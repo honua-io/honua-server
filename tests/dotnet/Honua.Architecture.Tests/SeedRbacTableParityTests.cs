@@ -68,14 +68,14 @@ public sealed class SeedRbacTableParityTests
 
     private static HashSet<string> EnumerateAuthorizationStoreTables(string projectRoot)
     {
-        var authorizationDirectory = Path.Combine(
+        var authorizationDirectory = ArchitectureTestHelpers.CombinePath(
             projectRoot, "src", "Honua.Postgres", "Features", "Authorization");
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var file in Directory.EnumerateFiles(authorizationDirectory, "*.cs", SearchOption.AllDirectories))
+        foreach (var source in Directory.EnumerateFiles(authorizationDirectory, "*.cs", SearchOption.AllDirectories)
+            .Select(File.ReadAllText))
         {
-            var source = File.ReadAllText(file);
             foreach (Match match in QualifyTableCall.Matches(source))
             {
                 tables.Add(match.Groups["table"].Value);
@@ -87,7 +87,7 @@ public sealed class SeedRbacTableParityTests
 
     private static HashSet<string> EnumerateSeedTables(string projectRoot)
     {
-        var seedPath = Path.Combine(projectRoot, "tests", "seed", "server.yaml");
+        var seedPath = ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "seed", "server.yaml");
         File.Exists(seedPath).Should().BeTrue($"the integration-test seed must exist at {seedPath}.");
 
         var seed = File.ReadAllText(seedPath);
@@ -106,7 +106,7 @@ public sealed class SeedRbacTableParityTests
         var current = new DirectoryInfo(startDirectory);
         while (current != null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
+            if (File.Exists(ArchitectureTestHelpers.CombinePath(current.FullName, "Honua.sln")))
             {
                 return current.FullName;
             }

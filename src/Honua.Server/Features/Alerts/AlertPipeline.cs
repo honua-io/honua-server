@@ -289,12 +289,9 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
         foreach (var service in snapshot.Graph.Services)
         {
-            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
+            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id).Where(static publication => publication.LayerIndex.HasValue))
             {
-                if (publication.LayerIndex.HasValue)
-                {
-                    _ = lookup.TryAdd(publication.LayerIndex.Value, service.Metadata.Name);
-                }
+                _ = lookup.TryAdd(publication.LayerIndex!.Value, service.Metadata.Name);
             }
         }
 

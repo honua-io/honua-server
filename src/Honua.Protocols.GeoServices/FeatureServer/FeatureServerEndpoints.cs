@@ -17,7 +17,7 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapFeatureServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var serviceMetadata = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer", (Delegate)HandleGetServiceMetadata)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer", (Delegate)HandleGetServiceMetadata)
             .WithDisplayName("Get FeatureServer Service Metadata")
             .WithName("GetServiceMetadata")
             .WithSummary("Get FeatureServer service metadata")
@@ -44,7 +44,7 @@ internal static partial class FeatureServerEndpoints
             .Produces<FeatureServerResponse>(200, "application/json")
             .Produces(404);
 
-        var layerMetadata = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}", (Delegate)HandleLayerMetadata)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}", (Delegate)HandleLayerMetadata)
             .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
             .WithSummary("Get FeatureServer layer metadata")
@@ -67,7 +67,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404)
             .Produces(StatusCodes.Status422UnprocessableEntity);
 
-        var queryGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
@@ -84,7 +84,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        var queryPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
@@ -104,7 +104,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        var serviceQueryGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesGet)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesGet)
             .WithDisplayName("Query FeatureServer Service (GET)")
             .WithName("QueryFeatureServiceGet")
             .WithSummary("Query features from a FeatureServer service using GET")
@@ -119,7 +119,7 @@ internal static partial class FeatureServerEndpoints
         // clients POST large layerDefs/layers arrays that exceed URL limits
         // (honua-server#1825). The POST companion shares the read-only handler and is
         // anonymous by design (per-layer access is enforced by the handler).
-        var serviceQueryPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
             .WithDisplayName("Query FeatureServer Service (POST)")
             .WithName("QueryFeatureServicePost")
             .WithSummary("Query features from a FeatureServer service using POST")
@@ -131,7 +131,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        var generateRenderer = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer",
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer",
                 (Func<HttpContext, Task<IResult>>)HandleGenerateRenderer)
             .WithDisplayName("Generate Renderer")
             .WithName("GenerateRenderer")
@@ -142,7 +142,7 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
-        var generateRendererPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer",
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/generateRenderer",
                 (Func<HttpContext, Task<IResult>>)HandleGenerateRenderer)
             .WithDisplayName("Generate Renderer (POST)")
             .WithName("GenerateRendererPost")
@@ -211,7 +211,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(400)
             .Produces(404);
 
-        var relatedGet = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsGet)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsGet)
             .WithDisplayName("Query Related Records (GET)")
             .WithName("QueryRelatedRecordsGet")
             .WithSummary("Query features related to source features through a relationship using GET")
@@ -222,7 +222,7 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
-        var relatedPost = endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsPost)
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryRelatedRecords", HandleQueryRelatedRecordsPost)
             .WithDisplayName("Query Related Records (POST)")
             .WithName("QueryRelatedRecordsPost")
             .WithSummary("Query features related to source features through a relationship using POST")
@@ -235,7 +235,7 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
-        var layerTile = endpoints.MapGet("/tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt", HandleLayerTile)
+        endpoints.MapGet("/tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt", HandleLayerTile)
             .WithDisplayName("Get MVT Tile")
             .WithName("GetMvtTile")
             .WithSummary("Get MVT (Mapbox Vector Tile) for a layer")

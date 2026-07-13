@@ -265,6 +265,10 @@ internal sealed partial class AnalysisContentService(
 
     private static bool TryResolveLayerInput(AnalysisPlanStep step, out int layerId)
     {
+        // Not rewritten as .Where(...): the out parameter is assigned inside the
+        // loop body as part of the match test itself (TryGetValue/TryParse), so a
+        // LINQ filter would need to re-run the same parse twice or capture state
+        // in a closure — a plain loop is clearer and behavior-preserving.
         foreach (var key in LayerInputKeys)
         {
             if (step.Inputs.TryGetValue(key, out var raw)
@@ -827,15 +831,12 @@ internal sealed partial class AnalysisContentService(
                 : step with { Inputs = updatedInputs };
         }
 
-        foreach (var pair in normalizedOverrides)
+        foreach (var pair in normalizedOverrides.Where(pair => !matchedKeys.Contains(pair.Key)))
         {
-            if (!matchedKeys.Contains(pair.Key))
-            {
-                throw new AnalysisContentValidationException(
-                    $"Parameter override '{pair.Key}' does not match an executable analysis plan input.",
-                    "analysis.content.parameterOverrides.unmatched",
-                    "/parameterOverrides");
-            }
+            throw new AnalysisContentValidationException(
+                $"Parameter override '{pair.Key}' does not match an executable analysis plan input.",
+                "analysis.content.parameterOverrides.unmatched",
+                "/parameterOverrides");
         }
 
         var mergedParameters = new Dictionary<string, string>(package.Parameters, StringComparer.Ordinal);
@@ -918,22 +919,16 @@ internal sealed partial class AnalysisContentService(
             metadata[AnalysisContentMetadataKeys.SourceUnits] = package.Units.Trim();
         }
 
-        foreach (var pair in package.Parameters)
+        foreach (var pair in package.Parameters.Where(pair => !string.IsNullOrWhiteSpace(pair.Key)))
         {
-            if (!string.IsNullOrWhiteSpace(pair.Key))
-            {
-                metadata[$"analysis.content.parameter.{pair.Key}"] = pair.Value;
-            }
+            metadata[$"analysis.content.parameter.{pair.Key}"] = pair.Value;
         }
 
         if (runtimeParameters is not null)
         {
-            foreach (var pair in runtimeParameters)
+            foreach (var pair in runtimeParameters.Where(pair => !string.IsNullOrWhiteSpace(pair.Key)))
             {
-                if (!string.IsNullOrWhiteSpace(pair.Key))
-                {
-                    metadata[$"analysis.content.runtime_parameter.{pair.Key}"] = pair.Value;
-                }
+                metadata[$"analysis.content.runtime_parameter.{pair.Key}"] = pair.Value;
             }
         }
 
@@ -1068,15 +1063,7 @@ internal sealed partial class AnalysisContentService(
             return true;
         }
 
-        foreach (var marker in SensitiveDiagnosticMarkers)
-        {
-            if (value.Contains(marker, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return SensitiveDiagnosticMarkers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string? SanitizePhase(string? value)
@@ -1118,17 +1105,7 @@ internal sealed partial class AnalysisContentService(
     ];
 
     private static bool IsSensitiveMetadataKey(string key)
-    {
-        foreach (var marker in SensitiveMetadataKeyMarkers)
-        {
-            if (key.Contains(marker, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => SensitiveMetadataKeyMarkers.Any(marker => key.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
     private static string CreateItemId() => $"analysis-content-{Guid.NewGuid():N}";
 

@@ -94,7 +94,6 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             var batch = await ReadBatchAsync(sql, storageLayerId, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {
-                hasMore = false;
                 break;
             }
 

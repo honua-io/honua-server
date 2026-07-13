@@ -38,7 +38,7 @@ public sealed class SpecContractRegressionTests
         parsed.Diagnostics.Should().BeEmpty();
 
         var schemaJson = await File.ReadAllTextAsync(ResolveRepoPath(
-            Path.Combine("docs", "developer", "spec-grammar", "v1.0", "spec.schema.json")));
+            Path.Join("docs", "developer", "spec-grammar", "v1.0", "spec.schema.json")));
         var schema = JSchema.Parse(schemaJson);
         var token = JToken.Parse(Canonicalizer.ToJson(parsed.Document!));
 
@@ -116,7 +116,7 @@ public sealed class SpecContractRegressionTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            var candidate = Path.Combine(directory.FullName, relativePath);
+            var candidate = Path.Join(directory.FullName, relativePath);
             if (File.Exists(candidate))
             {
                 return candidate;

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -74,12 +75,9 @@ public static class ProcessSchemaJsonGenerator
         // Required array — only the parameters flagged Required, in declared order.
         writer.WritePropertyName("required");
         writer.WriteStartArray();
-        foreach (var parameter in process.Parameters)
+        foreach (var parameter in process.Parameters.Where(static parameter => parameter.Required))
         {
-            if (parameter.Required)
-            {
-                writer.WriteStringValue(parameter.Name);
-            }
+            writer.WriteStringValue(parameter.Name);
         }
 
         writer.WriteEndArray();

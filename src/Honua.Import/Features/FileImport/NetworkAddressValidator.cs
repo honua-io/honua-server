@@ -81,12 +81,9 @@ internal static class NetworkAddressValidator
             return (IsDisallowed: true, ResolvedAddresses: []);
         }
 
-        foreach (var address in addresses)
+        if (addresses.Any(IsPrivateOrReservedAddress))
         {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                return (IsDisallowed: true, ResolvedAddresses: []);
-            }
+            return (IsDisallowed: true, ResolvedAddresses: []);
         }
 
         return (IsDisallowed: false, ResolvedAddresses: addresses);
@@ -121,15 +118,7 @@ internal static class NetworkAddressValidator
             return true;
         }
 
-        foreach (var address in addresses)
-        {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return addresses.Any(IsPrivateOrReservedAddress);
     }
 
     private static bool IsLocalhostHostName(string host)

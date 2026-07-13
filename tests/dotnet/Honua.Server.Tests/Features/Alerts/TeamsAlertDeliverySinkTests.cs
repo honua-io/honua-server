@@ -41,7 +41,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public async Task DeliverAsync_WithSuccessfulPost_ReturnsSuccess()
     {
         var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
@@ -58,7 +58,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public async Task DeliverAsync_WithServerError_ReturnsRetryableFailure()
     {
         var handler = new FakeHttpMessageHandler(HttpStatusCode.InternalServerError);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
@@ -75,7 +75,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public async Task DeliverAsync_UsesCanonicalMessageCardProperties()
     {
         var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
@@ -97,7 +97,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public async Task DeliverAsync_WithOpsEvent_RendersOpsTitleAndSourceNotRuleFacts()
     {
         var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
@@ -139,6 +139,8 @@ public sealed class TeamsAlertDeliverySinkTests
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
 
+            // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
+            // it disposes the response after the caller finishes with it.
             return new HttpResponseMessage(_statusCode);
         }
     }

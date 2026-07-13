@@ -2,12 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices;
 
@@ -63,8 +65,13 @@ internal static class GeoServicesCloudTileCache
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            // Cache reads are opportunistic: a storage-backend failure must not fail the
+            // tile request (caller falls back to regenerating the tile). Record the
+            // exception on the current span so the failure is still observable in
+            // telemetry rather than silently disappearing.
+            HonuaTelemetry.RecordException(Activity.Current, ex);
             return null;
         }
     }
@@ -110,9 +117,13 @@ internal static class GeoServicesCloudTileCache
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
-            // Tile cache writes are opportunistic; rendering has already succeeded.
+            // Tile cache writes are opportunistic; rendering has already succeeded, so a
+            // storage-backend failure here must not fail the response. Record the
+            // exception on the current span so the failure is still observable in
+            // telemetry rather than silently disappearing.
+            HonuaTelemetry.RecordException(Activity.Current, ex);
         }
     }
 

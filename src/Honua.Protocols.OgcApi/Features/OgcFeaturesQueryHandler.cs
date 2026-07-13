@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using System.Buffers;
+using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -693,7 +694,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             OgcFeaturesLog.ItemQueryStarted(_logger, collectionId, featureId);
             var stopwatch = Stopwatch.StartNew();
-            var storedFeature = resolvedFeature.Value.Feature;
 
             var resourceSrid = resource.ReadSrid() ?? 4326;
             var query = new FeatureQuery
@@ -1192,6 +1192,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         catch (JsonException)
         {
+            // Stored raw geometry JSON is malformed; fall through to null below rather
+            // than surfacing a parser exception for what is effectively invalid data.
         }
 
         writer.WriteNullValue();
@@ -1216,6 +1218,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         catch (JsonException)
         {
+            // Malformed JSON is treated as "no object present" rather than an error.
         }
 
         return null;
@@ -1614,12 +1617,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // the spec-compliant location.
 
             var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, hasMoreResults);
-            foreach (var link in links)
+            foreach (var link in links.Where(link => !string.IsNullOrEmpty(link.Href)))
             {
-                if (!string.IsNullOrEmpty(link.Href))
-                {
-                    httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
-                }
+                httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
             }
 
             EnableChunkedEncodingIfHttp1(httpContext);

@@ -211,6 +211,8 @@ internal sealed class GeoprocessingJobDispatcher
         }
         catch (Exception ex)
         {
+            // Intentionally broad: the documented best-effort removal (see the XML doc
+            // above) — logged so the stale-claim reconciler's later fix-up is diagnosable.
             GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
         }
     }
@@ -264,7 +266,7 @@ internal sealed class GeoprocessingJobDispatcher
                     _progressStore,
                     ProgressRetention,
                     mismatchMessage,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 var failed = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
                 return failed ?? job;

@@ -44,6 +44,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All three segments are fixed relative literals (none rooted), so nothing is dropped.
         _fixture.UseSeed(Path.Combine("tests", "seed", "server.yaml"));
 
         // Configure test limits
@@ -142,7 +143,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync(
@@ -222,7 +223,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync(

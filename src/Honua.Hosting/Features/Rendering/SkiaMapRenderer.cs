@@ -238,30 +238,25 @@ internal sealed class SkiaMapRenderer : IDisposable
     private static void RenderDefaultLegendSwatch(SKCanvas canvas, MetadataV2GeometryType geometryType, int width, int height, float padding)
     {
         var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
-        try
-        {
-            switch (geometryType)
-            {
-                case MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint:
-                    canvas.DrawCircle(width / 2f, height / 2f, Math.Min(width, height) / 4f, fill);
-                    break;
-                case MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString:
-                    canvas.DrawLine(padding, height / 2f, width - padding, height / 2f, fill);
-                    break;
-                case MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon:
-                    canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, fill);
-                    if (stroke != null)
-                    {
-                        canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, stroke);
-                    }
+        using var fillDisposable = fill;
+        using var strokeDisposable = stroke;
 
-                    break;
-            }
-        }
-        finally
+        switch (geometryType)
         {
-            fill.Dispose();
-            stroke?.Dispose();
+            case MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint:
+                canvas.DrawCircle(width / 2f, height / 2f, Math.Min(width, height) / 4f, fill);
+                break;
+            case MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString:
+                canvas.DrawLine(padding, height / 2f, width - padding, height / 2f, fill);
+                break;
+            case MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon:
+                canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, fill);
+                if (stroke != null)
+                {
+                    canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, stroke);
+                }
+
+                break;
         }
     }
 
@@ -314,29 +309,24 @@ internal sealed class SkiaMapRenderer : IDisposable
         MetadataV2GeometryType geometryType)
     {
         var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
-        try
+        using var fillDisposable = fill;
+        using var strokeDisposable = stroke;
+
+        if (geometryType == MetadataV2GeometryType.Point)
         {
-            if (geometryType == MetadataV2GeometryType.Point)
-            {
-                RenderDefaultPoints(canvas, features, transform, fill);
-                return;
-            }
-
-            foreach (var feature in features)
-            {
-                if (feature.Geometry == null || feature.Geometry.Length < 5)
-                {
-                    continue;
-                }
-
-                var result = WkbToSkiaConverter.Convert(feature.Geometry, transform);
-                RenderConversionResult(canvas, result, fill, stroke);
-            }
+            RenderDefaultPoints(canvas, features, transform, fill);
+            return;
         }
-        finally
+
+        foreach (var feature in features)
         {
-            fill.Dispose();
-            stroke?.Dispose();
+            if (feature.Geometry == null || feature.Geometry.Length < 5)
+            {
+                continue;
+            }
+
+            var result = WkbToSkiaConverter.Convert(feature.Geometry, transform);
+            RenderConversionResult(canvas, result, fill, stroke);
         }
     }
 

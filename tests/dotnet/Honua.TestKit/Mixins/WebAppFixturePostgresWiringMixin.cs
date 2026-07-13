@@ -67,6 +67,8 @@ internal static class WebAppFixturePostgresWiringMixin
         string connectionString,
         IDictionary<string, string?>? extraSettings = null)
     {
+        // "tmp" and "attachments" are fixed literals, so this combine can't drop the
+        // current directory.
         var attachmentsPath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
         var settings = new Dictionary<string, string?>
         {

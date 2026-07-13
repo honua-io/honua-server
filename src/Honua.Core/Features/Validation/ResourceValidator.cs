@@ -168,6 +168,10 @@ public sealed class ResourceValidator : IResourceValidator
         }
         var service = serviceResult.Resource!;
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        // Not a simple LINQ filter: each candidate needs a resource-resolution lookup
+        // (ResolveResource) plus a second lifecycle check on the resolved resource before
+        // the match is accepted, so the explicit loop stays clearer than a chained
+        // Where/Select/FirstOrDefault here.
         foreach (var pub in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             if (pub.LayerIndex != layerId) continue;

@@ -58,27 +58,19 @@ public sealed class RedisImportJobManagerIntegrationTests
     {
         var lockKey = $"test:leader:{Guid.NewGuid():N}";
         using var multiplexer = ConnectionMultiplexer.Connect(_redis.ConnectionString);
-        var electionA = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-a");
-        var electionB = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-b");
+        using var electionA = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-a");
+        using var electionB = new RedisLeaderElection(multiplexer, NullLogger.Instance, lockKey, "instance-b");
 
-        try
-        {
-            var acquiredA = await electionA.TryAcquireLeadershipAsync();
-            var acquiredB = await electionB.TryAcquireLeadershipAsync();
+        var acquiredA = await electionA.TryAcquireLeadershipAsync();
+        var acquiredB = await electionB.TryAcquireLeadershipAsync();
 
-            acquiredA.Should().BeTrue();
-            acquiredB.Should().BeFalse();
+        acquiredA.Should().BeTrue();
+        acquiredB.Should().BeFalse();
 
-            await electionA.ReleaseLeadershipAsync();
+        await electionA.ReleaseLeadershipAsync();
 
-            var acquiredBAfter = await electionB.TryAcquireLeadershipAsync();
-            acquiredBAfter.Should().BeTrue();
-        }
-        finally
-        {
-            electionA.Dispose();
-            electionB.Dispose();
-        }
+        var acquiredBAfter = await electionB.TryAcquireLeadershipAsync();
+        acquiredBAfter.Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -98,18 +90,12 @@ public sealed class RedisImportJobManagerIntegrationTests
     [IntegrationTest]
     public async Task LeaderElection_WithoutRedis_UsesLocalFallbackLeadership()
     {
-        var election = new RedisLeaderElection(null, NullLogger.Instance, $"test:leader:{Guid.NewGuid():N}", "instance-a");
-        try
-        {
-            var acquired = await election.TryAcquireLeadershipAsync();
+        using var election = new RedisLeaderElection(null, NullLogger.Instance, $"test:leader:{Guid.NewGuid():N}", "instance-a");
 
-            acquired.Should().BeTrue();
-            election.IsLeader.Should().BeTrue();
-        }
-        finally
-        {
-            election.Dispose();
-        }
+        var acquired = await election.TryAcquireLeadershipAsync();
+
+        acquired.Should().BeTrue();
+        election.IsLeader.Should().BeTrue();
     }
 
     [IntegrationTest]

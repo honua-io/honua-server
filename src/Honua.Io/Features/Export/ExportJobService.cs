@@ -159,7 +159,7 @@ internal sealed class ExportJobService(
 
     public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        var leaseCoordinator = await TryAcquireJobLeaseAsync(jobId).ConfigureAwait(false);
+        using var leaseCoordinator = await TryAcquireJobLeaseAsync(jobId).ConfigureAwait(false);
         if (_redis != null && leaseCoordinator == null)
         {
             return;
@@ -326,7 +326,7 @@ internal sealed class ExportJobService(
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-                leaseCoordinator.Dispose();
+                // Disposal is now handled by the `using` declaration above.
             }
         }
     }
@@ -585,6 +585,8 @@ internal sealed class ExportJobService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Expected: the caller cancelled processing (job finished or the host is
+            // shutting down); lease renewal simply stops.
         }
     }
 

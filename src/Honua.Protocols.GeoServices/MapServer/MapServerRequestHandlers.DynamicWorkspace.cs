@@ -349,18 +349,15 @@ internal static partial class MapServerEndpoints
                 }
             }
 
-            foreach (var candidate in _candidates)
+            foreach (var candidate in _candidates.Where(c => c.PublicLayerId == rightLayerId))
             {
-                if (candidate.PublicLayerId == rightLayerId)
+                var resourceName = candidate.Resource.Metadata.Name;
+                if (!string.IsNullOrWhiteSpace(resourceName))
                 {
-                    var resourceName = candidate.Resource.Metadata.Name;
-                    if (!string.IsNullOrWhiteSpace(resourceName))
-                    {
-                        return resourceName.Trim();
-                    }
-
-                    break;
+                    return resourceName.Trim();
                 }
+
+                break;
             }
 
             return rightLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -379,12 +376,9 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
-            foreach (var ch in trimmed)
+            foreach (var ch in trimmed.Where(ch => !char.IsLetterOrDigit(ch) && ch != '_'))
             {
-                if (!char.IsLetterOrDigit(ch) && ch != '_')
-                {
-                    return false;
-                }
+                return false;
             }
 
             return char.IsLetter(trimmed[0]) || trimmed[0] == '_';
@@ -482,12 +476,9 @@ internal static partial class MapServerEndpoints
                 return true;
             }
 
-            foreach (var allowed in _options.AllowedWorkspaceIds)
+            foreach (var allowed in _options.AllowedWorkspaceIds.Where(allowed => string.Equals(allowed, workspaceId, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(allowed, workspaceId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                return true;
             }
 
             return false;

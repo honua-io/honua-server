@@ -392,9 +392,13 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         var writeMetadata = writeMetadataField!.GetValue(cache) as System.Collections.IDictionary;
         writeMetadata.Should().NotBeNull();
+        if (writeMetadata is null)
+        {
+            throw new InvalidOperationException("_writeMetadata field was not the expected IDictionary type.");
+        }
 
         // Write metadata count should not exceed fallback max entries
-        writeMetadata!.Count.Should().BeLessOrEqualTo(options.FallbackMaxEntries);
+        writeMetadata.Count.Should().BeLessOrEqualTo(options.FallbackMaxEntries);
     }
 
     [UnitTest]
@@ -476,10 +480,14 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         var keyLocks = keyLocksField!.GetValue(_cacheService) as ConcurrentDictionary<string, SemaphoreSlim>;
         keyLocks.Should().NotBeNull();
+        if (keyLocks is null)
+        {
+            throw new InvalidOperationException("_keyLocks field was not the expected ConcurrentDictionary type.");
+        }
 
         var key = "prune:test";
         var semaphore = new SemaphoreSlim(1, 1);
-        keyLocks![key] = semaphore;
+        keyLocks[key] = semaphore;
 
         var pruneMethod = typeof(RedisCacheService).GetMethod("PruneKeyLocks", BindingFlags.NonPublic | BindingFlags.Instance);
         pruneMethod.Should().NotBeNull();
@@ -509,8 +517,12 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         var fallbackCache = fallbackCacheField!.GetValue(cacheService) as System.Collections.IEnumerable;
         fallbackCache.Should().NotBeNull();
+        if (fallbackCache is null)
+        {
+            throw new InvalidOperationException("_fallbackCache field was not the expected IEnumerable type.");
+        }
 
-        return fallbackCache!
+        return fallbackCache
             .Cast<object>()
             .Select(entry => (string)entry.GetType().GetProperty("Key")!.GetValue(entry)!)
             .ToArray();
@@ -523,8 +535,12 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         var writeMetadata = writeMetadataField!.GetValue(cacheService) as System.Collections.IDictionary;
         writeMetadata.Should().NotBeNull();
+        if (writeMetadata is null)
+        {
+            throw new InvalidOperationException("_writeMetadata field was not the expected IDictionary type.");
+        }
 
-        return writeMetadata!.Count;
+        return writeMetadata.Count;
     }
 
     internal sealed class MockLogger<T> : ILogger<T>

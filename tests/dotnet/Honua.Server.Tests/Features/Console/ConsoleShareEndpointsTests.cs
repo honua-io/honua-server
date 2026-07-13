@@ -410,12 +410,9 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
     {
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        foreach (var value in forbiddenValues)
+        foreach (var value in forbiddenValues.Where(value => !string.IsNullOrWhiteSpace(value)))
         {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                Assert.DoesNotContain(value, body, StringComparison.OrdinalIgnoreCase);
-            }
+            Assert.DoesNotContain(value!, body, StringComparison.OrdinalIgnoreCase);
         }
     }
 

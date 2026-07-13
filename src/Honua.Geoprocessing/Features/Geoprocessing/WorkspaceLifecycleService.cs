@@ -283,6 +283,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         }
         catch (Exception ex)
         {
+            // Intentionally broad: a failed state transition must trigger compensating
+            // rollback of the already-created promoted copy rather than leave two live
+            // artifacts, so the exception is logged and mapped into the rollback path.
             WorkspaceLifecycleLog.PromotionTransitionThrew(_logger, request.ArtifactId, ex);
             return await RollbackPromotedCopyAsync(request.ArtifactId, created.ArtifactId,
                 "Source artifact state transition threw an exception", cancellationToken);
@@ -314,6 +317,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         }
         catch (Exception ex)
         {
+            // Intentionally broad: this is the compensating-rollback path itself — it
+            // must report back to the caller (manual cleanup may be needed) rather than
+            // throw, so the exception is logged and turned into a Failure result.
             WorkspaceLifecycleLog.PromotionRollbackDeleteThrew(
                 _logger, sourceArtifactId, promotedArtifactId, ex);
             return ArtifactPromotionResult.Failure(
@@ -407,21 +413,18 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                 {
                     var artifacts = await _artifactStore.ListByWorkspaceAsync(workspace.WorkspaceId, cancellationToken);
                     var allArtifactsDeleted = true;
-                    foreach (var artifact in artifacts)
+                    foreach (var artifact in artifacts.Where(artifact => artifact.State is not ArtifactLifecycleState.Deleted))
                     {
-                        if (artifact.State is not ArtifactLifecycleState.Deleted)
+                        var deleted = await _artifactStore.DeleteAsync(artifact.ArtifactId, cancellationToken);
+                        if (deleted)
                         {
-                            var deleted = await _artifactStore.DeleteAsync(artifact.ArtifactId, cancellationToken);
-                            if (deleted)
-                            {
-                                artifactsDeleted++;
-                                bytesReclaimed += artifact.SizeBytes;
-                            }
-                            else
-                            {
-                                allArtifactsDeleted = false;
-                                errors.Add($"Workspace {workspace.WorkspaceId}: failed to delete artifact {artifact.ArtifactId}");
-                            }
+                            artifactsDeleted++;
+                            bytesReclaimed += artifact.SizeBytes;
+                        }
+                        else
+                        {
+                            allArtifactsDeleted = false;
+                            errors.Add($"Workspace {workspace.WorkspaceId}: failed to delete artifact {artifact.ArtifactId}");
                         }
                     }
 
@@ -446,6 +449,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             }
             catch (Exception ex)
             {
+                // Intentionally broad: this is the per-workspace sweep boundary — one
+                // workspace's cleanup failure must not abort the sweep for every other
+                // workspace in the batch, so it is logged and recorded per-workspace.
                 errors.Add($"Workspace {workspace.WorkspaceId}: cleanup failed");
                 WorkspaceLifecycleLog.CleanupError(_logger, workspace.WorkspaceId, ex);
             }

@@ -394,6 +394,9 @@
         }
         catch (Exception)
         {
+            // Intentional catch-all: this is the top-level UI load boundary for the demo
+            // page, and any failure (network, parsing, provider) must degrade to the
+            // user-visible error banner below rather than crash the render.
             if (!load.IsActive || _disposed)
             {
                 return;
@@ -449,19 +452,13 @@
             return null;
         }
 
-        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var segments = pair.Split('=', 2);
-            var key = Uri.UnescapeDataString(segments[0]);
-            if (!string.Equals(key, "source", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+        var match = query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split('=', 2))
+            .FirstOrDefault(segments =>
+                string.Equals(Uri.UnescapeDataString(segments[0]), "source", StringComparison.OrdinalIgnoreCase));
 
-            return segments.Length == 2 ? Uri.UnescapeDataString(segments[1]) : string.Empty;
-        }
-
-        return null;
+        return match is null ? null : match.Length == 2 ? Uri.UnescapeDataString(match[1]) : string.Empty;
     }
 
     private static string GetLevelCss(SignalLevel level) => level switch

@@ -546,19 +546,7 @@ internal static class CsvFormatReader
         return bestDelimiter;
     }
 
-    private static int CountOccurrences(string value, char candidate)
-    {
-        var count = 0;
-        foreach (var ch in value)
-        {
-            if (ch == candidate)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
+    private static int CountOccurrences(string value, char candidate) => value.Count(ch => ch == candidate);
 
     private static List<string> ParseCsvRecord(string record, char delimiter)
     {

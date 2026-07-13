@@ -166,7 +166,7 @@ internal static partial class TemporalHistorySlicesEndpoints
                 return bad;
             }
 
-            var request = new TemporalRollbackPlanRequest(checkpoint!);
+            var request = new TemporalRollbackPlanRequest(checkpoint);
             var plan = await service.PlanRollbackAsync(serviceId, layerId, request, context.RequestAborted).ConfigureAwait(false);
             return Results.Json(ToResponse(plan), TemporalHistorySlicesJsonContext.Default.TemporalRollbackPlanResponse);
         }
@@ -196,7 +196,7 @@ internal static partial class TemporalHistorySlicesEndpoints
             }
 
             var request = new TemporalRollbackExecuteRequest(
-                TargetCheckpoint: checkpoint!,
+                TargetCheckpoint: checkpoint,
                 Approved: body?.Approved ?? false,
                 Reason: body?.Reason);
 
@@ -281,7 +281,7 @@ internal static partial class TemporalHistorySlicesEndpoints
     private static bool TryBuildCheckpointFromBody(
         TemporalCheckpointBody? body,
         HttpContext context,
-        out TemporalCheckpoint? checkpoint,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out TemporalCheckpoint? checkpoint,
         out IResult problem)
     {
         checkpoint = null;

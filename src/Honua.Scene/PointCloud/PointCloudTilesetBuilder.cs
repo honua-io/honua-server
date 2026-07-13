@@ -330,9 +330,8 @@ public static class PointCloudTilesetBuilder
         }
         var min = double.PositiveInfinity;
         var max = double.NegativeInfinity;
-        foreach (var index in memberIndices)
+        foreach (var h in memberIndices.Select(index => projected[index].Height))
         {
-            var h = projected[index].Height;
             if (h < min) min = h;
             if (h > max) max = h;
         }

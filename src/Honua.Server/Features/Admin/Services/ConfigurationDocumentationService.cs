@@ -958,6 +958,9 @@ public sealed class ConfigurationDocumentationService
 
         foreach (var contributor in _configurationDocumentationContributors)
         {
+            // Not a pure filter: seenNames.Add(...) has a side effect (marks the name
+            // seen across contributors) that the Where predicate would still need to
+            // perform, so converting to LINQ would not simplify or clarify this loop.
             foreach (var envVar in contributor.GetEnvironmentVariables())
             {
                 if (seenNames.Add(envVar.Name))

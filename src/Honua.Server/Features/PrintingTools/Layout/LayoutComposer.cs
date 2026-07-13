@@ -17,6 +17,12 @@ internal static class LayoutComposer
     private const float AttributionFontSize = 8f;
 
     /// <summary>
+    /// Tolerance for comparing a computed "nice" scale-bar distance against 1.0 to pick
+    /// singular vs. plural units. Avoids exact double equality on a computed value.
+    /// </summary>
+    private const double NiceNumberEpsilon = 1e-9;
+
+    /// <summary>
     /// Composes a full page layout onto the given canvas at the specified DPI.
     /// </summary>
     /// <param name="canvas">Target canvas to draw on.</param>
@@ -175,7 +181,9 @@ internal static class LayoutComposer
         {
             var maxMiles = maxDisplayableFeet / 5280.0;
             displayDistance = FloorToNiceNumber(maxMiles);
-            unit = displayDistance == 1.0 ? "mile" : "miles";
+            // Tolerance-based (not ==): displayDistance is a computed double, not a guaranteed
+            // exact literal, even though FloorToNiceNumber snaps to round numbers.
+            unit = Math.Abs(displayDistance - 1.0) < NiceNumberEpsilon ? "mile" : "miles";
         }
         else if (maxDisplayableFeet > 100)
         {

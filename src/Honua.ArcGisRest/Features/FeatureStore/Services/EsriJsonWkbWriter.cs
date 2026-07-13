@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -176,14 +177,8 @@ internal static class EsriJsonWkbWriter
     {
         EnsurePathsShape(paths);
 
-        var lineBuffers = new List<byte[]>(paths.GetArrayLength());
-        long total = 1 + 4 + 4;
-        foreach (var path in paths.EnumerateArray())
-        {
-            var lineWkb = WriteSingleLineString(path);
-            lineBuffers.Add(lineWkb);
-            total += lineWkb.Length;
-        }
+        var lineBuffers = paths.EnumerateArray().Select(WriteSingleLineString).ToList();
+        long total = 1 + 4 + 4 + lineBuffers.Sum(line => (long)line.Length);
 
         var buffer = new byte[CheckedTotalSize(total)];
         var span = buffer.AsSpan();

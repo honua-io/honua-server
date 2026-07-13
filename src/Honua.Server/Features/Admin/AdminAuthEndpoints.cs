@@ -728,9 +728,10 @@ internal static class AdminAuthEndpoints
         }
 
         var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
+        using var content = new FormUrlEncodedContent(formValues);
         return await client.PostAsync(
             tokenEndpoint,
-            new FormUrlEncodedContent(formValues),
+            content,
             cancellationToken).ConfigureAwait(false);
     }
 

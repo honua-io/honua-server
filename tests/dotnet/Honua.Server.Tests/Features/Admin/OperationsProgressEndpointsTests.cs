@@ -151,6 +151,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         updatedJob.CompletedAt.Should().NotBeNull();
 
         var queueDepth = await jobQueue.GetQueueDepthAsync();
+        queueDepth.Should().Be(0, "cancelling the job must dequeue it so it is never dispatched to a worker");
         var updatedProgress = await _progressStore.GetProgressAsync(operationId);
         updatedProgress.Should().NotBeNull();
         updatedProgress!.Status.Should().Be(OperationStatus.Cancelled);
@@ -1434,12 +1435,10 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             throw new InvalidOperationException($"Expected JSON object for property '{propertyName}'.");
         }
 
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in element.EnumerateObject()
+            .Where(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value;
-            }
+            return property.Value;
         }
 
         throw new KeyNotFoundException($"Property '{propertyName}' not found in JSON payload.");
@@ -1452,16 +1451,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
             throw new InvalidOperationException($"Expected JSON object for property '{propertyName}'.");
         }
 
-        var count = 0;
-        foreach (var property in element.EnumerateObject())
-        {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                count++;
-            }
-        }
-
-        return count;
+        return element.EnumerateObject()
+            .Count(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static T RequireRegisteredService<T>(T? service)

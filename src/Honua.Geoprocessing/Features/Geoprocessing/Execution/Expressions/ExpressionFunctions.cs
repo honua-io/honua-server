@@ -130,26 +130,12 @@ internal static class ExpressionFunctions
                     ? args[1].Evaluate(context)
                     : args[2].Evaluate(context);
             case "coalesce":
-                {
-                    foreach (var arg in args)
-                    {
-                        var value = arg.Evaluate(context);
-                        if (value is null)
-                        {
-                            continue;
-                        }
-
-                        // Treat an empty string as "absent" so coalesce skips blank fields.
-                        if (value is string s2 && s2.Length == 0)
-                        {
-                            continue;
-                        }
-
-                        return value;
-                    }
-
-                    return null;
-                }
+                // Treat an empty string as "absent" so coalesce skips blank fields. Select
+                // stays lazy through FirstOrDefault, so later args are only evaluated when
+                // an earlier one is null/blank — matching the original loop's short circuit.
+                return args
+                    .Select(arg => arg.Evaluate(context))
+                    .FirstOrDefault(value => value is not (null or string { Length: 0 }));
 
             // ---- Math ---------------------------------------------------------
             case "abs":

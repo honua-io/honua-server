@@ -45,7 +45,7 @@ public sealed class ThrowingDefaultInterfaceMethodRatchetTests
         var violations = new List<string>();
         foreach (var relativePath in _v2InterfaceFiles)
         {
-            var absolutePath = Path.Combine(repositoryRoot, relativePath);
+            var absolutePath = ArchitectureTestHelpers.CombinePath(repositoryRoot, relativePath);
             File.Exists(absolutePath).Should().BeTrue(
                 $"audit-C1 v2 interface file '{relativePath}' must exist; update the ratchet list if it was renamed.");
 

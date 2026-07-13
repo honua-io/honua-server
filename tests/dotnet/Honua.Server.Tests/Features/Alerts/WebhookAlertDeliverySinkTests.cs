@@ -18,7 +18,8 @@ public sealed class WebhookAlertDeliverySinkTests
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CountingHandler();
-        httpClientFactory.CreateClient("alerts-webhook").Returns(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("alerts-webhook").Returns(httpClient);
 
         var sink = new WebhookAlertDeliverySink(
             httpClientFactory,
@@ -40,7 +41,8 @@ public sealed class WebhookAlertDeliverySinkTests
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CapturingHeaderHandler();
-        httpClientFactory.CreateClient("alerts-webhook").Returns(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("alerts-webhook").Returns(httpClient);
 
         var sink = new WebhookAlertDeliverySink(
             httpClientFactory,
@@ -94,6 +96,8 @@ public sealed class WebhookAlertDeliverySinkTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             SendCount++;
+            // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
+            // it disposes the response after the caller finishes with it.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }
@@ -114,6 +118,8 @@ public sealed class WebhookAlertDeliverySinkTests
             IdempotencyKeyHeader = Assert.Single(request.Headers.GetValues("Idempotency-Key"));
             EventTimestampHeader = Assert.Single(request.Headers.GetValues("X-Honua-Event-Timestamp"));
             SignatureHeader = Assert.Single(request.Headers.GetValues("X-Honua-Signature"));
+            // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
+            // it disposes the response after the caller finishes with it.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }

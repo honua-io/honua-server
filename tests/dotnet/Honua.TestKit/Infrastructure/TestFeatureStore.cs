@@ -172,9 +172,9 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         }
 
         // Apply field filtering
-        if (query.OutFields?.Length > 0)
+        if (query.OutFields is { Length: > 0 } outFields)
         {
-            allFilteredFeatures = allFilteredFeatures.Select(f => FilterFields(f, query.OutFields.Value)).ToList();
+            allFilteredFeatures = allFilteredFeatures.Select(f => FilterFields(f, outFields)).ToList();
         }
 
         // Calculate if more results are available
@@ -493,6 +493,9 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: this in-memory store mirrors the real
+                // provider's batch-edit semantics, where one item's failure is recorded
+                // per-item and does not abort the rest of the batch (unless RollbackOnFailure).
                 createResults.Add(EditOperationResult.Failure($"Failed to create feature {feature.Id}: {ex.Message}"));
             }
         }
@@ -514,6 +517,8 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: one item's failure is recorded per-item and
+                // does not abort the rest of the batch (unless RollbackOnFailure).
                 updateResults.Add(EditOperationResult.Failure($"Failed to update feature {feature.Id}: {ex.Message}", objectId: feature.Id));
             }
         }
@@ -542,6 +547,8 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: one item's failure is recorded per-item and
+                // does not abort the rest of the batch (unless RollbackOnFailure).
                 deleteResults.Add(EditOperationResult.Failure($"Failed to delete feature {featureId}: {ex.Message}", objectId: featureId));
             }
         }
@@ -583,6 +590,10 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         }
 
         var map = new Dictionary<long, string>(editBatch.Preconditions.Length);
+        // Not rewritten to `.Where(...)`: moving the null-check into a separate LINQ
+        // predicate loses the null-state narrowing the compiler currently applies to
+        // ExpectedStateToken (a `string?`) inside this `if` body, which would reintroduce
+        // a nullable-assignment warning under this project's TreatWarningsAsErrors build.
         foreach (var precondition in editBatch.Preconditions)
         {
             if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
@@ -656,6 +667,9 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: mirrors the batch path above - one operation's
+            // failure is recorded and reported, not rethrown, so ordered-batch processing
+            // can decide whether to continue or stop based on the caller's policy.
             createResults.Add(EditOperationResult.Failure($"Failed to create feature {feature.Id}: {ex.Message}"));
             return false;
         }
@@ -678,6 +692,8 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: mirrors the batch path above - one operation's
+            // failure is recorded and reported, not rethrown.
             updateResults.Add(EditOperationResult.Failure($"Failed to update feature {feature.Id}: {ex.Message}", objectId: feature.Id));
             return false;
         }
@@ -706,6 +722,8 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: mirrors the batch path above - one operation's
+            // failure is recorded and reported, not rethrown.
             deleteResults.Add(EditOperationResult.Failure($"Failed to delete feature {objectId}: {ex.Message}", objectId: objectId));
             return false;
         }
@@ -792,6 +810,10 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         var clauses = Regex.Split(normalized, @"\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         var filtered = features;
 
+        // Not rewritten to `.Select(c => c.Trim())`: the loop body does far more than map
+        // each clause (multiple early `continue`s, branching parse logic, and progressively
+        // narrowing the `filtered` sequence), so a LINQ projection here would obscure
+        // control flow rather than clarify it.
         foreach (var clause in clauses)
         {
             var trimmedClause = clause.Trim();
@@ -994,20 +1016,17 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                    string.Equals(leftText, rightText, StringComparison.OrdinalIgnoreCase);
         }
 
-        if (left is IConvertible)
+        if (left is IConvertible && right is IConvertible)
         {
-            if (right is IConvertible)
+            try
             {
-                try
-                {
-                    var leftValue = Convert.ToDouble(left, CultureInfo.InvariantCulture);
-                    var rightValue = Convert.ToDouble(right, CultureInfo.InvariantCulture);
-                    return Math.Abs(leftValue - rightValue) < double.Epsilon;
-                }
-                catch (FormatException)
-                {
-                    return false;
-                }
+                var leftValue = Convert.ToDouble(left, CultureInfo.InvariantCulture);
+                var rightValue = Convert.ToDouble(right, CultureInfo.InvariantCulture);
+                return Math.Abs(leftValue - rightValue) < double.Epsilon;
+            }
+            catch (FormatException)
+            {
+                return false;
             }
         }
 
@@ -1018,6 +1037,9 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
     {
         var filteredAttributes = ImmutableDictionary<string, object?>.Empty;
 
+        // Not rewritten to `.Where(...)`: the loop needs both the field name and its
+        // TryGetValue-resolved value together, which `Where` can't express without a
+        // second (redundant) dictionary lookup per field.
         foreach (var field in outFields)
         {
             if (feature.Attributes.TryGetValue(field, out var value))
@@ -1050,16 +1072,20 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         // Handle KNN queries - sort by distance and take K nearest
         if (spatialFilter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
         {
-            var filterPoint = ParsePointFromWkb(spatialFilter.Geometry);
-            if (filterPoint == null)
+            // Bind to a non-nullable local via pattern matching (rather than checking
+            // `filterPoint == null` and later dereferencing `filterPoint.Value`) so the
+            // captured value used inside the Select/Where lambdas below is provably non-null.
+            if (ParsePointFromWkb(spatialFilter.Geometry) is not { } filterPoint)
+            {
                 return Enumerable.Empty<Feature>();
+            }
 
             var featuresWithDistance = features
                 .Where(f => f.Geometry != null)
                 .Select(f =>
                 {
                     var point = ParsePointFromWkb(f.Geometry!);
-                    var distance = point.HasValue ? CalculateDistance(filterPoint.Value, point.Value) : double.MaxValue;
+                    var distance = point.HasValue ? CalculateDistance(filterPoint, point.Value) : double.MaxValue;
                     return (Feature: f, Distance: distance);
                 })
                 .OrderBy(x => x.Distance);
@@ -1084,9 +1110,12 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         if (spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance ||
             spatialFilter.SpatialRelationship == SpatialRelationship.BeyondDistance)
         {
-            var filterPoint = ParsePointFromWkb(spatialFilter.Geometry);
-            if (filterPoint == null)
+            // Bind to a non-nullable local via pattern matching so the value captured by
+            // the Where lambda below is provably non-null (see the KNN branch above).
+            if (ParsePointFromWkb(spatialFilter.Geometry) is not { } filterPoint)
+            {
                 return Enumerable.Empty<Feature>();
+            }
 
             var distanceMeters = ConvertDistanceToMeters(spatialFilter.Distance ?? 0, spatialFilter.DistanceUnit);
 
@@ -1099,7 +1128,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                 if (point == null)
                     return false;
 
-                var actualDistance = CalculateDistance(filterPoint.Value, point.Value);
+                var actualDistance = CalculateDistance(filterPoint, point.Value);
 
                 return spatialFilter.SpatialRelationship == SpatialRelationship.WithinDistance
                     ? actualDistance <= distanceMeters

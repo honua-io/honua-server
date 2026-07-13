@@ -166,24 +166,18 @@ internal sealed partial class ScopedJobTokenIssuer(
             claims.Add(new Claim(TenantClaimType, record.TenantId!));
         }
 
-        foreach (var role in record.Roles)
+        foreach (var role in record.Roles.Where(role => !string.IsNullOrWhiteSpace(role)))
         {
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                // Project both the canonical Role claim (so IsInRole and the shared
-                // role enumeration both see it) and the configurable "roles" claim
-                // the RBAC pipeline also reads.
-                claims.Add(new Claim(ClaimTypes.Role, role));
-                claims.Add(new Claim(RolesClaimType, role));
-            }
+            // Project both the canonical Role claim (so IsInRole and the shared
+            // role enumeration both see it) and the configurable "roles" claim
+            // the RBAC pipeline also reads.
+            claims.Add(new Claim(ClaimTypes.Role, role));
+            claims.Add(new Claim(RolesClaimType, role));
         }
 
-        foreach (var permission in record.Permissions)
+        foreach (var permission in record.Permissions.Where(permission => !string.IsNullOrWhiteSpace(permission)))
         {
-            if (!string.IsNullOrWhiteSpace(permission))
-            {
-                claims.Add(new Claim(PermissionClaimType, permission));
-            }
+            claims.Add(new Claim(PermissionClaimType, permission));
         }
 
         var identity = new ClaimsIdentity(
@@ -249,7 +243,7 @@ internal sealed partial class ScopedJobTokenIssuer(
             catch (Exception ex)
             {
                 ScopedJobTokenLog.DistributedCacheReadFailed(_logger, LogValueRedactor.Hash(key), ex);
-                // Distributed cache is unreachable; fall back to the in-process memory tier
+                // Intentional: distributed cache is unreachable; fall back to the in-process memory tier
                 // if a valid entry is present.  The memory entry was written atomically with
                 // the distributed entry at issuance time, so it remains consistent for its
                 // original TTL.  Evicting it would extend the auth outage beyond the Redis
@@ -298,6 +292,8 @@ internal sealed partial class ScopedJobTokenIssuer(
         }
         catch (Exception ex)
         {
+            // Intentional: removal is best-effort; the entry's own TTL is the safety net,
+            // and the failure is already logged for diagnosis.
             ScopedJobTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
         }
     }

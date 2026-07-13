@@ -36,23 +36,10 @@ internal static class ODataProtocolHeaders
             return false;
         }
 
-        foreach (var headerValue in values)
-        {
-            if (headerValue is null)
-            {
-                continue;
-            }
-
-            foreach (var token in headerValue.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (Version.TryParse(token, out var maxVersion) && maxVersion < CurrentParsedVersion)
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return values
+            .Where(headerValue => headerValue is not null)
+            .SelectMany(headerValue => headerValue!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .Any(token => Version.TryParse(token, out var maxVersion) && maxVersion < CurrentParsedVersion);
     }
 
     private static void AppendVary(IHeaderDictionary headers, string value)
@@ -63,16 +50,14 @@ internal static class ODataProtocolHeaders
             return;
         }
 
-        foreach (var headerValue in existing)
-        {
-            if (headerValue != null &&
-                headerValue.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                    .Any(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase)))
-            {
-                return;
-            }
-        }
+        var alreadyPresent = existing.Any(headerValue =>
+            headerValue != null &&
+            headerValue.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Any(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase)));
 
-        headers[VaryHeader] = StringValues.Concat(existing, value);
+        if (!alreadyPresent)
+        {
+            headers[VaryHeader] = StringValues.Concat(existing, value);
+        }
     }
 }

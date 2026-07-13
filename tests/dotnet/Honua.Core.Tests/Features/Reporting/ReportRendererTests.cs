@@ -158,20 +158,8 @@ public sealed class ReportRendererTests
 
     private static AnalysisReport BuildReport()
     {
-        var artifact = new ArtifactRef
-        {
-            ArtifactId = "artifact-1",
-            Kind = ArtifactKind.FeatureLayer,
-            Label = "Buffered places",
-            Uri = "honua://artifacts/artifact-1",
-            Metadata = new Dictionary<string, string>
-            {
-                ["distance"] = "500",
-                ["unit"] = "meters",
-                ["bufferedFeatureCount"] = "42"
-            }
-        };
-
+        // The rendered artifact row below (id/kind/label/URI) mirrors this
+        // fixture's single buffered-places artifact reference.
         return new AnalysisReport
         {
             ReportId = "report-1",

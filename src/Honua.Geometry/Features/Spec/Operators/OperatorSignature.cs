@@ -29,36 +29,16 @@ public sealed record OperatorSignature(
     /// </summary>
     /// <param name="name">Parameter name.</param>
     /// <returns>Parameter descriptor or <c>null</c>.</returns>
-    public OperatorPort? FindParameter(string name)
-    {
-        foreach (var param in Parameters)
-        {
-            if (string.Equals(param.Name, name, StringComparison.Ordinal))
-            {
-                return param;
-            }
-        }
-
-        return null;
-    }
+    public OperatorPort? FindParameter(string name) =>
+        Parameters.FirstOrDefault(param => string.Equals(param.Name, name, StringComparison.Ordinal));
 
     /// <summary>
     /// Looks up a named input descriptor.
     /// </summary>
     /// <param name="name">Input name.</param>
     /// <returns>Port descriptor or <c>null</c>.</returns>
-    public OperatorPort? FindInput(string name)
-    {
-        foreach (var input in Inputs)
-        {
-            if (string.Equals(input.Name, name, StringComparison.Ordinal))
-            {
-                return input;
-            }
-        }
-
-        return null;
-    }
+    public OperatorPort? FindInput(string name) =>
+        Inputs.FirstOrDefault(input => string.Equals(input.Name, name, StringComparison.Ordinal));
 }
 
 /// <summary>

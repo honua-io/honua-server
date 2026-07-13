@@ -194,6 +194,10 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 progressMessage,
                 resultMessage);
         }
+        // Intentionally generic: this boundary must convert any failure from the Azure
+        // SDK, the local progress writer, or an unexpected bug into a reported failed
+        // upload rather than letting it propagate; the exception is logged via
+        // ReportFailedUploadAsync -> FileStorageLog.FileUploadFailed.
         catch (Exception ex)
         {
             if (progressWriter != null)
@@ -218,6 +222,8 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
             // already removed it and is between TryRemove and CancelAsync, disposing
             // here would cause ObjectDisposedException on the cancel path's CancelAsync
             // call. The cancel path is responsible for disposing when it removes the CTS.
+            // Not a `using` statement: the CTS is not owned/created in this scope, it is
+            // conditionally reclaimed from a shared dictionary via TryRemove.
             if (UploadCancellationTokens.TryRemove(uploadId, out var removedSource))
             {
                 removedSource.Dispose();

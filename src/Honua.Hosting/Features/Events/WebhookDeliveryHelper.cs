@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -151,17 +152,12 @@ internal static partial class WebhookDeliveryHelper
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        var sanitized = new StringBuilder(value.Length);
-        foreach (var character in value)
-        {
-            if ((character >= 0x20 && character != 0x7f) || character == '\t')
-            {
-                sanitized.Append(character);
-            }
-        }
+        var sanitized = new string(value
+            .Where(character => (character >= 0x20 && character != 0x7f) || character == '\t')
+            .ToArray());
 
         return sanitized.Length > 0
-            ? sanitized.ToString()
+            ? sanitized
             : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     }
 
@@ -194,6 +190,12 @@ internal static partial class WebhookDeliveryHelper
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // Not converted to `using`: on success the socket's ownership transfers to the
+            // returned NetworkStream (ownsSocket: true). A `using` declaration here would
+            // dispose the socket as part of returning — after the NetworkStream is
+            // constructed but before the caller can use it — closing the connection it just
+            // established. The `connected` flag lets the finally block dispose the socket
+            // only on the failure paths, where no NetworkStream has taken ownership of it.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 
@@ -257,12 +259,9 @@ internal static partial class WebhookDeliveryHelper
             throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
         }
 
-        foreach (var address in addresses)
+        if (addresses.Any(IsPrivateOrReservedAddress))
         {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-            }
+            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
         }
 
         return addresses;

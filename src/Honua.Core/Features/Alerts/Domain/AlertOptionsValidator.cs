@@ -133,12 +133,9 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
             errors.Add($"{nameof(AlertOptions.Ops)}.{nameof(AlertOpsOptions.Channels)} must list at least one channel when ops notifications are enabled.");
         }
 
-        foreach (var channel in ops.Channels)
+        foreach (var channel in ops.Channels.Where(channel => !AlertChannelNames.TryParse(channel, out _)))
         {
-            if (!AlertChannelNames.TryParse(channel, out _))
-            {
-                errors.Add($"{nameof(AlertOptions.Ops)}.{nameof(AlertOpsOptions.Channels)} contains an unsupported channel '{channel}'.");
-            }
+            errors.Add($"{nameof(AlertOptions.Ops)}.{nameof(AlertOpsOptions.Channels)} contains an unsupported channel '{channel}'.");
         }
     }
 

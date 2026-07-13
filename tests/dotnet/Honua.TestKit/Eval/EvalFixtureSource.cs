@@ -103,6 +103,8 @@ public sealed class SharedCorpusFixtureSource : IEvalFixtureSource
             return path;
         }
 
+        // Each Path.Combine call below joins `path` with fixed literal segments, so
+        // `path` can't be dropped by an unexpectedly-rooted later argument.
         var candidates = new[]
         {
             Path.Combine(path, "seed.yaml"),
@@ -133,5 +135,6 @@ public sealed class LocalSeedFixtureSource : IEvalFixtureSource
     public string? CorpusPath => null;
 
     /// <inheritdoc />
+    // Both segments are fixed literals, so this combine can never drop an argument.
     public string SeedPath => Path.Combine("tests", "seed", "seed.yaml");
 }

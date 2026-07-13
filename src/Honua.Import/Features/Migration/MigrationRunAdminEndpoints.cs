@@ -501,13 +501,11 @@ internal static partial class MigrationRunAdminEndpoints
             limit = Math.Min(limit, MaxPageLimit);
         }
 
-        if (query.TryGetValue("offset", out var offsetValues) && offsetValues.Count > 0 && !string.IsNullOrWhiteSpace(offsetValues[0]))
+        if (query.TryGetValue("offset", out var offsetValues) && offsetValues.Count > 0 && !string.IsNullOrWhiteSpace(offsetValues[0]) &&
+            (!int.TryParse(offsetValues[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out offset) || offset < 0))
         {
-            if (!int.TryParse(offsetValues[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out offset) || offset < 0)
-            {
-                error = "offset must be a non-negative integer.";
-                return new MigrationRunListQuery();
-            }
+            error = "offset must be a non-negative integer.";
+            return new MigrationRunListQuery();
         }
 
         if (query.TryGetValue("sourceKind", out var sourceValues) && sourceValues.Count > 0 && !string.IsNullOrWhiteSpace(sourceValues[0]))

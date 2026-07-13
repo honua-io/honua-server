@@ -109,7 +109,8 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         var rotated = JsonSerializer.Deserialize<ApiResponse<EmbedKeySecretResponse>>(
             await response.Content.ReadAsStringAsync(), _jsonOptions);
 
-        Assert.NotNull(rotated?.Data);
+        Assert.NotNull(rotated);
+        Assert.NotNull(rotated.Data);
         Assert.NotEqual(created.Key, rotated.Data.Key);
 
         var oldKeyPolicy = await GetPolicyAsync(created.Key, "https://app.example.com");
@@ -203,7 +204,8 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, usage.StatusCode);
         var report = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
             await usage.Content.ReadAsStringAsync(), _jsonOptions);
-        Assert.NotNull(report?.Data);
+        Assert.NotNull(report);
+        Assert.NotNull(report.Data);
         Assert.True(report.Data.Total >= 2);
     }
 
@@ -274,8 +276,9 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, usage.StatusCode);
         var report = JsonSerializer.Deserialize<ApiResponse<EmbedUsageResponse>>(
             await usage.Content.ReadAsStringAsync(), _jsonOptions);
-        Assert.NotNull(report?.Data);
-        Assert.Equal(0L, report!.Data.Total);
+        Assert.NotNull(report);
+        Assert.NotNull(report.Data);
+        Assert.Equal(0L, report.Data.Total);
     }
 
     [IntegrationTest]
@@ -321,7 +324,8 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
 
         var result = JsonSerializer.Deserialize<ApiResponse<EmbedKeySecretResponse>>(
             await response.Content.ReadAsStringAsync(), _jsonOptions);
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         return result.Data;
     }
 

@@ -228,6 +228,9 @@ public static class TilesetDocumentWriter
             max = nodeContent.MaxHeightMeters;
         }
 
+        // Not a candidate for .Where(...): the guard call also yields childMin/childMax via
+        // out parameters that the loop body needs, so filtering and value extraction can't
+        // be separated without a tuple-returning refactor of TryGetDescendantHeightExtent.
         foreach (var child in node.Children)
         {
             if (TryGetDescendantHeightExtent(child, content, out var childMin, out var childMax))

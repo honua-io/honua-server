@@ -57,7 +57,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
@@ -93,7 +93,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
@@ -122,7 +122,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
@@ -152,7 +152,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
@@ -191,7 +191,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={batchBoundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
@@ -220,7 +220,7 @@ public sealed class ODataMultipartBatchTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);

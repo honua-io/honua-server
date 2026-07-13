@@ -107,6 +107,9 @@ internal sealed partial class GeoservicesImportService
         }
         catch (Exception)
         {
+            // Malformed/unrecognized Esri geometry JSON: return null like the "no recognized shape"
+            // path above. The caller (InsertFeaturesAsync) already logs GeometryConversionFailed
+            // whenever this returns null, so the failure is surfaced without duplicating it here.
             return null;
         }
     }
@@ -148,6 +151,9 @@ internal sealed partial class GeoservicesImportService
         }
         catch (Exception)
         {
+            // This only feeds a diagnostic higher-dimension-count statistic, not the actual geometry
+            // insert path; malformed geometry JSON here safely degrades to "no Z observed" rather than
+            // failing the import (the geometry conversion itself has its own error handling/logging).
             return false;
         }
     }
@@ -207,6 +213,12 @@ internal sealed partial class GeoservicesImportService
         writer.WriteEndArray();
     }
 
+    // Esri JSON coordinates round-trip through text/JSON parsing, so the "same" vertex
+    // repeated as the ring's first and last point can differ by a few ULPs. Compare
+    // within a tight tolerance rather than exact float equality to avoid appending a
+    // near-duplicate closing vertex to an already-closed ring.
+    private const double RingClosureTolerance = 1e-9;
+
     private static double[][] EnsureClosedRing(double[][] ring)
     {
         if (ring.Length == 0)
@@ -216,7 +228,9 @@ internal sealed partial class GeoservicesImportService
 
         var first = ring[0];
         var last = ring[^1];
-        if (first.Length >= 2 && last.Length >= 2 && first[0] == last[0] && first[1] == last[1])
+        if (first.Length >= 2 && last.Length >= 2 &&
+            Math.Abs(first[0] - last[0]) < RingClosureTolerance &&
+            Math.Abs(first[1] - last[1]) < RingClosureTolerance)
         {
             return ring;
         }

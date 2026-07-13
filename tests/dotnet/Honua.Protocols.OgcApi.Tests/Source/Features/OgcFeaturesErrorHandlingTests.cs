@@ -148,7 +148,7 @@ public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandl
     {
         // Arrange - Invalid GeoJSON payload
         var invalidPayload = "{ \"invalid\": \"json\" }";
-        var content = new StringContent(invalidPayload, System.Text.Encoding.UTF8, "application/geo+json");
+        using var content = new StringContent(invalidPayload, System.Text.Encoding.UTF8, "application/geo+json");
 
         // Act
         var response = await _fixture.Client.PostAsync("/ogc/features/collections/0/items", content);
@@ -172,7 +172,7 @@ public class OgcFeaturesErrorHandlingTests : IClassFixture<OgcFeaturesErrorHandl
         // Arrange - Invalid GeoJSON payload
         var existingId = await _fixture.InsertFeatureAsync(0, "Invalid Update Target");
         var invalidPayload = "{ \"invalid\": \"json\" }";
-        var content = new StringContent(invalidPayload, System.Text.Encoding.UTF8, "application/geo+json");
+        using var content = new StringContent(invalidPayload, System.Text.Encoding.UTF8, "application/geo+json");
 
         // Act
         var response = await _fixture.Client.PutAsync($"/ogc/features/collections/0/items/{existingId}", content);

@@ -384,12 +384,9 @@ internal static class FeatureStreamArtifact
         }
 
         var rebuilt = new AttributesTable();
-        foreach (var name in attributes.GetNames())
+        foreach (var name in attributes.GetNames().Where(name => !string.Equals(name, SridMemberKey, StringComparison.Ordinal)))
         {
-            if (!string.Equals(name, SridMemberKey, StringComparison.Ordinal))
-            {
-                rebuilt.Add(name, attributes.GetOptionalValue(name));
-            }
+            rebuilt.Add(name, attributes.GetOptionalValue(name));
         }
 
         return new Feature(feature.Geometry, rebuilt);

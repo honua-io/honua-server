@@ -352,6 +352,8 @@ public sealed class GeoservicesImportServiceScanTests
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
 
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
@@ -372,6 +374,8 @@ public sealed class GeoservicesImportServiceScanTests
                 }
             });
 
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")

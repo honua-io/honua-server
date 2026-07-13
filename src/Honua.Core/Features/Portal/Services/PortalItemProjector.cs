@@ -136,6 +136,9 @@ public sealed class PortalItemProjector : IPortalItemProjector
         var anyResource = false;
         var anyVisible = false;
 
+        // Not rewritten as a LINQ Select/Where pipeline: the loop body accumulates
+        // three independent pieces of state (anyResource, anyVisible, and the first
+        // visible resource) per iteration, so it is not a pure 1:1 filter/map.
         foreach (var publication in publications)
         {
             var resource = snapshot.ResolveResource(publication);
@@ -293,13 +296,17 @@ public sealed class PortalItemProjector : IPortalItemProjector
     private static (IReadOnlyList<IReadOnlyList<double>> Extent, string? SpatialReference) BuildExtent(
         MetadataV2Resource? resource)
     {
-        var bbox = resource?.Spatial?.Bbox;
-        if (bbox is null)
+        var spatial = resource?.Spatial;
+        var bbox = spatial?.Bbox;
+        if (bbox is null || spatial is null)
         {
             return (Array.Empty<IReadOnlyList<double>>(), null);
         }
 
-        var wkid = resource?.Spatial?.SpatialReference?.ResolveSrid();
+        // `spatial` is already proven non-null above (it is the source of `bbox`),
+        // so no need to re-navigate from `resource` here — that would repeat the
+        // same null check the compiler just narrowed away.
+        var wkid = spatial.SpatialReference?.ResolveSrid();
         var extent = new IReadOnlyList<double>[]
         {
             new[] { bbox.West, bbox.South },
@@ -313,15 +320,5 @@ public sealed class PortalItemProjector : IPortalItemProjector
         => timestamp.HasValue ? timestamp.Value.ToUnixTimeMilliseconds() : 0L;
 
     private static string FirstNonEmpty(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return string.Empty;
-    }
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 }

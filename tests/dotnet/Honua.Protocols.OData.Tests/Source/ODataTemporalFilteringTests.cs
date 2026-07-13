@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -56,9 +57,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
             var features = await ParseFeaturesAsync(response);
 
             // All returned features should have matching event_date
-            foreach (var feature in features)
+            foreach (var attributes in features.Select(ParseAttributes))
             {
-                var attributes = ParseAttributes(feature);
                 var eventDate = attributes.GetProperty("event_date").GetString();
                 eventDate.Should().NotBeNull($"Filter: {filterExpression}");
 
@@ -92,9 +92,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should be within the date range
-        foreach (var feature in features)
+        foreach (var attributes in features.Select(ParseAttributes))
         {
-            var attributes = ParseAttributes(feature);
             var eventDate = attributes.GetProperty("event_date").GetString();
             if (eventDate != null)
             {
@@ -126,9 +125,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have event_date after threshold
-        foreach (var feature in features)
+        foreach (var attributes in features.Select(ParseAttributes))
         {
-            var attributes = ParseAttributes(feature);
             var eventDate = attributes.GetProperty("event_date").GetString();
             if (eventDate != null)
             {
@@ -159,9 +157,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have event_date before threshold
-        foreach (var feature in features)
+        foreach (var attributes in features.Select(ParseAttributes))
         {
-            var attributes = ParseAttributes(feature);
             var eventDate = attributes.GetProperty("event_date").GetString();
             if (eventDate != null)
             {
@@ -195,9 +192,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should be in one of the two date ranges
-        foreach (var feature in features)
+        foreach (var attributes in features.Select(ParseAttributes))
         {
-            var attributes = ParseAttributes(feature);
             var eventDate = attributes.GetProperty("event_date").GetString();
             if (eventDate != null)
             {
@@ -230,9 +226,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have matching created_date
-        foreach (var feature in features)
+        foreach (var attributes in features.Select(ParseAttributes))
         {
-            var attributes = ParseAttributes(feature);
             if (attributes.TryGetProperty("created_date", out var dateElement))
             {
                 var dateValue = dateElement.GetString();
@@ -306,9 +301,8 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
             var features = await ParseFeaturesAsync(response);
 
             // Verify null handling logic
-            foreach (var feature in features)
+            foreach (var attributes in features.Select(ParseAttributes))
             {
-                var attributes = ParseAttributes(feature);
                 if (attributes.TryGetProperty("event_date", out var dateElement))
                 {
                     var isNull = dateElement.ValueKind == JsonValueKind.Null;

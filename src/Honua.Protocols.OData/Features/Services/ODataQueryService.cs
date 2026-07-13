@@ -253,8 +253,8 @@ internal sealed partial class ODataQueryService
                 BinaryOperator.Add => leftNumber + rightNumber,
                 BinaryOperator.Subtract => leftNumber - rightNumber,
                 BinaryOperator.Multiply => leftNumber * rightNumber,
-                BinaryOperator.Divide => rightNumber == 0 ? throw new ArgumentException("Division by zero.") : leftNumber / rightNumber,
-                BinaryOperator.Modulo => rightNumber == 0 ? throw new ArgumentException("Modulo by zero.") : leftNumber % rightNumber,
+                BinaryOperator.Divide => NumericTolerance.IsEffectivelyZero(rightNumber) ? throw new ArgumentException("Division by zero.") : leftNumber / rightNumber,
+                BinaryOperator.Modulo => NumericTolerance.IsEffectivelyZero(rightNumber) ? throw new ArgumentException("Modulo by zero.") : leftNumber % rightNumber,
                 _ => throw new ArgumentException($"Unsupported arithmetic operator {expression.Operator}.")
             };
         }

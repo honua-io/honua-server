@@ -131,7 +131,7 @@ public sealed class MigrationRunCheckpointStoreTests
     {
         public TempDirectory()
         {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"honua-mc-{Guid.NewGuid():N}");
+            Path = System.IO.Path.Join(System.IO.Path.GetTempPath(), $"honua-mc-{Guid.NewGuid():N}");
             Directory.CreateDirectory(Path);
         }
 

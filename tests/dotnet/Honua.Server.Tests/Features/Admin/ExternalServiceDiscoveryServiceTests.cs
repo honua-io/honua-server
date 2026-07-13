@@ -325,6 +325,9 @@ public sealed class ExternalServiceDiscoveryServiceTests
             var requestUrl = request.RequestUri?.ToString() ?? string.Empty;
             _requestedUrls.Add(requestUrl);
 
+            // Ownership transfer: HttpMessageHandler.SendAsync hands the response to the
+            // owning HttpClient/caller, which disposes it — matching the real handler
+            // contract, so these are not disposed here.
             if (!responses.TryGetValue(requestUrl, out var body))
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)

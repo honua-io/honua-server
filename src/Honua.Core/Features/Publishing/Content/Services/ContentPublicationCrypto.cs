@@ -79,15 +79,7 @@ public static class ContentPublicLinkVerifier
             return false;
         }
 
-        ContentPublicLink? link = null;
-        foreach (var candidate in policy.Links)
-        {
-            if (string.Equals(candidate.LinkId, linkId, StringComparison.Ordinal))
-            {
-                link = candidate;
-                break;
-            }
-        }
+        var link = policy.Links.FirstOrDefault(candidate => string.Equals(candidate.LinkId, linkId, StringComparison.Ordinal));
 
         if (link is null || link.Revoked)
         {

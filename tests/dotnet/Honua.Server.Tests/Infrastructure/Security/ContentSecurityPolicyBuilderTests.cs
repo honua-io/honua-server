@@ -341,7 +341,7 @@ public class ContentSecurityPolicyBuilderTests
             .FirstOrDefault(part => part.Trim().StartsWith("script-src", StringComparison.Ordinal))?.Trim();
 
         Assert.NotNull(scriptSrcPart);
-        var selfCount = scriptSrcPart.Split(' ').Count(value => value == "'self'");
+        var selfCount = scriptSrcPart!.Split(' ').Count(value => value == "'self'");
         Assert.Equal(1, selfCount);
     }
 }

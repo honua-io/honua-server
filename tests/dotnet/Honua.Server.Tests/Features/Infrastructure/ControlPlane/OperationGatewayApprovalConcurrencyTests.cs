@@ -40,30 +40,40 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         var executor = new RecordingExecutor(() => Interlocked.Increment(ref executorCallCount));
         var sut = BuildGateway(store, executor);
 
-        // Act: fire both tasks from thread-pool threads so the OS can interleave them.
-        var t1 = Task.Run(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-1"));
-        var t2 = Task.Run(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-2"));
-
-        // Tolerate one exception (the loser throws); capture both outcomes.
-        OperationProposal? success = null;
-        Exception? failure = null;
-
-        foreach (var task in new[] { t1, t2 })
-        {
-            try
-            {
-                success = await task;
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        }
+        // Act: fire both tasks from thread-pool threads so the OS can interleave them. Each
+        // call's outcome is captured independently (not into a shared success/failure variable
+        // overwritten per iteration) so a real double-success or double-failure regression can
+        // never be silently masked by one outcome overwriting the other.
+        var t1 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-1"));
+        var t2 = CaptureOutcomeAsync(() => sut.ApplyApprovedProposalAsync("p-concurrent", "admin-2"));
+        var outcomes = await Task.WhenAll(t1, t2);
 
         // Assert
         executorCallCount.Should().Be(1, "only the caller that wins the claim CAS may execute the operation");
-        success.Should().NotBeNull("exactly one approval call should succeed");
-        failure.Should().BeOfType<InvalidOperationException>("the losing caller should throw rather than double-execute");
+        outcomes.Count(o => o.Success is not null).Should().Be(1, "exactly one approval call should succeed");
+        outcomes.Count(o => o.Failure is not null).Should().Be(1, "exactly one approval call should fail");
+        outcomes.Select(o => o.Failure).FirstOrDefault(f => f is not null)
+            .Should().BeOfType<InvalidOperationException>("the losing caller should throw rather than double-execute");
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on a thread-pool thread and captures its outcome as a
+    /// (Success, Failure) pair instead of letting an exception propagate. The broad catch here
+    /// is intentional: it captures whatever the concurrent call actually threw so the caller can
+    /// assert on its type, rather than swallowing a signal that would otherwise fail the test.
+    /// </summary>
+    private static async Task<(OperationProposal? Success, Exception? Failure)> CaptureOutcomeAsync(
+        Func<Task<OperationProposal?>> action)
+    {
+        try
+        {
+            var result = await Task.Run(action).ConfigureAwait(false);
+            return (result, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex);
+        }
     }
 
     [Fact]

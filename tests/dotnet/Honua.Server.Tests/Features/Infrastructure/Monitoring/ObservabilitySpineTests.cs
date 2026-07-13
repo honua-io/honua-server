@@ -161,7 +161,7 @@ public sealed class ObservabilitySpineTests
 
         foreach (var name in curated)
         {
-            var path = Path.Combine(dashboardsDir, name);
+            var path = Path.Join(dashboardsDir, name);
             Assert.True(File.Exists(path), $"Curated dashboard missing: {path}");
 
             using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -188,12 +188,9 @@ public sealed class ObservabilitySpineTests
 
     private static int EntryCount(IReadOnlyList<ExecutionQueueDepthEntry> snapshot, string status, string backend)
     {
-        foreach (var entry in snapshot)
+        foreach (var entry in snapshot.Where(e => e.Status == status && e.Backend == backend))
         {
-            if (entry.Status == status && entry.Backend == backend)
-            {
-                return entry.Count;
-            }
+            return entry.Count;
         }
 
         return 0;
@@ -220,12 +217,12 @@ public sealed class ObservabilitySpineTests
 
     private static string FindMonitoringDashboardsDirectory()
     {
-        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        foreach (var directoryInfo in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.Select(start => new DirectoryInfo(start)))
         {
-            var directory = new DirectoryInfo(start);
+            var directory = directoryInfo;
             while (directory is not null)
             {
-                var candidate = Path.Combine(
+                var candidate = Path.Join(
                     directory.FullName, "docker", "monitoring", "grafana", "dashboards");
                 if (Directory.Exists(candidate))
                 {

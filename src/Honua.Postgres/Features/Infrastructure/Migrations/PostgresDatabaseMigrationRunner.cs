@@ -74,6 +74,9 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         }
         catch (Exception ex)
         {
+            // Map any planning failure (bad connection string, DbUp/journal errors, etc.) to the
+            // typed DatabaseMigrationPlan.Failed result with a sanitized message; the raw exception
+            // is carried on the result for the caller to log without leaking it to end users.
             return Task.FromResult(DatabaseMigrationPlan.Failed(ex, SafeMigrationFailureMessage));
         }
     }

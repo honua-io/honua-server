@@ -59,12 +59,9 @@ internal sealed class RlsClaimsTestAuthHandler(
         // IN-style policy can match any of the caller's categories.
         if (Request.Headers.TryGetValue(CategoryHeader, out var categoryValues))
         {
-            foreach (var value in categoryValues)
+            foreach (var value in categoryValues.Where(value => !string.IsNullOrWhiteSpace(value)))
             {
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    claims.Add(new Claim("category", value));
-                }
+                claims.Add(new Claim("category", value!));
             }
         }
 

@@ -81,7 +81,7 @@ internal sealed partial class FeatureQueryBuilder
 
             if (query.Offset.HasValue)
             {
-                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);

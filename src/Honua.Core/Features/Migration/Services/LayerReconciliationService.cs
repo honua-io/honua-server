@@ -25,6 +25,19 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     private const int MinSampleSize = 1;
     private const int MaxSampleSize = 10_000;
 
+    // Absolute coordinate-noise epsilon used only to decide whether an extent
+    // dimension/coordinate is "effectively zero"/"effectively equal" ahead of
+    // the relative ExtentTolerance ratio check below (which cannot be applied
+    // to a zero-width/height denominator). This is intentionally much smaller
+    // than any real-world coordinate difference, so it does not weaken the
+    // configured business tolerance — it only absorbs floating-point
+    // round-trip noise from CRS transforms/serialization.
+    private const double CoordinateEqualityEpsilon = 1e-9;
+
+    private static bool IsEffectivelyZero(double value) => Math.Abs(value) <= CoordinateEqualityEpsilon;
+
+    private static bool AreCoordinatesEqual(double a, double b) => Math.Abs(a - b) <= CoordinateEqualityEpsilon;
+
     private readonly IFeatureReader _featureReader;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<LayerReconciliationService> _logger;
@@ -308,14 +321,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             };
         }
 
-        var valid = 0;
-        foreach (var feature in features)
-        {
-            if (IsGeometryWellFormed(feature.Geometry))
-            {
-                valid++;
-            }
-        }
+        var valid = features.Count(static feature => IsGeometryWellFormed(feature.Geometry));
 
         var ratio = (double)valid / features.Length;
         var classification = ratio >= options.GeometryPassRatio
@@ -371,6 +377,10 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var targetFields = new HashSet<string>(StringComparer.Ordinal);
         foreach (var feature in features)
         {
+            // Not rewritten as features.Where(f => f.Attributes is not null): the nested loop
+            // accumulates into the shared targetFields set (not a pure filter/project), and moving
+            // the null check into a separate lambda would lose the null-narrowing on
+            // feature.Attributes for the nested foreach below.
             if (feature.Attributes is null)
             {
                 continue;
@@ -486,13 +496,13 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
         // Degenerate sources (point geometries) cannot use a width-relative tolerance; require an
         // exact match instead, otherwise we would always pass.
-        if (width == 0d && height == 0d)
+        if (IsEffectivelyZero(width) && IsEffectivelyZero(height))
         {
             var matches =
-                sourceBox.MinX == targetBox.MinX &&
-                sourceBox.MinY == targetBox.MinY &&
-                sourceBox.MaxX == targetBox.MaxX &&
-                sourceBox.MaxY == targetBox.MaxY;
+                AreCoordinatesEqual(sourceBox.MinX, targetBox.MinX) &&
+                AreCoordinatesEqual(sourceBox.MinY, targetBox.MinY) &&
+                AreCoordinatesEqual(sourceBox.MaxX, targetBox.MaxX) &&
+                AreCoordinatesEqual(sourceBox.MaxY, targetBox.MaxY);
             return new MigrationReconciliationExtentProbe
             {
                 Source = source,
@@ -507,8 +517,8 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             };
         }
 
-        var widthDenom = width == 0d ? height : width;
-        var heightDenom = height == 0d ? width : height;
+        var widthDenom = IsEffectivelyZero(width) ? height : width;
+        var heightDenom = IsEffectivelyZero(height) ? width : height;
         var dx = Math.Max(
             Math.Abs(targetBox.MinX - sourceBox.MinX),
             Math.Abs(targetBox.MaxX - sourceBox.MaxX));

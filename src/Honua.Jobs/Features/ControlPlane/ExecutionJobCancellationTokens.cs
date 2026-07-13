@@ -81,22 +81,19 @@ internal sealed class ExecutionJobCancellationTokens : IJobCancellationNotifier
     /// </remarks>
     public void Revoke(string jobId, string claimHandle)
     {
-        if (_tokens.TryGetValue(jobId, out var entry) && entry.ClaimHandle == claimHandle)
+        // Atomic compare-and-remove: only succeeds when the entry (CTS reference +
+        // handle) still matches, preventing removal of a CTS registered by a new claim.
+        // CancellationEntry is a record — equality includes CTS reference equality,
+        // so a replacement entry with a different CTS instance will not match.
+        if (_tokens.TryGetValue(jobId, out var entry) && entry.ClaimHandle == claimHandle && TryRemoveEntry(jobId, entry))
         {
-            // Atomic compare-and-remove: only succeeds when the entry (CTS reference +
-            // handle) still matches, preventing removal of a CTS registered by a new claim.
-            // CancellationEntry is a record — equality includes CTS reference equality,
-            // so a replacement entry with a different CTS instance will not match.
-            if (TryRemoveEntry(jobId, entry))
+            try
             {
-                try
-                {
-                    entry.Cts.Cancel();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // The execution service disposed the CTS — the job already completed.
-                }
+                entry.Cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The execution service disposed the CTS — the job already completed.
             }
         }
     }

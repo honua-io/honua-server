@@ -148,11 +148,12 @@ public sealed class ImageServerRenderingRuleMappingTests
 
         mapping.Supported.Should().BeTrue();
         mapping.Terrain.Should().NotBeNull();
-        mapping.Terrain!.Value.Method.Should().Be(RasterTerrainMethod.Hillshade);
+        var terrain = mapping.Terrain!.Value;
+        terrain.Method.Should().Be(RasterTerrainMethod.Hillshade);
         // Esri defaults: azimuth 315, altitude 45, z-factor 1, band 1.
-        mapping.Terrain.Value.AzimuthDegrees.Should().Be(315.0);
-        mapping.Terrain.Value.AltitudeDegrees.Should().Be(45.0);
-        mapping.Terrain.Value.Band.Should().Be(1);
+        terrain.AzimuthDegrees.Should().Be(315.0);
+        terrain.AltitudeDegrees.Should().Be(45.0);
+        terrain.Band.Should().Be(1);
     }
 
     [UnitTest]
@@ -164,11 +165,12 @@ public sealed class ImageServerRenderingRuleMappingTests
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeTrue();
-        mapping.Terrain!.Value.AzimuthDegrees.Should().Be(270);
-        mapping.Terrain.Value.AltitudeDegrees.Should().Be(30);
-        mapping.Terrain.Value.ZFactor.Should().Be(2);
+        var terrain = mapping.Terrain!.Value;
+        terrain.AzimuthDegrees.Should().Be(270);
+        terrain.AltitudeDegrees.Should().Be(30);
+        terrain.ZFactor.Should().Be(2);
         // 0-based BandId 2 -> 1-based band 3.
-        mapping.Terrain.Value.Band.Should().Be(3);
+        terrain.Band.Should().Be(3);
     }
 
     [UnitTest]
@@ -228,11 +230,12 @@ public sealed class ImageServerRenderingRuleMappingTests
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeTrue();
-        mapping.BandArithmetic!.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndwi);
+        var bandArithmetic = mapping.BandArithmetic!.Value;
+        bandArithmetic.Method.Should().Be(RasterBandArithmeticMethod.Ndwi);
         // NDWI: [green, NIR] -> green (index 1, 1-based 2) is InfraredBand (rast1),
         // NIR (index 3, 1-based 4) is VisibleBand (rast2).
-        mapping.BandArithmetic.Value.InfraredBand.Should().Be(2);
-        mapping.BandArithmetic.Value.VisibleBand.Should().Be(4);
+        bandArithmetic.InfraredBand.Should().Be(2);
+        bandArithmetic.VisibleBand.Should().Be(4);
     }
 
     [UnitTest]
@@ -244,11 +247,12 @@ public sealed class ImageServerRenderingRuleMappingTests
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeTrue();
-        mapping.BandArithmetic!.Value.Method.Should().Be(RasterBandArithmeticMethod.Savi);
+        var bandArithmetic = mapping.BandArithmetic!.Value;
+        bandArithmetic.Method.Should().Be(RasterBandArithmeticMethod.Savi);
         // SAVI: [visible, infrared] -> visible (index 2, 1-based 3) is VisibleBand (rast2),
         // infrared (index 3, 1-based 4) is InfraredBand (rast1).
-        mapping.BandArithmetic.Value.VisibleBand.Should().Be(3);
-        mapping.BandArithmetic.Value.InfraredBand.Should().Be(4);
+        bandArithmetic.VisibleBand.Should().Be(3);
+        bandArithmetic.InfraredBand.Should().Be(4);
     }
 
     [UnitTest]
@@ -444,8 +448,9 @@ public sealed class ImageServerRenderingRuleMappingTests
 
         mapping.Supported.Should().BeTrue();
         mapping.ClipRegion.Should().NotBeNull();
-        mapping.ClipRegion!.Value.Srid.Should().Be(3857);
-        mapping.ClipRegion.Value.Geometry.Should().NotBeEmpty();
+        var clipRegion = mapping.ClipRegion!.Value;
+        clipRegion.Srid.Should().Be(3857);
+        clipRegion.Geometry.Should().NotBeEmpty();
     }
 
     [UnitTest]
@@ -591,10 +596,11 @@ public sealed class ImageServerRenderingRuleMappingTests
 
         mapping.Supported.Should().BeTrue();
         mapping.BandArithmetic.Should().NotBeNull();
+        var bandArithmetic = mapping.BandArithmetic!.Value;
         // 0-based [2,3] -> 1-based visible=3, infrared=4.
-        mapping.BandArithmetic!.Value.VisibleBand.Should().Be(3);
-        mapping.BandArithmetic.Value.InfraredBand.Should().Be(4);
-        mapping.BandArithmetic.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
+        bandArithmetic.VisibleBand.Should().Be(3);
+        bandArithmetic.InfraredBand.Should().Be(4);
+        bandArithmetic.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
     }
 
     [UnitTest]
@@ -606,9 +612,10 @@ public sealed class ImageServerRenderingRuleMappingTests
         var mapping = ImageServerRasterFunctionPlanner.MapRenderingRule(document);
 
         mapping.Supported.Should().BeTrue();
-        mapping.BandArithmetic!.Value.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
-        mapping.BandArithmetic.Value.VisibleBand.Should().Be(1);
-        mapping.BandArithmetic.Value.InfraredBand.Should().Be(2);
+        var bandArithmetic = mapping.BandArithmetic!.Value;
+        bandArithmetic.Method.Should().Be(RasterBandArithmeticMethod.Ndvi);
+        bandArithmetic.VisibleBand.Should().Be(1);
+        bandArithmetic.InfraredBand.Should().Be(2);
     }
 
     [UnitTest]
@@ -685,7 +692,8 @@ public sealed class ImageServerRenderingRuleMappingTests
         mapping.Supported.Should().BeTrue();
         mapping.Stretch!.Value.StretchType.Should().Be(RasterStretchType.MinMax);
         mapping.BandArithmetic.Should().NotBeNull();
-        mapping.BandArithmetic!.Value.VisibleBand.Should().Be(1);
-        mapping.BandArithmetic.Value.InfraredBand.Should().Be(2);
+        var bandArithmetic = mapping.BandArithmetic!.Value;
+        bandArithmetic.VisibleBand.Should().Be(1);
+        bandArithmetic.InfraredBand.Should().Be(2);
     }
 }

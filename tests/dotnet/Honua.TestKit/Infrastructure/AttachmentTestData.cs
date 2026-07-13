@@ -172,7 +172,8 @@ public static class AttachmentTestData
         }
         catch
         {
-            // Best effort cleanup for test data.
+            // Broad catch is intentional: best-effort cleanup for test data, any failure
+            // here (already deleted, storage unavailable, etc.) should not fail the test.
         }
     }
 }

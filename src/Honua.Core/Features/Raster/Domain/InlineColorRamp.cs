@@ -325,6 +325,10 @@ public static class InlineColorRamp
         double h = 0;
         if (delta > 0)
         {
+            // max was assigned directly from Math.Max(r, Math.Max(g, b)), which
+            // returns one of its arguments verbatim (no rounding/arithmetic), so
+            // comparing it back against r/g/b for hue-sector selection is exact
+            // bit-identity, not lossy floating-point math.
             if (max == r)
             {
                 h = 60 * (((g - b) / delta) % 6);
@@ -453,6 +457,9 @@ public static class InlineColorRamp
     private static bool TryGetString(JsonElement element, string property, out string value)
     {
         value = string.Empty;
+        // Not a simple filter: the matched property's JsonElement (`child`) is consumed
+        // by the body to extract the returned `value`, so a `.Where(...)` filter can't
+        // carry that extraction across without recomputing TryGetProperty.
         foreach (var candidate in new[] { property, ToLowerFirst(property), property.ToLowerInvariant() })
         {
             if (element.TryGetProperty(candidate, out var child) && child.ValueKind == JsonValueKind.String)
@@ -470,6 +477,8 @@ public static class InlineColorRamp
         color = default;
         JsonElement array = default;
         var found = false;
+        // Not a simple filter: `array` (the TryGetProperty out-param) is captured for use
+        // after the loop, so a `.Where(...)` filter can't thread it through cleanly.
         foreach (var candidate in new[] { property, ToLowerFirst(property), property.ToLowerInvariant() })
         {
             if (element.TryGetProperty(candidate, out array))

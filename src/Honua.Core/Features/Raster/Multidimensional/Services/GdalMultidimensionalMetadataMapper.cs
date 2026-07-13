@@ -245,6 +245,8 @@ public static class GdalMultidimensionalMetadataMapper
         }
 
         var chunkShape = new List<long>();
+        // Not a simple filter: TryGetInt64's out-param is the value being collected, so
+        // `.Where(...)` can't express this without duplicating the TryGetInt64 call.
         foreach (var entry in blockEl.EnumerateArray())
         {
             if (entry.TryGetInt64(out var v))
@@ -279,6 +281,9 @@ public static class GdalMultidimensionalMetadataMapper
         // Prefer an explicit GDAL spatial reference when present.
         if (root.TryGetProperty("arrays", out var arrays) && arrays.ValueKind == JsonValueKind.Object)
         {
+            // Not a simple filter: the match condition itself resolves `srs`/`epsg` via
+            // TryGetProperty/TryReadEpsgFromSrs out-params that the body then returns, so
+            // `.Where(...)` would need to recompute both calls rather than reuse them.
             foreach (var array in arrays.EnumerateObject())
             {
                 if (array.Value.ValueKind == JsonValueKind.Object &&
@@ -349,12 +354,9 @@ public static class GdalMultidimensionalMetadataMapper
         }
 
         // indexing_variable is keyed by the coordinate variable's short name.
-        foreach (var variable in indexing.EnumerateObject())
+        foreach (var variable in indexing.EnumerateObject().Where(variable => variable.Value.ValueKind == JsonValueKind.Object))
         {
-            if (variable.Value.ValueKind == JsonValueKind.Object)
-            {
-                return GetString(variable.Value, "unit");
-            }
+            return GetString(variable.Value, "unit");
         }
 
         return null;
@@ -365,6 +367,8 @@ public static class GdalMultidimensionalMetadataMapper
         var values = new List<long>();
         if (element.TryGetProperty(property, out var arrayEl) && arrayEl.ValueKind == JsonValueKind.Array)
         {
+            // Not a simple filter: TryGetInt64's out-param is the value being collected, so
+            // `.Where(...)` can't express this without duplicating the TryGetInt64 call.
             foreach (var entry in arrayEl.EnumerateArray())
             {
                 if (entry.TryGetInt64(out var v))

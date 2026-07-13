@@ -301,7 +301,7 @@ public readonly record struct FeatureEditResult
     /// <summary>
     /// Gets whether the operation was fully successful
     /// </summary>
-    public bool IsSuccess => !WasRolledBack && HasErrors == false;
+    public bool IsSuccess => !WasRolledBack && !HasErrors;
 
     /// <summary>
     /// Gets whether any individual operations had errors

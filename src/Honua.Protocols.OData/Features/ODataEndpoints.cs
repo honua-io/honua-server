@@ -18,7 +18,7 @@ internal static partial class ODataEndpoints
     public static IEndpointRouteBuilder MapODataEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // OData service document
-        var serviceDocument = endpoints.MapGet("/odata",
+        endpoints.MapGet("/odata",
             (HttpContext context, [FromServices] ODataMetadataHandler handler) => handler.HandleGetServiceDocument(context))
             .WithDisplayName("OData Service Document")
             .WithName("ODataServiceDocument")
@@ -28,7 +28,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // OData metadata document
-        var metadata = endpoints.MapGet("/odata/$metadata",
+        endpoints.MapGet("/odata/$metadata",
             (HttpContext context, [FromServices] ODataMetadataHandler handler, CancellationToken cancellationToken) =>
                 handler.HandleGetMetadataAsync(context, cancellationToken))
             .WithDisplayName("OData Metadata Document")
@@ -39,7 +39,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // OData entity sets (layers as collections)
-        var layers = endpoints.MapGet("/odata/Layers",
+        endpoints.MapGet("/odata/Layers",
             (HttpContext context,
                 [FromServices] ODataQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
@@ -63,7 +63,7 @@ internal static partial class ODataEndpoints
             .Produces(400)
             .Produces(404);
 
-        var layersCount = endpoints.MapGet("/odata/Layers/$count",
+        endpoints.MapGet("/odata/Layers/$count",
             (HttpContext context,
                 [FromServices] ODataQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
@@ -78,7 +78,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // OData single layer
-        var layer = endpoints.MapGet("/odata/Layers({layerId:int})",
+        endpoints.MapGet("/odata/Layers({layerId:int})",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataQueryHandler handler,
@@ -93,7 +93,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // OData features collection (all layers requires LayerId filter)
-        var features = endpoints.MapGet("/odata/Features",
+        endpoints.MapGet("/odata/Features",
             (HttpContext context,
                 [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
@@ -124,7 +124,7 @@ internal static partial class ODataEndpoints
             .Produces(400)
             .Produces(404);
 
-        var featuresCount = endpoints.MapGet("/odata/Features/$count",
+        endpoints.MapGet("/odata/Features/$count",
             (HttpContext context,
                 [FromServices] ODataStreamingQueryHandler handler,
                 [AsParameters] ODataQueryOptions query,
@@ -139,7 +139,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // OData features for a specific layer (canonical)
-        var layerFeatures = endpoints.MapGet("/odata/Layers({layerId:int})/Features",
+        endpoints.MapGet("/odata/Layers({layerId:int})/Features",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataStreamingQueryHandler handler,
@@ -171,7 +171,7 @@ internal static partial class ODataEndpoints
             .Produces(400)
             .Produces(404);
 
-        var layerFeaturesCount = endpoints.MapGet("/odata/Layers({layerId:int})/Features/$count",
+        endpoints.MapGet("/odata/Layers({layerId:int})/Features/$count",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataStreamingQueryHandler handler,
@@ -186,7 +186,7 @@ internal static partial class ODataEndpoints
             .Produces(400)
             .Produces(404);
 
-        var legacyLayerFeaturesCount = endpoints.MapGet("/odata/Features({layerId:int})/$count",
+        endpoints.MapGet("/odata/Features({layerId:int})/$count",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataStreamingQueryHandler handler,
@@ -202,7 +202,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // Legacy layer-scoped features endpoint
-        var legacyLayerFeatures = endpoints.MapGet("/odata/Features({layerId:int})",
+        endpoints.MapGet("/odata/Features({layerId:int})",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataStreamingQueryHandler handler,
@@ -261,7 +261,7 @@ internal static partial class ODataEndpoints
         createLayerFeature.AllowAnonymous();
 
         // GET - Get a single feature
-        var getFeature = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
+        endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})",
             (HttpContext context,
                 int layerId,
                 long objectId,
@@ -276,7 +276,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(404);
 
-        var getFeatureRef = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})/$ref",
+        endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})/$ref",
             (HttpContext context,
                 int layerId,
                 long objectId,
@@ -290,7 +290,7 @@ internal static partial class ODataEndpoints
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(404);
 
-        var getFeatureValue = endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})/$value",
+        endpoints.MapGet("/odata/Features(LayerId={layerId:int},ObjectId={objectId:long})/$value",
             (HttpContext context,
                 int layerId,
                 long objectId,
@@ -305,7 +305,7 @@ internal static partial class ODataEndpoints
             .Produces<string>(200, "application/json")
             .Produces(404);
 
-        var getLayerFeature = endpoints.MapGet("/odata/Layers({layerId:int})/Features({objectId:long})",
+        endpoints.MapGet("/odata/Layers({layerId:int})/Features({objectId:long})",
             (HttpContext context,
                 int layerId,
                 long objectId,
@@ -321,7 +321,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // Legacy feature key format
-        var legacyGetFeature = endpoints.MapGet("/odata/Features({layerId:int},{objectId:long})",
+        endpoints.MapGet("/odata/Features({layerId:int},{objectId:long})",
             (HttpContext context,
                 int layerId,
                 long objectId,
@@ -460,7 +460,7 @@ internal static partial class ODataEndpoints
         batch.AllowAnonymous();
 
         // GET - Aggregation with $apply (legacy)
-        var apply = endpoints.MapGet("/odata/Features({layerId:int})/$apply",
+        endpoints.MapGet("/odata/Features({layerId:int})/$apply",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataAdvancedQueryHandler handler,
@@ -476,7 +476,7 @@ internal static partial class ODataEndpoints
             .Produces(404);
 
         // GET - Full-text search with $search (legacy)
-        var search = endpoints.MapGet("/odata/Features({layerId:int})/$search",
+        endpoints.MapGet("/odata/Features({layerId:int})/$search",
             (HttpContext context,
                 int layerId,
                 [FromServices] ODataAdvancedQueryHandler handler,

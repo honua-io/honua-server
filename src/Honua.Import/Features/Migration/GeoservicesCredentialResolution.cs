@@ -55,12 +55,9 @@ internal static class GeoservicesCredentialResolution
             return null;
         }
 
-        if (credentials.HasPlaintextSecret)
+        if (credentials.HasPlaintextSecret && requireSecretReferences)
         {
-            if (requireSecretReferences)
-            {
-                return "GeoServices credential secrets must be provided as secret references for queued imports.";
-            }
+            return "GeoServices credential secrets must be provided as secret references for queued imports.";
         }
 
         switch (mode)

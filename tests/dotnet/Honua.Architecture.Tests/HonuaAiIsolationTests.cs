@@ -36,7 +36,7 @@ public sealed class HonuaAiIsolationTests
     public void HonuaAi_MustNotReference_HonuaServer()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(repositoryRoot, HonuaAiCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var csprojPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, HonuaAiCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
         File.Exists(csprojPath).Should().BeTrue(
             "Honua.Ai.csproj must exist at the canonical path: {0}",
@@ -71,7 +71,7 @@ public sealed class HonuaAiIsolationTests
     public void HonuaAi_MustOnlyReference_PermittedProviders()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(repositoryRoot, HonuaAiCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var csprojPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, HonuaAiCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
         var permittedProviders = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -134,7 +134,7 @@ public sealed class HonuaAiIsolationTests
             .Select(value => value!))
         {
             var normalizedInclude = projectInclude.Replace('\\', Path.DirectorySeparatorChar);
-            var referenced = Path.GetFullPath(Path.Combine(csprojDir, normalizedInclude));
+            var referenced = Path.GetFullPath(ArchitectureTestHelpers.CombinePath(csprojDir, normalizedInclude));
             var referencedName = Path.GetFileNameWithoutExtension(referenced);
 
             if (string.Equals(referencedName, "Honua.Server", StringComparison.Ordinal))

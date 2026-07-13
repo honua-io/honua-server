@@ -24,7 +24,7 @@ internal sealed class ProofLedgerProjection
     public static ProofLedgerProjection Load()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var ledgerPath = Path.Combine(repoRoot, "docs", "gis", "data", "public-interface-proof.json");
+        var ledgerPath = Honua.Architecture.Tests.ArchitectureTestHelpers.CombinePath(repoRoot, "docs", "gis", "data", "public-interface-proof.json");
 
         using var stream = File.OpenRead(ledgerPath);
         var document = JsonSerializer.Deserialize(stream, ProofLedgerJsonContext.Default.ProofLedgerDocument)

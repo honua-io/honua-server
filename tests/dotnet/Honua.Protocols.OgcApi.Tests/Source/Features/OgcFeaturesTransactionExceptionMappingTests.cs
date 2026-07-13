@@ -38,9 +38,10 @@ public sealed class OgcFeaturesTransactionExceptionMappingTests
             var existingId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Replace Target");
             var payload = CreateGeoJsonFeaturePayload(existingId, "Replace Updated");
 
+            using var content = new StringContent(payload, Encoding.UTF8, MediaTypes.GeoJson);
             var response = await fixture.Client.PutAsync(
                 $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items/{existingId}",
-                new StringContent(payload, Encoding.UTF8, MediaTypes.GeoJson));
+                content);
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             var body = await response.Content.ReadAsStringAsync();
@@ -65,9 +66,10 @@ public sealed class OgcFeaturesTransactionExceptionMappingTests
             var existingId = await fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, "Replace Target");
             var payload = CreateGeoJsonFeaturePayload(existingId, "Replace Updated");
 
+            using var content = new StringContent(payload, Encoding.UTF8, MediaTypes.GeoJson);
             var response = await fixture.Client.PutAsync(
                 $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items/{existingId}",
-                new StringContent(payload, Encoding.UTF8, MediaTypes.GeoJson));
+                content);
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }

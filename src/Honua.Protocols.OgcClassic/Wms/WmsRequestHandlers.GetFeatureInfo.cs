@@ -124,12 +124,9 @@ internal static partial class WmsRequestHandlers
         }
 
         var mapLayerStorageIds = new HashSet<int>(mapLayers.Select(layer => layer.StorageLayerId));
-        foreach (var layer in queryLayers)
+        if (queryLayers.Any(layer => !mapLayerStorageIds.Contains(layer.StorageLayerId)))
         {
-            if (!mapLayerStorageIds.Contains(layer.StorageLayerId))
-            {
-                return CreateWmsServiceException(context, "LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
-            }
+            return CreateWmsServiceException(context, "LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
         }
 
         if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))
@@ -175,12 +172,10 @@ internal static partial class WmsRequestHandlers
 
         var featureCount = DefaultFeatureInfoCount;
         var featureCountRaw = GetQueryValue(query, "FEATURE_COUNT");
-        if (!string.IsNullOrWhiteSpace(featureCountRaw))
+        if (!string.IsNullOrWhiteSpace(featureCountRaw) &&
+            (!int.TryParse(featureCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureCount) || featureCount <= 0))
         {
-            if (!int.TryParse(featureCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureCount) || featureCount <= 0)
-            {
-                return CreateWmsServiceException(context, "InvalidParameterValue", "FEATURE_COUNT must be a positive integer.");
-            }
+            return CreateWmsServiceException(context, "InvalidParameterValue", "FEATURE_COUNT must be a positive integer.");
         }
 
         // Use the wrap-aware effective width so a dateline-crossing geographic BBOX (minX > maxX,

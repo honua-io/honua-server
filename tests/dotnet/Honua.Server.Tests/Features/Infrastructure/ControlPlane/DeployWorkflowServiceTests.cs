@@ -606,8 +606,13 @@ public sealed class DeployWorkflowServiceTests
             await Task.Delay(10);
         }
 
-        snapshot.Should().NotBeNull();
-        snapshot!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        if (snapshot is null)
+        {
+            Assert.Fail("Reconciliation loop never produced an operation snapshot.");
+            return;
+        }
+
+        snapshot.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         snapshot.CurrentPhase.Should().Contain("Automatic rollback requested");
         // Rollback fired before promotion to full traffic.
         backend.PromoteCount.Should().Be(0);
@@ -863,6 +868,10 @@ public sealed class DeployWorkflowServiceTests
             ]
         });
 
+        // Intentionally not disposed: this in-memory HttpClient/DelegateHttpMessageHandler never
+        // opens a real socket, and the returned DeployTelemetrySignalEvaluator (not IDisposable)
+        // is shared by multiple call sites in this file, so a `using` cannot be threaded through
+        // this helper's return value.
         var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
             new StubHttpClientFactory(new HttpClient(new DelegateHttpMessageHandler(_ =>
                 new HttpResponseMessage(HttpStatusCode.OK)

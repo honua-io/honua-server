@@ -65,7 +65,7 @@ internal static class ClientCertificateAudit
                 ClientCertificateInfrastructureJsonContext.Default.ClientCertificateAuditDetails),
         };
 
-        await RecordBestEffortAsync(auditLog, auditEvent, context.RequestAborted).ConfigureAwait(false);
+        await RecordBestEffortAsync(context, auditLog, auditEvent).ConfigureAwait(false);
     }
 
     public static async Task RecordConfigChangeAsync(
@@ -108,7 +108,7 @@ internal static class ClientCertificateAudit
                 ClientCertificateInfrastructureJsonContext.Default.ClientCertificateAuditDetails),
         };
 
-        await RecordBestEffortAsync(auditLog, auditEvent, context.RequestAborted).ConfigureAwait(false);
+        await RecordBestEffortAsync(context, auditLog, auditEvent).ConfigureAwait(false);
     }
 
     private static void SetActivityTags(ClientCertificateValidationResult result)
@@ -130,17 +130,24 @@ internal static class ClientCertificateAudit
     }
 
     private static async Task RecordBestEffortAsync(
+        HttpContext context,
         IAuditLog auditLog,
-        AuditEvent auditEvent,
-        CancellationToken cancellationToken)
+        AuditEvent auditEvent)
     {
         try
         {
-            await auditLog.RecordAsync(auditEvent, cancellationToken).ConfigureAwait(false);
+            await auditLog.RecordAsync(auditEvent, context.RequestAborted).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // Audit sinks are best-effort and must not break authentication or admin writes.
+            // Audit sinks are best-effort and must not break authentication or admin writes,
+            // but the failure is still worth a log line for operability.
+            var logger = context.RequestServices.GetService<ILoggerFactory>()?
+                .CreateLogger(typeof(ClientCertificateAudit).FullName ?? nameof(ClientCertificateAudit));
+            if (logger is not null)
+            {
+                ClientCertificateAuthenticationLog.AuditRecordFailed(logger, ex);
+            }
         }
     }
 

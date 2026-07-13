@@ -319,6 +319,8 @@ public sealed class NominatimGeocodeProviderTests
         {
             CapturedUri = request.RequestUri;
 
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
@@ -341,6 +343,8 @@ public sealed class NominatimGeocodeProviderTests
                 ? values.FirstOrDefault()
                 : null;
 
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
@@ -357,6 +361,8 @@ public sealed class NominatimGeocodeProviderTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             SendCount++;
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
@@ -373,6 +379,8 @@ public sealed class NominatimGeocodeProviderTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(

@@ -40,9 +40,10 @@ public sealed class ODataCrudExceptionMappingTests
             };
 
             var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await fixture.Client.PostAsync(
                 "/odata/Layers(0)/Features",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                content);
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             var payload = await response.Content.ReadAsStringAsync();

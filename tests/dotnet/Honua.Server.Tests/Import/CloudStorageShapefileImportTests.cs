@@ -230,6 +230,7 @@ internal static class ShapefileImportTestHelpers
     internal static (byte[] payload, int? expectedFeatureCount) GetShapefileZipPayload()
     {
         var useBundled = bool.TryParse(Environment.GetEnvironmentVariable(UseBundledShapefileEnv), out var flag) && flag;
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var bundledPath = Path.Combine(AppContext.BaseDirectory, "TestData", ShapefileZipFileName);
         if (useBundled && File.Exists(bundledPath))
         {
@@ -340,11 +341,13 @@ internal static class ShapefileImportTestHelpers
 
     private static (byte[] payload, int? expectedFeatureCount) CreateSampleShapefileZip()
     {
+        // Path.Combine args are a temp-root plus a generated relative folder name; no rooted-segment risk.
         var tempDir = Path.Combine(Path.GetTempPath(), $"honua-test-shp-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
+            // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
             var shpPath = Path.Combine(tempDir, "sample.shp");
             var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
             var features = new List<IFeature>
@@ -361,6 +364,9 @@ internal static class ShapefileImportTestHelpers
             using var zipStream = new MemoryStream();
             using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
             {
+                // Not rewritten as .Select(...): the loop has side effects (archive entry
+                // creation, stream copy) beyond the extension-to-path mapping, and an early
+                // skip for missing sidecar files.
                 foreach (var extension in new[] { ".shp", ".shx", ".dbf", ".prj" })
                 {
                     var path = Path.ChangeExtension(shpPath, extension);
@@ -384,8 +390,15 @@ internal static class ShapefileImportTestHelpers
             {
                 Directory.Delete(tempDir, recursive: true);
             }
-            catch
+            catch (IOException ex)
             {
+                // Best-effort cleanup: ignore if the temp directory is transiently locked.
+                System.Diagnostics.Debug.WriteLine($"Failed to delete temp shapefile directory '{tempDir}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Best-effort cleanup: ignore permission issues on transient test files.
+                System.Diagnostics.Debug.WriteLine($"Failed to delete temp shapefile directory '{tempDir}': {ex.Message}");
             }
         }
     }

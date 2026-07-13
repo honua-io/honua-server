@@ -231,8 +231,8 @@ public static class Symbology3DResolver
         {
             return rule.Comparison switch
             {
-                Symbology3DComparison.Equals => left == right,
-                Symbology3DComparison.NotEquals => left != right,
+                Symbology3DComparison.Equals => AreNumericallyEqual(left, right),
+                Symbology3DComparison.NotEquals => !AreNumericallyEqual(left, right),
                 Symbology3DComparison.GreaterThan => left > right,
                 Symbology3DComparison.GreaterThanOrEqual => left >= right,
                 Symbology3DComparison.LessThan => left < right,
@@ -266,12 +266,9 @@ public static class Symbology3DResolver
         // Feature attribute bags are typically ordinal-keyed; fall back to a
         // case-insensitive scan so authoring-side casing does not silently
         // drop a rule.
-        foreach (var pair in attributes)
+        foreach (var pair in attributes.Where(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return pair.Value;
-            }
+            return pair.Value;
         }
 
         return null;
@@ -285,6 +282,15 @@ public static class Symbology3DResolver
         }
         return Math.Clamp(value, 0.0, 1.0);
     }
+
+    // Rule values are frequently authored/round-tripped as strings (JSON/YAML
+    // style specs) and attribute values may arrive as float/decimal, so exact
+    // double equality can miss matches that are numerically identical modulo
+    // representation error. Compare with a small absolute epsilon.
+    private const double NumericEqualityEpsilon = 1e-9;
+
+    private static bool AreNumericallyEqual(double left, double right)
+        => Math.Abs(left - right) <= NumericEqualityEpsilon;
 
     private static bool TryToDouble(object? value, out double result)
     {

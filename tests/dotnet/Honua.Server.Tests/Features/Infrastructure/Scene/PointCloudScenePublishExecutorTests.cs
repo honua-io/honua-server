@@ -31,7 +31,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
 
     public PointCloudScenePublishExecutorTests()
     {
-        _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-pcloud-{Guid.NewGuid():N}");
+        _outputRoot = Path.Join(Path.GetTempPath(), $"honua-pcloud-{Guid.NewGuid():N}");
         _registration = new StubRegistrationService();
 
         var options = Options.Create(new SceneGenerationServerOptions
@@ -78,7 +78,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
 
         // The tileset.json plus every referenced .pnts tile must exist under the
         // promoted asset root so the standard scene serving path can stream them.
-        var tilesetPath = Path.Combine(outcome.AssetRoot, "tileset.json");
+        var tilesetPath = Path.Join(outcome.AssetRoot, "tileset.json");
         File.Exists(tilesetPath).Should().BeTrue();
 
         using var json = JsonDocument.Parse(await File.ReadAllBytesAsync(tilesetPath));
@@ -88,7 +88,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
         uris.Should().NotBeEmpty();
         foreach (var uri in uris)
         {
-            File.Exists(Path.Combine(outcome.AssetRoot, uri)).Should().BeTrue($"tile '{uri}' must be on disk.");
+            File.Exists(Path.Join(outcome.AssetRoot, uri)).Should().BeTrue($"tile '{uri}' must be on disk.");
             uri.Should().EndWith(".pnts");
         }
 
@@ -120,7 +120,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
 
         // A single point produces exactly one .pnts leaf; decode it and assert
         // the PNTS feature/batch tables carry the preserved attributes.
-        var pnts = await File.ReadAllBytesAsync(Path.Combine(outcome.AssetRoot, FindFirstPnts(outcome.AssetRoot)));
+        var pnts = await File.ReadAllBytesAsync(Path.Join(outcome.AssetRoot, FindFirstPnts(outcome.AssetRoot)));
 
         var featureJson = ReadPntsFeatureTableJson(pnts);
         featureJson.RootElement.GetProperty("POINTS_LENGTH").GetInt32().Should().Be(1);
@@ -140,12 +140,12 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
         var second = await _executor.IngestAsync(
             new PointCloudSceneIngestRequest(las, SceneId: "det-b"), CancellationToken.None);
 
-        var tileset1 = await File.ReadAllBytesAsync(Path.Combine(first.AssetRoot, "tileset.json"));
-        var tileset2 = await File.ReadAllBytesAsync(Path.Combine(second.AssetRoot, "tileset.json"));
+        var tileset1 = await File.ReadAllBytesAsync(Path.Join(first.AssetRoot, "tileset.json"));
+        var tileset2 = await File.ReadAllBytesAsync(Path.Join(second.AssetRoot, "tileset.json"));
         tileset1.Should().Equal(tileset2, "identical LAS input must produce byte-identical tileset.json output.");
 
-        var tile1 = await File.ReadAllBytesAsync(Path.Combine(first.AssetRoot, "points_0000.pnts"));
-        var tile2 = await File.ReadAllBytesAsync(Path.Combine(second.AssetRoot, "points_0000.pnts"));
+        var tile1 = await File.ReadAllBytesAsync(Path.Join(first.AssetRoot, "points_0000.pnts"));
+        var tile2 = await File.ReadAllBytesAsync(Path.Join(second.AssetRoot, "points_0000.pnts"));
         tile1.Should().Equal(tile2, "identical LAS input must produce byte-identical .pnts output.");
     }
 
@@ -230,7 +230,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
         // against, and assert the span now carries ActivityStatusCode.Error.
         const string sceneId = "pcloud-promote-fail";
         Directory.CreateDirectory(_outputRoot);
-        var finalDirectory = Path.Combine(_outputRoot, sceneId);
+        var finalDirectory = Path.Join(_outputRoot, sceneId);
         await File.WriteAllTextAsync(finalDirectory, "blocks Directory.Move");
 
         var activities = new List<Activity>();

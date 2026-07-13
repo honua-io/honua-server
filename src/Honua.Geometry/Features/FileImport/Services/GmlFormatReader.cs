@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Xml;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -101,7 +102,6 @@ internal static class GmlFormatReader
                 continue;
             }
 
-            var ns = reader.NamespaceURI;
             var localName = reader.LocalName;
 
             // Capture the srsName from the root collection element
@@ -232,7 +232,7 @@ internal static class GmlFormatReader
 
             // Peek inside the property element
             NtsGeometry? propertyGeom = null;
-            string? propertyText = null;
+            StringBuilder? propertyTextBuilder = null;
 
             while (await reader.ReadAsync())
             {
@@ -247,7 +247,7 @@ internal static class GmlFormatReader
 
                 if (reader.NodeType == XmlNodeType.Text || reader.NodeType == XmlNodeType.CDATA)
                 {
-                    propertyText = (propertyText ?? string.Empty) + reader.Value;
+                    (propertyTextBuilder ??= new StringBuilder()).Append(reader.Value);
                     continue;
                 }
 
@@ -266,9 +266,9 @@ internal static class GmlFormatReader
             {
                 geometry = propertyGeom;
             }
-            else if (propertyText != null)
+            else if (propertyTextBuilder != null)
             {
-                AddAttribute(attributes, propertyLocalName, propertyText);
+                AddAttribute(attributes, propertyLocalName, propertyTextBuilder.ToString());
             }
         }
 
@@ -815,35 +815,36 @@ internal static class GmlFormatReader
 
     private static Coordinate[] ParseGml2Coordinates(string text)
     {
-        var coords = new List<Coordinate>();
         var tuples = text.Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
 
-        foreach (var tuple in tuples)
+        return tuples
+            .Select(ParseGml2CoordinateTuple)
+            .Where(coordinate => coordinate != null)
+            .Select(coordinate => coordinate!)
+            .ToArray();
+    }
+
+    private static Coordinate? ParseGml2CoordinateTuple(string tuple)
+    {
+        var parts = tuple.Split(',');
+        if (parts.Length < 2)
         {
-            var parts = tuple.Split(',');
-            if (parts.Length < 2)
-            {
-                continue;
-            }
-
-            if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) ||
-                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
-            {
-                continue;
-            }
-
-            if (parts.Length >= 3 &&
-                double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var z))
-            {
-                coords.Add(new CoordinateZ(x, y, z));
-            }
-            else
-            {
-                coords.Add(new Coordinate(x, y));
-            }
+            return null;
         }
 
-        return coords.ToArray();
+        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) ||
+            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+        {
+            return null;
+        }
+
+        if (parts.Length >= 3 &&
+            double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var z))
+        {
+            return new CoordinateZ(x, y, z);
+        }
+
+        return new Coordinate(x, y);
     }
 
     private static Coordinate[] ParseGml3PosList(string text)

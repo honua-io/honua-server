@@ -68,6 +68,8 @@ internal sealed class StatisticsSummarizeExecutor(
     {
         var fields = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        // Not a .Where(...) candidate: seen.Add(spec.Field) is the dedup side effect
+        // itself, so a filter predicate here would double as the mutation.
         foreach (var spec in stats)
         {
             if (spec.Kind != StatisticsSupport.StatKind.Count && seen.Add(spec.Field))
@@ -104,6 +106,8 @@ internal sealed class StatisticsSummarizeExecutor(
         public void Accumulate(IFeature feature, IReadOnlyList<string> numericFields)
         {
             Frequency++;
+            // Not a .Where(...) candidate: TryReadNumeric's out value is the addend, so
+            // filtering separately would mean parsing each value twice.
             foreach (var field in numericFields)
             {
                 if (StatisticsSupport.TryReadNumeric(feature, field, out var value))

@@ -11,8 +11,6 @@ Endpoints:
 - DELETE /ogc/features/collections/{collectionId}/items/{featureId} (delete)
 """
 
-import json
-
 import pytest
 import httpx
 

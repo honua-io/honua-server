@@ -114,7 +114,13 @@ public static class CfCoordinateAxisIndexer
         }
 
         var step = (axis.End - axis.Start) / (axis.Count - 1);
-        if (step == 0 || double.IsNaN(step) || double.IsInfinity(step))
+        // Use the same magnitude-relative tolerance as the rest of this file
+        // (see Tolerance below) rather than an exact zero test, so an axis
+        // whose bounds are numerically indistinguishable at this coordinate
+        // scale is treated as degenerate consistently with the instant/bound
+        // comparisons elsewhere in this method.
+        if (Math.Abs(step) <= Tolerance(Math.Max(Math.Abs(axis.Start), Math.Abs(axis.End)))
+            || double.IsNaN(step) || double.IsInfinity(step))
         {
             error = $"The coverage axis '{axis.Name}' is not evenly spaced or has unknown spacing; subsetting is unavailable.";
             return false;
@@ -294,7 +300,7 @@ public static class CfCoordinateAxisIndexer
     }
 
     private static bool IsInstant(double? low, double? high)
-        => low is { } l && high is { } h && l == h;
+        => low is { } l && high is { } h && Math.Abs(l - h) <= Tolerance(Math.Max(Math.Abs(l), Math.Abs(h)));
 
     private static double Tolerance(double magnitude)
         => Math.Max(1e-9, magnitude * 1e-9);

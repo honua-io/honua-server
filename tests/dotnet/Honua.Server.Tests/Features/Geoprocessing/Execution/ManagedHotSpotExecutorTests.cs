@@ -104,7 +104,7 @@ public sealed class ManagedHotSpotExecutorTests
         };
         for (var i = 0; i < 16; i++)
         {
-            features.Add(Feature(Point(100 + (i * 10), 0), ("val", 1), ("kind", "cold")));
+            features.Add(Feature(Point(100.0 + (i * 10.0), 0), ("val", 1), ("kind", "cold")));
         }
 
         var (status, uri) = await RunAsync(

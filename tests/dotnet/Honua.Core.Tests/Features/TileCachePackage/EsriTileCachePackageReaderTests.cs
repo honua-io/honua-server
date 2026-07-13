@@ -247,7 +247,7 @@ public sealed class EsriTileCachePackageReaderTests
         ms.Write(header);
 
         var index = new byte[CompactV2IndexSize];
-        var tileBlob = new MemoryStream();
+        using var tileBlob = new MemoryStream();
         long cursor = dataStart;
         foreach (var (row, col, bytes) in tiles)
         {

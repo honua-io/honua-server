@@ -68,6 +68,9 @@ internal sealed class DedupTransformExecutor(
         var builder = new StringBuilder();
         var attributes = feature.Attributes;
 
+        // Not a .Select(...) candidate: each iteration appends two StringBuilder
+        // segments (the escaped value and the field separator) rather than mapping to
+        // a single projected value, so a LINQ projection wouldn't simplify this.
         foreach (var field in keys)
         {
             var raw = attributes is not null && attributes.Exists(field)

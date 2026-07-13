@@ -65,75 +65,67 @@ internal static class BedrockStructuredGenerationClient
         ArgumentException.ThrowIfNullOrWhiteSpace(model);
         ArgumentNullException.ThrowIfNull(chatClientFactory);
 
-        IChatClient? client = null;
+        using var client = chatClientFactory(model, options.Region, NullIfEmpty(options.ApiKey));
+
+        var tool = new EmitDocumentFunction(schema, toolDescription);
+        var chatOptions = new ChatOptions
+        {
+            ModelId = model,
+            MaxOutputTokens = options.MaxTokens,
+            Temperature = 0.0f,
+            Tools = [tool],
+            ToolMode = ChatToolMode.RequireSpecific(ToolName)
+        };
+
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userPrompt)
+        };
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
+
+        ChatResponse response;
         try
         {
-            client = chatClientFactory(model, options.Region, NullIfEmpty(options.ApiKey));
-
-            var tool = new EmitDocumentFunction(schema, toolDescription);
-            var chatOptions = new ChatOptions
-            {
-                ModelId = model,
-                MaxOutputTokens = options.MaxTokens,
-                Temperature = 0.0f,
-                Tools = [tool],
-                ToolMode = ChatToolMode.RequireSpecific(ToolName)
-            };
-
-            var messages = new List<ChatMessage>
-            {
-                new(ChatRole.System, systemPrompt),
-                new(ChatRole.User, userPrompt)
-            };
-
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
-
-            ChatResponse response;
-            try
-            {
-                response = await client.GetResponseAsync(messages, chatOptions, timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                return BedrockStructuredResult.Failed("Bedrock request timed out.");
-            }
-
-            if (response.FinishReason == ChatFinishReason.ContentFilter)
-            {
-                return BedrockStructuredResult.Failed("Bedrock declined the request (content filtered).");
-            }
-
-            // Surface max_tokens truncation explicitly. The Converse adapter maps StopReason.Max_tokens
-            // to ChatFinishReason.Length; the forced tool-call JSON is then cut off mid-payload and the
-            // caller's deserialize fails with an opaque generic parse error instead of an actionable
-            // message (mirrors the workflow/OpenAI/Anthropic providers from #1979).
-            if (response.FinishReason == ChatFinishReason.Length)
-            {
-                return BedrockStructuredResult.Failed(
-                    "Bedrock response was truncated (max_tokens reached); try a higher MaxTokens.");
-            }
-
-            var call = response.Messages
-                .SelectMany(m => m.Contents)
-                .OfType<FunctionCallContent>()
-                .FirstOrDefault(c => string.Equals(c.Name, ToolName, StringComparison.Ordinal));
-
-            if (call is null)
-            {
-                return BedrockStructuredResult.Failed("Bedrock did not return the expected tool output.");
-            }
-
-            // The Converse adapter surfaces tool-call arguments as a string->object map; the map IS
-            // the proposal object, so write it straight back to JSON for the caller to parse. The
-            // writer is hand-rolled (rather than reflection-based serialization) to stay AOT-safe.
-            var json = ArgumentsToJson(call.Arguments);
-            return BedrockStructuredResult.Ok(json);
+            response = await client.GetResponseAsync(messages, chatOptions, timeoutCts.Token).ConfigureAwait(false);
         }
-        finally
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            client?.Dispose();
+            return BedrockStructuredResult.Failed("Bedrock request timed out.");
         }
+
+        if (response.FinishReason == ChatFinishReason.ContentFilter)
+        {
+            return BedrockStructuredResult.Failed("Bedrock declined the request (content filtered).");
+        }
+
+        // Surface max_tokens truncation explicitly. The Converse adapter maps StopReason.Max_tokens
+        // to ChatFinishReason.Length; the forced tool-call JSON is then cut off mid-payload and the
+        // caller's deserialize fails with an opaque generic parse error instead of an actionable
+        // message (mirrors the workflow/OpenAI/Anthropic providers from #1979).
+        if (response.FinishReason == ChatFinishReason.Length)
+        {
+            return BedrockStructuredResult.Failed(
+                "Bedrock response was truncated (max_tokens reached); try a higher MaxTokens.");
+        }
+
+        var call = response.Messages
+            .SelectMany(m => m.Contents)
+            .OfType<FunctionCallContent>()
+            .FirstOrDefault(c => string.Equals(c.Name, ToolName, StringComparison.Ordinal));
+
+        if (call is null)
+        {
+            return BedrockStructuredResult.Failed("Bedrock did not return the expected tool output.");
+        }
+
+        // The Converse adapter surfaces tool-call arguments as a string->object map; the map IS
+        // the proposal object, so write it straight back to JSON for the caller to parse. The
+        // writer is hand-rolled (rather than reflection-based serialization) to stay AOT-safe.
+        var json = ArgumentsToJson(call.Arguments);
+        return BedrockStructuredResult.Ok(json);
     }
 
     private static string? NullIfEmpty(string value) =>

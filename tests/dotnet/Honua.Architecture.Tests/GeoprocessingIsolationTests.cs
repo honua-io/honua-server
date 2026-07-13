@@ -30,7 +30,7 @@ public sealed class GeoprocessingIsolationTests
     public void HonuaGeoprocessingCsproj_ShouldNotReference_HonuaServer()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var geoprocessingCsproj = Path.Combine(
+        var geoprocessingCsproj = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
             "Honua.Geoprocessing",

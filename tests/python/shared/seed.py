@@ -21,7 +21,7 @@ class SeedRunner:
     """Apply a YAML seed file to a PostgreSQL schema."""
 
     _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-    _TYPE_RE = re.compile(r"^[A-Za-z0-9_(),\\s\\[\\]]+$")
+    _TYPE_RE = re.compile(r"^[A-Za-z0-9_(),\s\[\]]+$")
 
     def __init__(self, seed_path: str | Path):
         self.seed_path = Path(seed_path)

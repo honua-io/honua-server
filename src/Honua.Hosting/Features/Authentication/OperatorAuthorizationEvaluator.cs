@@ -197,15 +197,8 @@ internal sealed class OperatorAuthorizationEvaluator(
 
     private static bool HasScopeClaim(ClaimsPrincipal principal, string claimType, string scopeId)
     {
-        foreach (var claim in principal.Claims)
-        {
-            if (string.Equals(claim.Type, claimType, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(claim.Value, scopeId, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return principal.Claims.Any(claim =>
+            string.Equals(claim.Type, claimType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(claim.Value, scopeId, StringComparison.Ordinal));
     }
 }

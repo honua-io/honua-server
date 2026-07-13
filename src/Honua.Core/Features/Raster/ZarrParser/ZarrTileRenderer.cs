@@ -199,6 +199,11 @@ public static class ZarrTileRenderer
         var max = double.NegativeInfinity;
         foreach (var value in values)
         {
+            // Exact equality is required (not tolerance-based): fillValue is the
+            // producer-declared CF/NetCDF/Zarr "_FillValue"/no-data sentinel, and
+            // only a bit-identical match identifies a no-data pixel. A tolerance
+            // here would risk misclassifying genuine nearby data values as
+            // missing.
             if (!double.IsFinite(value) || (fillValue is { } fill && value == fill))
             {
                 continue;
@@ -227,6 +232,11 @@ public static class ZarrTileRenderer
         (double Min, double Max) ramp,
         double? fillValue)
     {
+        // Exact equality is required (not tolerance-based): fillValue is the
+        // producer-declared CF/NetCDF/Zarr "_FillValue"/no-data sentinel, and
+        // only a bit-identical match identifies a no-data pixel. A tolerance
+        // here would risk misclassifying genuine nearby data values as
+        // missing.
         if (!double.IsFinite(value) || (fillValue is { } fill && value == fill))
         {
             pixel[0] = 0;

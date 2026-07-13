@@ -46,18 +46,15 @@ internal sealed class MetadataV2GraphProviderEnvironmentSnapshotReader(
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var environment in environments)
+        foreach (var environment in environments.Where(e => MatchesEnvironment(snapshot, e)))
         {
-            if (MatchesEnvironment(snapshot, environment))
+            yield return new MetadataV2EnvironmentRevision
             {
-                yield return new MetadataV2EnvironmentRevision
-                {
-                    Environment = snapshot.Graph.Environment,
-                    Revision = snapshot.Revision,
-                    ETag = snapshot.Etag,
-                    ActivatedAt = snapshot.LoadedAt,
-                };
-            }
+                Environment = snapshot.Graph.Environment,
+                Revision = snapshot.Revision,
+                ETag = snapshot.Etag,
+                ActivatedAt = snapshot.LoadedAt,
+            };
         }
     }
 

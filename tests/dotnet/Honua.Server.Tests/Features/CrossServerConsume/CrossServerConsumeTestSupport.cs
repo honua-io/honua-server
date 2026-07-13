@@ -61,6 +61,7 @@ internal static class CrossServerConsumeTestSupport
         var contentType = response.Content.Headers.ContentType?.MediaType;
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, "consume image request should succeed: {0}", url);
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         contentType.Should().NotBeNull();
         contentType!.Should().StartWith("image/");
         body.Length.Should().BeGreaterThan(100, "source server should return a non-empty image payload");

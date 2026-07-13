@@ -66,6 +66,10 @@ internal sealed class RedisLeaseCoordinator(
         }
         catch
         {
+            // Intentional: any Redis failure here (timeout, connection drop) is treated as a
+            // lost lease rather than a fatal error — the caller (dispatcher loop) retries the
+            // acquire/extend on its next iteration. No ILogger is wired into this coordinator;
+            // MarkLeaseLost() already flips HasLease/LeaseLostToken so callers observe the state.
             MarkLeaseLost();
             return false;
         }
@@ -93,6 +97,10 @@ internal sealed class RedisLeaseCoordinator(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Intentional no-op: this fires on ordinary host shutdown (the Task.Delay above
+            // observes cancellationToken). There is nothing to clean up here — the lease
+            // either expires naturally in Redis or is released explicitly via ReleaseAsync()
+            // by the caller's finally block — so swallowing and letting the loop exit is safe.
         }
     }
 

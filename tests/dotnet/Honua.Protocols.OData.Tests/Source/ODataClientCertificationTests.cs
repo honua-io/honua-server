@@ -106,7 +106,7 @@ public sealed class ODataClientCertificationTests : IClassFixture<ODataClientCer
             // bare HttpClient sees the production authorization pipeline.
             // Probe a write — which is the most diagnostic negative-auth
             // surface for OData — and assert 401.
-            var body = new StringContent("{\"Attributes\":{\"name\":\"unauthorized\"}}", Encoding.UTF8, "application/json");
+            using var body = new StringContent("{\"Attributes\":{\"name\":\"unauthorized\"}}", Encoding.UTF8, "application/json");
             var response = await WebApp.Client.PostAsync("/odata/Layers(0)/Features", body);
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
                 "unauthenticated OData writes must be rejected with 401");
@@ -379,6 +379,10 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // _adminClient is a field created in InitializeAsync and disposed here in
+        // DisposeAsync (IAsyncLifetime) — creation and disposal are in different
+        // methods, so a `using` declaration (single lexical scope) cannot express
+        // this lifetime; the try/finally is the correct pattern.
         try
         {
             Evidence.Flush();

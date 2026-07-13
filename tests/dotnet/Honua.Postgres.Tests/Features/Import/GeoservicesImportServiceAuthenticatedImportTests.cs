@@ -242,6 +242,8 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {sanitizedPath}")
             };
 
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
@@ -265,6 +267,9 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             SanitizedPaths.Add(sanitizedPath);
 
             // Metadata + count succeed; the first paged query rejects the token with 401.
+            // Ownership of the HttpResponseMessage instances returned below transfers to the HttpClient
+            // pipeline that invokes this handler; they are disposed by the caller, not here
+            // (cs/local-not-disposed false positive).
             return sanitizedPath switch
             {
                 "/arcgis/rest/services/Private/FeatureServer/0?f=json" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

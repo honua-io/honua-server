@@ -545,13 +545,11 @@ internal static partial class SceneDatasetEndpoints
         }
 
         var datasetType = existing.DatasetType;
-        if (!string.IsNullOrWhiteSpace(request.DatasetType))
+        if (!string.IsNullOrWhiteSpace(request.DatasetType)
+            && !TryParseDatasetType(request.DatasetType, out datasetType, out var datasetTypeError))
         {
-            if (!TryParseDatasetType(request.DatasetType, out datasetType, out var datasetTypeError))
-            {
-                error = datasetTypeError;
-                return false;
-            }
+            error = datasetTypeError;
+            return false;
         }
 
         IReadOnlyList<string>? allowedRoles;

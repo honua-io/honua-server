@@ -61,15 +61,7 @@ public static class StartupDatabaseResilience
         // mask a permanent sibling failure.
         if (exception is AggregateException aggregate && aggregate.InnerExceptions.Count > 0)
         {
-            foreach (var inner in aggregate.InnerExceptions)
-            {
-                if (!IsTransientConnectivityError(inner))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return aggregate.InnerExceptions.All(IsTransientConnectivityError);
         }
 
         for (var current = exception; current is not null; current = current.InnerException)
@@ -136,15 +128,7 @@ public static class StartupDatabaseResilience
             return true;
         }
 
-        foreach (var code in TransientSqlStates)
-        {
-            if (string.Equals(sqlState, code, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return TransientSqlStates.Contains(sqlState, StringComparer.Ordinal);
     }
 
     [UnconditionalSuppressMessage(

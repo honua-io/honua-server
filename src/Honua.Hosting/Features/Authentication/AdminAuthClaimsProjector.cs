@@ -66,6 +66,8 @@ internal static class AdminAuthClaimsProjector
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // Not converted to LINQ: each iteration mutates `claims` (the same list the predicate
+        // queries), so a Where/Select projection over roleValues would read as pure but isn't.
         foreach (var roleValue in roleValues)
         {
             if (!claims.Any(claim =>

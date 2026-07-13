@@ -17,7 +17,7 @@ public sealed class CustomBuildProfileTests
     public void HonuaServer_ShouldImportBuildProfilesAndConditionCloudReferences()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var serverProjectPath = Path.Combine(repositoryRoot, "src", "Honua.Server", "Honua.Server.csproj");
+        var serverProjectPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, "src", "Honua.Server", "Honua.Server.csproj");
         var document = XDocument.Load(serverProjectPath);
 
         document.Descendants("Import")
@@ -95,8 +95,8 @@ public sealed class CustomBuildProfileTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfiles = new[]
         {
-            Path.Combine(repositoryRoot, "Dockerfile"),
-            Path.Combine(repositoryRoot, "docker", "Dockerfile.aot")
+            ArchitectureTestHelpers.CombinePath(repositoryRoot, "Dockerfile"),
+            ArchitectureTestHelpers.CombinePath(repositoryRoot, "docker", "Dockerfile.aot")
         };
 
         foreach (var dockerfile in dockerfiles)
@@ -119,7 +119,7 @@ public sealed class CustomBuildProfileTests
     public void AlertEditionPolicy_ShouldGateCloudChannelConfigurationBehindBuildProfileConstants()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var source = File.ReadAllText(Path.Combine(
+        var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
             repositoryRoot, "src", "Honua.Server", "Features", "Alerts", "AlertEditionPolicy.cs"));
 
         // In no-cloud / slim builds the AWS / Azure channels are backed only by
@@ -170,7 +170,7 @@ public sealed class CustomBuildProfileTests
         };
 
         startInfo.ArgumentList.Add("msbuild");
-        startInfo.ArgumentList.Add(Path.Combine("src", "Honua.Server", "Honua.Server.csproj"));
+        startInfo.ArgumentList.Add(ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Honua.Server.csproj"));
         startInfo.ArgumentList.Add("-nologo");
         startInfo.ArgumentList.Add("-v:q");
         startInfo.ArgumentList.Add(queryArgument);

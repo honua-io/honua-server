@@ -138,6 +138,10 @@ public sealed class WebAppFixture : IAsyncLifetime
         _postgres = new PostgresFixture();
         await _postgres.InitializeAsync();
 
+        // Not disposed here by design: this factory is stored in the instance field
+        // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
+        // for the whole fixture. Wrapping this in `using` would dispose it before the
+        // fixture's tests run.
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -526,6 +530,9 @@ public sealed class WebAppFixture : IAsyncLifetime
             return seedPath;
         }
 
+        // The Path.Combine calls below never risk dropping an earlier segment: "Honua.sln"
+        // is a fixed literal, and seedPath is provably non-rooted here (the IsPathRooted
+        // check above already returned for rooted paths).
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {

@@ -53,12 +53,9 @@ public sealed class DocumentationCoverageTests
 
         var violations = new List<string>();
 
-        foreach (var type in publicStaticTypes)
+        foreach (var type in publicStaticTypes.Where(type => !HasXmlDocumentation(type)))
         {
-            if (!HasXmlDocumentation(type))
-            {
-                violations.Add($"Public static class '{type.FullName}' lacks XML documentation");
-            }
+            violations.Add($"Public static class '{type.FullName}' lacks XML documentation");
         }
 
         violations.Should().BeEmpty(
@@ -72,33 +69,23 @@ public sealed class DocumentationCoverageTests
         var currentDir = Directory.GetCurrentDirectory();
         var projectRoot = FindProjectRoot(currentDir);
 
-        var expectedXmlDocFiles = new[]
-        {
-            Path.Combine(projectRoot, "src", "Honua.Core", "bin"),
-            Path.Combine(projectRoot, "src", "Honua.Server", "bin"),
-            Path.Combine(projectRoot, "src", "Honua.Postgres", "bin")
-        };
-
         // Check if any project is configured to generate XML documentation
         var projectFiles = new[]
         {
-            Path.Combine(projectRoot, "src", "Honua.Core", "Honua.Core.csproj"),
-            Path.Combine(projectRoot, "src", "Honua.Server", "Honua.Server.csproj"),
-            Path.Combine(projectRoot, "src", "Honua.Postgres", "Honua.Postgres.csproj")
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Core", "Honua.Core.csproj"),
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Honua.Server.csproj"),
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Postgres", "Honua.Postgres.csproj")
         };
 
         var projectsWithXmlDoc = new List<string>();
 
-        foreach (var projectFile in projectFiles)
+        foreach (var projectFile in projectFiles.Where(File.Exists))
         {
-            if (File.Exists(projectFile))
+            var content = File.ReadAllText(projectFile);
+            if (content.Contains("<GenerateDocumentationFile>true</GenerateDocumentationFile>") ||
+                content.Contains("<DocumentationFile>"))
             {
-                var content = File.ReadAllText(projectFile);
-                if (content.Contains("<GenerateDocumentationFile>true</GenerateDocumentationFile>") ||
-                    content.Contains("<DocumentationFile>"))
-                {
-                    projectsWithXmlDoc.Add(Path.GetFileNameWithoutExtension(projectFile));
-                }
+                projectsWithXmlDoc.Add(Path.GetFileNameWithoutExtension(projectFile));
             }
         }
 
@@ -141,31 +128,7 @@ public sealed class DocumentationCoverageTests
 
         // For testing purposes, we'll check common patterns that indicate missing documentation
         // In a real scenario, you might want to parse the actual XML documentation files
-
-        // Types that are likely to have documentation based on their role
-        var wellDocumentedPatterns = new[]
-        {
-            "Exception",
-            "Options",
-            "Extensions",
-            "Builder",
-            "Factory",
-            "Provider",
-            "Service",
-            "Handler",
-            "Validator",
-            "Parser",
-            "Converter",
-            "Manager",
-            "Store",
-            "Repository",
-            "Client"
-        };
-
-        // Check if the type name suggests it should have documentation
         var typeName = type.Name;
-        var isLikelyDocumented = wellDocumentedPatterns.Any(pattern =>
-            typeName.Contains(pattern, StringComparison.OrdinalIgnoreCase));
 
         // Exception types should always be documented
         if (typeof(Exception).IsAssignableFrom(type))
@@ -250,7 +213,9 @@ public sealed class DocumentationCoverageTests
         }
         catch
         {
-            // If we can't parse the XML doc, assume it's not documented
+            // Intentional catch-all (not a silent-swallow bug): this is a best-effort heuristic
+            // over a possibly-missing/malformed XML doc file (XmlException, IOException, etc. are
+            // all equally "can't tell, so assume undocumented" outcomes for this test).
             return false;
         }
     }
@@ -274,7 +239,7 @@ public sealed class DocumentationCoverageTests
         var current = new DirectoryInfo(startPath);
         while (current != null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
+            if (File.Exists(ArchitectureTestHelpers.CombinePath(current.FullName, "Honua.sln")))
             {
                 return current.FullName;
             }

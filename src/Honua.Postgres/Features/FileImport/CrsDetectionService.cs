@@ -202,13 +202,10 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         // is not a projected CRS to avoid false matches on datum names
         if (!isProjected)
         {
-            foreach (var kvp in _wellKnownEpsgCodes)
+            foreach (var kvp in _wellKnownEpsgCodes.Where(kvp => cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase)))
             {
-                if (cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (await ValidateSridAsync(kvp.Value, cancellationToken))
-                        return kvp.Value;
-                }
+                if (await ValidateSridAsync(kvp.Value, cancellationToken))
+                    return kvp.Value;
             }
         }
         else if (TryMatchEsriProjectedName(cleanedContent, out var esriEpsg)
@@ -428,11 +425,10 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             .Replace("EPSG:", "", StringComparison.OrdinalIgnoreCase)
             .Replace("SRID=", "", StringComparison.OrdinalIgnoreCase);
 
-        if (int.TryParse(cleaned, out var srid))
+        // Validate reasonable EPSG/SRID range (includes user-defined SRIDs up to 999999)
+        if (int.TryParse(cleaned, out var srid) && srid > 0 && srid <= 999999)
         {
-            // Validate reasonable EPSG/SRID range (includes user-defined SRIDs up to 999999)
-            if (srid > 0 && srid <= 999999)
-                return srid;
+            return srid;
         }
 
         return null;

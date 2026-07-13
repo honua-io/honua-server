@@ -209,6 +209,11 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
         {
             throw;
         }
+        // Intentional broad catch: this is the source-isolation boundary for federated
+        // connectors. Any remaining connector/provider failure is translated into a typed
+        // FederatedSourceUnavailableException (preserving the original as InnerException) so
+        // one misbehaving source cannot surface a raw, connector-specific exception type to
+        // callers or take down the overall federated query.
         catch (Exception ex)
         {
             throw new FederatedSourceUnavailableException(source.Id, FederatedSourceUnavailableReason.Faulted, ex);

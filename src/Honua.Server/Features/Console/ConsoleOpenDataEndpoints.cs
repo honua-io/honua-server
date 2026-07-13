@@ -112,15 +112,10 @@ internal static class ConsoleOpenDataEndpoints
             if (item is null)
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Console content item not found."));
 
-            if (request.Distributions is { } distributions)
+            if (request.Distributions is { } distributions &&
+                distributions.Any(distribution => string.IsNullOrWhiteSpace(distribution.AccessUrl)))
             {
-                foreach (var distribution in distributions)
-                {
-                    if (string.IsNullOrWhiteSpace(distribution.AccessUrl))
-                    {
-                        return TypedResults.BadRequest(ApiResponse<object>.Failure("Each distribution must have a non-empty accessUrl."));
-                    }
-                }
+                return TypedResults.BadRequest(ApiResponse<object>.Failure("Each distribution must have a non-empty accessUrl."));
             }
 
             var principalId = ConsolePrincipal.ResolveActorId(context.User);

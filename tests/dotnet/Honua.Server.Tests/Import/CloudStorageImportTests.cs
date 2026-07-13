@@ -226,6 +226,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
 
     private static byte[] LoadTestData(params string[] pathSegments)
     {
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var path = Path.Combine(
             new[] { AppContext.BaseDirectory }.Concat(pathSegments).ToArray());
         if (!File.Exists(path))
@@ -257,6 +258,9 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            // These HttpResponseMessage instances are returned to the HttpClient pipeline;
+            // disposal ownership transfers to the caller (production import code), so they
+            // must not be wrapped in `using` here.
             var url = request.RequestUri!.ToString();
             if (responses.TryGetValue(url, out var resp))
             {

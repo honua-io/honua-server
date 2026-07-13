@@ -1282,6 +1282,9 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static RsaSecurityKey CreateOidcSigningKey()
     {
+        // Ownership transfer: the RSA instance is held by the returned RsaSecurityKey
+        // for the lifetime of the static _oidcSigningKey field (process lifetime), so
+        // it must not be disposed here.
         var rsa = RSA.Create(2048);
         return new RsaSecurityKey(rsa)
         {

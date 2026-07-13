@@ -103,6 +103,8 @@ public sealed class CertificationEvidenceCollector
     /// <summary>
     /// Path of the envelope file that <see cref="Flush"/> will write.
     /// </summary>
+    // The second argument is always a generated file name (never rooted), so this
+    // combine can't drop _outputDirectory.
     public string EnvelopePath =>
         Path.Combine(_outputDirectory, $"{_runId}-{_clientLane}-{_protocol}.cert.json");
 
@@ -165,6 +167,9 @@ public sealed class CertificationEvidenceCollector
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: any non-assertion exception is classified as a
+            // client-incompat failure, recorded, then rethrown as XunitException so xUnit
+            // still surfaces it via its normal failure channel.
             sw.Stop();
             Upsert(new CertResult
             {

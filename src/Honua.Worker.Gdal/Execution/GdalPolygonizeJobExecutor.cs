@@ -69,13 +69,11 @@ internal sealed partial class GdalPolygonizeJobExecutor(
         var opts = options.CurrentValue;
 
         var band = 1;
-        if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw) && !string.IsNullOrWhiteSpace(bandRaw))
+        if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw) && !string.IsNullOrWhiteSpace(bandRaw)
+            && (!int.TryParse(bandRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out band) || band < 1))
         {
-            if (!int.TryParse(bandRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out band) || band < 1)
-            {
-                return JobExecutionResult.Failed(
-                    $"Invalid polygonize inputs: 'band' must be a positive integer; got '{bandRaw}'.");
-            }
+            return JobExecutionResult.Failed(
+                $"Invalid polygonize inputs: 'band' must be a positive integer; got '{bandRaw}'.");
         }
 
         var eightConnected = false;

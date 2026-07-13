@@ -178,9 +178,8 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
         samples.GetArrayLength().Should().Be(25);
 
         double previousDistance = -1;
-        foreach (var sample in samples.EnumerateArray())
+        foreach (var distance in samples.EnumerateArray().Select(sample => sample.GetProperty("distanceMeters").GetDouble()))
         {
-            var distance = sample.GetProperty("distanceMeters").GetDouble();
             distance.Should().BeGreaterThanOrEqualTo(previousDistance);
             previousDistance = distance;
         }

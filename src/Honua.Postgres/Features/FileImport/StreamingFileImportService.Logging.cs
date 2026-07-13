@@ -129,6 +129,12 @@ internal sealed partial class StreamingFileImportService
             Level = LogLevel.Warning,
             Message = "Skipped geometry whose automatic repair collapsed to an empty geometry during import")]
         public static partial void GeometryRepairEmptySkipped(ILogger logger);
+
+        [LoggerMessage(
+            EventId = 7420,
+            Level = LogLevel.Debug,
+            Message = "Streaming CRS auto-detection failed for format {Format}; falling back to explicit source SRID or default")]
+        public static partial void CrsDetectionFailed(ILogger logger, Exception exception, SupportedFileFormat format);
     }
 
     private static partial class ShapefileLog

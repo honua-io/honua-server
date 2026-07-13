@@ -97,6 +97,13 @@ public static class GoldenFixtureLoader
             throw new InvalidDataException($"GP fixture manifest is missing 'golden': {manifestPath}");
         }
 
+        if (Path.IsPathRooted(manifest.Golden))
+        {
+            throw new InvalidDataException(
+                $"GP fixture '{manifest.Id}' declares an absolute 'golden' path "
+                + $"'{manifest.Golden}'; golden must be relative to the manifest's directory.");
+        }
+
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal);
         if (manifest.Inputs is not null)
         {
@@ -110,6 +117,13 @@ public static class GoldenFixtureLoader
         {
             foreach (var (key, relativePath) in manifest.InputFiles)
             {
+                if (Path.IsPathRooted(relativePath))
+                {
+                    throw new InvalidDataException(
+                        $"GP fixture '{manifest.Id}' declares an absolute inputFiles path "
+                        + $"'{relativePath}'; inputFiles must be relative to the manifest's directory.");
+                }
+
                 var path = Path.Combine(directory, relativePath);
                 if (!File.Exists(path))
                 {

@@ -97,7 +97,6 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        var committed = false;
         try
         {
             var insertThread = $"""
@@ -125,15 +124,10 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
                 $"opened a comment on {featureLabel}", threadId, now, cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
         }
         catch
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
-
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
 
@@ -152,14 +146,12 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        var committed = false;
         try
         {
             var featureLabel = await TouchThreadAsync(connection, transaction, mapId, threadId, now, cancellationToken).ConfigureAwait(false);
             if (featureLabel is null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                committed = true;
                 return null;
             }
 
@@ -168,15 +160,10 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
                 $"replied on {featureLabel}", threadId, now, cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
         }
         catch
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
-
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
 
@@ -195,7 +182,6 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        var committed = false;
         try
         {
             string? featureLabel;
@@ -218,7 +204,6 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
             if (featureLabel is null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                committed = true;
                 return null;
             }
 
@@ -228,15 +213,10 @@ internal sealed class PostgresStudioMapCollaborationStore : IStudioMapCollaborat
                 $"{verb} the comment on {featureLabel}", threadId, now, cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
         }
         catch
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
-
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
 

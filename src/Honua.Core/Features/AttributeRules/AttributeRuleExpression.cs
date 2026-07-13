@@ -175,6 +175,14 @@ public static class AttributeRuleExpression
         // Mirrors FilterParserGuard.EnsureExpressionDepth on the filter parsers.
         private const int MaxGroupingDepth = 32;
 
+        // Threshold for treating a division's right-hand operand as zero.
+        // Deliberately far tighter than any realistic user-supplied divisor
+        // (which legitimately spans everything down to very small fractions)
+        // so real calculations keep working; it only catches an exact zero or
+        // a near-zero result of upstream floating-point cancellation, which
+        // would otherwise silently produce Infinity/NaN instead of Fail().
+        private const double DivisionByZeroEpsilon = 1e-12;
+
         private readonly string _text = text;
         private readonly IReadOnlyDictionary<string, object?> _attributes = attributes;
         private int _pos;
@@ -625,7 +633,19 @@ public static class AttributeRuleExpression
             }
         }
 
-        private bool AsBool(object? value) => value is bool b ? b : Fail() is null && false;
+        private bool AsBool(object? value)
+        {
+            if (value is bool b)
+            {
+                return b;
+            }
+
+            // Non-bool operand: record the parse failure. The returned value is never
+            // observed as a real result — TryParse() checks _failed first and discards
+            // whatever ParseOr()/ParseAnd() computed — so any placeholder is fine here.
+            Fail();
+            return false;
+        }
 
         private object? Arithmetic(object? left, object? right, char op)
         {
@@ -651,7 +671,7 @@ public static class AttributeRuleExpression
                 '+' => l + r,
                 '-' => l - r,
                 '*' => l * r,
-                '/' => r == 0 ? Fail() : l / r,
+                '/' => Math.Abs(r) <= DivisionByZeroEpsilon ? Fail() : l / r,
                 _ => Fail()
             };
         }

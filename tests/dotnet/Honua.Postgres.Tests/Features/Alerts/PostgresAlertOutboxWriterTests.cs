@@ -38,8 +38,9 @@ public sealed class PostgresAlertOutboxWriterTests(PostgresFixture fixture)
             ImmutableArray.Create(AlertChannelType.Webhook, AlertChannelType.Slack));
 
         eventId.Should().NotBeNull("the event was newly appended");
-        (await CountEventsAsync(eventId!.Value)).Should().Be(1, "the event row is committed");
-        (await CountDispatchForEventAsync(eventId.Value)).Should().Be(2, "one dispatch row per deliverable channel is committed in the same transaction");
+        var appendedEventId = eventId is { } id ? id : throw new InvalidOperationException("Expected a non-null event id.");
+        (await CountEventsAsync(appendedEventId)).Should().Be(1, "the event row is committed");
+        (await CountDispatchForEventAsync(appendedEventId)).Should().Be(2, "one dispatch row per deliverable channel is committed in the same transaction");
     }
 
     [IntegrationTest]

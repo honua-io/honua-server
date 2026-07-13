@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Caching;
@@ -64,16 +65,10 @@ internal static class OgcFeatureEntityTag
 
         var entityToken = NormalizeTagToken(entityETag);
         var representationPrefix = string.Concat(RepresentationTagPrefix, entityToken, "-");
-        foreach (var rawTag in precondition.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var tag = NormalizeTagToken(rawTag);
-            if (tag.StartsWith(representationPrefix, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return precondition
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeTagToken)
+            .Any(tag => tag.StartsWith(representationPrefix, StringComparison.Ordinal));
     }
 
     private static string NormalizeTagToken(string etag)

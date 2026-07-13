@@ -216,17 +216,10 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
             // whether any numeric field, interpreted as epoch-ms, falls within our range.
             var startMs = startTimestamp;
             var endMs = endTimestamp;
-            var hasDateInRange = false;
-            foreach (var property in attributes.EnumerateObject())
-            {
-                if (property.Value.ValueKind == JsonValueKind.Number
-                    && property.Value.TryGetInt64(out var epochMs)
-                    && epochMs >= startMs && epochMs <= endMs)
-                {
-                    hasDateInRange = true;
-                    break;
-                }
-            }
+            var hasDateInRange = attributes.EnumerateObject().Any(property =>
+                property.Value.ValueKind == JsonValueKind.Number
+                && property.Value.TryGetInt64(out var epochMs)
+                && epochMs >= startMs && epochMs <= endMs);
 
             hasDateInRange.Should().BeTrue($"Feature should have a datetime field within {startDate} to {endDate}");
         }
@@ -506,10 +499,9 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         var serviceId = WebAppFixture.TestServiceId;
         var layerId = WebAppFixture.TestLayerId;
 
-        foreach (var invalidTime in invalidTimeFormats)
+        foreach (var encodedTime in invalidTimeFormats.Select(Uri.EscapeDataString))
         {
             // Act
-            var encodedTime = Uri.EscapeDataString(invalidTime);
             var response = await _client.GetAsync(
                 $"/rest/services/{serviceId}/FeatureServer/{layerId}/query?time={encodedTime}&f=json");
 
@@ -580,7 +572,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         var serviceId = WebAppFixture.TestServiceId;
         var layerId = WebAppFixture.TestLayerId;
 
-        var formData = new FormUrlEncodedContent(new[]
+        using var formData = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("time", unixTimestamp.ToString(CultureInfo.InvariantCulture)),
             new KeyValuePair<string, string>("f", "json"),
@@ -642,16 +634,19 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
             return [];
         }
 
+        // Filtering and extraction are combined in one pass because each step depends on the
+        // previous TryGetProperty/TryGetInt64 out-variable; a Where/Select split would need to
+        // repeat the same property lookups, so an explicit loop with a single combined
+        // condition stays clearer than the LINQ equivalent.
         var ids = new List<long>();
         foreach (var feature in featuresElement.EnumerateArray())
         {
             if (feature.TryGetProperty("attributes", out var attributes) &&
-                attributes.TryGetProperty("objectid", out var objectId))
+                attributes.TryGetProperty("objectid", out var objectId) &&
+                objectId.ValueKind == JsonValueKind.Number &&
+                objectId.TryGetInt64(out var idValue))
             {
-                if (objectId.ValueKind == JsonValueKind.Number && objectId.TryGetInt64(out var idValue))
-                {
-                    ids.Add(idValue);
-                }
+                ids.Add(idValue);
             }
         }
 

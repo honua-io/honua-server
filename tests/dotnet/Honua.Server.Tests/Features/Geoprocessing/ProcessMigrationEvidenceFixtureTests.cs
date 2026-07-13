@@ -47,6 +47,8 @@ public sealed class ProcessMigrationEvidenceFixtureTests
             "geometry.convex-hull"
         ]);
 
+        // Not a missed-Select: each iteration performs assertions as a side effect rather than
+        // building a projected collection, so a .Select(...) rewrite would not be equivalent.
         foreach (var processId in processIds)
         {
             var definition = _catalog.GetProcess(processId);
@@ -87,6 +89,8 @@ public sealed class ProcessMigrationEvidenceFixtureTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory != null)
         {
+            // Path.Combine args are directory.FullName (the walk-up root) followed only by
+            // literal relative fixture-path segments from call sites; no rooted-segment risk.
             var candidate = Path.Combine(new[] { directory.FullName }.Concat(segments).ToArray());
             if (File.Exists(candidate))
             {

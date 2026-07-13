@@ -12,6 +12,8 @@ public sealed class FileSystemObjectStoreTriggerProbeTests : IDisposable
 
     public FileSystemObjectStoreTriggerProbeTests()
     {
+        // The second Path.Combine argument is a literal prefix plus a GUID (never rooted), so
+        // GetTempPath() is never dropped.
         _root = Path.Combine(Path.GetTempPath(), "honua-objstore-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
     }
@@ -36,6 +38,8 @@ public sealed class FileSystemObjectStoreTriggerProbeTests : IDisposable
 
     private string Write(string relativePath, DateTimeOffset modified)
     {
+        // This private helper is only called from this file with relative literal paths
+        // (e.g. "in/a.csv"), so relativePath is never rooted and _root is never dropped.
         var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, "x");
@@ -68,6 +72,11 @@ public sealed class FileSystemObjectStoreTriggerProbeTests : IDisposable
             new ObjectStoreTriggerConfig { StoreId = "drop", Prefix = "in" });
 
         Assert.NotNull(result);
+        if (result is null)
+        {
+            throw new InvalidOperationException("ProbeNewestAsync should have returned a result.");
+        }
+
         Assert.Equal("in/b.csv", result.Value.Key);
     }
 
@@ -84,6 +93,11 @@ public sealed class FileSystemObjectStoreTriggerProbeTests : IDisposable
             new ObjectStoreTriggerConfig { StoreId = "drop", Prefix = "in" });
 
         Assert.NotNull(second);
+        if (first is null || second is null)
+        {
+            throw new InvalidOperationException("ProbeNewestAsync should have returned results for both probes.");
+        }
+
         // The newest marker must strictly advance when a newer object lands.
         Assert.True(string.CompareOrdinal(second.Value.Marker, first.Value.Marker) > 0);
         Assert.Equal("in/z.csv", second.Value.Key);

@@ -196,6 +196,9 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
 
     private static long ResolveIdentifier(ImmutableDictionary<string, object?> attributes, int ordinal)
     {
+        // Not a simple filter: each key must be looked up and converted via two chained
+        // TryXxx calls whose out-parameter feeds the return value, so a LINQ Where/Select
+        // would not read more clearly than the short-circuiting loop below.
         foreach (var key in IdentifierKeys)
         {
             if (attributes.TryGetValue(key, out var value) && TryConvertToInt64(value, out var id))
@@ -223,7 +226,10 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
             case short s:
                 result = s;
                 return true;
-            case double d when d == Math.Floor(d) && !double.IsInfinity(d):
+            // Equals() (not ==) is intentional: this is an exact whole-number check (identifiers
+            // must round-trip losslessly to long), not a tolerance-based geometry comparison.
+            // IsFinite excludes NaN/Infinity, which Equals() would otherwise treat as self-equal.
+            case double d when double.IsFinite(d) && d.Equals(Math.Floor(d)):
                 result = (long)d;
                 return true;
             case string str when long.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed):

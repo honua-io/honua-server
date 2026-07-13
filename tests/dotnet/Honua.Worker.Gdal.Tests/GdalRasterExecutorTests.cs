@@ -741,7 +741,7 @@ public sealed class GdalRasterExecutorTests
     private static GdalDispatchJobExecutor NewDispatcher()
     {
         var runner = FakeGdalCommandRunner.Failing(1, "n/a");
-        var options = GdalJobFactory.Options(Path.Combine(Path.GetTempPath(), "honua-gdal-dispatch-test"));
+        var options = GdalJobFactory.Options(Path.Join(Path.GetTempPath(), "honua-gdal-dispatch-test"));
         IProcessExecutor[] executors =
         {
             new GdalVectorConvertJobExecutor(runner, options, NullLogger<GdalVectorConvertJobExecutor>.Instance),

@@ -364,14 +364,7 @@ internal static class MultidimensionalCoverageEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (publication.LayerIndex == layerId)
-            {
-                return true;
-            }
-        }
-        return false;
+        return snapshot.Graph.Publications.Any(publication => publication.LayerIndex == layerId);
     }
 
     private static MultidimensionalCoverageRegistrationResponse ToResponse(MultidimensionalCoverageRegistration reg)

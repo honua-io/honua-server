@@ -53,6 +53,11 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
+        // Not a `using` declaration: this token source is published to UploadCancellationTokens
+        // below and must outlive this method call so a concurrent CancelUploadAsync request (on
+        // another request/thread) can look it up and cancel it. Ownership transfers to whichever
+        // path removes it from the dictionary first; the finally block below disposes it once
+        // this upload's own processing has removed its entry.
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -400,6 +405,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             .Where(f => f.ExpiresAt.HasValue && f.ExpiresAt.Value <= now)
             .ToList();
 
+        // Not a `.Where(...).Count()`: DeleteAsync is an awaited side-effecting deletion
+        // attempted for every expired file, not a pure predicate, so every element must still
+        // be visited regardless of its outcome; only the counting is conditional.
         var cleanedCount = 0;
         foreach (var file in expiredFiles)
         {
@@ -484,7 +492,21 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         var safeName = fileId
             .Replace('/', '_')
             .Replace('\\', '_');
-        return Path.Combine(_metadataPath, $"{safeName}.json");
+
+        // Defence-in-depth: the slash/backslash replacement above already prevents
+        // POSIX-style traversal, but it does not prevent a rooted result on platforms
+        // where a bare "C:" prefix (no separator) makes a path rooted. Resolve and
+        // verify containment the same way GetSafeFullPath does for storage paths.
+        var candidate = Path.GetFullPath(Path.Combine(_metadataPath, $"{safeName}.json"));
+        var root = Path.GetFullPath(_metadataPath) + Path.DirectorySeparatorChar;
+        if (!candidate.StartsWith(root, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The resolved metadata path escapes the metadata directory.",
+                nameof(fileId));
+        }
+
+        return candidate;
     }
 
     private static void ValidateObjectKeyOverride(string objectKey)

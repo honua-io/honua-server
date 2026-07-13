@@ -119,10 +119,11 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         var extent = await _store.GetExtentAsync(LayerId);
 
         Assert.NotNull(extent);
-        Assert.Equal(-5, extent!.Value.MinX);
-        Assert.Equal(0, extent.Value.MinY);
-        Assert.Equal(10, extent.Value.MaxX);
-        Assert.Equal(20, extent.Value.MaxY);
+        var extentValue = extent!.Value;
+        Assert.Equal(-5, extentValue.MinX);
+        Assert.Equal(0, extentValue.MinY);
+        Assert.Equal(10, extentValue.MaxX);
+        Assert.Equal(20, extentValue.MaxY);
     }
 
     [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]

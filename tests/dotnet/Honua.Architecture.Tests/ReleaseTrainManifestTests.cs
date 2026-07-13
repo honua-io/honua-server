@@ -133,12 +133,18 @@ public sealed class ReleaseTrainManifestTests
             AssertApprovedWaiver(waiver);
         }
 
-        foreach (var item in EnumerateReleaseItems(releaseRoot))
-        {
-            if (item.TryGetProperty("waiver", out var waiver) && waiver.ValueKind == JsonValueKind.Object)
+        // TryGetProperty's out parameter defaults to a JsonValueKind.Undefined JsonElement when
+        // "waiver" is absent, so filtering on ValueKind == Object below is equivalent to the
+        // original combined TryGetProperty-and-ValueKind check.
+        foreach (var waiver in EnumerateReleaseItems(releaseRoot)
+            .Select(item =>
             {
-                AssertApprovedWaiver(waiver);
-            }
+                item.TryGetProperty("waiver", out var waiver);
+                return waiver;
+            })
+            .Where(waiver => waiver.ValueKind == JsonValueKind.Object))
+        {
+            AssertApprovedWaiver(waiver);
         }
     }
 
@@ -176,7 +182,7 @@ public sealed class ReleaseTrainManifestTests
 
     private static string ResolvePath(string repositoryRoot, string relativePath)
     {
-        return Path.Combine(repositoryRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        return ArchitectureTestHelpers.CombinePath(repositoryRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static IEnumerable<JsonElement> EnumerateReleaseItems(JsonElement root)

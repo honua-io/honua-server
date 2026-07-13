@@ -71,9 +71,8 @@ public class ImageServerLegendHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<LegendResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Layers.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which;
+        jsonResult.Value!.Layers.Should().HaveCount(1);
         jsonResult.Value.Layers[0].Legend.Should().HaveCount(5);
         jsonResult.Value.Layers[0].LayerName.Should().Be("test-layer");
         jsonResult.Value.Layers[0].LayerType.Should().Be("Raster Layer");
@@ -88,9 +87,8 @@ public class ImageServerLegendHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<LegendResponse>;
-        jsonResult.Should().NotBeNull();
-        var legend = jsonResult!.Value!.Layers[0].Legend;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which;
+        var legend = jsonResult.Value!.Layers[0].Legend;
 
         // Equal interval over [0, 100] with 5 classes -> 0-20, 20-40, 40-60, 60-80, 80-100.
         legend[0].Values.Should().Equal(0, 20);
@@ -109,9 +107,8 @@ public class ImageServerLegendHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<LegendResponse>;
-        jsonResult.Should().NotBeNull();
-        var legend = jsonResult!.Value!.Layers[0].Legend;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which;
+        var legend = jsonResult.Value!.Layers[0].Legend;
 
         foreach (var entry in legend)
         {
@@ -131,9 +128,8 @@ public class ImageServerLegendHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<LegendResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Layers[0].Legend.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which;
+        jsonResult.Value!.Layers[0].Legend.Should().HaveCount(1);
         jsonResult.Value.Layers[0].Legend[0].Values.Should().Equal(5, 5);
     }
 
@@ -149,9 +145,8 @@ public class ImageServerLegendHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<LegendResponse>;
-        jsonResult.Should().NotBeNull();
-        var legend = jsonResult!.Value!.Layers[0].Legend;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which;
+        var legend = jsonResult.Value!.Layers[0].Legend;
         legend.Should().HaveCount(5);
         legend[0].Values![0].Should().Be(0);
         legend[4].Values![1].Should().Be(255);
@@ -183,9 +178,8 @@ public class ImageServerLegendHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 1, CancellationToken.None, renderingRule);
 
-        var jsonResult = result as JsonHttpResult<LegendResponse>;
-        jsonResult.Should().NotBeNull();
-        var legend = jsonResult!.Value!.Layers[0].Legend;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<LegendResponse>>().Which;
+        var legend = jsonResult.Value!.Layers[0].Legend;
 
         // The legend emits one swatch per resolved colormap stop, so it matches the rendered image
         // that exportImage produces from the identical MapRenderingRule colormap.

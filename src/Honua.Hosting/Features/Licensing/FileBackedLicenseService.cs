@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -341,15 +342,7 @@ internal sealed class FileBackedLicenseService :
             return null;
         }
 
-        ILicenseContentSecretResolver? resolver = null;
-        foreach (var candidate in _secretResolvers)
-        {
-            if (candidate.CanResolve(secretRef))
-            {
-                resolver = candidate;
-                break;
-            }
-        }
+        var resolver = _secretResolvers.FirstOrDefault(candidate => candidate.CanResolve(secretRef));
 
         if (resolver is null)
         {
@@ -481,9 +474,13 @@ internal sealed class FileBackedLicenseService :
         }
         catch (IOException)
         {
+            // Intentional: best-effort temp-file cleanup after a failed upload;
+            // an orphaned temp file is harmless and must not mask the original error.
         }
         catch (UnauthorizedAccessException)
         {
+            // Intentional: best-effort temp-file cleanup after a failed upload;
+            // an orphaned temp file is harmless and must not mask the original error.
         }
     }
 
@@ -554,7 +551,7 @@ internal sealed class FileBackedLicenseService :
             return CreateInvalidResult(LicenseValidationState.Malformed, payloadError, payload, envelope.KeyId);
         }
 
-        if (payload!.ExpiresAt.HasValue && payload.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
             return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId);
         }
@@ -571,7 +568,7 @@ internal sealed class FileBackedLicenseService :
     }
 
     private static bool TryValidatePayload(
-        SignedLicensePayload? payload,
+        [NotNullWhen(true)] SignedLicensePayload? payload,
         out HonuaEdition edition,
         out string reason)
     {

@@ -391,15 +391,8 @@ internal static class ServiceDataEditorAuthorization
 
     private static bool IsAdmin(ClaimsPrincipal principal, RbacOptions options)
     {
-        foreach (var role in EnumerateRoles(principal, options))
-        {
-            if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return EnumerateRoles(principal, options)
+            .Any(role => string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool HasGlobalDataEditorRole(ClaimsPrincipal principal, RbacOptions options)
@@ -409,16 +402,9 @@ internal static class ServiceDataEditorAuthorization
             return false;
         }
 
-        foreach (var role in EnumerateRoles(principal, options))
-        {
-            if (options.DataEditorRoles.Any(allowed =>
-                string.Equals(allowed?.Trim(), role, StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return EnumerateRoles(principal, options).Any(role =>
+            options.DataEditorRoles.Any(allowed =>
+                string.Equals(allowed?.Trim(), role, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static bool HasServiceScopedRole(ClaimsPrincipal principal, RbacOptions options, string serviceId)
@@ -427,15 +413,8 @@ internal static class ServiceDataEditorAuthorization
 
         var expected = string.Concat(prefix, serviceId);
 
-        foreach (var role in EnumerateRoles(principal, options))
-        {
-            if (string.Equals(role, expected, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return EnumerateRoles(principal, options)
+            .Any(role => string.Equals(role, expected, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IEnumerable<string> EnumerateServiceScopedRoleServiceIds(ClaimsPrincipal principal, RbacOptions options)
@@ -470,23 +449,17 @@ internal static class ServiceDataEditorAuthorization
 
     private static IEnumerable<string> EnumerateRoles(ClaimsPrincipal principal, RbacOptions options)
     {
-        foreach (var claim in principal.FindAll(ClaimTypes.Role))
+        foreach (var claim in principal.FindAll(ClaimTypes.Role).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
         {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-            {
-                yield return claim.Value;
-            }
+            yield return claim.Value;
         }
 
         var roleClaimType = options.EffectiveRoleClaimType;
         if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var claim in principal.FindAll(roleClaimType))
+            foreach (var claim in principal.FindAll(roleClaimType).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
             {
-                if (!string.IsNullOrWhiteSpace(claim.Value))
-                {
-                    yield return claim.Value;
-                }
+                yield return claim.Value;
             }
         }
     }

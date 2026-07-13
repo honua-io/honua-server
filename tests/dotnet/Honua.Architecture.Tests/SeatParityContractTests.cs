@@ -196,7 +196,7 @@ public sealed class SeatParityContractTests
 
     private static Dictionary<string, ParityMapEntry> LoadParityMap(string repoRoot)
     {
-        var path = Path.Combine(repoRoot, OpsParityMapRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        var path = ArchitectureTestHelpers.CombinePath(repoRoot, OpsParityMapRelativePath.Replace('/', Path.DirectorySeparatorChar));
         File.Exists(path).Should().BeTrue($"the #2567 parity map should exist at {path}");
 
         var entries = new Dictionary<string, ParityMapEntry>(StringComparer.Ordinal);
@@ -223,6 +223,9 @@ public sealed class SeatParityContractTests
 
             var propertyMatch = RoutePropertyRegex.Match(rawLine);
             propertyMatch.Success.Should().BeTrue($"line '{rawLine}' must be a route key or route property");
+            // Intentional: FluentAssertions' Should() extension is null-safe (extension methods
+            // never NRE on a null receiver), so this *is* the explicit null guard for currentRoute,
+            // not an unguarded dereference.
             currentRoute.Should().NotBeNull($"line '{rawLine}' must belong to a route entry");
 
             var value = Unquote(propertyMatch.Groups["value"].Value.Trim());
@@ -252,7 +255,7 @@ public sealed class SeatParityContractTests
 
     private static HashSet<string> LoadImplementedMcpTools(string repoRoot)
     {
-        var indexPath = Path.Combine(
+        var indexPath = ArchitectureTestHelpers.CombinePath(
             repoRoot,
             "tests",
             "dotnet",
@@ -335,22 +338,22 @@ public sealed class SeatParityContractTests
     private static string FindTypeSource(string repoRoot, string fullTypeName)
     {
         var typeName = fullTypeName[(fullTypeName.LastIndexOf('.') + 1)..];
-        var serverRoot = Path.Combine(repoRoot, "src", "Honua.Server");
-        foreach (var file in Directory.EnumerateFiles(serverRoot, "*.cs", SearchOption.AllDirectories))
+        var serverRoot = ArchitectureTestHelpers.CombinePath(repoRoot, "src", "Honua.Server");
+        var source = Directory.EnumerateFiles(serverRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(File.ReadAllText)
+            .FirstOrDefault(source => source.Contains("class " + typeName, StringComparison.Ordinal)
+                || source.Contains("record " + typeName, StringComparison.Ordinal));
+
+        if (source is null)
         {
-            var source = File.ReadAllText(file);
-            if (source.Contains("class " + typeName, StringComparison.Ordinal)
-                || source.Contains("record " + typeName, StringComparison.Ordinal))
-            {
-                return source;
-            }
+            throw new FileNotFoundException($"Unable to locate source for {fullTypeName}.");
         }
 
-        throw new FileNotFoundException($"Unable to locate source for {fullTypeName}.");
+        return source;
     }
 
     private static string ReadRepoFile(string repoRoot, string relativePath)
-        => File.ReadAllText(Path.Combine(repoRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        => File.ReadAllText(ArchitectureTestHelpers.CombinePath(repoRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
     private static string Unquote(string value)
     {

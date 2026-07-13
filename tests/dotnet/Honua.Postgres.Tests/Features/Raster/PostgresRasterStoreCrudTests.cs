@@ -102,8 +102,9 @@ public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
 
             var updated = await store.UpdateRasterMetadataAsync(LayerId, rasterId, update);
             updated.Should().NotBeNull();
-            updated!.Value.Name.Should().Be("renamed");
-            updated.Value.AcquisitionDate!.Value.UtcDateTime.Should().Be(newDate.UtcDateTime);
+            var updatedMetadata = updated is { } m ? m : throw new InvalidOperationException("Expected updated raster metadata.");
+            updatedMetadata.Name.Should().Be("renamed");
+            updatedMetadata.AcquisitionDate!.Value.UtcDateTime.Should().Be(newDate.UtcDateTime);
         }
         finally
         {

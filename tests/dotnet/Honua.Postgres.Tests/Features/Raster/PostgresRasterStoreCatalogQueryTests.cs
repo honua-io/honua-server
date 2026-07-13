@@ -95,7 +95,7 @@ public sealed class PostgresRasterStoreCatalogQueryTests(PostgresFixture fixture
             await CreateIndexedRasterTableAsync(schema);
             for (var i = 0; i < 5; i++)
             {
-                await InsertRasterAsync(schema, $"tile-{i}", i * 10, (i * 10) + 5);
+                await InsertRasterAsync(schema, $"tile-{i}", i * 10.0, (i * 10.0) + 5);
             }
 
             var store = CreateStore(schema);
@@ -130,8 +130,11 @@ public sealed class PostgresRasterStoreCatalogQueryTests(PostgresFixture fixture
             var page = await store.QueryCatalogAsync(LayerId, query);
 
             page.AggregateExtent.Should().NotBeNull();
-            page.AggregateExtent!.Value.XMin.Should().Be(0);
-            page.AggregateExtent.Value.XMax.Should().Be(30);
+            var aggregateExtent = page.AggregateExtent is { } extent
+                ? extent
+                : throw new InvalidOperationException("Expected an aggregate extent.");
+            aggregateExtent.XMin.Should().Be(0);
+            aggregateExtent.XMax.Should().Be(30);
             page.TotalCount.Should().Be(2);
         }
         finally

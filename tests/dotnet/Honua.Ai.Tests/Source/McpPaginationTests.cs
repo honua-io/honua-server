@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -102,7 +103,7 @@ public sealed class McpPaginationTests
             new McpResourceContent { Uri = "honua://jobs/j/results", MimeType = "application/json", Text = text }
         ];
 
-        var reassembled = string.Empty;
+        var reassembled = new StringBuilder();
         string? cursor = null;
         var pages = 0;
         do
@@ -111,13 +112,13 @@ public sealed class McpPaginationTests
             page.Should().HaveCount(1);
             page[0].Uri.Should().Be("honua://jobs/j/results");
             page[0].Text.Length.Should().BeLessThanOrEqualTo(20);
-            reassembled += page[0].Text;
+            reassembled.Append(page[0].Text);
             pages++;
         }
         while (cursor is not null && pages < 10);
 
         pages.Should().Be(3);
-        reassembled.Should().Be(text);
+        reassembled.ToString().Should().Be(text);
     }
 
     [UnitTest]

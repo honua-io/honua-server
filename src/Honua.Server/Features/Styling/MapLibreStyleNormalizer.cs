@@ -50,6 +50,8 @@ internal static class MapLibreStyleNormalizer
         "typeof"
     };
 
+    private static readonly string[] HueUnitSuffixes = ["deg", "grad", "rad", "turn"];
+
     public static bool TryNormalize(
         JsonElement style,
         StyleLayerDescriptor layer,
@@ -593,15 +595,10 @@ internal static class MapLibreStyleNormalizer
     private static string StripHueUnit(string component)
     {
         var trimmed = component.Trim();
-        foreach (var unit in new[] { "deg", "grad", "rad", "turn" })
-        {
-            if (trimmed.EndsWith(unit, StringComparison.OrdinalIgnoreCase))
-            {
-                return trimmed[..^unit.Length];
-            }
-        }
+        var matchedUnit = HueUnitSuffixes
+            .FirstOrDefault(unit => trimmed.EndsWith(unit, StringComparison.OrdinalIgnoreCase));
 
-        return trimmed;
+        return matchedUnit is not null ? trimmed[..^matchedUnit.Length] : trimmed;
     }
 
     private static string[] SplitCssFunctionArguments(string body)
@@ -787,13 +784,10 @@ internal static class MapLibreStyleNormalizer
             return false;
         }
 
-        foreach (var item in array)
+        if (array.Any(item => string.IsNullOrWhiteSpace(TryGetString(item))))
         {
-            if (string.IsNullOrWhiteSpace(TryGetString(item)))
-            {
-                error = $"MapLibre style layer '{layerId}' property '{property}' must contain only non-empty strings.";
-                return false;
-            }
+            error = $"MapLibre style layer '{layerId}' property '{property}' must contain only non-empty strings.";
+            return false;
         }
 
         return true;
@@ -835,14 +829,11 @@ internal static class MapLibreStyleNormalizer
             return false;
         }
 
-        foreach (var item in array)
+        if (array.Any(item => !TryGetFiniteDouble(item, out var number) || (!allowNegative && number < 0d)))
         {
-            if (!TryGetFiniteDouble(item, out var number) || (!allowNegative && number < 0d))
-            {
-                var qualifier = allowNegative ? "finite" : "non-negative";
-                error = $"MapLibre style layer '{layerId}' property '{property}' must contain only {qualifier} numbers.";
-                return false;
-            }
+            var qualifier = allowNegative ? "finite" : "non-negative";
+            error = $"MapLibre style layer '{layerId}' property '{property}' must contain only {qualifier} numbers.";
+            return false;
         }
 
         return true;

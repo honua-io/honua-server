@@ -23,7 +23,7 @@ public sealed class StacProjectedGeometryTestsFixture : IAsyncLifetime
     public StacProjectedGeometryTestsFixture()
     {
         App = new WebAppFixture()
-            .UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
+            .UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
     }
 
     public Task InitializeAsync() => App.InitializeAsync();

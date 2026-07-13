@@ -18,6 +18,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Trait("Component", "Admin")]
 public sealed class SldConversionTests
 {
+    // All later segments are fixed relative literals, so they can never be
+    // rooted and silently discard AppContext.BaseDirectory.
     private static readonly string FixtureRoot = Path.Combine(
         AppContext.BaseDirectory,
         "TestData",
@@ -489,7 +491,7 @@ public sealed class SldConversionTests
         var layer = conversion.Layers.First(l => l.Type == "fill");
         layer.Filter.Should().NotBeNull();
         layer.Filter!.Value.Items![0].StringValue.Should().Be("all");
-        layer.Filter.Value.Items.Should().HaveCount(3);
+        layer.Filter!.Value.Items.Should().HaveCount(3);
     }
 
     [UnitTest]
@@ -1012,6 +1014,8 @@ public sealed class SldConversionTests
 
     private static string ReadFixture(string fixtureName)
     {
+        // Internal test helper: fixtureName is always a relative literal fixture
+        // filename supplied by callers in this file, never rooted.
         var path = Path.Combine(FixtureRoot, fixtureName);
         return File.ReadAllText(path);
     }

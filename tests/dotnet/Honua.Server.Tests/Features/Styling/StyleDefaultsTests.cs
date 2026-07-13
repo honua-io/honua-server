@@ -30,15 +30,8 @@ public class StyleDefaultsTests
         var layers = root.GetProperty("layers");
         Assert.True(layers.GetArrayLength() >= 1);
 
-        var hasExpectedType = false;
-        foreach (var entry in layers.EnumerateArray())
-        {
-            if (entry.GetProperty("type").GetString() == expectedLayerType)
-            {
-                hasExpectedType = true;
-                break;
-            }
-        }
+        var hasExpectedType = layers.EnumerateArray()
+            .Any(entry => entry.GetProperty("type").GetString() == expectedLayerType);
         Assert.True(hasExpectedType, $"Expected at least one layer of type '{expectedLayerType}'.");
 
         var sources = root.GetProperty("sources");
@@ -78,15 +71,8 @@ public class StyleDefaultsTests
         Assert.Equal(8, root.GetProperty("version").GetInt32());
         var layers = root.GetProperty("layers");
 
-        var hasFill = false;
-        foreach (var entry in layers.EnumerateArray())
-        {
-            if (entry.GetProperty("type").GetString() == "fill")
-            {
-                hasFill = true;
-                break;
-            }
-        }
+        var hasFill = layers.EnumerateArray()
+            .Any(entry => entry.GetProperty("type").GetString() == "fill");
         Assert.True(hasFill);
     }
 }

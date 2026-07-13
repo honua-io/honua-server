@@ -52,7 +52,7 @@ internal sealed class CatalogRasterSourceResolver(IServiceScopeFactory scopeFact
         {
             return RasterSourceResolution.Failure(
                 $"no reader is configured for the resolved raster's storage provider "
-                + $"({registration.Provider.ToString()}).");
+                + $"({registration.Provider}).");
         }
 
         long size;

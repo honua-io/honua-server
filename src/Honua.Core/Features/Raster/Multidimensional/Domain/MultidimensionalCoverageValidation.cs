@@ -167,15 +167,7 @@ public static class MultidimensionalCoverageValidation
             _ => Array.Empty<string>()
         };
 
-        foreach (var ext in allowed)
-        {
-            if (objectKey.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return allowed.Any(ext => objectKey.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsSafeBucket(string bucket)
@@ -205,15 +197,7 @@ public static class MultidimensionalCoverageValidation
             return false;
         }
 
-        foreach (var ch in key)
-        {
-            if (ch is < (char)32 or (char)127)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return !key.Any(ch => ch is < (char)32 or (char)127);
     }
 
     private static bool IsSafeVariableName(string variable)

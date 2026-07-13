@@ -73,7 +73,8 @@ public sealed class OAuthClientEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(created.ClientSecret!, json, StringComparison.Ordinal);
 
         var list = JsonSerializer.Deserialize<ApiResponse<OAuthClientResponse[]>>(json, _jsonOptions);
-        Assert.NotNull(list?.Data);
+        Assert.NotNull(list);
+        Assert.NotNull(list.Data);
         var listed = Assert.Single(list.Data, client => client.Id == created.Client.Id);
         Assert.Equal("active", listed.Status);
         Assert.Contains("features:read", listed.AllowedScopes);
@@ -115,7 +116,8 @@ public sealed class OAuthClientEndpointsTests : IAsyncLifetime
 
         var list = await _client.GetFromJsonAsync<ApiResponse<OAuthScopeResponse[]>>(
             "/api/v1/admin/oauth-scopes", _jsonOptions);
-        Assert.NotNull(list?.Data);
+        Assert.NotNull(list);
+        Assert.NotNull(list.Data);
         var scope = Assert.Single(list.Data, s => s.Scope == "features:read");
         Assert.Contains("services:read", scope.Permissions);
 
@@ -169,7 +171,8 @@ public sealed class OAuthClientEndpointsTests : IAsyncLifetime
             await response.Content.ReadAsStringAsync(),
             _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         return result.Data;
     }
 }

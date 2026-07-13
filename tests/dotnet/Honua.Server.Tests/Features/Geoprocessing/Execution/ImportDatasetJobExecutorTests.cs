@@ -169,6 +169,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
     /// <c>GeoprocessingExecutorOptions</c> so the path-traversal guard (BH3-027) passes
     /// for legitimate test files.
     /// </summary>
+    // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
     private static readonly string StagingDirectory =
         Path.Combine(Path.GetTempPath(), "honua-import-staging");
 
@@ -187,6 +188,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
 
         // BH3-027: files must be placed under the configured staging root.
         Directory.CreateDirectory(StagingDirectory);
+        // Path.Combine args are a staging root plus a generated relative file name; no rooted-segment risk.
         var path = Path.Combine(StagingDirectory, $"import_dataset_{Guid.NewGuid():N}.geojson");
         File.WriteAllText(path, geoJson, Encoding.UTF8);
         return path;

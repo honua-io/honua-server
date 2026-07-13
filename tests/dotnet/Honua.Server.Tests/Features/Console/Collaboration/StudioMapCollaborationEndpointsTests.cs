@@ -154,12 +154,13 @@ public sealed class StudioMapCollaborationEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/console/maps/{mapId}/collab/comments")]
     public async Task CreateThread_MissingBody_ReturnsBadRequest()
     {
+        using var content = new StringContent(
+            "{\"featureLabel\":\"P\",\"layerRef\":\"l\",\"xFraction\":0.1,\"yFraction\":0.1,\"body\":\"\"}",
+            Encoding.UTF8,
+            "application/json");
         var response = await _client.PostAsync(
             $"/api/v1/console/maps/{MapId}/collab/comments",
-            new StringContent(
-                "{\"featureLabel\":\"P\",\"layerRef\":\"l\",\"xFraction\":0.1,\"yFraction\":0.1,\"body\":\"\"}",
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -176,7 +177,10 @@ public sealed class StudioMapCollaborationEndpointsTests : IAsyncLifetime
     }
 
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
-        => await _client.PostAsync(path, new StringContent(JsonSerializer.Serialize(body, typeInfo), Encoding.UTF8, "application/json"));
+    {
+        using var content = new StringContent(JsonSerializer.Serialize(body, typeInfo), Encoding.UTF8, "application/json");
+        return await _client.PostAsync(path, content);
+    }
 
     private static async Task<TData> ReadAsync<TData>(HttpResponseMessage response, JsonTypeInfo<ApiResponse<TData>> typeInfo)
     {

@@ -635,17 +635,10 @@ public static class OgcStylesEndpoints
     }
 
     private static string? ReadSldVersion(MediaTypeHeaderValue media)
-    {
-        foreach (var parameter in media.Parameters)
-        {
-            if (string.Equals(parameter.Name.Value, "version", StringComparison.OrdinalIgnoreCase))
-            {
-                return parameter.Value.Value;
-            }
-        }
-
-        return null;
-    }
+        => media.Parameters
+            .Where(parameter => string.Equals(parameter.Name.Value, "version", StringComparison.OrdinalIgnoreCase))
+            .Select(parameter => parameter.Value.Value)
+            .FirstOrDefault();
 
     private static bool IsMapboxStyleContentType(string contentType)
     {
@@ -670,36 +663,19 @@ public static class OgcStylesEndpoints
 
     private static bool IsStrictRequested(HttpContext context)
     {
-        if (context.Request.Query.TryGetValue("validate", out var validateValues))
+        if (context.Request.Query.TryGetValue("validate", out var validateValues) &&
+            validateValues.Any(value =>
+                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "strict", StringComparison.OrdinalIgnoreCase)))
         {
-            foreach (var value in validateValues)
-            {
-                if (string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(value, "strict", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
+            return true;
         }
 
-        foreach (var prefer in context.Request.Headers["Prefer"])
-        {
-            if (prefer is null)
-            {
-                continue;
-            }
-
-            foreach (var token in prefer.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (token.Replace(" ", string.Empty, StringComparison.Ordinal)
-                    .Equals("handling=strict", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return context.Request.Headers["Prefer"]
+            .Where(prefer => prefer is not null)
+            .SelectMany(prefer => prefer!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .Any(token => token.Replace(" ", string.Empty, StringComparison.Ordinal)
+                .Equals("handling=strict", StringComparison.OrdinalIgnoreCase));
     }
 }

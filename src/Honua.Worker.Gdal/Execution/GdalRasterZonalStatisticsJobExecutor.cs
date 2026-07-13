@@ -45,6 +45,9 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             "count", "sum", "mean", "min", "max", "stddev", "variance"
         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    // Candidate attribute names ZoneId probes, in preference order.
+    private static readonly string[] ZoneIdAttributeNames = ["id", "ID", "Id"];
+
     /// <inheritdoc />
     /// <summary>
     /// The single process id this executor handles, surfaced through
@@ -129,13 +132,11 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         }
 
         var band = 1;
-        if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw))
+        if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw)
+            && (!int.TryParse(bandRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out band) || band < 1))
         {
-            if (!int.TryParse(bandRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out band) || band < 1)
-            {
-                return JobExecutionResult.Failed(
-                    $"Invalid zonal statistics inputs: 'band' value '{bandRaw}' is not a positive integer.");
-            }
+            return JobExecutionResult.Failed(
+                $"Invalid zonal statistics inputs: 'band' value '{bandRaw}' is not a positive integer.");
         }
 
         var requestedStatistics = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -337,16 +338,13 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     {
         if (feature.Attributes is { } attributes)
         {
-            foreach (var name in new[] { "id", "ID", "Id" })
+            var value = ZoneIdAttributeNames
+                .Where(name => attributes.Exists(name))
+                .Select(name => attributes[name])
+                .FirstOrDefault(candidate => candidate is not null);
+            if (value is not null)
             {
-                if (attributes.Exists(name))
-                {
-                    var value = attributes[name];
-                    if (value is not null)
-                    {
-                        return value.ToString() ?? fallbackIndex.ToString(CultureInfo.InvariantCulture);
-                    }
-                }
+                return value.ToString() ?? fallbackIndex.ToString(CultureInfo.InvariantCulture);
             }
         }
         return fallbackIndex.ToString(CultureInfo.InvariantCulture);
@@ -364,17 +362,10 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             return EmptyStats(requested);
         }
 
-        JsonElement target = default;
-        foreach (var entry in bandsElement.EnumerateArray())
-        {
-            if (entry.TryGetProperty("band", out var bandIndex)
-                && bandIndex.ValueKind == JsonValueKind.Number
-                && bandIndex.GetInt32() == band)
-            {
-                target = entry;
-                break;
-            }
-        }
+        var target = bandsElement.EnumerateArray().FirstOrDefault(entry =>
+            entry.TryGetProperty("band", out var bandIndex)
+            && bandIndex.ValueKind == JsonValueKind.Number
+            && bandIndex.GetInt32() == band);
 
         if (target.ValueKind == JsonValueKind.Undefined)
         {

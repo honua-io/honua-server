@@ -74,17 +74,14 @@ public static class OptimizedStringOperations
         try
         {
             bool first = true;
-            foreach (var value in values)
+            foreach (var value in values.Where(static v => v != null))
             {
-                if (value != null)
+                if (!first && sep.Length > 0)
                 {
-                    if (!first && sep.Length > 0)
-                    {
-                        sb.Append(sep);
-                    }
-                    sb.Append(value);
-                    first = false;
+                    sb.Append(sep);
                 }
+                sb.Append(value);
+                first = false;
             }
 
             return sb.ToString();
@@ -400,7 +397,7 @@ public static class OptimizedStringOperations
     /// </summary>
     public ref struct OptimizedStringBuilder
     {
-        private StringBuilder _sb;
+        private readonly StringBuilder _sb;
         private bool _disposed;
 
         /// <summary>

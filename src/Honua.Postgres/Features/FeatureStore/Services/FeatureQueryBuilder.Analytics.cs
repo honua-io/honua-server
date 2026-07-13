@@ -127,7 +127,7 @@ internal sealed partial class FeatureQueryBuilder
                 sql.Append(" GROUP BY cluster_id ORDER BY \"featureCount\" DESC");
                 if (clusterQuery.MaxClusters > 0)
                 {
-                    var maxClustersParam = $"${paramIndex++}";
+                    var maxClustersParam = $"${paramIndex}";
                     parameters.Add(clusterQuery.MaxClusters + 1);
                     sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxClustersParam}");
                 }
@@ -225,7 +225,7 @@ internal sealed partial class FeatureQueryBuilder
             // LIMIT n+1 inside the CTE so ST_Buffer / ST_Union only operate on the
             // capped input set and the handler can still detect overflow without
             // letting the query scan beyond MaxInputFeatures.
-            var maxInputParam = $"${paramIndex++}";
+            var maxInputParam = $"${paramIndex}";
             parameters.Add(bufferQuery.MaxInputFeatures + 1);
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxInputParam})");
 
@@ -373,7 +373,7 @@ internal sealed partial class FeatureQueryBuilder
 
             // ORDER BY count desc, then LIMIT max+1 so the handler detects overflow.
             sql.Append(" ORDER BY \"featureCount\" DESC");
-            var maxCellsParam = $"${paramIndex++}";
+            var maxCellsParam = $"${paramIndex}";
             parameters.Add(densityQuery.MaxCells + 1);
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxCellsParam}");
 

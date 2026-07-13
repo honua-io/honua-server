@@ -249,12 +249,9 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
 
         if (additionalAttributes is { Count: > 0 })
         {
-            foreach (var kvp in additionalAttributes)
+            foreach (var kvp in additionalAttributes.Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key)))
             {
-                if (!string.IsNullOrWhiteSpace(kvp.Key))
-                {
-                    attributes[kvp.Key] = kvp.Value;
-                }
+                attributes[kvp.Key] = kvp.Value;
             }
         }
 

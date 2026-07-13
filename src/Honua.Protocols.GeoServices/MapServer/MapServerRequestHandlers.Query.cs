@@ -257,17 +257,11 @@ internal static partial class MapServerEndpoints
         }
 
         var layersValue = layersRaw.ToString();
-        var segments = new List<string>();
-        foreach (var segment in layersValue.Split(',', StringSplitOptions.None))
+        var segments = layersValue.Split(',', StringSplitOptions.None).Select(segment => segment.Trim()).ToList();
+        if (segments.Any(static segment => segment.Length == 0))
         {
-            var trimmed = segment.Trim();
-            if (trimmed.Length == 0)
-            {
-                error = "layers must contain exactly one layer identifier";
-                return false;
-            }
-
-            segments.Add(trimmed);
+            error = "layers must contain exactly one layer identifier";
+            return false;
         }
 
         if (segments.Count != 1)

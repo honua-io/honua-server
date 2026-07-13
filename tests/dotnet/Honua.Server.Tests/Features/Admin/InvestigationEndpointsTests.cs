@@ -152,7 +152,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-update" });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
 
-        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
+        using var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
             Content = JsonContent.Create(new { status = "closed", summary = "done" })
         };
@@ -211,7 +211,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-status-num" });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
 
-        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
+        using var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
             Content = JsonContent.Create(new { status = "1" })
         };
@@ -226,7 +226,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-ws" });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
 
-        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
+        using var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
             Content = JsonContent.Create(new { title = "   " })
         };

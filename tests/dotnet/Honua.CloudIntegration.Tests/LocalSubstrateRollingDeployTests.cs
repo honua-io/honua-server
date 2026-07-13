@@ -454,6 +454,8 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
                 }
                 catch
                 {
+                    // Any other transport/deserialization error during rolling-deploy load generation
+                    // just counts as a failed request; cancellation is already rethrown above.
                     Interlocked.Increment(ref _failures);
                 }
 

@@ -303,7 +303,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });
                 shouldDisposeStream = true;
-                totalBytes = fileStream.Length;
             }
             else if (format.Value == SupportedFileFormat.Shapefile)
             {
@@ -341,7 +340,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     Options = FileOptions.Asynchronous | FileOptions.SequentialScan
                 });
                 shouldDisposeStream = true;
-                totalBytes = fileStream.Length;
                 detectedSrid = request.SourceSrid ?? 4326;
             }
             else if (format.Value == SupportedFileFormat.FileGdb)

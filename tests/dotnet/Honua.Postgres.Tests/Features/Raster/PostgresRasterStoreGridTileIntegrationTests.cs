@@ -101,13 +101,14 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             // cell grid, and carry the source value at the tile-centre ground point.
             var geotiff = await store.GetImageTileAsync(LayerId, rasterId, window, RasterFormat.TIFF);
             geotiff.Should().NotBeNull("the gridset tile SQL must return a rendered tile");
-            geotiff!.Value.Width.Should().Be(256);
-            geotiff.Value.Height.Should().Be(256);
-            geotiff.Value.Srid.Should().Be(4326);
-            geotiff.Value.Data.Should().NotBeEmpty();
+            var geotiffTile = geotiff is { } g ? g : throw new InvalidOperationException("Expected a rendered GeoTIFF tile.");
+            geotiffTile.Width.Should().Be(256);
+            geotiffTile.Height.Should().Be(256);
+            geotiffTile.Srid.Should().Be(4326);
+            geotiffTile.Data.Should().NotBeEmpty();
 
             var expectedCellSize = (window.MaxX - window.MinX) / 256.0; // 45deg / 256px
-            var decoded = await InspectGeoTiffTileAsync(schemaName, geotiff.Value.Data);
+            var decoded = await InspectGeoTiffTileAsync(schemaName, geotiffTile.Data);
             decoded.Srid.Should().Be(4326, "the source in 3857 must be reprojected into the 4326 gridset SRID");
             decoded.ScaleX.Should().BeApproximately(expectedCellSize, 1e-6,
                 "the rendered tile must sit on the WorldCRS84Quad cell grid (45deg / 256px)");
@@ -117,7 +118,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             // And the PNG encoding branch still returns real PNG bytes for the same window.
             var png = await store.GetImageTileAsync(LayerId, rasterId, window, RasterFormat.PNG);
             png.Should().NotBeNull();
-            png!.Value.Data.Take(4).Should().Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, "the tile must be a real PNG");
+            var pngTile = png is { } p ? p : throw new InvalidOperationException("Expected a rendered PNG tile.");
+            pngTile.Data.Take(4).Should().Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, "the tile must be a real PNG");
         }
         finally
         {

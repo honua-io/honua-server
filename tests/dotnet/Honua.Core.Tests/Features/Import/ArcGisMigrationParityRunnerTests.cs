@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
@@ -484,38 +485,32 @@ public sealed class ArcGisMigrationParityRunnerTests
             }
         };
 
-        foreach (var attachment in targetResource.Attachments)
+        foreach (var attachment in targetResource.Attachments.Where(a => !string.IsNullOrWhiteSpace(a.TargetAttachmentRef)))
         {
-            if (!string.IsNullOrWhiteSpace(attachment.TargetAttachmentRef))
+            remaps.Add(new MigrationManifestIdentityRemap
             {
-                remaps.Add(new MigrationManifestIdentityRemap
-                {
-                    SourceId = attachment.SourceAttachmentId,
-                    SourceKind = "attachment",
-                    TargetId = attachment.TargetAttachmentRef!,
-                    TargetKind = "attachment",
-                    TargetName = attachment.SourceAttachmentId,
-                    Action = "publish",
-                    IdentityStability = MigrationManifestIdentityStabilities.Preserved
-                });
-            }
+                SourceId = attachment.SourceAttachmentId,
+                SourceKind = "attachment",
+                TargetId = attachment.TargetAttachmentRef!,
+                TargetKind = "attachment",
+                TargetName = attachment.SourceAttachmentId,
+                Action = "publish",
+                IdentityStability = MigrationManifestIdentityStabilities.Preserved
+            });
         }
 
-        foreach (var relationship in targetResource.Relationships)
+        foreach (var relationship in targetResource.Relationships.Where(r => !string.IsNullOrWhiteSpace(r.TargetRelationshipRef)))
         {
-            if (!string.IsNullOrWhiteSpace(relationship.TargetRelationshipRef))
+            remaps.Add(new MigrationManifestIdentityRemap
             {
-                remaps.Add(new MigrationManifestIdentityRemap
-                {
-                    SourceId = relationship.SourceRelationshipId,
-                    SourceKind = "relationship",
-                    TargetId = relationship.TargetRelationshipRef!,
-                    TargetKind = "relationship",
-                    TargetName = relationship.SourceRelationshipId,
-                    Action = "publish",
-                    IdentityStability = MigrationManifestIdentityStabilities.Preserved
-                });
-            }
+                SourceId = relationship.SourceRelationshipId,
+                SourceKind = "relationship",
+                TargetId = relationship.TargetRelationshipRef!,
+                TargetKind = "relationship",
+                TargetName = relationship.SourceRelationshipId,
+                Action = "publish",
+                IdentityStability = MigrationManifestIdentityStabilities.Preserved
+            });
         }
 
         return new MigrationManifestArtifact

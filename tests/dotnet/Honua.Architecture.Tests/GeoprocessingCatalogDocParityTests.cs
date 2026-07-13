@@ -80,7 +80,7 @@ public sealed class GeoprocessingCatalogDocParityTests
 
     private static string ReadDoc()
     {
-        var docPath = Path.Combine(
+        var docPath = ArchitectureTestHelpers.CombinePath(
             ArchitectureTestHelpers.ResolveRepositoryRoot(),
             DocRelativePath.Replace('/', Path.DirectorySeparatorChar));
 

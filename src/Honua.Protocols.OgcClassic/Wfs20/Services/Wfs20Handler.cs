@@ -1138,12 +1138,10 @@ internal sealed partial class Wfs20Handler
         {
             geometryRequested |= HasGeometry(plan.Descriptor.Resource);
 
-            foreach (var field in GetProjectedAttributeFields(plan.Descriptor.Resource, plan.Query))
+            foreach (var field in GetProjectedAttributeFields(plan.Descriptor.Resource, plan.Query)
+                .Where(field => !attributeHeaders.Contains(field.Name, StringComparer.OrdinalIgnoreCase)))
             {
-                if (!attributeHeaders.Contains(field.Name, StringComparer.OrdinalIgnoreCase))
-                {
-                    attributeHeaders.Add(field.Name);
-                }
+                attributeHeaders.Add(field.Name);
             }
 
             // The CSV geometry column is GeoJSON, which is always longitude,latitude

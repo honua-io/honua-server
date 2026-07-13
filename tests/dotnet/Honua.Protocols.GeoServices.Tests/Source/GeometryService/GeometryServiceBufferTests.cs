@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -41,7 +42,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "true"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -75,7 +76,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "true"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -108,7 +109,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "false"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
         response.Be200Ok();
@@ -121,14 +122,9 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
         result!.Geometries.Should().HaveCount(1);
 
         var ring = result.Geometries![0].GetProperty("rings")[0];
-        var minX = double.PositiveInfinity;
-        var maxX = double.NegativeInfinity;
-        foreach (var point in ring.EnumerateArray())
-        {
-            var x = point[0].GetDouble();
-            minX = Math.Min(minX, x);
-            maxX = Math.Max(maxX, x);
-        }
+        var xValues = ring.EnumerateArray().Select(point => point[0].GetDouble()).ToList();
+        var minX = xValues.Min();
+        var maxX = xValues.Max();
 
         var widthDegrees = maxX - minX;
         widthDegrees.Should().BeGreaterThan(0.001);
@@ -156,7 +152,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "true"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -191,7 +187,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "true"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -226,7 +222,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "true"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -255,7 +251,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "distances": "100"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -278,7 +274,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "distances": "100"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -310,7 +306,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "inSR": "4326"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 
@@ -336,9 +332,10 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             unit = "esriMeters"
         });
 
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/buffer",
-            new StringContent(requestBody, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
 
@@ -367,9 +364,10 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             unit = "esriMeters"
         });
 
+        using var requestContent = new StringContent(requestBody, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/buffer",
-            new StringContent(requestBody, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
 
@@ -426,7 +424,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             "geodesic": "true"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/buffer", content);
 

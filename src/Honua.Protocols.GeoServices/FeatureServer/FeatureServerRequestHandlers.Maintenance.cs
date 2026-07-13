@@ -1121,14 +1121,7 @@ internal static partial class FeatureServerEndpoints
         // clients send the canonical enum (esriSQLTypeWhere/OrderBy/Expression), so map those
         // to the short forms while still accepting the short forms directly (#1858).
         var sqlType = GetValueString(values, "sqlType");
-        if (string.IsNullOrWhiteSpace(sqlType))
-        {
-            sqlType = "where";
-        }
-        else
-        {
-            sqlType = NormalizeServiceSqlType(sqlType);
-        }
+        sqlType = string.IsNullOrWhiteSpace(sqlType) ? "where" : NormalizeServiceSqlType(sqlType);
 
         if (!IsSupportedServiceSqlType(sqlType))
         {

@@ -192,15 +192,16 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
         try
         {
             // Try to get the circuit breaker state from the cached policy
-            var policy = HttpResiliencePolicies.GetHttpPolicy(_serviceType);
+            HttpResiliencePolicies.GetHttpPolicy(_serviceType);
 
             // This is a simplified approach - in a full implementation,
             // we might need to track circuit breaker state more explicitly
             return null; // Circuit breaker state introspection is complex with Polly
         }
-        catch
+        catch (Exception ex)
         {
             // If we can't determine circuit breaker state, continue with health check
+            HttpClientHealthCheckLog.CircuitBreakerStateCheckFailed(_logger, _serviceType, ex);
             return null;
         }
     }

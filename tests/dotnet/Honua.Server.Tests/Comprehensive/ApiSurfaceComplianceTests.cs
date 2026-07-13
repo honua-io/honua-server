@@ -254,7 +254,8 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK, description);
 
             var actualContentType = response.Content.Headers.ContentType?.MediaType;
-            actualContentType.Should().StartWith(expectedContentType, description);
+            actualContentType.Should().NotBeNull(description);
+            actualContentType!.Should().StartWith(expectedContentType, description);
 
             _output.WriteLine($"{description}: {actualContentType} (expected {expectedContentType})");
         }

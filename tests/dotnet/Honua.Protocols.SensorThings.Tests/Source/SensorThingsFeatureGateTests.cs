@@ -63,9 +63,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public async Task StaObservationsPost_WhenFeatureDisabled_Returns404()
     {
-        var response = await _fixture.Client.PostAsync(
-            "/sta/v1.1/Observations",
-            new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "SensorThings ingest routes must not be registered when Experimental:Features:SensorThings is false");
@@ -77,9 +76,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public async Task StaDatastreamsPost_WhenFeatureDisabled_Returns404()
     {
-        var response = await _fixture.Client.PostAsync(
-            "/sta/v1.1/Datastreams",
-            new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/sta/v1.1/Datastreams", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "SensorThings datastream creation routes must not be registered when Experimental:Features:SensorThings is false");

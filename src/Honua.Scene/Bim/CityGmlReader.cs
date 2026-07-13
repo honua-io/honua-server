@@ -293,12 +293,10 @@ public static class CityGmlReader
         // Collect boundary surfaces owned by THIS building only — stop the walk
         // at any nested Building/BuildingPart so a part's surfaces are not
         // double-counted (the descendant pass over the document handles parts).
-        foreach (var surfaceElement in DescendantsUntilNestedBuilding(element))
+        foreach (var surfaceElement in DescendantsUntilNestedBuilding(element)
+                     .Where(e => IsBoundarySurfaceType(e.Name.LocalName)))
         {
-            if (IsBoundarySurfaceType(surfaceElement.Name.LocalName))
-            {
-                ReadBoundarySurface(surfaceElement, surfaces);
-            }
+            ReadBoundarySurface(surfaceElement, surfaces);
         }
 
         if (surfaces.Count == 0)
@@ -356,13 +354,11 @@ public static class CityGmlReader
         var baseId = GmlId(element) ?? $"{surfaceType}-{sink.Count}";
 
         var attributes = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var child in element.Elements())
+        foreach (var child in element.Elements()
+                     .Where(c => c.Name.LocalName is "stringAttribute" or "intAttribute"
+                         or "doubleAttribute" or "genericAttribute"))
         {
-            if (child.Name.LocalName is "stringAttribute" or "intAttribute"
-                or "doubleAttribute" or "genericAttribute")
-            {
-                ReadGenericAttribute(child, attributes);
-            }
+            ReadGenericAttribute(child, attributes);
         }
 
         // Each exterior LinearRing under the surface becomes one BSL component

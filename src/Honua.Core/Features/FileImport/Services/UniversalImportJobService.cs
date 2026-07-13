@@ -299,6 +299,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
+        // Intentional broad catch: ProcessJobAsync runs fire-and-forget with no caller to
+        // observe a thrown exception, so any import-provider failure must be caught here,
+        // logged, and recorded on the job's progress rather than becoming an unobserved task
+        // exception.
         catch (Exception ex)
         {
             activity?.SetTag("honua.import.outcome", "failed");
@@ -306,7 +310,6 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "failed";
-                errorMessage = "Import failed.";
                 if (progressWriter != null)
                 {
                     await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
@@ -342,8 +345,11 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }
 
             TryDeleteTempFile(tempFilePath);
-            _cancellationTokens.TryRemove(jobId, out var cts);
-            cts?.Dispose();
+            if (_cancellationTokens.TryRemove(jobId, out var cts))
+            {
+                using var _ = cts;
+            }
+
             _jobs.TryRemove(jobId, out _);
         }
     }
@@ -400,6 +406,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 await _progressStore.SetProgressAsync(jobId, failed, TimeSpan.FromDays(1), CancellationToken.None);
             }
         }
+        // Intentional broad catch: this is the best-effort helper described above — failures
+        // are logged and swallowed by design, never rethrown to the caller.
         catch (Exception ex)
         {
             UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
@@ -608,6 +616,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     TimeSpan.FromDays(1),
                     CancellationToken.None).ConfigureAwait(false);
             }
+            // Intentional broad catch: this backs the serialized progress-writer chain (see
+            // StoreAfterPreviousAsync above) — a progress-store fault must be logged and
+            // swallowed here so it cannot break the chain or surface as an unobserved task
+            // exception on a fire-and-forget progress update.
             catch (Exception ex)
             {
                 UniversalImportJobLog.ProgressUpdateFailed(_logger, _jobId, ex);
@@ -624,9 +636,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 File.Delete(tempFilePath);
             }
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Best-effort cleanup; ignore failures
+            // Best-effort cleanup; ignore failures (e.g. file locked/in use, already removed,
+            // or the process lacks delete permission on the temp path).
         }
     }
 }

@@ -10,7 +10,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 
 public sealed class GpWorkflowSourceTests : IDisposable
 {
-    private readonly string _fixtureRoot = Path.Combine(
+    private readonly string _fixtureRoot = Path.Join(
         Path.GetTempPath(),
         "gp-publish-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -103,9 +103,9 @@ public sealed class GpWorkflowSourceTests : IDisposable
     [Fact]
     public void Resolve_WorkflowFixture_IsPublishable()
     {
-        Directory.CreateDirectory(Path.Combine(_fixtureRoot, "my-flow"));
+        Directory.CreateDirectory(Path.Join(_fixtureRoot, "my-flow"));
         File.WriteAllText(
-            Path.Combine(_fixtureRoot, "my-flow", "workflow.json"),
+            Path.Join(_fixtureRoot, "my-flow", "workflow.json"),
             """{"schemaVersion":"workflow-package.v1","nodes":[{"nodeId":"n1","nodeTypeId":"process:geometry.buffer"}]}""");
 
         var source = CreateSource("geometry.buffer");
@@ -120,7 +120,7 @@ public sealed class GpWorkflowSourceTests : IDisposable
     [Fact]
     public void Resolve_ExplicitFile_OverridesFixtureAndProcess()
     {
-        var path = Path.Combine(_fixtureRoot, "explicit.json");
+        var path = Path.Join(_fixtureRoot, "explicit.json");
         Directory.CreateDirectory(_fixtureRoot);
         File.WriteAllText(
             path,
@@ -154,6 +154,6 @@ public sealed class GpWorkflowSourceTests : IDisposable
         var source = CreateSource("geometry.buffer");
 
         Assert.Throws<GpCliUsageException>(() =>
-            source.Resolve("x", filePath: Path.Combine(_fixtureRoot, "nope.json"), asProcessNode: false, name: null, _fixtureRoot));
+            source.Resolve("x", filePath: Path.Join(_fixtureRoot, "nope.json"), asProcessNode: false, name: null, _fixtureRoot));
     }
 }

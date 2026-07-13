@@ -38,7 +38,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "outSR": "3857"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -72,7 +72,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "outSR": "4326"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -105,7 +105,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "outSR": "4326"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -131,7 +131,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "outSR": "3857"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -192,7 +192,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "outSR": {"latestWkid": 3857}
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -225,7 +225,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "datumTransformation": 108001
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -263,7 +263,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "datumTransformation": 108001
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -286,7 +286,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "datumTransformation": "not-a-wkid"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
@@ -308,7 +308,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
             "outSR": {"name": "EPSG:3857"}
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
 

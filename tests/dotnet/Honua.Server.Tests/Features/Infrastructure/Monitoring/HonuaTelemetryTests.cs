@@ -27,7 +27,7 @@ public sealed class HonuaTelemetryTests
     [Operation(Operations.TestInfrastructure)]
     public void RecordException_WhenDetailsDisabled_OmitsMessageAndStackTrace()
     {
-        var activity = new Activity("telemetry-test").Start();
+        using var activity = new Activity("telemetry-test").Start();
 
         try
         {
@@ -45,7 +45,6 @@ public sealed class HonuaTelemetryTests
         }
         finally
         {
-            activity.Dispose();
             HonuaTelemetry.ConfigureExceptionRecording(exportDetails: false, includeStackTraces: false);
         }
     }
@@ -54,7 +53,7 @@ public sealed class HonuaTelemetryTests
     [Operation(Operations.TestInfrastructure)]
     public void RecordException_WhenDetailsEnabled_SanitizesExportedMessage()
     {
-        var activity = new Activity("telemetry-test").Start();
+        using var activity = new Activity("telemetry-test").Start();
 
         try
         {
@@ -75,7 +74,6 @@ public sealed class HonuaTelemetryTests
         }
         finally
         {
-            activity.Dispose();
             HonuaTelemetry.ConfigureExceptionRecording(exportDetails: false, includeStackTraces: false);
         }
     }
@@ -86,6 +84,9 @@ public sealed class HonuaTelemetryTests
         {
             throw new InvalidOperationException(message);
         }
+        // Intentional: this helper's sole purpose is to hand back a real thrown exception
+        // (with a populated stack trace) for the recorder under test; it must catch whatever
+        // type is thrown, not swallow it.
         catch (Exception ex)
         {
             return ex;
@@ -94,12 +95,9 @@ public sealed class HonuaTelemetryTests
 
     private static string? GetEventTag(ActivityEvent activityEvent, string tagName)
     {
-        foreach (var tag in activityEvent.Tags)
+        foreach (var tag in activityEvent.Tags.Where(t => string.Equals(t.Key, tagName, StringComparison.Ordinal)))
         {
-            if (string.Equals(tag.Key, tagName, StringComparison.Ordinal))
-            {
-                return tag.Value?.ToString();
-            }
+            return tag.Value?.ToString();
         }
 
         return null;

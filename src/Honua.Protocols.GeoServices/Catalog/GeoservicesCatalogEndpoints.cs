@@ -95,14 +95,10 @@ internal static class GeoservicesCatalogEndpoints
 
             // Project publications -> resources, filtering by access.
             var visibleResources = new List<MetadataV2Resource>();
-            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
+            foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
+                .Select(snapshot.ResolveResource)
+                .OfType<MetadataV2Resource>())
             {
-                var resource = snapshot.ResolveResource(publication);
-                if (resource is null)
-                {
-                    continue;
-                }
-
                 if (AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
                 {
                     visibleResources.Add(resource);
@@ -173,18 +169,15 @@ internal static class GeoservicesCatalogEndpoints
                     }
                     catch (Exception ex)
                     {
+                        // Intentional catch-all: one service's raster-store probe failing must not
+                        // abort the whole concurrent Parallel.ForEachAsync batch or the directory
+                        // response; the failure is logged and the entry is simply omitted.
                         GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, svc.Metadata.Name, ex);
                     }
                 }).ConfigureAwait(false);
 
             // Merge ImageServer entries back; re-sort by name to restore alphabetical order.
-            foreach (var entry in imageServerEntries)
-            {
-                if (entry is not null)
-                {
-                    entries.Add(entry);
-                }
-            }
+            entries.AddRange(imageServerEntries.OfType<ServiceDirectoryEntry>());
 
             entries.Sort(static (a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
         }
@@ -248,6 +241,9 @@ internal static class GeoservicesCatalogEndpoints
     /// </summary>
     private static List<string> MapEsriDirectoryTypes(MetadataV2Service service)
     {
+        // Not rewritten as .Where/.Select: TryMapServiceType uses the Try-pattern (bool + out),
+        // and the loop both filters (unmapped protocols) and de-duplicates while preserving the
+        // service's declared protocol order — a single LINQ expression would be less clear here.
         var types = new List<string>();
         foreach (var protocol in service.Protocols)
         {

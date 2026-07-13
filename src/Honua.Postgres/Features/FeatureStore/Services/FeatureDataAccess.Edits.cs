@@ -441,12 +441,9 @@ internal sealed partial class FeatureDataAccess
         }
 
         var map = new Dictionary<long, string>(editBatch.Preconditions.Length);
-        foreach (var precondition in editBatch.Preconditions)
+        foreach (var precondition in editBatch.Preconditions.Where(p => !string.IsNullOrEmpty(p.ExpectedStateToken)))
         {
-            if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
-            {
-                map[precondition.ObjectId] = precondition.ExpectedStateToken;
-            }
+            map[precondition.ObjectId] = precondition.ExpectedStateToken!;
         }
 
         return map.Count == 0 ? null : map;
@@ -607,6 +604,8 @@ internal sealed partial class FeatureDataAccess
                     }
                     catch (Exception ex)
                     {
+                        // Per-operation failure in an ordered batch: sanitize via GetSafeEditOperationError
+                        // (avoids leaking SQL/provider internals) and let the rest of the batch continue.
                         createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
                         return false;
                     }
@@ -652,6 +651,8 @@ internal sealed partial class FeatureDataAccess
                     }
                     catch (Exception ex)
                     {
+                        // Per-operation failure in an ordered batch: sanitize via GetSafeEditOperationError
+                        // and let the rest of the batch continue.
                         updateResults.Add(EditOperationResult.Failure(
                             GetSafeEditOperationError(ex, "Update"),
                             objectId: feature.Id));
@@ -706,6 +707,8 @@ internal sealed partial class FeatureDataAccess
                     }
                     catch (Exception ex)
                     {
+                        // Per-operation failure in an ordered batch: sanitize via GetSafeEditOperationError
+                        // and let the rest of the batch continue.
                         deleteResults.Add(EditOperationResult.Failure(
                             GetSafeEditOperationError(ex, "Delete"),
                             objectId: objectId));
@@ -1022,6 +1025,8 @@ internal sealed partial class FeatureDataAccess
                     }
                     catch (Exception ex)
                     {
+                        // Per-feature failure in an adaptive batch: sanitize via GetSafeEditOperationError
+                        // and let the remaining features in the batch continue.
                         return (
                             null,
                             EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
@@ -1065,6 +1070,8 @@ internal sealed partial class FeatureDataAccess
             }
             catch (Exception ex)
             {
+                // Per-feature failure in the row-by-row create path: sanitize via
+                // GetSafeEditOperationError and let the rest of the batch continue.
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
             }
         }
@@ -1109,6 +1116,10 @@ internal sealed partial class FeatureDataAccess
         }
         catch (Exception)
         {
+            // Adaptive bisection: on any batch-insert failure, recursively split in half and retry
+            // each half so a single bad row can't fail the whole batch. No logging here by design —
+            // the recursion bottoms out at singleCreateAsync's single-row path, which sanitizes and
+            // reports the actual failing row via GetSafeEditOperationError.
             var midpoint = features.Length / 2;
             var left = Slice(features, 0, midpoint);
             var right = Slice(features, midpoint, features.Length - midpoint);
@@ -1283,6 +1294,8 @@ internal sealed partial class FeatureDataAccess
             }
             catch (Exception ex)
             {
+                // Per-row failure in the batch update path: sanitize via GetSafeEditOperationError
+                // and let the rest of the batch continue.
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             }
         }
@@ -1359,6 +1372,8 @@ internal sealed partial class FeatureDataAccess
             }
             catch (Exception ex)
             {
+                // Per-row failure in the batch delete path: sanitize via GetSafeEditOperationError
+                // and let the rest of the batch continue.
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: featureId));
             }
         }

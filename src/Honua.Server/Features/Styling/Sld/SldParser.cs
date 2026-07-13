@@ -76,15 +76,10 @@ internal static class SldParser
         }
 
         // Heuristic: if the root or any descendant uses the SE namespace, treat as 1.1.
-        foreach (var descendant in root.DescendantsAndSelf())
-        {
-            if (string.Equals(descendant.Name.NamespaceName, SldNamespaces.Se, StringComparison.Ordinal))
-            {
-                return SldVersion.Sld11;
-            }
-        }
+        var usesSeNamespace = root.DescendantsAndSelf()
+            .Any(descendant => string.Equals(descendant.Name.NamespaceName, SldNamespaces.Se, StringComparison.Ordinal));
 
-        return SldVersion.Sld10;
+        return usesSeNamespace ? SldVersion.Sld11 : SldVersion.Sld10;
     }
 
     private static List<SldNamedLayer> ParseRootContents(XElement root, List<SldConversionDiagnostic> diagnostics)
@@ -151,12 +146,9 @@ internal static class SldParser
         var name = ChildLocal(element, "Name")?.Value?.Trim();
         var featureTypeStyles = new List<SldFeatureTypeStyle>();
 
-        foreach (var child in element.Elements())
+        foreach (var child in element.Elements().Where(child => child.Name.LocalName == "FeatureTypeStyle"))
         {
-            if (child.Name.LocalName == "FeatureTypeStyle")
-            {
-                featureTypeStyles.Add(ParseFeatureTypeStyle(child, diagnostics));
-            }
+            featureTypeStyles.Add(ParseFeatureTypeStyle(child, diagnostics));
         }
 
         return new SldUserStyle(name, featureTypeStyles);
@@ -663,15 +655,7 @@ internal static class SldParser
 
     private static XElement? ChildLocal(XElement parent, string localName)
     {
-        foreach (var child in parent.Elements())
-        {
-            if (child.Name.LocalName == localName)
-            {
-                return child;
-            }
-        }
-
-        return null;
+        return parent.Elements().FirstOrDefault(child => child.Name.LocalName == localName);
     }
 
     private static bool IsRemoteUri(string href)
@@ -699,15 +683,12 @@ internal static class SldParser
         // graphic-margin, partials, autoWrap, repeat). They have no portable MapLibre
         // equivalent; record a diagnostic per occurrence so callers see exactly what
         // would have been ignored.
-        foreach (var child in element.Elements())
+        foreach (var child in element.Elements().Where(child => child.Name.LocalName == "VendorOption"))
         {
-            if (child.Name.LocalName == "VendorOption")
-            {
-                diagnostics.Add(Warn(
-                    "VendorOption",
-                    $"{scope} VendorOption '{child.Attribute("name")?.Value}' is not portable to MapLibre and was ignored.",
-                    ruleName));
-            }
+            diagnostics.Add(Warn(
+                "VendorOption",
+                $"{scope} VendorOption '{child.Attribute("name")?.Value}' is not portable to MapLibre and was ignored.",
+                ruleName));
         }
     }
 }

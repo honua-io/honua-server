@@ -219,20 +219,14 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                 throw new InvalidDataException($"Zarr array '{name}' has mismatched shape and chunk rank.");
             }
 
-            foreach (var dim in shape)
+            if (shape.Any(dim => dim <= 0))
             {
-                if (dim <= 0)
-                {
-                    throw new InvalidDataException($"Zarr array '{name}' has non-positive shape entry.");
-                }
+                throw new InvalidDataException($"Zarr array '{name}' has non-positive shape entry.");
             }
 
-            foreach (var chunk in chunks)
+            if (chunks.Any(chunk => chunk <= 0))
             {
-                if (chunk <= 0)
-                {
-                    throw new InvalidDataException($"Zarr array '{name}' has non-positive chunk entry.");
-                }
+                throw new InvalidDataException($"Zarr array '{name}' has non-positive chunk entry.");
             }
 
             var dtype = ReadRequiredString(root, "dtype", name);
@@ -421,19 +415,16 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         {
             throw new InvalidDataException($"Zarr v3 array '{name}' has an empty shape.");
         }
-        foreach (var dim in shape)
+        if (shape.Any(dim => dim <= 0))
         {
-            if (dim <= 0)
-            {
-                throw new InvalidDataException($"Zarr v3 array '{name}' has non-positive shape entry.");
-            }
+            throw new InvalidDataException($"Zarr v3 array '{name}' has non-positive shape entry.");
         }
 
         var chunks = ReadV3ChunkShape(root, shape.Length, name);
 
         var dataType = NormalizeV3DataType(ReadRequiredString(root, "data_type", name), name);
 
-        var (compressor, separatorPrefixed) = ResolveV3Codecs(root, name);
+        var compressor = ResolveV3Codecs(root, name);
 
         object? fillValue = null;
         if (root.TryGetProperty("fill_value", out var fillEl))
@@ -488,12 +479,9 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         {
             throw new InvalidDataException($"Zarr v3 array '{name}' chunk_shape rank does not match shape rank.");
         }
-        foreach (var chunk in chunks)
+        if (chunks.Any(chunk => chunk <= 0))
         {
-            if (chunk <= 0)
-            {
-                throw new InvalidDataException($"Zarr v3 array '{name}' has non-positive chunk entry.");
-            }
+            throw new InvalidDataException($"Zarr v3 array '{name}' has non-positive chunk entry.");
         }
 
         return chunks;
@@ -541,7 +529,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
     /// compatible and maps to the existing zlib decoder; uncompressed arrays return a
     /// null compressor. Rejects blosc, sharding, and other unsupported codecs cleanly.
     /// </summary>
-    private static (string? Compressor, bool _) ResolveV3Codecs(JsonElement root, string name)
+    private static string? ResolveV3Codecs(JsonElement root, string name)
     {
         if (!root.TryGetProperty("codecs", out var codecsEl) || codecsEl.ValueKind != JsonValueKind.Array)
         {
@@ -586,7 +574,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             }
         }
 
-        return (compressor, false);
+        return compressor;
     }
 
     /// <summary>
@@ -772,17 +760,17 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             {
                 srid = crsValue;
             }
-            else if (root.TryGetProperty("crs", out var crsStringEl) && crsStringEl.ValueKind == JsonValueKind.String)
+            else if (root.TryGetProperty("crs", out var crsStringEl) && crsStringEl.ValueKind == JsonValueKind.String &&
+                     TryParseEpsg(crsStringEl.GetString(), out var parsedSrid))
             {
-                if (TryParseEpsg(crsStringEl.GetString(), out var parsedSrid))
-                {
-                    srid = parsedSrid;
-                }
+                srid = parsedSrid;
             }
 
             if (root.TryGetProperty("extent", out var extentEl) && extentEl.ValueKind == JsonValueKind.Array)
             {
                 var coords = new List<double>();
+                // Not a simple filter: TryGetDouble's out-param is the value being collected, so
+                // `.Where(...)` can't express this without duplicating the TryGetDouble call.
                 foreach (var entry in extentEl.EnumerateArray())
                 {
                     if (entry.ValueKind == JsonValueKind.Number && entry.TryGetDouble(out var d))

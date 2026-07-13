@@ -63,6 +63,10 @@ public static class WkbValidation
         }
         catch (Exception)
         {
+            // No logger is wired into this static, dependency-free validation helper (it's called
+            // from many hot request paths across protocols), and a malformed-WKB exception here is
+            // just untrusted client input, not an operational fault: the returned Invalid result is
+            // already the meaningful signal the caller surfaces to the client.
             return WkbValidationResult.Invalid("Invalid WKB format.");
         }
 

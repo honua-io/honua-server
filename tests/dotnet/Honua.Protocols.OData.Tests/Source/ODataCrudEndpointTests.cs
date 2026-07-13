@@ -44,9 +44,10 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -74,9 +75,10 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload, ODataJsonContext.Default.DictionaryStringObject);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/odata/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -94,9 +96,10 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        using var content = new StringContent("""{"Attributes":{"name":"Bad Type"}}""", Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PostAsync(
             $"/odata/Layers({TestLayerId})/Features",
-            new StringContent("""{"Attributes":{"name":"Bad Type"}}""", Encoding.UTF8, "text/plain"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
@@ -117,7 +120,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{existingId})")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{existingId})")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -186,7 +189,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features(LayerId={TestLayerId},ObjectId={existingId})")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features(LayerId={TestLayerId},ObjectId={existingId})")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -219,7 +222,7 @@ public sealed class ODataCrudEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Layers({TestLayerId})/Features({existingId})")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Layers({TestLayerId})/Features({existingId})")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };

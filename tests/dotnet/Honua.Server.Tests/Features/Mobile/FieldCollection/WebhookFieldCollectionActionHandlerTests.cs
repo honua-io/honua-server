@@ -55,8 +55,9 @@ public sealed class WebhookFieldCollectionActionHandlerTests
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CapturingHandler();
+        using var httpClient = new HttpClient(handler);
         httpClientFactory.CreateClient(WebhookFieldCollectionActionHandler.HttpClientName)
-            .Returns(new HttpClient(handler));
+            .Returns(httpClient);
 
         var sut = new WebhookFieldCollectionActionHandler(httpClientFactory);
 
@@ -128,8 +129,9 @@ public sealed class WebhookFieldCollectionActionHandlerTests
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new StatusHandler(HttpStatusCode.InternalServerError);
+        using var httpClient = new HttpClient(handler);
         httpClientFactory.CreateClient(WebhookFieldCollectionActionHandler.HttpClientName)
-            .Returns(new HttpClient(handler));
+            .Returns(httpClient);
 
         var sut = new WebhookFieldCollectionActionHandler(httpClientFactory);
         var result = await sut.ExecuteAsync(CreateInvocation());
@@ -185,6 +187,8 @@ public sealed class WebhookFieldCollectionActionHandlerTests
 
         public StatusHandler(HttpStatusCode status) => _status = status;
 
+        // Ownership of the HttpResponseMessage transfers to the caller (HttpClient/handler chain);
+        // it cannot be disposed here since it must be returned intact.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(_status));
     }

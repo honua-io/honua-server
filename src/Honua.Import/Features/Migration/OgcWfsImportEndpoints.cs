@@ -22,7 +22,7 @@ namespace Honua.Migration;
 /// <summary>
 /// Admin endpoints for OGC Web Feature Service (WFS) data import.
 /// </summary>
-internal static class OgcWfsImportEndpoints
+internal static partial class OgcWfsImportEndpoints
 {
     /// <summary>
     /// Maps WFS data import endpoints.
@@ -55,8 +55,9 @@ internal static class OgcWfsImportEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -161,6 +162,18 @@ internal static class OgcWfsImportEndpoints
         }
 
         await Results.Json(result, OgcWfsImportJsonContext.Default.OgcWfsImportResult).ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private static ILogger<OgcWfsImportEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<OgcWfsImportEndpointsLog>>();
+
+    /// <summary>Log category marker for OGC WFS import endpoint operations.</summary>
+    internal sealed class OgcWfsImportEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8100, LogLevel.Warning, "Failed to deserialize WFS import request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
     }
 }
 

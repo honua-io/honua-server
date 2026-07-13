@@ -194,7 +194,12 @@ public static class LoadTestScenarios
             {
                 var templateIndex = (int)(context.InvocationNumber % _odataQueryTemplates.Length);
                 var template = _odataQueryTemplates[templateIndex];
-                var endpoint = string.Format(CultureInfo.InvariantCulture, template, layerId);
+                // Not every template has a `{0}` placeholder (e.g. the Layers-collection
+                // template doesn't need layerId) - only format when the template actually
+                // has one, so the supplied argument is never silently ignored.
+                var endpoint = template.Contains("{0}", StringComparison.Ordinal)
+                    ? string.Format(CultureInfo.InvariantCulture, template, layerId)
+                    : template;
                 var response = await httpClient.GetAsync($"{baseUrl}{endpoint}");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();

@@ -224,12 +224,9 @@ internal sealed partial class PortalTokenIssuer(
             claims.Add(new Claim(TenantClaimType, record.TenantId!));
         }
 
-        foreach (var role in record.Roles)
+        foreach (var role in record.Roles.Where(role => !string.IsNullOrWhiteSpace(role)))
         {
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                claims.Add(new Claim(ClaimTypes.Role, role));
-            }
+            claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
         var identity = new ClaimsIdentity(
@@ -300,7 +297,7 @@ internal sealed partial class PortalTokenIssuer(
             catch (Exception ex)
             {
                 PortalTokenLog.DistributedCacheReadFailed(_logger, LogValueRedactor.Hash(key), ex);
-                // Distributed cache is unreachable; fall back to the in-process memory tier
+                // Intentional: distributed cache is unreachable; fall back to the in-process memory tier
                 // if a valid entry is present.  The memory entry was written atomically with
                 // the distributed entry at issuance time, so it remains consistent for its
                 // original TTL.  Evicting it would extend the auth outage beyond the Redis
@@ -349,6 +346,8 @@ internal sealed partial class PortalTokenIssuer(
         }
         catch (Exception ex)
         {
+            // Intentional: removal is best-effort; the entry's own TTL is the safety net,
+            // and the failure is already logged for diagnosis.
             PortalTokenLog.DistributedCacheRemoveFailed(_logger, LogValueRedactor.Hash(key), ex);
         }
     }

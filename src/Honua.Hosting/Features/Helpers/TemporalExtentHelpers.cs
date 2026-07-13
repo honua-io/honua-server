@@ -73,12 +73,10 @@ internal static class TemporalExtentHelpers
         }
 
         string? endName = null;
-        if (!string.IsNullOrWhiteSpace(fields.EndTimeField))
+        if (!string.IsNullOrWhiteSpace(fields.EndTimeField) &&
+            !TryFindSchemaTemporalField(resource, fields.EndTimeField, out endName))
         {
-            if (!TryFindSchemaTemporalField(resource, fields.EndTimeField, out endName))
-            {
-                return false;
-            }
+            return false;
         }
 
         selection = new MetadataV2TemporalFieldSelection(startName!, endName);
@@ -87,19 +85,14 @@ internal static class TemporalExtentHelpers
 
     private static bool TryFindSchemaTemporalField(MetadataV2Resource resource, string fieldName, out string? resolvedName)
     {
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.SchemaFields.Where(field =>
+            string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase) &&
+            field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time))
         {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                if (field.Type is MetadataV2FieldType.Date
-                    or MetadataV2FieldType.DateTime
-                    or MetadataV2FieldType.Time)
-                {
-                    resolvedName = field.Name;
-                    return true;
-                }
-            }
+            resolvedName = field.Name;
+            return true;
         }
+
         resolvedName = null;
         return false;
     }
@@ -163,15 +156,9 @@ internal static class TemporalExtentHelpers
         }
 
         var min = startExtent?.Start;
-        DateTimeOffset? max;
-        if (string.IsNullOrWhiteSpace(fields.EndTimeField))
-        {
-            max = startExtent?.End;
-        }
-        else
-        {
-            max = endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
-        }
+        DateTimeOffset? max = string.IsNullOrWhiteSpace(fields.EndTimeField)
+            ? startExtent?.End
+            : endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
 
         var hasExtent = startExtent != null || endExtent != null;
         return new MetadataV2TemporalRange(
@@ -184,16 +171,14 @@ internal static class TemporalExtentHelpers
 
     private static TemporalPropertyType ResolveSchemaPropertyType(MetadataV2Resource resource, string fieldName)
     {
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.SchemaFields.Where(field =>
+            string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            return field.Type switch
             {
-                return field.Type switch
-                {
-                    MetadataV2FieldType.Date => TemporalPropertyType.Date,
-                    _ => TemporalPropertyType.DateTime,
-                };
-            }
+                MetadataV2FieldType.Date => TemporalPropertyType.Date,
+                _ => TemporalPropertyType.DateTime,
+            };
         }
         return TemporalPropertyType.DateTime;
     }

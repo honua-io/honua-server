@@ -429,7 +429,11 @@ internal sealed class PortalOAuthTokenService(
             }
             catch
             {
-                // Swallow restore failures; the original exception propagates below.
+                // Intentional: this is a best-effort restore of the just-consumed refresh
+                // token (BH2-024) so the client can retry; if the store is also unavailable
+                // there is nothing actionable to do here, and the original IssueAsync
+                // failure below (via `throw;`) is the real error signal that propagates to
+                // the caller/telemetry, so a secondary log line here would be redundant.
             }
             throw;
         }

@@ -52,9 +52,10 @@ public sealed class FeatureServerEditingEditionGateTests : IAsyncLifetime
         };
         var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
 
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(402);
         var responseBody = await response.Content.ReadAsStringAsync();

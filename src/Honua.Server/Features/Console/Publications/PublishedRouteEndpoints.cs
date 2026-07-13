@@ -218,16 +218,9 @@ internal static class PublishedRouteEndpoints
             return false;
         }
 
-        foreach (var allowedOrigin in allowedOrigins)
-        {
-            if (TryNormalizeOrigin(allowedOrigin, out var normalizedAllowed)
-                && string.Equals(normalizedAllowed, requestOrigin, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return allowedOrigins.Any(allowedOrigin =>
+            TryNormalizeOrigin(allowedOrigin, out var normalizedAllowed)
+            && string.Equals(normalizedAllowed, requestOrigin, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryResolveRequestOrigin(HttpRequest request, out string? origin)

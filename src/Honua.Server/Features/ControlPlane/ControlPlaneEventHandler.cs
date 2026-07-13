@@ -204,15 +204,9 @@ internal sealed partial class ControlPlaneEventHandler(
         CancellationToken cancellationToken)
     {
         var active = await jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken).ConfigureAwait(false);
-        foreach (var job in active)
-        {
-            if (string.Equals(job.ProviderOperationId, providerOperationId, StringComparison.Ordinal))
-            {
-                return job.OperationId;
-            }
-        }
-
-        return null;
+        return active
+            .FirstOrDefault(job => string.Equals(job.ProviderOperationId, providerOperationId, StringComparison.Ordinal))
+            ?.OperationId;
     }
 
     private async Task<string?> ResolveWorkflowOperationIdAsync(
@@ -221,15 +215,9 @@ internal sealed partial class ControlPlaneEventHandler(
         CancellationToken cancellationToken)
     {
         var active = await workflowStore.ListActiveAsync(kind, cancellationToken).ConfigureAwait(false);
-        foreach (var operation in active)
-        {
-            if (string.Equals(operation.ProviderOperationId, providerOperationId, StringComparison.Ordinal))
-            {
-                return operation.OperationId;
-            }
-        }
-
-        return null;
+        return active
+            .FirstOrDefault(operation => string.Equals(operation.ProviderOperationId, providerOperationId, StringComparison.Ordinal))
+            ?.OperationId;
     }
 
     private static partial class Log

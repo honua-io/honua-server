@@ -123,22 +123,12 @@ internal static class GeoservicesServiceUrlValidation
             return false;
         }
 
-        foreach (var suffix in allowedSuffixes)
-        {
-            var normalizedSuffix = NormalizeHostAllowlistToken(suffix);
-            if (normalizedSuffix.Length == 0)
-            {
-                continue;
-            }
-
-            if (normalizedHost == normalizedSuffix ||
-                normalizedHost.EndsWith("." + normalizedSuffix, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return allowedSuffixes
+            .Select(NormalizeHostAllowlistToken)
+            .Where(normalizedSuffix => normalizedSuffix.Length > 0)
+            .Any(normalizedSuffix =>
+                normalizedHost == normalizedSuffix ||
+                normalizedHost.EndsWith("." + normalizedSuffix, StringComparison.Ordinal));
     }
 
     private static string NormalizeHostAllowlistToken(string? value)

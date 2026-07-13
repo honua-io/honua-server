@@ -276,15 +276,7 @@ public static class WorkflowDefinitionValidator
         var unvisited = new HashSet<string>(lookup.Keys, StringComparer.Ordinal);
         var active = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var step in steps)
-        {
-            if (unvisited.Contains(step.StepId) && Visit(step.StepId, lookup, unvisited, active))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return steps.Any(step => unvisited.Contains(step.StepId) && Visit(step.StepId, lookup, unvisited, active));
     }
 
     private static bool Visit(

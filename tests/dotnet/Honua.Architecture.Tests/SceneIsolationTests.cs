@@ -32,7 +32,7 @@ public sealed class SceneIsolationTests
     public void HonuaSceneCsproj_ShouldNotReference_HonuaServer()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var sceneCsproj = Path.Combine(
+        var sceneCsproj = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
             "Honua.Scene",

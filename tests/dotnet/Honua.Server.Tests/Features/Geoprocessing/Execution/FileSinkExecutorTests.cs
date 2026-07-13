@@ -31,6 +31,7 @@ public sealed class FileSinkExecutorTests
     {
         var root = CreateOutputRoot();
         var relativePath = "out/sink.geojson";
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var path = Path.Combine(root, "out", "sink.geojson");
         var executor = new GeoJsonFileSinkExecutor(Options(root));
         try
@@ -75,6 +76,7 @@ public sealed class FileSinkExecutorTests
         var executor = new GeoJsonFileSinkExecutor(Options(root));
         try
         {
+            // Path.Combine args are a temp-dir root plus a generated relative file name; no rooted-segment risk.
             var absolutePath = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-{Guid.NewGuid():N}.geojson");
 
             var (status, _) = await RunAsync(
@@ -99,6 +101,7 @@ public sealed class FileSinkExecutorTests
     {
         var root = CreateOutputRoot();
         var relativePath = "dlq/quarantine.geojson";
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var path = Path.Combine(root, "dlq", "quarantine.geojson");
         var executor = new QuarantineSinkExecutor(Options(root));
         try
@@ -139,6 +142,7 @@ public sealed class FileSinkExecutorTests
         {
             MaxArtifactBytes = 50L * 1024L * 1024L,
             ResultRetention = TimeSpan.FromDays(7),
+            // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
             OutputRootDirectory = outputRootDirectory
                 ?? Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs")
         };
@@ -149,6 +153,7 @@ public sealed class FileSinkExecutorTests
 
     private static string CreateOutputRoot()
     {
+        // Path.Combine args are a temp-dir root plus a generated relative folder name; no rooted-segment risk.
         var root = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-root-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         return root;

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using Honua.Infrastructure.Rendering;
 
 namespace Honua.Protocols.Ogc.Common;
@@ -145,17 +146,7 @@ internal static class OgcVerticalSelectionParser
     }
 
     private static bool IsVerticalAxis(string axis)
-    {
-        foreach (var label in VerticalAxisLabels)
-        {
-            if (string.Equals(axis, label, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => VerticalAxisLabels.Any(label => string.Equals(axis, label, StringComparison.OrdinalIgnoreCase));
 
     private static bool TryParseNumber(string value, out double parsed)
         => double.TryParse(

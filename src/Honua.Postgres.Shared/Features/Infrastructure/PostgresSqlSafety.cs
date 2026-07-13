@@ -92,6 +92,9 @@ internal static class PostgresSqlSafety
 
     private static string GetFirstToken(string sql)
     {
+        // Not rewritten as .Where(...).FirstOrDefault(): this needs to throw when no Word token
+        // exists, and SqlToken is a struct where a default() sentinel would be ambiguous with a
+        // genuine empty-value token.
         foreach (var token in EnumerateSqlTokensOutsideQuotes(sql))
         {
             if (token.Kind == SqlTokenKind.Word)

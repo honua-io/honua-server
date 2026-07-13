@@ -160,25 +160,19 @@ internal static class TerrainEndpoints
         string datasetId,
         CancellationToken cancellationToken)
     {
-        LayerValidationHelpers.MetadataV2ValidationResult validation;
-        if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-        {
-            validation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+        var validation = int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
+            ? await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 AccessScope.Read,
                 TerrainProtocolName,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                cancellationToken).ConfigureAwait(false)
+            : await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 datasetId,
                 AccessScope.Read,
                 TerrainProtocolName,
                 cancellationToken).ConfigureAwait(false);
-        }
 
         if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
         {

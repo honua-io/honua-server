@@ -145,7 +145,8 @@ public sealed class Wfs20StoredQueryScopeTests
         result.ExecuteAsync(httpContext).GetAwaiter().GetResult();
 
         httpContext.Response.Body.Position = 0;
-        var body = new System.IO.StreamReader(httpContext.Response.Body, Encoding.UTF8).ReadToEnd();
+        using var reader = new System.IO.StreamReader(httpContext.Response.Body, Encoding.UTF8);
+        var body = reader.ReadToEnd();
         body.Should().Contain(expectedContains,
             because ?? $"response body must contain '{expectedContains}'");
     }

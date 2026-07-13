@@ -64,6 +64,11 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "bbox")] string? bbox = null,
         CancellationToken cancellationToken = default)
     {
+        // Not converted to a `using` declaration: featureActivity is intentionally created
+        // partway through the try block (only once layer validation resolves the effective
+        // layer id), and both the catch blocks (RecordException) and the finally need to
+        // observe whatever value it holds - including null if validation short-circuited
+        // before the activity was started.
         Activity? featureActivity = null;
         try
         {
@@ -590,6 +595,9 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error (or an abort
+        // if streaming already started).
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
@@ -639,6 +647,12 @@ internal sealed partial class ODataStreamingQueryHandler(
         IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
+        // deltaState is only meaningfully used below when trackChangesRequested/deltatoken
+        // paging is active, but the parameter itself is always non-null (callers pass the
+        // resolved-or-default delta state unconditionally). Guard once, up front, instead of
+        // repeating an inline "?? throw" at each access site further down.
+        ArgumentNullException.ThrowIfNull(deltaState);
+
         using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
@@ -706,7 +720,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
                 ? ODataUtilityService.GenerateDeltaNextLink(
                     context.Request,
-                    deltaState ?? throw new InvalidOperationException("Delta state is required for delta paging."),
+                    deltaState,
                     nextSkip,
                     pagination.Limit,
                     useSkipToken,
@@ -841,12 +855,10 @@ internal sealed partial class ODataStreamingQueryHandler(
                     continue;
                 }
 
-                if (select == null || select.Contains(kvp.Key))
+                if ((select == null || select.Contains(kvp.Key)) &&
+                    (writtenProperties == null || writtenProperties.Add(kvp.Key)))
                 {
-                    if (writtenProperties == null || writtenProperties.Add(kvp.Key))
-                    {
-                        await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
-                    }
+                    await WriteODataJsonValueAsync(writer, kvp.Key, kvp.Value, cancellationToken);
                 }
             }
         }
@@ -859,7 +871,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             };
         }
 
-        if (requiresCompute && computeSource != null)
+        // computeSource is only ever assigned (in the branches above) when requiresCompute is
+        // true, so a non-null computeSource already implies requiresCompute; the redundant
+        // conjunct has been dropped.
+        if (computeSource != null)
         {
             ODataComputeService.ApplyCompute(computeSource, computeExpressions);
             foreach (var expression in computeExpressions)
@@ -957,6 +972,11 @@ internal sealed partial class ODataStreamingQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
+        // Not converted to a `using` declaration: featureActivity is intentionally created
+        // partway through the try block (only once layer validation resolves the effective
+        // layer id), and both the catch blocks (RecordException) and the finally need to
+        // observe whatever value it holds - including null if validation short-circuited
+        // before the activity was started.
         Activity? featureActivity = null;
         try
         {
@@ -1056,6 +1076,8 @@ internal sealed partial class ODataStreamingQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
@@ -1069,7 +1091,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
     }
 
-    private static bool TryResolveLayerIdFromFilter(string? filter, out (int LayerId, string? ErrorMessage) result)
+    private bool TryResolveLayerIdFromFilter(string? filter, out (int LayerId, string? ErrorMessage) result)
     {
         result = default;
         if (string.IsNullOrWhiteSpace(filter))
@@ -1092,8 +1114,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             result = (layerIds.First(), null);
             return true;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.LayerIdFilterResolutionFailed(_logger, filter, ex);
             result = (0, InvalidLayerIdFilterMessage);
             return false;
         }
@@ -1211,5 +1234,8 @@ internal sealed partial class ODataStreamingQueryHandler(
 
         [LoggerMessage(EventId = 3021, Level = LogLevel.Error, Message = "OData streaming features query failed for layer {LayerId}.")]
         public static partial void FeaturesQueryFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(EventId = 3024, Level = LogLevel.Debug, Message = "Failed to resolve a single LayerId from OData $filter expression '{Filter}'.")]
+        public static partial void LayerIdFilterResolutionFailed(ILogger logger, string filter, Exception exception);
     }
 }

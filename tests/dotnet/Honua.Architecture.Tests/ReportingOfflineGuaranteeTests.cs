@@ -51,7 +51,7 @@ public sealed class ReportingOfflineGuaranteeTests
     [ArchitectureTest]
     public void EmbeddedReportCss_ShipsAsEmbeddedResource()
     {
-        var cssPath = Path.Combine(
+        var cssPath = ArchitectureTestHelpers.CombinePath(
             ArchitectureTestHelpers.ResolveRepositoryRoot(),
             "src",
             "Honua.Core",
@@ -64,7 +64,7 @@ public sealed class ReportingOfflineGuaranteeTests
             $"Embedded report CSS must live at {cssPath}; the HTML renderer reads it via GetManifestResourceStream.");
 
         var csproj = File.ReadAllText(
-            Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Core", "Honua.Core.csproj"));
+            ArchitectureTestHelpers.CombinePath(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Core", "Honua.Core.csproj"));
         csproj.Should().Contain("Features/Reporting/Templates/Resources/report.css",
             "report.css must be registered as <EmbeddedResource /> so the HTML renderer can inline it.");
     }
@@ -72,7 +72,7 @@ public sealed class ReportingOfflineGuaranteeTests
     private static string ResolveGoldensDirectory()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        return Path.Combine(
+        return ArchitectureTestHelpers.CombinePath(
             repoRoot,
             "tests",
             "dotnet",

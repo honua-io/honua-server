@@ -73,12 +73,11 @@ internal static class WorkflowPackageGraphCompiler
         ArgumentNullException.ThrowIfNull(graph);
 
         var paths = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var edge in graph.Edges)
+        foreach (var edge in graph.Edges.Where(edge => edge.Kind == WorkflowEdgeKind.Data && !string.IsNullOrWhiteSpace(edge.TargetPort)))
         {
-            if (edge.Kind == WorkflowEdgeKind.Data && !string.IsNullOrWhiteSpace(edge.TargetPort))
-            {
-                paths.Add($"steps[{edge.TargetNodeId}].inputs.{edge.TargetPort.Trim()}");
-            }
+            // The Where filter above already proves TargetPort is non-null/non-whitespace,
+            // but that narrowing doesn't flow across the LINQ call boundary into this body.
+            paths.Add($"steps[{edge.TargetNodeId}].inputs.{edge.TargetPort!.Trim()}");
         }
 
         return paths;
@@ -93,29 +92,13 @@ internal static class WorkflowPackageGraphCompiler
     {
         ArgumentNullException.ThrowIfNull(graph);
 
-        foreach (var edge in graph.Edges)
-        {
-            if (edge.Kind == WorkflowEdgeKind.Data && !string.IsNullOrWhiteSpace(edge.TargetPort))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return graph.Edges.Any(edge => edge.Kind == WorkflowEdgeKind.Data && !string.IsNullOrWhiteSpace(edge.TargetPort));
     }
 
     private static IEnumerable<WorkflowEdge> DataBindingsInto(WorkflowGraph graph, string nodeId)
-    {
-        foreach (var edge in graph.Edges)
-        {
-            if (edge.Kind == WorkflowEdgeKind.Data
-                && !string.IsNullOrWhiteSpace(edge.TargetPort)
-                && string.Equals(edge.TargetNodeId, nodeId, StringComparison.Ordinal))
-            {
-                yield return edge;
-            }
-        }
-    }
+        => graph.Edges.Where(edge => edge.Kind == WorkflowEdgeKind.Data
+            && !string.IsNullOrWhiteSpace(edge.TargetPort)
+            && string.Equals(edge.TargetNodeId, nodeId, StringComparison.Ordinal));
 
     private static string ArtifactSelector(string? sourcePort)
         => string.IsNullOrWhiteSpace(sourcePort)

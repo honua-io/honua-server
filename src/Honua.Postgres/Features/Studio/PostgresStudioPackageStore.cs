@@ -51,7 +51,6 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        var committed = false;
         try
         {
             await UpsertItemAsync(
@@ -97,23 +96,16 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
             return draft;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException("Studio package key conflicts with an existing content item.", ex);
         }
         catch
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
     }
@@ -230,7 +222,6 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
             return updated;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -450,7 +441,6 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        var committed = false;
         try
         {
             if (!await VersionExistsAsync(connection, transaction, request.ItemId, request.VersionId, cancellationToken).ConfigureAwait(false))
@@ -496,15 +486,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
             return request;
         }
         catch
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
     }
@@ -527,7 +513,6 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
-        var committed = false;
         try
         {
             if (!await VersionExistsAsync(connection, transaction, itemId, targetVersionId, cancellationToken).ConfigureAwait(false))
@@ -586,15 +571,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             }
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-            committed = true;
             return request;
         }
         catch
         {
-            if (!committed)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
     }

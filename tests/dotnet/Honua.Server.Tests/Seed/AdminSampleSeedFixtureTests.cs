@@ -48,12 +48,15 @@ public sealed class AdminSampleSeedFixtureTests
     private static string ResolveRepoFile(params string[] path)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        // "Honua.sln" is a fixed literal (never rooted), so directory.FullName is never dropped.
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
         directory.Should().NotBeNull("the test should run under the repository output tree");
+        // `path` is always caller-supplied relative literals (e.g. "tests", "seed", "*.yaml"),
+        // never rooted, so directory!.FullName is never dropped.
         return Path.Combine(new[] { directory!.FullName }.Concat(path).ToArray());
     }
 }

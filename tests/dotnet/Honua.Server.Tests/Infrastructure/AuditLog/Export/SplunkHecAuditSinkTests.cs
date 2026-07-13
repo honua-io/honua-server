@@ -109,6 +109,7 @@ public sealed class SplunkHecAuditSinkTests
             LastAuthorization = request.Headers.TryGetValues("Authorization", out var values)
                 ? string.Join(' ', values)
                 : null;
+            // Ownership transfers to the HttpClient pipeline, which disposes the response.
             return Task.FromResult(new HttpResponseMessage(_status));
         }
     }

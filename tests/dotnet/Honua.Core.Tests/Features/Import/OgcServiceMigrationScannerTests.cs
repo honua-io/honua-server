@@ -325,6 +325,8 @@ public sealed class OgcServiceMigrationScannerTests
 
     private sealed class OgcFixtureHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var query = request.RequestUri?.Query ?? string.Empty;
@@ -371,6 +373,8 @@ public sealed class OgcServiceMigrationScannerTests
                 return Task.FromException<HttpResponseMessage>(new HttpRequestException("secret=/var/private/provider-token"));
             }
 
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(WfsCapabilities)
@@ -388,6 +392,8 @@ public sealed class OgcServiceMigrationScannerTests
                 return Task.FromException<HttpResponseMessage>(new HttpRequestException("secret=/var/private/provider-token"));
             }
 
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(WcsCapabilities)

@@ -88,14 +88,7 @@ internal sealed class BedrockChatClientAdapter : IChatClient
         List<AIContent> contents = [];
         if (response.Output?.Message?.Content is { } blocks)
         {
-            foreach (var block in blocks)
-            {
-                var content = MapContentBlock(block);
-                if (content is not null)
-                {
-                    contents.Add(content);
-                }
-            }
+            contents.AddRange(blocks.Select(MapContentBlock).OfType<AIContent>());
         }
 
         var responseMessage = new ChatMessage(ChatRole.Assistant, contents)

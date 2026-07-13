@@ -607,6 +607,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // Intentionally empty: draining the stream is only to force
+                // the expected RpcException, not to inspect any tile payload.
             }
         };
 
@@ -655,6 +657,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // Intentionally empty: draining the stream is only to force
+                // the expected RpcException, not to inspect any tile payload.
             }
         };
 
@@ -689,6 +693,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // Intentionally empty: draining the stream is only to force
+                // the expected RpcException, not to inspect any tile payload.
             }
         };
 
@@ -727,6 +733,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // Intentionally empty: draining the stream is only to force
+                // the expected RpcException, not to inspect any tile payload.
             }
         };
 
@@ -1131,6 +1139,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // Intentionally empty: draining the stream is only to force
+                // the expected RpcException, not to inspect any tile payload.
             }
         };
 
@@ -1157,6 +1167,9 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     /// </summary>
     private static string CreateMissingContentTilesetRoot()
     {
+        // Every Path.Combine call below only ever joins a temp directory with
+        // fixed/generated relative literal segments, so no later segment can be
+        // rooted and silently discard the one before it.
         var root = Path.Combine(Path.GetTempPath(), "honua-grpc-missing-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
@@ -1183,6 +1196,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     /// </summary>
     private static string CreateMissingTilesetRoot()
     {
+        // Second segment is a generated relative literal, so it can never be
+        // rooted and silently discard Path.GetTempPath().
         var root = Path.Combine(Path.GetTempPath(), "honua-grpc-no-tileset-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
@@ -1195,6 +1210,9 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     /// </summary>
     private static string CreateMalformedTilesetRoot()
     {
+        // Both Path.Combine calls below only join a temp directory with a fixed
+        // or generated relative literal segment, so neither later segment can be
+        // rooted and silently discard the one before it.
         var root = Path.Combine(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "tileset.json"), "null");
@@ -1211,6 +1229,9 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     /// </summary>
     private static string CreateOversizedTileRoot()
     {
+        // Every Path.Combine call below only joins a temp directory with fixed
+        // or generated relative literal segments, so no later segment can be
+        // rooted and silently discard the one before it.
         var root = Path.Combine(Path.GetTempPath(), "honua-grpc-oversized-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
@@ -1247,6 +1268,8 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         var directory = AppContext.BaseDirectory;
         while (directory is not null)
         {
+            // All later segments are fixed relative literals, so none can be
+            // rooted and silently discard directory.
             var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "fixture-tileset");
             if (Directory.Exists(candidate))
             {
@@ -1417,6 +1440,8 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         {
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // Intentionally empty: draining the stream is only to force
+                // the expected RpcException, not to inspect any tile payload.
             }
         };
 
@@ -1477,6 +1502,8 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         var directory = AppContext.BaseDirectory;
         while (directory is not null)
         {
+            // All later segments are fixed relative literals, so none can be
+            // rooted and silently discard directory.
             var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "fixture-tileset");
             if (Directory.Exists(candidate))
             {

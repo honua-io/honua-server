@@ -378,29 +378,37 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
     private async Task MonitorAsync(ProcessExecution execution, Process process)
     {
-        try
+        // MonitorAsync exclusively owns disposal of `process` from this point on (Launch
+        // handed it off after a successful Start()); a using statement here documents
+        // that ownership instead of the previous manual Dispose() in `finally`.
+        using (process)
         {
-            await process.WaitForExitAsync(execution.CancellationToken).ConfigureAwait(false);
-            // Ensure the async output readers flush before the tail is read.
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            execution.CompleteFromExit(process.ExitCode);
-            Log.ProcessExited(_logger, execution.OperationId, process.ExitCode);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            execution.CompleteCancelled();
-            Log.ProcessCancelled(_logger, execution.OperationId);
-        }
-        catch (Exception ex)
-        {
-            execution.CompleteFailed();
-            Log.ProcessMonitorFailed(_logger, execution.OperationId, ex.Message);
-        }
-        finally
-        {
-            process.Dispose();
-            ReleaseSlot();
+            try
+            {
+                await process.WaitForExitAsync(execution.CancellationToken).ConfigureAwait(false);
+                // Ensure the async output readers flush before the tail is read.
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+                execution.CompleteFromExit(process.ExitCode);
+                Log.ProcessExited(_logger, execution.OperationId, process.ExitCode);
+            }
+            catch (OperationCanceledException)
+            {
+                TryKill(process);
+                execution.CompleteCancelled();
+                Log.ProcessCancelled(_logger, execution.OperationId);
+            }
+            catch (Exception ex)
+            {
+                // Deliberately broad: this is the terminal handler for a fire-and-forget
+                // monitor task: any unexpected failure must still mark the execution
+                // Failed and release the pool slot rather than crash unobserved.
+                execution.CompleteFailed();
+                Log.ProcessMonitorFailed(_logger, execution.OperationId, ex.Message);
+            }
+            finally
+            {
+                ReleaseSlot();
+            }
         }
     }
 
@@ -726,6 +734,9 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
             }
             catch (ObjectDisposedException)
             {
+                // Defensive: guards a concurrent Cancel()/Dispose() race from the monitor
+                // task and an explicit Dispose() call on this execution; either caller
+                // finishing first leaves nothing further to release.
             }
         }
 

@@ -76,9 +76,11 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             _totalExecutionTimeMs.AddOrUpdate(operationType, executionTimeMs, (key, value) => value + executionTimeMs);
             _maxExecutionTimeMs.AddOrUpdate(operationType, executionTimeMs, (key, value) => Math.Max(value, executionTimeMs));
 
-            if (resultCount.HasValue)
+            if (resultCount is { } resultCountValue)
             {
-                _totalResultCounts.AddOrUpdate(operationType, resultCount.Value, (key, value) => value + resultCount.Value);
+                // Capture as a non-nullable local so the AddOrUpdate closure (invoked later,
+                // possibly on another thread) never re-reads the nullable parameter directly.
+                _totalResultCounts.AddOrUpdate(operationType, resultCountValue, (key, value) => value + resultCountValue);
             }
         }
 
@@ -310,6 +312,8 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
         catch (Exception ex)
         {
+            // Best-effort catalog probe: on failure, log and assume "no layer catalog" rather than
+            // failing the caller — callers treat false as "fall back to non-catalog behavior".
             MonitoredFeatureStoreLog.LayerCatalogCheckFailed(_logger, ex);
             return false;
         }

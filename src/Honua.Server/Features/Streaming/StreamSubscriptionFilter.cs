@@ -173,6 +173,12 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
                     }
                     catch
                     {
+                        // No logger here by design: this filter is a plain `new`-constructed,
+                        // per-subscription value evaluated on the hot per-event delivery path
+                        // (not DI-registered), so wiring a logger through would add a dependency
+                        // to a type instantiated per subscription/message. Malformed properties
+                        // JSON is treated as "does not match" below rather than surfaced/thrown,
+                        // which is the safe/conservative outcome for a filter predicate.
                         parsedProperties = null;
                     }
                 }

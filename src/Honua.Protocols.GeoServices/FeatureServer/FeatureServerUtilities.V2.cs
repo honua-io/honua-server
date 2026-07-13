@@ -834,18 +834,12 @@ internal static partial class FeatureServerEndpoints
             service.Options.TryGetValue("capabilities", out var element) &&
             element.ValueKind == JsonValueKind.Array)
         {
-            var list = new List<string>(element.GetArrayLength());
-            foreach (var item in element.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.String)
-                {
-                    var value = item.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        list.Add(value);
-                    }
-                }
-            }
+            var list = element.EnumerateArray()
+                .Where(static item => item.ValueKind == JsonValueKind.String)
+                .Select(static item => item.GetString())
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value!)
+                .ToList();
             if (list.Count > 0)
             {
                 return list;
@@ -863,18 +857,12 @@ internal static partial class FeatureServerEndpoints
             service.Options.TryGetValue("supportedFormats", out var element) &&
             element.ValueKind == JsonValueKind.Array)
         {
-            var list = new List<string>(element.GetArrayLength());
-            foreach (var item in element.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.String)
-                {
-                    var value = item.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        list.Add(value);
-                    }
-                }
-            }
+            var list = element.EnumerateArray()
+                .Where(static item => item.ValueKind == JsonValueKind.String)
+                .Select(static item => item.GetString())
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value!)
+                .ToList();
             return list.Count == 0 ? null : list.ToArray();
         }
         return null;
@@ -883,17 +871,11 @@ internal static partial class FeatureServerEndpoints
     private static bool ServiceSupportsEditingV2(MetadataV2Service service)
     {
         var capabilities = ReadServiceCapabilitiesV2(service);
-        foreach (var capability in capabilities)
-        {
-            if (capability.Equals("Create", StringComparison.OrdinalIgnoreCase) ||
-                capability.Equals("Update", StringComparison.OrdinalIgnoreCase) ||
-                capability.Equals("Delete", StringComparison.OrdinalIgnoreCase) ||
-                capability.Equals("Editing", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-        return false;
+        return capabilities.Any(capability =>
+            capability.Equals("Create", StringComparison.OrdinalIgnoreCase) ||
+            capability.Equals("Update", StringComparison.OrdinalIgnoreCase) ||
+            capability.Equals("Delete", StringComparison.OrdinalIgnoreCase) ||
+            capability.Equals("Editing", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool ServiceSupportsAdvancedQueriesV2(MetadataV2Service service)

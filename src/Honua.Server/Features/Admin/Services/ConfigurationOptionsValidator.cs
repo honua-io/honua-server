@@ -31,14 +31,14 @@ internal static class ConfigurationOptionsValidator
         try
         {
             // Validate critical authentication options
-            ValidateOidcOptions(serviceProvider, errors, isDevelopment);
-            ValidateApiKeyOptions(serviceProvider, errors, isDevelopment);
+            ValidateOidcOptions(serviceProvider, errors, isDevelopment, logger);
+            ValidateApiKeyOptions(serviceProvider, errors, isDevelopment, logger);
 
             // Validate performance monitoring options
-            ValidatePerformanceMonitoringOptions(serviceProvider, errors);
+            ValidatePerformanceMonitoringOptions(serviceProvider, errors, logger);
 
             // Validate adaptive sampling options
-            ValidateAdaptiveSamplingOptions(serviceProvider, errors);
+            ValidateAdaptiveSamplingOptions(serviceProvider, errors, logger);
 
             if (errors.Count == 0)
             {
@@ -54,7 +54,7 @@ internal static class ConfigurationOptionsValidator
         return errors;
     }
 
-    private static void ValidateOidcOptions(IServiceProvider serviceProvider, List<string> errors, bool isDevelopment)
+    private static void ValidateOidcOptions(IServiceProvider serviceProvider, List<string> errors, bool isDevelopment, ILogger logger)
     {
         try
         {
@@ -116,13 +116,14 @@ internal static class ConfigurationOptionsValidator
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            ConfigurationLog.ConfigurationError(logger, "OIDC options validation failed", ex);
             errors.Add("Failed to validate OIDC options due to an unexpected error.");
         }
     }
 
-    private static void ValidateApiKeyOptions(IServiceProvider serviceProvider, List<string> errors, bool isDevelopment)
+    private static void ValidateApiKeyOptions(IServiceProvider serviceProvider, List<string> errors, bool isDevelopment, ILogger logger)
     {
         try
         {
@@ -157,13 +158,14 @@ internal static class ConfigurationOptionsValidator
                 errors.Add("Authentication:BasicCompatibility:RequireHttps must be true when Basic compatibility is enabled in production.");
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            ConfigurationLog.ConfigurationError(logger, "API key options validation failed", ex);
             errors.Add("Failed to validate API key options due to an unexpected error.");
         }
     }
 
-    private static void ValidatePerformanceMonitoringOptions(IServiceProvider serviceProvider, List<string> errors)
+    private static void ValidatePerformanceMonitoringOptions(IServiceProvider serviceProvider, List<string> errors, ILogger logger)
     {
         try
         {
@@ -179,13 +181,14 @@ internal static class ConfigurationOptionsValidator
                 errors.Add("PerformanceMonitoring:MemorySamplingInterval must be greater than zero");
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            ConfigurationLog.ConfigurationError(logger, "Performance monitoring options validation failed", ex);
             errors.Add("Failed to validate performance monitoring options due to an unexpected error.");
         }
     }
 
-    private static void ValidateAdaptiveSamplingOptions(IServiceProvider serviceProvider, List<string> errors)
+    private static void ValidateAdaptiveSamplingOptions(IServiceProvider serviceProvider, List<string> errors, ILogger logger)
     {
         try
         {
@@ -224,8 +227,9 @@ internal static class ConfigurationOptionsValidator
         {
             // AdaptiveSamplingOptions service not registered - skip validation
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            ConfigurationLog.ConfigurationError(logger, "Adaptive sampling options validation failed", ex);
             errors.Add("Failed to validate adaptive sampling options due to an unexpected error.");
         }
     }

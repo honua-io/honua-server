@@ -1926,13 +1926,11 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             var root = document.RootElement;
-            if (root.TryGetProperty("type", out var typeProperty))
+            if (root.TryGetProperty("type", out var typeProperty) &&
+                (typeProperty.ValueKind != JsonValueKind.String ||
+                 !string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase)))
             {
-                if (typeProperty.ValueKind != JsonValueKind.String ||
-                    !string.Equals(typeProperty.GetString(), "Feature", StringComparison.OrdinalIgnoreCase))
-                {
-                    return (null, null, "GeoJSON 'type' must be 'Feature' when provided.");
-                }
+                return (null, null, "GeoJSON 'type' must be 'Feature' when provided.");
             }
 
             string? payloadId = null;

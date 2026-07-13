@@ -10,7 +10,7 @@ namespace Honua.Geoprocessing.Cli.Tests;
 
 public sealed class GpPublishCommandTests : IDisposable
 {
-    private readonly string _fixtureRoot = Path.Combine(
+    private readonly string _fixtureRoot = Path.Join(
         Path.GetTempPath(),
         "gp-publish-cmd-" + Guid.NewGuid().ToString("N"));
 
@@ -52,16 +52,16 @@ public sealed class GpPublishCommandTests : IDisposable
 
     private void WriteFixture(string id, string json)
     {
-        Directory.CreateDirectory(Path.Combine(_fixtureRoot, id));
-        File.WriteAllText(Path.Combine(_fixtureRoot, id, "workflow.json"), json);
+        Directory.CreateDirectory(Path.Join(_fixtureRoot, id));
+        File.WriteAllText(Path.Join(_fixtureRoot, id, "workflow.json"), json);
     }
 
     private async Task<(int Exit, string Out, string Err, RecordingHttpMessageHandler? Handler)> RunAsync(
         string[] args,
         Action<RecordingHttpMessageHandler>? configure = null)
     {
-        var output = new StringWriter();
-        var error = new StringWriter();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
         var processIds = new HashSet<string>(StringComparer.Ordinal) { "geometry.buffer" };
         var catalog = new StubCatalog(BufferProcess());
         RecordingHttpMessageHandler? handler = null;

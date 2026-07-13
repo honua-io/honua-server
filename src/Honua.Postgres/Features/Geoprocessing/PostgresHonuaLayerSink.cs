@@ -166,11 +166,15 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         IReadOnlyList<HonuaLayerSinkRow> rows)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
+        // Not rewritten as rows.Select(...): building each composite key needs a per-row JsonDocument
+        // parse plus a mutable StringBuilder, which is hoisted and reused (via Clear()) below rather
+        // than reallocated per row.
+        var builder = new StringBuilder();
         foreach (var row in rows)
         {
             using var document = JsonDocument.Parse(row.AttributesJson);
             var root = document.RootElement;
-            var builder = new StringBuilder();
+            builder.Clear();
             for (var i = 0; i < keyFields.Count; i++)
             {
                 if (i > 0)

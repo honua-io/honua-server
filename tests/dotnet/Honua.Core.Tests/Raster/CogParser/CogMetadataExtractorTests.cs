@@ -585,6 +585,8 @@ public class CogMetadataExtractorTests
         {
             var available = Math.Max(0, _data.Length - (int)offset);
             var bytesToRead = Math.Min(length, available);
+            // Stream ownership transfers to the caller via the return value; the
+            // reader consuming this stream is responsible for disposing it.
             return Task.FromResult<Stream>(new MemoryStream(_data, (int)offset, bytesToRead));
         }
 

@@ -59,7 +59,7 @@ public sealed class GdalErrorSanitizerTests
         var runner = FakeGdalCommandRunner.Failing(
             exitCode: 1,
             stderr: "ERROR 1: /tmp/honua-gdal-worker/leaky-op/input.tif unreadable; aborting.");
-        var scratch = Path.Combine(Path.GetTempPath(), "honua-gdal-worker");
+        var scratch = Path.Join(Path.GetTempPath(), "honua-gdal-worker");
         var executor = new GdalSurfaceJobExecutor(
             runner,
             GdalJobFactory.Options(scratch),
@@ -80,6 +80,7 @@ public sealed class GdalErrorSanitizerTests
         }
         finally
         {
+            // Best-effort cleanup: a lingering file handle on the scratch directory must not fail the test.
             try { if (Directory.Exists(scratch)) Directory.Delete(scratch, recursive: true); } catch (IOException) { }
         }
     }

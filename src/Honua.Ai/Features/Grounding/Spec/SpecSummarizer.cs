@@ -170,17 +170,7 @@ internal sealed class SpecSummarizer
                 : source.Id;
 
     private static SpecExpression? TryGetField(ObjectExpression expression, string key)
-    {
-        foreach (var field in expression.Fields)
-        {
-            if (string.Equals(field.Key, key, StringComparison.Ordinal))
-            {
-                return field.Value;
-            }
-        }
-
-        return null;
-    }
+        => expression.Fields.FirstOrDefault(field => string.Equals(field.Key, key, StringComparison.Ordinal))?.Value;
 
     private static string BuildSectionText(IEnumerable<string> clauses)
     {

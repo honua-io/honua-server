@@ -90,6 +90,8 @@ internal sealed class StatisticsFrequencyExecutor(
         public void Accumulate(IFeature feature, IReadOnlyList<string> summaryFields)
         {
             Frequency++;
+            // Not a .Where(...) candidate: TryReadNumeric's out value is the addend, so
+            // filtering separately would mean parsing each value twice.
             foreach (var field in summaryFields)
             {
                 if (StatisticsSupport.TryReadNumeric(feature, field, out var value))

@@ -251,25 +251,16 @@ internal sealed class OgcMapsRenderingHandler
                             "Specify the collections parameter to narrow the request.");
                     }
 
-                    foreach (var entry in allEntries.OrderBy(e => e.LayerId))
-                    {
-                        if (IsOgcApiMapsEnabled(entry.Service))
-                        {
-                            entries.Add(entry);
-                        }
-                    }
+                    entries.AddRange(allEntries.OrderBy(e => e.LayerId).Where(entry => IsOgcApiMapsEnabled(entry.Service)));
                 }
 
                 if (entries.Count == 0)
                 {
-                    if (context is not null)
+                    if (context is not null && hasDeniedEnabledLayer)
                     {
-                        if (hasDeniedEnabledLayer)
-                        {
-                            return requiresAuth
-                                ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
-                                : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
-                        }
+                        return requiresAuth
+                            ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
+                            : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
                     }
 
                     return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
@@ -591,12 +582,9 @@ internal sealed class OgcMapsRenderingHandler
             renderRequest.BoundingBox[1],
             renderRequest.BoundingBox[2],
             renderRequest.BoundingBox[3]);
-        var format = renderRequest.Format switch
-        {
-            RasterFormat.JPEG => "jpeg",
-            RasterFormat.TIFF => "tiff",
-            _ => "png"
-        };
+        // TIFF is rejected above (the Skia vector renderer has no GeoTIFF encoder), so only
+        // JPEG/PNG can reach this point.
+        var format = renderRequest.Format == RasterFormat.JPEG ? "jpeg" : "png";
 
         var renderResult = await RasterMapRenderingPipeline.RenderVectorCollectionAsync(
             context,
@@ -938,9 +926,7 @@ internal sealed class OgcMapsRenderingHandler
                 var bboxAxisOrder = hasRequestedBboxCrs
                     ? requestedBboxCrsDefinition.AxisOrder
                     : AxisOrder.EastNorth;
-                var bboxIsGeographic = hasRequestedBboxCrs
-                    ? requestedBboxCrsDefinition.IsGeographic
-                    : true;
+                var bboxIsGeographic = !hasRequestedBboxCrs || requestedBboxCrsDefinition.IsGeographic;
 
                 if (!RasterParsingHelpers.TryParseBoundingBox(
                         request.Bbox,

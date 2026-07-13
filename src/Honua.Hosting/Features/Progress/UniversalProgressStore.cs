@@ -718,8 +718,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             var progress = DeserializeProgress(progressValue.ToString());
             return progress?.Type;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.StoredOperationTypeLookupFailed(_logger, operationId, ex);
             return null;
         }
     }
@@ -763,6 +764,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
         [LoggerMessage(7653, LogLevel.Debug, "Failed to release conditional-write lock for operation {OperationId}")]
         public static partial void ConditionalWriteLockReleaseFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(7654, LogLevel.Debug, "Failed to resolve stored operation type for operation {OperationId}")]
+        public static partial void StoredOperationTypeLookupFailed(ILogger logger, string operationId, Exception exception);
     }
 }
 

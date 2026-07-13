@@ -194,10 +194,10 @@ internal static class SamlSignatureVerifier
         // The CanonicalizationMethod/Transform may carry an <ec:InclusiveNamespaces
         // PrefixList="..."/> child. Collect prefixes from any such descendant.
         var prefixes = new List<string>();
-        foreach (var inclusive in signedElementParent.Descendants()
-                     .Where(e => e.Name.LocalName == "InclusiveNamespaces"))
+        foreach (var list in signedElementParent.Descendants()
+                     .Where(e => e.Name.LocalName == "InclusiveNamespaces")
+                     .Select(e => e.Attribute("PrefixList")?.Value))
         {
-            var list = inclusive.Attribute("PrefixList")?.Value;
             if (!string.IsNullOrWhiteSpace(list))
             {
                 prefixes.AddRange(list.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));

@@ -37,7 +37,7 @@ internal static class ImageServerZarrTestFixture
                 for (var column = 0; column < cols; column++)
                 {
                     var offset = ((level * rows + row) * cols + column) * sizeof(float);
-                    var value = (float)(level * 1000 + row * 10 + column);
+                    var value = (level * 1000f) + (row * 10f) + column;
                     Buffer.BlockCopy(BitConverter.GetBytes(value), 0, raw, offset, sizeof(float));
                 }
             }
@@ -82,6 +82,8 @@ internal sealed class ImageServerFixtureRangeReader(Dictionary<string, byte[]> o
         CancellationToken cancellationToken = default)
     {
         var data = Get(key);
+
+        // Ownership transfers to the caller via the returned Stream; the caller disposes it.
         return Task.FromResult<Stream>(
             new MemoryStream(data, (int)offset, Math.Min(length, data.Length - (int)offset)));
     }

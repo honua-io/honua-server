@@ -36,9 +36,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        using var requestContent = new StringContent("""{"operations":[]}""", Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent("""{"operations":[]}""", Encoding.UTF8, "text/plain"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
@@ -48,9 +49,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithNullOperations_ReturnsBadRequest()
     {
+        using var requestContent = new StringContent("""{"operations":null}""", Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent("""{"operations":null}""", Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -60,9 +62,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithNullOperationType_ReturnsPerOperationBadRequest()
     {
+        using var requestContent = new StringContent("""{"operations":[{"id":"missing-type","type":null}]}""", Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent("""{"operations":[{"id":"missing-type","type":null}]}""", Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -103,9 +106,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
         };
 
         var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        using var requestContent = new StringContent(json, Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -156,9 +160,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
         };
 
         var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        using var requestContent = new StringContent(json, Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -210,9 +215,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
         };
 
         var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        using var requestContent = new StringContent(json, Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -261,9 +267,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
         };
 
         var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        using var requestContent = new StringContent(json, Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -317,9 +324,10 @@ public sealed class OgcFeaturesBatchOperationTests : IClassFixture<OgcFeaturesBa
         };
 
         var json = JsonSerializer.Serialize(batchRequest, OgcJsonContext.Default.BatchRequest);
+        using var requestContent = new StringContent(json, Encoding.UTF8, MediaTypes.Json);
         var response = await fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items/batch",
-            new StringContent(json, Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var responseContent = await response.Content.ReadAsStringAsync();

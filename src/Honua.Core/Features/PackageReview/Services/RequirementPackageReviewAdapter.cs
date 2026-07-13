@@ -82,46 +82,42 @@ internal sealed class RequirementPackageReviewAdapter : IPackageFamilyReviewAdap
 
     private static void AddPermissionFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var permission in request.Requirements.Permissions)
-        {
-            if (!permission.Granted)
+        findings.AddRange(request.Requirements.Permissions
+            .Where(permission => !permission.Granted)
+            .Select(permission => new PackageFinding
             {
-                findings.Add(new PackageFinding
+                Code = "permission_denied",
+                Severity = PackageFindingSeverity.Blocker,
+                Category = PackageFindingCategory.Permission,
+                Disposition = PackageFindingDisposition.AuthDenied,
+                AppliesTo = NormalizeScope(permission.AppliesTo),
+                Message = $"Permission '{permission.Permission}' is required but was not granted.",
+                RequiredAction = new PackageRequiredAction
                 {
-                    Code = "permission_denied",
-                    Severity = PackageFindingSeverity.Blocker,
-                    Category = PackageFindingCategory.Permission,
-                    Disposition = PackageFindingDisposition.AuthDenied,
-                    AppliesTo = NormalizeScope(permission.AppliesTo),
-                    Message = $"Permission '{permission.Permission}' is required but was not granted.",
-                    RequiredAction = new PackageRequiredAction
+                    ActionKind = "grant_permission",
+                    TargetPath = permission.Path,
+                    Title = "Grant the required permission or choose a different package target."
+                },
+                AffectedArtifact = new PackageAffectedArtifact
+                {
+                    Kind = "permission",
+                    Id = permission.Permission,
+                    Path = permission.Path,
+                    SourceId = permission.Target
+                },
+                Evidence =
+                [
+                    new PackageFindingEvidence
                     {
-                        ActionKind = "grant_permission",
-                        TargetPath = permission.Path,
-                        Title = "Grant the required permission or choose a different package target."
-                    },
-                    AffectedArtifact = new PackageAffectedArtifact
-                    {
-                        Kind = "permission",
-                        Id = permission.Permission,
+                        Kind = "policy",
+                        Expected = "granted",
+                        Actual = "denied",
                         Path = permission.Path,
-                        SourceId = permission.Target
-                    },
-                    Evidence =
-                    [
-                        new PackageFindingEvidence
-                        {
-                            Kind = "policy",
-                            Expected = "granted",
-                            Actual = "denied",
-                            Path = permission.Path,
-                            PolicyRef = permission.PolicyRef,
-                            ResourceRef = permission.Target
-                        }
-                    ]
-                });
-            }
-        }
+                        PolicyRef = permission.PolicyRef,
+                        ResourceRef = permission.Target
+                    }
+                ]
+            }));
     }
 
     private static void AddSchemaFindings(PackageReviewRequest request, List<PackageFinding> findings)
@@ -212,27 +208,23 @@ internal sealed class RequirementPackageReviewAdapter : IPackageFamilyReviewAdap
 
     private static void AddDomainFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var domain in request.Requirements.Domains)
-        {
-            if (!domain.Exists || !domain.IsValid)
-            {
-                findings.Add(Blocker(
-                    domain.Exists ? "domain_mismatch" : "missing_domain",
-                    PackageFindingCategory.Domain,
-                    $"Domain '{domain.Name}' is not compatible with the package requirement.",
-                    "update_domain_or_field_mapping",
-                    domain.Path,
-                    new PackageAffectedArtifact { Kind = "domain", Id = domain.Name, Path = domain.Path },
-                    new PackageFindingEvidence
-                    {
-                        Kind = "domain",
-                        Expected = domain.Expected ?? "compatible",
-                        Actual = domain.Exists ? domain.Actual ?? "incompatible" : "missing",
-                        Path = domain.Path,
-                        FieldName = domain.Field
-                    }));
-            }
-        }
+        findings.AddRange(request.Requirements.Domains
+            .Where(domain => !domain.Exists || !domain.IsValid)
+            .Select(domain => Blocker(
+                domain.Exists ? "domain_mismatch" : "missing_domain",
+                PackageFindingCategory.Domain,
+                $"Domain '{domain.Name}' is not compatible with the package requirement.",
+                "update_domain_or_field_mapping",
+                domain.Path,
+                new PackageAffectedArtifact { Kind = "domain", Id = domain.Name, Path = domain.Path },
+                new PackageFindingEvidence
+                {
+                    Kind = "domain",
+                    Expected = domain.Expected ?? "compatible",
+                    Actual = domain.Exists ? domain.Actual ?? "incompatible" : "missing",
+                    Path = domain.Path,
+                    FieldName = domain.Field
+                })));
     }
 
     private static void AddCrsFindings(PackageReviewRequest request, List<PackageFinding> findings)
@@ -354,157 +346,137 @@ internal sealed class RequirementPackageReviewAdapter : IPackageFamilyReviewAdap
 
     private static void AddTemporalFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var temporal in request.Requirements.Temporal)
-        {
-            if (temporal.Required && !temporal.Exists)
-            {
-                findings.Add(Blocker(
-                    "missing_temporal_field",
-                    PackageFindingCategory.Temporal,
-                    $"Temporal field '{temporal.Field ?? temporal.Path ?? "<unknown>"}' is required but missing.",
-                    "add_temporal_field_or_disable_time_requirement",
-                    temporal.Path,
-                    new PackageAffectedArtifact { Kind = "temporal", Id = temporal.Field, Path = temporal.Path },
-                    new PackageFindingEvidence
-                    {
-                        Kind = "temporal_field",
-                        Expected = temporal.Field ?? "present",
-                        Actual = "missing",
-                        Path = temporal.Path,
-                        FieldName = temporal.Field
-                    }));
-            }
-        }
+        findings.AddRange(request.Requirements.Temporal
+            .Where(temporal => temporal.Required && !temporal.Exists)
+            .Select(temporal => Blocker(
+                "missing_temporal_field",
+                PackageFindingCategory.Temporal,
+                $"Temporal field '{temporal.Field ?? temporal.Path ?? "<unknown>"}' is required but missing.",
+                "add_temporal_field_or_disable_time_requirement",
+                temporal.Path,
+                new PackageAffectedArtifact { Kind = "temporal", Id = temporal.Field, Path = temporal.Path },
+                new PackageFindingEvidence
+                {
+                    Kind = "temporal_field",
+                    Expected = temporal.Field ?? "present",
+                    Actual = "missing",
+                    Path = temporal.Path,
+                    FieldName = temporal.Field
+                })));
     }
 
     private static void AddCapabilityFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var capability in request.Requirements.Capabilities)
-        {
-            if (capability.Required && !capability.Supported)
+        findings.AddRange(request.Requirements.Capabilities
+            .Where(capability => capability.Required && !capability.Supported)
+            .Select(capability => new PackageFinding
             {
-                findings.Add(new PackageFinding
+                Code = "unsupported_capability",
+                Severity = PackageFindingSeverity.Blocker,
+                Category = PackageFindingCategory.Capability,
+                Disposition = PackageFindingDisposition.Unsupported,
+                AppliesTo = NormalizeScope(capability.AppliesTo),
+                Message = $"Capability '{capability.Capability}' is required but unsupported.",
+                RequiredAction = new PackageRequiredAction
                 {
-                    Code = "unsupported_capability",
-                    Severity = PackageFindingSeverity.Blocker,
-                    Category = PackageFindingCategory.Capability,
-                    Disposition = PackageFindingDisposition.Unsupported,
-                    AppliesTo = NormalizeScope(capability.AppliesTo),
-                    Message = $"Capability '{capability.Capability}' is required but unsupported.",
-                    RequiredAction = new PackageRequiredAction
-                    {
-                        ActionKind = "choose_supported_capability",
-                        TargetPath = capability.Path,
-                        Title = "Remove or replace the unsupported capability."
-                    },
-                    AffectedArtifact = new PackageAffectedArtifact
+                    ActionKind = "choose_supported_capability",
+                    TargetPath = capability.Path,
+                    Title = "Remove or replace the unsupported capability."
+                },
+                AffectedArtifact = new PackageAffectedArtifact
+                {
+                    Kind = "capability",
+                    Id = capability.Capability,
+                    Path = capability.Path,
+                    SourceId = capability.Scope
+                },
+                Evidence =
+                [
+                    new PackageFindingEvidence
                     {
                         Kind = "capability",
-                        Id = capability.Capability,
+                        Expected = "supported",
+                        Actual = "unsupported",
                         Path = capability.Path,
-                        SourceId = capability.Scope
-                    },
-                    Evidence =
-                    [
-                        new PackageFindingEvidence
-                        {
-                            Kind = "capability",
-                            Expected = "supported",
-                            Actual = "unsupported",
-                            Path = capability.Path,
-                            Capability = capability.Capability,
-                            ResourceRef = capability.Scope
-                        }
-                    ]
-                });
-            }
-        }
+                        Capability = capability.Capability,
+                        ResourceRef = capability.Scope
+                    }
+                ]
+            }));
     }
 
     private static void AddDependencyFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var dependency in request.Requirements.Dependencies)
-        {
-            if (dependency.Required && !dependency.Resolved)
-            {
-                findings.Add(Blocker(
-                    "missing_dependency",
-                    PackageFindingCategory.Dependency,
-                    $"Dependency package '{dependency.PackageId}' is required but unresolved.",
-                    "resolve_dependency",
-                    dependency.Path,
-                    new PackageAffectedArtifact { Kind = "dependency", Id = dependency.PackageId, Path = dependency.Path },
-                    new PackageFindingEvidence
-                    {
-                        Kind = "dependency",
-                        Expected = dependency.Version ?? "resolved",
-                        Actual = "unresolved",
-                        Path = dependency.Path,
-                        ResourceRef = dependency.PackageId
-                    }));
-            }
-        }
+        findings.AddRange(request.Requirements.Dependencies
+            .Where(dependency => dependency.Required && !dependency.Resolved)
+            .Select(dependency => Blocker(
+                "missing_dependency",
+                PackageFindingCategory.Dependency,
+                $"Dependency package '{dependency.PackageId}' is required but unresolved.",
+                "resolve_dependency",
+                dependency.Path,
+                new PackageAffectedArtifact { Kind = "dependency", Id = dependency.PackageId, Path = dependency.Path },
+                new PackageFindingEvidence
+                {
+                    Kind = "dependency",
+                    Expected = dependency.Version ?? "resolved",
+                    Actual = "unresolved",
+                    Path = dependency.Path,
+                    ResourceRef = dependency.PackageId
+                })));
     }
 
     private static void AddFormatFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var format in request.Requirements.Formats)
-        {
-            if (!format.Supported)
-            {
-                findings.Add(Blocker(
-                    "unsupported_package_format",
-                    PackageFindingCategory.Format,
-                    $"Package format '{format.Format}' is unsupported.",
-                    "choose_supported_format",
-                    format.Path,
-                    new PackageAffectedArtifact { Kind = "format", Id = format.Format, Path = format.Path },
-                    new PackageFindingEvidence
-                    {
-                        Kind = "format",
-                        Expected = "supported",
-                        Actual = "unsupported",
-                        Path = format.Path
-                    }));
-            }
-        }
+        findings.AddRange(request.Requirements.Formats
+            .Where(format => !format.Supported)
+            .Select(format => Blocker(
+                "unsupported_package_format",
+                PackageFindingCategory.Format,
+                $"Package format '{format.Format}' is unsupported.",
+                "choose_supported_format",
+                format.Path,
+                new PackageAffectedArtifact { Kind = "format", Id = format.Format, Path = format.Path },
+                new PackageFindingEvidence
+                {
+                    Kind = "format",
+                    Expected = "supported",
+                    Actual = "unsupported",
+                    Path = format.Path
+                })));
     }
 
     private static void AddApprovalFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {
-        foreach (var approval in request.Requirements.Approvals)
-        {
-            if (approval.Required && !approval.Approved)
+        findings.AddRange(request.Requirements.Approvals
+            .Where(approval => approval.Required && !approval.Approved)
+            .Select(approval => new PackageFinding
             {
-                findings.Add(new PackageFinding
+                Code = "approval_required",
+                Severity = PackageFindingSeverity.Blocker,
+                Category = PackageFindingCategory.Approval,
+                Disposition = PackageFindingDisposition.RequiresApproval,
+                AppliesTo = NormalizeScope(approval.AppliesTo),
+                Message = "Package requires approval before the requested action can continue.",
+                RequiredAction = new PackageRequiredAction
                 {
-                    Code = "approval_required",
-                    Severity = PackageFindingSeverity.Blocker,
-                    Category = PackageFindingCategory.Approval,
-                    Disposition = PackageFindingDisposition.RequiresApproval,
-                    AppliesTo = NormalizeScope(approval.AppliesTo),
-                    Message = "Package requires approval before the requested action can continue.",
-                    RequiredAction = new PackageRequiredAction
+                    ActionKind = "obtain_approval",
+                    TargetPath = approval.Path,
+                    Title = "Obtain the required approval."
+                },
+                AffectedArtifact = new PackageAffectedArtifact { Kind = "approval", Path = approval.Path },
+                Evidence =
+                [
+                    new PackageFindingEvidence
                     {
-                        ActionKind = "obtain_approval",
-                        TargetPath = approval.Path,
-                        Title = "Obtain the required approval."
-                    },
-                    AffectedArtifact = new PackageAffectedArtifact { Kind = "approval", Path = approval.Path },
-                    Evidence =
-                    [
-                        new PackageFindingEvidence
-                        {
-                            Kind = "approval",
-                            Expected = "approved",
-                            Actual = "not_approved",
-                            Path = approval.Path,
-                            PolicyRef = approval.PolicyRef
-                        }
-                    ]
-                });
-            }
-        }
+                        Kind = "approval",
+                        Expected = "approved",
+                        Actual = "not_approved",
+                        Path = approval.Path,
+                        PolicyRef = approval.PolicyRef
+                    }
+                ]
+            }));
     }
 
     private static PackagePreviewPlan BuildPreviewPlan(PackageReviewRequest request)

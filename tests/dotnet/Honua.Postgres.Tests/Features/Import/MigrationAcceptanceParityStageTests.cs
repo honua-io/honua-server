@@ -498,6 +498,8 @@ public sealed class MigrationAcceptanceParityStageTests
 
     private static FixtureScenario LoadFixture(string family, string scenario)
     {
+        // All segments below are fixed literals/deterministic tokens and can never be rooted, so
+        // Path.Combine cannot drop earlier segments here (cs/path-combine false positive).
         var fixturePath = Path.Combine(
             AppContext.BaseDirectory,
             "Features",
@@ -597,6 +599,8 @@ public sealed class MigrationAcceptanceParityStageTests
                     ? "application/vnd.ogc.sld+xml"
                     : "application/json";
 
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, contentType)

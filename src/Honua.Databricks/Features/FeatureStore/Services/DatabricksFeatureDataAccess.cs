@@ -127,13 +127,7 @@ internal sealed class DatabricksFeatureDataAccess : IDatabricksFeatureDataAccess
         }
 
         var builder = ImmutableArray.CreateBuilder<long>(resultSet.Rows.Count);
-        foreach (var row in resultSet.Rows)
-        {
-            if (row.Length > 0)
-            {
-                builder.Add(ReadId(row[0]));
-            }
-        }
+        builder.AddRange(resultSet.Rows.Where(row => row.Length > 0).Select(row => ReadId(row[0])));
 
         return builder.ToImmutable();
     }

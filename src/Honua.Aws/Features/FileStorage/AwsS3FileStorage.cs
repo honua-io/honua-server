@@ -211,6 +211,10 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 progressMessage,
                 resultMessage);
         }
+        // Intentionally generic: this boundary must convert any failure from the AWS
+        // SDK, the local progress writer, or an unexpected bug into a reported failed
+        // upload rather than letting it propagate; the exception is logged via
+        // ReportFailedUploadAsync -> FileStorageLog.FileUploadFailed.
         catch (Exception ex)
         {
             if (progressWriter != null)
@@ -235,6 +239,8 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             // already removed it and is between TryRemove and CancelAsync, disposing
             // here would cause ObjectDisposedException on the cancel path's CancelAsync
             // call. The cancel path is responsible for disposing when it removes the CTS.
+            // Not a `using` statement: the CTS is not owned/created in this scope, it is
+            // conditionally reclaimed from a shared dictionary via TryRemove.
             if (UploadCancellationTokens.TryRemove(uploadId, out var removedSource))
             {
                 removedSource.Dispose();
@@ -511,12 +517,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 cancellationToken.ThrowIfCancellationRequested();
                 var metadata = await GetMetadataDictionaryAsync(item.Key, cancellationToken);
                 var expiresAt = CloudStorageMetadata.GetExpiresAt(metadata);
-                if (expiresAt.HasValue && expiresAt.Value <= now)
+                if (expiresAt.HasValue && expiresAt.Value <= now && await DeleteObjectAsync(item.Key, cancellationToken))
                 {
-                    if (await DeleteObjectAsync(item.Key, cancellationToken))
-                    {
-                        cleanedCount++;
-                    }
+                    cleanedCount++;
                 }
             }
 
@@ -631,6 +634,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         {
             return false;
         }
+        // Intentionally generic: covers transport/auth/throttling failures beyond
+        // AmazonS3Exception so a single delete failure never aborts batch cleanup;
+        // the exception is logged via FileStorageLog.FileDeleteFailed.
         catch (Exception ex)
         {
             FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
@@ -661,6 +667,8 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             var response = await _client.ListObjectsV2Async(request, cancellationToken);
 
             // SDK v4: S3Objects is null (not empty) when the listing has no results.
+            // Not rewritten with .Where(): the filter predicate (DeleteObjectAsync) is
+            // async, which plain LINQ .Where() cannot express without buffering tasks.
             foreach (var item in response.S3Objects ?? [])
             {
                 if (await DeleteObjectAsync(item.Key, cancellationToken))

@@ -97,7 +97,7 @@ public sealed class GeographicSridClassifierGuardTests
     public void SourceTree_ShouldNotReintroduceLocalSridAllowlists()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var srcRoot = Path.Combine(repositoryRoot, "src");
+        var srcRoot = ArchitectureTestHelpers.CombinePath(repositoryRoot, "src");
         Directory.Exists(srcRoot).Should().BeTrue("the src tree must exist to scan for SRID allowlists");
 
         var allowlist = new HashSet<string>(

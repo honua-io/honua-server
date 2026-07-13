@@ -661,10 +661,10 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     // namespace identifies the local cluster, so a Honua host running inside
     // cluster A that targets cluster B via an explicit ApiServerUrl must not leak
     // the local namespace into requests against the remote cluster.
-    private static string ResolveNamespace(ExecutionJobRecord job, KubernetesExecutionOptions snapshot)
+    private string ResolveNamespace(ExecutionJobRecord job, KubernetesExecutionOptions snapshot)
         => Normalize(job.Spec.Parameters.GetValueOrDefault(KubernetesJobParameterKeys.Namespace))
             ?? Normalize(snapshot.DefaultNamespace)
-            ?? (snapshot.InClusterAutoDetect ? KubernetesJobClient.TryReadInClusterNamespace() : null)
+            ?? (snapshot.InClusterAutoDetect ? KubernetesJobClient.TryReadInClusterNamespace(logger) : null)
             ?? "default";
 
     internal static string BuildJobName(string operationId, int attemptNumber = 1)
@@ -726,14 +726,9 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             }
 
             var lowered = char.ToLowerInvariant(ch);
-            if (char.IsAsciiLetterOrDigit(lowered) || lowered == '-' || lowered == '.')
-            {
-                buffer[length++] = lowered;
-            }
-            else
-            {
-                buffer[length++] = '-';
-            }
+            buffer[length++] = char.IsAsciiLetterOrDigit(lowered) || lowered == '-' || lowered == '.'
+                ? lowered
+                : '-';
         }
 
         var trimmed = new string(buffer[..length]).Trim('-', '.');
@@ -809,14 +804,10 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
             return null;
         }
 
-        var result = new List<string>();
-        foreach (var entry in encoded.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (!string.IsNullOrEmpty(entry))
-            {
-                result.Add(entry);
-            }
-        }
+        var result = encoded
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(entry => !string.IsNullOrEmpty(entry))
+            .ToList();
 
         return result.Count == 0 ? null : result;
     }

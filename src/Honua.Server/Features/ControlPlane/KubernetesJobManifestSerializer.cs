@@ -225,17 +225,10 @@ internal static class KubernetesJobManifestSerializer
             return Array.Empty<KubernetesPodStatusSnapshot>();
         }
 
-        var result = new List<KubernetesPodStatusSnapshot>();
-        foreach (var pod in items.EnumerateArray())
-        {
-            var snapshot = ParsePod(pod);
-            if (snapshot != null)
-            {
-                result.Add(snapshot);
-            }
-        }
-
-        return result;
+        return items.EnumerateArray()
+            .Select(ParsePod)
+            .OfType<KubernetesPodStatusSnapshot>()
+            .ToList();
     }
 
     private static KubernetesPodStatusSnapshot? ParsePod(JsonElement pod)

@@ -512,16 +512,9 @@ internal static partial class FeatureStreamEndpoints
     private static IEnumerable<StreamLayerDescriptor> ResolveServiceStreamLayers(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
-    {
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
-        {
-            var layer = CreateStreamLayer(snapshot, publication, service);
-            if (layer is not null)
-            {
-                yield return layer;
-            }
-        }
-    }
+        => snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Select(publication => CreateStreamLayer(snapshot, publication, service))
+            .OfType<StreamLayerDescriptor>();
 
     private static IEnumerable<StreamLayerDescriptor> ResolveAllStreamLayers(MetadataV2GraphSnapshot snapshot)
     {
@@ -614,13 +607,12 @@ internal static partial class FeatureStreamEndpoints
     {
         var schema = FilterFieldSchema.From(layer.Resource);
 
-        foreach (var property in EnumeratePropertyReferences(expression))
+        var unknownProperty = EnumeratePropertyReferences(expression)
+            .FirstOrDefault(property => !schema.TryGetFieldType(property.PropertyName, out _));
+        if (unknownProperty is not null)
         {
-            if (!schema.TryGetFieldType(property.PropertyName, out _))
-            {
-                error = $"Unknown field '{property.PropertyName}' in streaming filter for layer {layer.LayerId}.";
-                return false;
-            }
+            error = $"Unknown field '{unknownProperty.PropertyName}' in streaming filter for layer {layer.LayerId}.";
+            return false;
         }
 
         error = string.Empty;

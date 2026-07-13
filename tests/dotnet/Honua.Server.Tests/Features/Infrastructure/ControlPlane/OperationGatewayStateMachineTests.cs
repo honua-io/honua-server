@@ -41,8 +41,6 @@ public sealed class OperationGatewayStateMachineTests
     public async Task ExecuteDirect_WithUnregisteredKind_ReturnsNotSupported(OperationClass unregisteredKind)
     {
         // Arrange: gateway has only a Deploy executor; MetadataRelease/Seed have no executor.
-        var sut = BuildGateway(store: new InMemoryProposalStore(), executor: new DeployExecutor());
-
         var ladder = Substitute.For<IGuardrailLadder>();
         ladder.Resolve(unregisteredKind).Returns(
             new GuardrailDecision(GuardrailTier.DirectExecute, unregisteredKind, HonuaEdition.Community, "DefaultGuardrailLadder"));

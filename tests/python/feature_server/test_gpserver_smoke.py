@@ -8,8 +8,6 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from shared.geoservices import assert_geoservices_error
-
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 

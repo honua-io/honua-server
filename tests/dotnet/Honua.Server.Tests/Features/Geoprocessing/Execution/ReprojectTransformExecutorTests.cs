@@ -81,6 +81,7 @@ public sealed class ReprojectTransformExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         var geom = ReadFeatures(uri!)[0].Geometry as Point;
+        geom.Should().NotBeNull("the reprojected geometry must remain a Point");
         geom!.X.Should().BeApproximately(10, 1e-9);
         geom.Y.Should().BeApproximately(20, 1e-9);
     }
@@ -100,6 +101,7 @@ public sealed class ReprojectTransformExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         var geom = ReadFeatures(uri!)[0].Geometry as Point;
+        geom.Should().NotBeNull("the reprojected geometry must remain a Point");
         geom!.X.Should().BeApproximately(5009377.085, 1.0);
         double.IsFinite(geom.Coordinates[0].Z).Should().BeTrue("Z must survive reprojection (#2744)");
         geom.Coordinates[0].Z.Should().BeApproximately(123.5, 1e-9);

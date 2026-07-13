@@ -135,7 +135,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var payload = new StringContent(
+        using var payload = new StringContent(
             @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""rbac-test""}}]}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -320,7 +320,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var payload = new StringContent(
+        using var payload = new StringContent(
             @"{""name"":""unauthorized-update""}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -363,7 +363,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var payload = new StringContent(
+        using var payload = new StringContent(
             @"{""name"":""authorized-update""}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -399,9 +399,10 @@ public sealed class CrossProtocolPermissionMatrixTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var payload = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            payload);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
@@ -431,9 +432,10 @@ public sealed class CrossProtocolPermissionMatrixTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var payload = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            payload);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
@@ -599,7 +601,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var content = new StringContent(
+        using var content = new StringContent(
             "objectIds=1&f=json",
             System.Text.Encoding.UTF8,
             "application/x-www-form-urlencoded");
@@ -627,7 +629,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var applyEditsContent = new StringContent(
+        using var applyEditsContent = new StringContent(
             @"{""deletes"":[1,2]}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -655,7 +657,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("insert"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var payload = new StringContent(
+        using var payload = new StringContent(
             @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""unauthorized""}}]}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -678,7 +680,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("update"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var payload = new StringContent(
+        using var payload = new StringContent(
             @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""authorized""}}]}",
             System.Text.Encoding.UTF8,
             "application/json");
@@ -702,7 +704,7 @@ public sealed class CrossProtocolPermissionMatrixTests
         using var factory = CreateWriteFactory(Grant("delete"));
         using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
 
-        var payload = new StringContent(
+        using var payload = new StringContent(
             @"{""updates"":[{""attributes"":{""objectid"":1,""name"":""unauthorized""}}]}",
             System.Text.Encoding.UTF8,
             "application/json");

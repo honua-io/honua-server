@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
@@ -24,14 +25,8 @@ internal static class GdalCli
     public static bool Available(string tool)
     {
         var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (File.Exists(Path.Combine(dir, tool)))
-            {
-                return true;
-            }
-        }
-        return false;
+        return pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(dir => File.Exists(Path.Join(dir, tool)));
     }
 
     /// <summary>
@@ -54,7 +49,7 @@ internal static class GdalCli
     /// isolated executor run. The directory is created lazily by the executor.
     /// </summary>
     public static string NewScratch(string suite)
-        => Path.Combine(Path.GetTempPath(), suite, Guid.NewGuid().ToString("N"));
+        => Path.Join(Path.GetTempPath(), suite, Guid.NewGuid().ToString("N"));
 
     /// <summary>
     /// Best-effort recursive cleanup of a scratch directory; swallows the
@@ -85,7 +80,7 @@ internal static class GdalCli
     public static async Task<byte[]> GenerateSampleDemAsync(string scratch)
     {
         Directory.CreateDirectory(scratch);
-        var demPath = Path.Combine(scratch, "sample-dem.tif");
+        var demPath = Path.Join(scratch, "sample-dem.tif");
         if (Available("gdal_create"))
         {
             var args = new[]
@@ -103,7 +98,7 @@ internal static class GdalCli
         {
             // Fallback: gdal_translate over a tiny VRT. The VRT holds a 16×16
             // constant-value Float32 dataset so gdaldem has finite slope inputs.
-            var vrtPath = Path.Combine(scratch, "sample.vrt");
+            var vrtPath = Path.Join(scratch, "sample.vrt");
             File.WriteAllText(vrtPath, """
                 <VRTDataset rasterXSize="16" rasterYSize="16">
                   <VRTRasterBand dataType="Float32" band="1">

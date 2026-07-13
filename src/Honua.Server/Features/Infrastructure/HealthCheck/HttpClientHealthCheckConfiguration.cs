@@ -162,7 +162,7 @@ internal sealed class CircuitBreakerHealthCheck : IHealthCheck
             try
             {
                 // Get the policy for each service and check if we can determine circuit state
-                var policy = HttpResiliencePolicies.GetHttpPolicy(serviceType);
+                HttpResiliencePolicies.GetHttpPolicy(serviceType);
 
                 // Note: Polly doesn't provide easy introspection of circuit breaker state
                 // In a production system, you might want to implement custom circuit breaker

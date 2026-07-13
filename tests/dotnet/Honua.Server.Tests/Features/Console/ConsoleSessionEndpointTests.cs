@@ -99,9 +99,10 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
             await createResponse.Content.ReadAsStringAsync(), JsonOptions);
 
         Assert.NotNull(created?.Data);
-        Assert.False(string.IsNullOrWhiteSpace(created!.Data!.Id));
-        Assert.Contains(ConsoleContentAction.Administer, created.Data.Actions);
-        Assert.Equal(1, created.Data.Generation);
+        var createdData = created!.Data!;
+        Assert.False(string.IsNullOrWhiteSpace(createdData.Id));
+        Assert.Contains(ConsoleContentAction.Administer, createdData.Actions);
+        Assert.Equal(1, createdData.Generation);
 
         var getResponse = await _client.GetAsync($"/api/v1/console/content/{created.Data.Id}");
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
@@ -140,8 +141,9 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
             await response.Content.ReadAsStringAsync(), JsonOptions);
 
         Assert.NotNull(listing?.Data);
-        Assert.NotEmpty(listing!.Data!.Items);
-        Assert.All(listing.Data.Items, item => Assert.Equal(ConsoleContentItemType.Layer, item.ItemType));
+        var listingData = listing!.Data!;
+        Assert.NotEmpty(listingData.Items);
+        Assert.All(listingData.Items, item => Assert.Equal(ConsoleContentItemType.Layer, item.ItemType));
     }
 
     [IntegrationTest]
@@ -368,16 +370,17 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
             await response.Content.ReadAsStringAsync(), JsonOptions);
 
         Assert.NotNull(payload?.Data);
-        Assert.Equal(3, payload!.Data!.Results.Count);
+        var payloadData = payload!.Data!;
+        Assert.Equal(3, payloadData.Results.Count);
 
-        var itemResult = payload.Data.Results.Single(r => r.ItemId == created.Data.Id);
+        var itemResult = payloadData.Results.Single(r => r.ItemId == created.Data.Id);
         Assert.Contains(ConsoleContentAction.View, itemResult.Allowed);
         Assert.Contains(ConsoleContentAction.Administer, itemResult.Allowed);
 
-        var routeResult = payload.Data.Results.Single(r => r.RouteKey == "admin");
+        var routeResult = payloadData.Results.Single(r => r.RouteKey == "admin");
         Assert.NotEmpty(routeResult.Allowed);
 
-        var missingResult = payload.Data.Results.Single(r => r.ItemId == "missing-id");
+        var missingResult = payloadData.Results.Single(r => r.ItemId == "missing-id");
         Assert.True(missingResult.NotFound);
         Assert.Empty(missingResult.Allowed);
     }
@@ -586,9 +589,10 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
             await chainResponse.Content.ReadAsStringAsync(), JsonOptions);
 
         Assert.NotNull(chain?.Data);
-        Assert.Equal(service.Data.Id, chain!.Data!.ItemId);
-        Assert.Equal(2, chain.Data.Chain.Count);
-        Assert.Equal(service.Data.Id, chain.Data.Chain[0].Id);
-        Assert.Equal(catalog.Data.Id, chain.Data.Chain[1].Id);
+        var chainData = chain!.Data!;
+        Assert.Equal(service.Data.Id, chainData.ItemId);
+        Assert.Equal(2, chainData.Chain.Count);
+        Assert.Equal(service.Data.Id, chainData.Chain[0].Id);
+        Assert.Equal(catalog.Data.Id, chainData.Chain[1].Id);
     }
 }

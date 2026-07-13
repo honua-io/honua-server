@@ -95,18 +95,23 @@ public sealed class GroundingFixtureReplayTests
             result.Candidates.Processes[0].Id.Should().Contain(idSubstring);
         }
 
-        if (fixtureCase.Expected.ClarificationPresent is true)
+        // Pattern-match the nullable bool once into a definite value, then branch on it directly
+        // rather than chaining two independent nullable-pattern checks ("is true" / "is false").
+        if (fixtureCase.Expected.ClarificationPresent is { } clarificationPresent)
         {
-            result.Clarification.Should().NotBeNull();
-            foreach (var reason in fixtureCase.Expected.ClarificationReasonCodes ?? [])
+            if (clarificationPresent)
             {
-                result.Clarification!.ReasonCodes.Select(r => r.ToString())
-                    .Should().Contain(reason);
+                result.Clarification.Should().NotBeNull();
+                foreach (var reason in fixtureCase.Expected.ClarificationReasonCodes ?? [])
+                {
+                    result.Clarification!.ReasonCodes.Select(r => r.ToString())
+                        .Should().Contain(reason);
+                }
             }
-        }
-        else if (fixtureCase.Expected.ClarificationPresent is false)
-        {
-            result.Clarification.Should().BeNull();
+            else
+            {
+                result.Clarification.Should().BeNull();
+            }
         }
     }
 
@@ -182,6 +187,7 @@ public sealed class GroundingFixtureReplayTests
         var directory = AppContext.BaseDirectory;
         while (directory is not null)
         {
+            // False positive: all later segments are fixed relative literals, never absolute.
             var candidate = Path.Combine(directory, "tests", "fixtures", "grounding", "grounding-fixtures.json");
             if (File.Exists(candidate))
             {

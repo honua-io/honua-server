@@ -105,14 +105,9 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             // update/delete uploads can conflict; inserts use server-assigned ids and cannot collide
             // on an existing (layerId, objectId) key here (duplicate-insert detection is owned by the
             // edit pipeline's uniqueness handling and #1287).
-            var uploadedObjectIds = new HashSet<long>();
-            foreach (var edit in edits)
-            {
-                if (edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId is { } uploadedId)
-                {
-                    uploadedObjectIds.Add(uploadedId);
-                }
-            }
+            var uploadedObjectIds = new HashSet<long>(edits
+                .Where(edit => edit.Kind != FeatureEditOperationKind.Create && edit.ObjectId.HasValue)
+                .Select(edit => edit.ObjectId!.Value));
 
             // Only the uploaded ids can ever be probed below, so push the id filter into the change
             // tracker: providers that support it (Postgres) restrict the change-log scan in SQL, and
@@ -167,17 +162,11 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 editsToApply.Add(edit);
             }
 
-            ReplicaLayerApplyResult applyResult;
-            if (editsToApply.Count == 0)
-            {
-                applyResult = new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null);
-            }
-            else
-            {
-                applyResult = await editApplier
+            var applyResult = editsToApply.Count == 0
+                ? new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null)
+                : await editApplier
                     .ApplyAsync(request.ServiceId, layer.PublicLayerId, editsToApply.ToImmutable(), request.RollbackOnFailure, cancellationToken)
                     .ConfigureAwait(false);
-            }
 
             totalAdds += applyResult.AppliedAdds;
             totalUpdates += applyResult.AppliedUpdates;

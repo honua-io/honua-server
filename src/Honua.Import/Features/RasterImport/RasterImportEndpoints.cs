@@ -400,12 +400,9 @@ internal static partial class RasterImportEndpoints
                     continue;
                 }
 
-                if (MultipartParsingHelpers.HasFormDataContentDisposition(contentDisposition))
+                if (MultipartParsingHelpers.HasFormDataContentDisposition(contentDisposition) && !string.IsNullOrWhiteSpace(fieldName))
                 {
-                    if (!string.IsNullOrWhiteSpace(fieldName))
-                    {
-                        fields[fieldName] = await MultipartParsingHelpers.ReadFormFieldStringAsync(section, cancellationToken);
-                    }
+                    fields[fieldName] = await MultipartParsingHelpers.ReadFormFieldStringAsync(section, cancellationToken);
                 }
             }
 

@@ -454,6 +454,9 @@ internal static class SldToMapLibreConverter
                     }
 
                     var operands = new List<MapLibreExpression> { new("all") };
+                    // Not converted to .Select(...): the loop must bail out (return null for
+                    // the whole compound filter) as soon as any operand fails to convert,
+                    // rather than eagerly converting every operand first.
                     foreach (var operand in and.Operands)
                     {
                         var converted = BuildFilterExpression(operand);
@@ -479,6 +482,9 @@ internal static class SldToMapLibreConverter
                     }
 
                     var operands = new List<MapLibreExpression> { new("any") };
+                    // Not converted to .Select(...): the loop must bail out (return null for
+                    // the whole compound filter) as soon as any operand fails to convert,
+                    // rather than eagerly converting every operand first.
                     foreach (var operand in or.Operands)
                     {
                         var converted = BuildFilterExpression(operand);
@@ -585,16 +591,14 @@ internal static class SldToMapLibreConverter
         }
 
         // SLD AARRGGBB hex (alpha-prefixed) needs to become rgba() for MapLibre.
-        if (color.Length == 9 && color[0] == '#')
+        if (color.Length == 9 && color[0] == '#'
+            && TryParseHexByte(color.AsSpan(1, 2), out var a)
+            && TryParseHexByte(color.AsSpan(3, 2), out var r)
+            && TryParseHexByte(color.AsSpan(5, 2), out var g)
+            && TryParseHexByte(color.AsSpan(7, 2), out var b))
         {
-            if (TryParseHexByte(color.AsSpan(1, 2), out var a)
-                && TryParseHexByte(color.AsSpan(3, 2), out var r)
-                && TryParseHexByte(color.AsSpan(5, 2), out var g)
-                && TryParseHexByte(color.AsSpan(7, 2), out var b))
-            {
-                var alpha = a / 255d;
-                return string.Create(CultureInfo.InvariantCulture, $"rgba({r},{g},{b},{alpha:0.###})");
-            }
+            var alpha = a / 255d;
+            return string.Create(CultureInfo.InvariantCulture, $"rgba({r},{g},{b},{alpha:0.###})");
         }
 
         if (opacity.HasValue && opacity.Value < 1d && opacity.Value >= 0d

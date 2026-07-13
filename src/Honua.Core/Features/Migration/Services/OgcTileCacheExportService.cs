@@ -116,6 +116,10 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
         }
         catch (Exception ex)
         {
+            // Intentionally broad: the WMTS scan can fail in many ways (HTTP, DNS/socket,
+            // XML/JSON parsing, URL validation). Any failure here means the whole export
+            // cannot proceed, so we log it and return a structured failure result instead
+            // of letting an unhandled exception type escape the export API surface.
             Log.InventoryScanFailed(_logger, safeSourceUrl, ex);
             return CreateFailureResult(request, safeSourceUrl, "Failed to scan WMTS source for tile-cache export.", stopwatch.Elapsed);
         }
@@ -266,6 +270,9 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
                     }
                     catch (Exception ex)
                     {
+                        // Intentionally broad: one tile-set's export (many tile fetches + sink
+                        // writes) must not abort the rest of the plan. Any failure is recorded as
+                        // a manual-review outcome for this tile-set only; the loop continues.
                         Log.TileSetExportFailed(_logger, layerResource.Name, tileSetEntry.SourceId, ex);
                         outcome = new OgcTileCacheExportedTileSet
                         {
@@ -398,6 +405,9 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
                     }
                     catch (Exception ex)
                     {
+                        // Intentionally broad: a single tile fetch/write failure (HTTP, sink
+                        // storage, decoding) must not abort the whole tile-set export; count it
+                        // as failed and continue with the remaining tiles in the window.
                         Log.TileFetchFailed(_logger, layerResource.Name, z, x, y, ex);
                         if (warnings.Count == 0)
                         {

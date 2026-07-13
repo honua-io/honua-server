@@ -228,7 +228,7 @@ public sealed class MigrationEvidencePackBuilderTests
         var outputPath = Environment.GetEnvironmentVariable("HONUA_EVIDENCE_PACK_OUTPUT");
         if (string.IsNullOrWhiteSpace(outputPath))
         {
-            outputPath = Path.Combine(AppContext.BaseDirectory, "geoserver-migration-evidence-pack.json");
+            outputPath = Path.Join(AppContext.BaseDirectory, "geoserver-migration-evidence-pack.json");
         }
 
         var directory = Path.GetDirectoryName(outputPath);

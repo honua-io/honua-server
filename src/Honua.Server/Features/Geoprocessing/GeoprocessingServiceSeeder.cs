@@ -59,13 +59,12 @@ internal sealed partial class GeoprocessingServiceSeeder(
             baseGraph = new MetadataV2Graph();
         }
 
-        foreach (var existing in baseGraph.Services)
+        var existingGpService = baseGraph.Services.FirstOrDefault(
+            existing => MetadataV2ServiceProtocols.IsProtocolEnabled(existing, MetadataV2ServiceProtocols.GPServer));
+        if (existingGpService is not null)
         {
-            if (MetadataV2ServiceProtocols.IsProtocolEnabled(existing, MetadataV2ServiceProtocols.GPServer))
-            {
-                Log.AlreadyPresent(logger, existing.Metadata.Name);
-                return;
-            }
+            Log.AlreadyPresent(logger, existingGpService.Metadata.Name);
+            return;
         }
 
         var now = DateTimeOffset.UtcNow;

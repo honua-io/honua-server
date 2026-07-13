@@ -382,6 +382,8 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             """;
 
         var bytes = (byte[])(await command.ExecuteScalarAsync())!;
+        // The filename segment is a fixed literal + GUID token and can never be rooted, so
+        // Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
         var filePath = Path.Combine(Path.GetTempPath(), $"honua-raster-import-{Guid.NewGuid():N}.png");
         await File.WriteAllBytesAsync(filePath, bytes);
         return filePath;
@@ -395,9 +397,14 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
         }
         catch (IOException)
         {
+            // Best-effort temp-file cleanup: another process (e.g. an antivirus scanner or a
+            // still-open handle) may transiently hold the file. Leaving it behind does not fail
+            // the test, so the failure is intentionally swallowed here.
         }
         catch (UnauthorizedAccessException)
         {
+            // Best-effort temp-file cleanup: permissions races on the OS temp directory should
+            // not fail the test. Intentionally swallowed.
         }
     }
 

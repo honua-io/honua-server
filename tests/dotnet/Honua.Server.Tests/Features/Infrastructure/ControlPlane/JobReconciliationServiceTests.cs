@@ -1229,17 +1229,7 @@ public sealed class JobReconciliationServiceTests
     }
 
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
-    {
-        foreach (var tag in tags)
-        {
-            if (tag.Key == name)
-            {
-                return tag.Value?.ToString();
-            }
-        }
-
-        return null;
-    }
+        => tags.FirstOrDefault(tag => tag.Key == name).Value?.ToString();
 
     /// <summary>
     /// Invokes the reconciler's sweep logic once without running the full

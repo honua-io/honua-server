@@ -198,6 +198,9 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
             _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_timeout");
             Log.BackgroundRefreshTimeout(_logger, item.Key);
         }
+        // Intentional: a background refresh callback is best-effort — any failure
+        // (provider error, bug in the callback, etc.) must not crash the refresh
+        // loop; it is logged and backed off instead.
         catch (Exception ex)
         {
             SetRetryBackoff(item.Key);

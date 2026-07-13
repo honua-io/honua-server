@@ -141,10 +141,9 @@ internal static class ClassificationAlgorithms
         {
             var bi = breakIndices[i];
             // Break is between sorted[bi-1] and sorted[bi]
-            if (bi > 0 && bi < n)
-                breaks[i] = (sorted[bi - 1] + sorted[bi]) / 2d;
-            else
-                breaks[i] = sorted[Math.Max(0, bi)];
+            breaks[i] = bi > 0 && bi < n
+                ? (sorted[bi - 1] + sorted[bi]) / 2d
+                : sorted[Math.Max(0, bi)];
         }
 
         return breaks;

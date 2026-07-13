@@ -108,6 +108,9 @@ public static class I3sSceneStatisticsBuilder
         }
 
         // Non-numeric (string) field: emit value presence + distinct count only.
+        // Not a candidate for .Where(...): TryGetValue's out parameter both filters
+        // (missing attributes are skipped) and feeds the running present/distinct
+        // accumulation below, so a LINQ split would need a redundant second lookup.
         var present = 0;
         var distinct = new HashSet<string>(StringComparer.Ordinal);
         foreach (var feature in features)
@@ -179,17 +182,7 @@ public static class I3sSceneStatisticsBuilder
             return 0;
         }
 
-        long count = 0;
-        foreach (var page in pages)
-        {
-            foreach (var node in page.Nodes)
-            {
-                if (node.Mesh is not null)
-                {
-                    count++;
-                }
-            }
-        }
+        long count = pages.Sum(page => page.Nodes.Count(node => node.Mesh is not null));
 
         return count;
     }

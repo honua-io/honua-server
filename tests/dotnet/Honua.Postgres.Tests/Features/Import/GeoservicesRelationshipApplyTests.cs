@@ -249,6 +249,8 @@ public sealed class GeoservicesRelationshipApplyTests
 
     private sealed class NoopHandler : HttpMessageHandler
     {
+        // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+        // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotImplemented));
     }

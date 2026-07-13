@@ -344,9 +344,10 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             ErrorRate = 0.01,
             LatencyP95 = 120
         });
+        using var httpClient = new HttpClient(new DelegateHttpMessageHandler(_ =>
+            throw new InvalidOperationException("Prometheus provider must not be invoked.")));
         var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
-            new StubHttpClientFactory(new HttpClient(new DelegateHttpMessageHandler(_ =>
-                throw new InvalidOperationException("Prometheus provider must not be invoked.")))));
+            new StubHttpClientFactory(httpClient));
 
         var evaluator = new DeployTelemetrySignalEvaluator(
             new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
@@ -932,6 +933,10 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             };
         });
 
+        // Intentionally not disposed: this in-memory HttpClient/DelegateHttpMessageHandler
+        // never opens a real socket, and the returned evaluator (not IDisposable) is shared
+        // by 17+ call sites in this file, so threading a `using` through every caller here
+        // would be disproportionate to the (non-existent) unmanaged resource risk.
         var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
             new StubHttpClientFactory(new HttpClient(handler)));
 

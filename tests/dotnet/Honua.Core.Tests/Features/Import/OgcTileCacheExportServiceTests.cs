@@ -400,6 +400,8 @@ public sealed class OgcTileCacheExportServiceTests
     {
         public List<Uri> RequestUris { get; } = [];
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUris.Add(request.RequestUri!);
@@ -416,6 +418,8 @@ public sealed class OgcTileCacheExportServiceTests
 
     private sealed class FailingTileHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
             {

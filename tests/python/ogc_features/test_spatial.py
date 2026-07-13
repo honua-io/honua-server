@@ -315,7 +315,7 @@ class TestErrorResponses:
         assert response.status_code == 404
         # Should be able to parse as JSON
         try:
-            data = response.json()
+            response.json()
             # May have error details
         except Exception:
             pass  # JSON parsing not required for 404
@@ -332,7 +332,7 @@ class TestErrorResponses:
         )
         assert response.status_code == 400
         try:
-            data = response.json()
+            response.json()
             # Error response may include code, description, etc.
         except Exception:
-            pass
+            pass  # JSON parsing not required for error responses

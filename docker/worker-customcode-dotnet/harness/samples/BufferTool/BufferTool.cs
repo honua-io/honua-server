@@ -38,6 +38,11 @@ public sealed class BufferTool : IGeoprocessingTool
         var outName = context.Params.TryGetProperty("out_name", out var n) && n.ValueKind == JsonValueKind.String
             ? n.GetString()!
             : "buffered.geojson";
+        if (!ArtifactNames.IsSimpleFileName(outName))
+        {
+            return Task.FromResult(GpResult.Failed(
+                $"params.out_name '{outName}' must be a simple file name (no path separators or '..')."));
+        }
 
         context.Log.Info($"buffering '{wkt}' by {distance}");
         context.Progress.Report(10.0, "parsing input");
@@ -49,6 +54,9 @@ public sealed class BufferTool : IGeoprocessingTool
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: WKT parsing can throw a variety of NTS/format
+            // exceptions and this tool boundary reports every failure as a GpResult
+            // rather than crashing the harness process.
             return Task.FromResult(GpResult.Failed($"failed to parse WKT: {ex.Message}"));
         }
 

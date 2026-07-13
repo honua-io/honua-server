@@ -105,7 +105,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _cleanupLogger ??= logger;
+        // First-instance-wins capture of a static logger for the shared timer callback. Multiple
+        // instances can legitimately be constructed concurrently (DI does not guarantee this type
+        // is a singleton), so the write uses CompareExchange instead of a plain '??=' to avoid a
+        // benign-looking but still racy read-then-write on shared static state.
+        Interlocked.CompareExchange(ref _cleanupLogger, logger, null);
     }
 
     /// <summary>
@@ -458,20 +462,18 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         try
         {
             var cutoff = DateTimeOffset.UtcNow.Subtract(LockTimeout);
-            var expiredKeys = new List<string>();
 
             // Find expired lock ownership entries
-            foreach (var kvp in _lockOwnership)
-            {
-                if (kvp.Value.AcquiredAt < cutoff)
-                {
-                    expiredKeys.Add(kvp.Key);
-                }
-            }
+            var expiredKeys = _lockOwnership
+                .Where(kvp => kvp.Value.AcquiredAt < cutoff)
+                .Select(kvp => kvp.Key)
+                .ToList();
 
             // Remove expired entries whose locks are idle. Entries that are still
             // referenced (a legitimately long-running holder or queued waiters)
             // are left untouched and revisited on a later sweep.
+            // Not filtered via '.Where(...)': TryRemoveIdleEntry has the side effect of removing
+            // and disposing the lock entry, so it cannot be hoisted into a predicate.
             var removedCount = 0;
             foreach (var key in expiredKeys)
             {
@@ -487,6 +489,8 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // using the same ref-count guard.
             if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
+                // Not filtered via '.Where(...)': TryRemoveIdleEntry has the side effect of
+                // removing and disposing the lock entry, so it cannot be hoisted into a predicate.
                 var orphanedRemoved = 0;
                 foreach (var lockKey in _globalLocks.Keys)
                 {

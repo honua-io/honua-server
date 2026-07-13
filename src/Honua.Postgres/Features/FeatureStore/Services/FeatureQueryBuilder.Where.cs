@@ -108,6 +108,8 @@ internal sealed partial class FeatureQueryBuilder
 
         var parameterizedExpressions = new List<string>(expressions.Count);
 
+        // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
+        // per-expression parse (literal/null-check/comparison/etc.), not a pure 1:1 mapping.
         foreach (var expression in expressions)
         {
             var trimmedExpression = expression.Trim();
@@ -343,17 +345,7 @@ internal sealed partial class FeatureQueryBuilder
         char.IsLetterOrDigit(value) || value == '_';
 
     private static bool IsAllIdentifierChars(string value)
-    {
-        foreach (var c in value)
-        {
-            if (!IsIdentifierChar(c))
-            {
-                return false;
-            }
-        }
-
-        return value.Length > 0;
-    }
+        => value.Length > 0 && value.All(IsIdentifierChar);
 
     private static string? FindDangerousPattern(string whereClause)
     {
@@ -374,14 +366,6 @@ internal sealed partial class FeatureQueryBuilder
             "chr", "convert_from"
         };
 
-        foreach (var pattern in dangerousPatterns)
-        {
-            if (ContainsOutsideQuotes(whereClause, pattern))
-            {
-                return pattern;
-            }
-        }
-
-        return null;
+        return dangerousPatterns.FirstOrDefault(pattern => ContainsOutsideQuotes(whereClause, pattern));
     }
 }

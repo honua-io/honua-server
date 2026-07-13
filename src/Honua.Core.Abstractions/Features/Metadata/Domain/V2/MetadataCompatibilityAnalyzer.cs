@@ -561,24 +561,21 @@ public static class MetadataCompatibilityAnalyzer
                 MetadataCompatibilityCoverageState.Uncovered));
         }
 
-        foreach (var capability in sourceBinding.Capabilities)
+        foreach (var capability in sourceBinding.Capabilities.Where(capability => !targetBinding.Capabilities.Contains(capability)))
         {
-            if (!targetBinding.Capabilities.Contains(capability))
-            {
-                findings.Add(Finding(
-                    MetadataCompatibilityCode.StorageCapabilityMissing,
-                    MetadataCompatibilityFindingSeverity.Error,
-                    MetadataCompatibilityFindingKind.Storage,
-                    source.Metadata.Id,
-                    MetadataSemanticArtifactKind.Resource,
-                    null,
-                    source.Metadata.Title ?? source.Metadata.Name,
-                    "The target storage binding is missing a required capability.",
-                    Value("capability", capability.ToString()),
-                    Value("capability", "missing"),
-                    MetadataCompatibilityRequiredAction.UpdateStorage,
-                    MetadataCompatibilityCoverageState.Uncovered));
-            }
+            findings.Add(Finding(
+                MetadataCompatibilityCode.StorageCapabilityMissing,
+                MetadataCompatibilityFindingSeverity.Error,
+                MetadataCompatibilityFindingKind.Storage,
+                source.Metadata.Id,
+                MetadataSemanticArtifactKind.Resource,
+                null,
+                source.Metadata.Title ?? source.Metadata.Name,
+                "The target storage binding is missing a required capability.",
+                Value("capability", capability.ToString()),
+                Value("capability", "missing"),
+                MetadataCompatibilityRequiredAction.UpdateStorage,
+                MetadataCompatibilityCoverageState.Uncovered));
         }
 
         if (!string.Equals(sourceBinding.Locator, targetBinding.Locator, StringComparison.Ordinal))
@@ -656,25 +653,23 @@ public static class MetadataCompatibilityAnalyzer
                 MetadataCompatibilityCoverageState.NotApplicable));
         }
 
-        foreach (var protocol in source.EnabledProtocols ?? Array.Empty<string>())
+        foreach (var protocol in (source.EnabledProtocols ?? Array.Empty<string>())
+            .Where(protocol => target.EnabledProtocols is null ||
+                !target.EnabledProtocols.Contains(protocol, StringComparer.OrdinalIgnoreCase)))
         {
-            if (target.EnabledProtocols is null ||
-                !target.EnabledProtocols.Contains(protocol, StringComparer.OrdinalIgnoreCase))
-            {
-                findings.Add(Finding(
-                    MetadataCompatibilityCode.ServiceProtocolMissing,
-                    MetadataCompatibilityFindingSeverity.Error,
-                    MetadataCompatibilityFindingKind.Service,
-                    source.Metadata.Id,
-                    MetadataSemanticArtifactKind.Service,
-                    null,
-                    source.Metadata.Title ?? source.Metadata.Name,
-                    "The target service is missing a required enabled protocol.",
-                    Value("protocol", protocol),
-                    Value("protocol", "missing"),
-                    MetadataCompatibilityRequiredAction.UpdateService,
-                    MetadataCompatibilityCoverageState.Uncovered));
-            }
+            findings.Add(Finding(
+                MetadataCompatibilityCode.ServiceProtocolMissing,
+                MetadataCompatibilityFindingSeverity.Error,
+                MetadataCompatibilityFindingKind.Service,
+                source.Metadata.Id,
+                MetadataSemanticArtifactKind.Service,
+                null,
+                source.Metadata.Title ?? source.Metadata.Name,
+                "The target service is missing a required enabled protocol.",
+                Value("protocol", protocol),
+                Value("protocol", "missing"),
+                MetadataCompatibilityRequiredAction.UpdateService,
+                MetadataCompatibilityCoverageState.Uncovered));
         }
     }
 
@@ -739,44 +734,38 @@ public static class MetadataCompatibilityAnalyzer
                 MetadataCompatibilityCoverageState.NotApplicable));
         }
 
-        foreach (var format in source.SupportedFormats)
+        foreach (var format in source.SupportedFormats.Where(format => !target.SupportedFormats.Contains(format, StringComparer.OrdinalIgnoreCase)))
         {
-            if (!target.SupportedFormats.Contains(format, StringComparer.OrdinalIgnoreCase))
-            {
-                findings.Add(Finding(
-                    MetadataCompatibilityCode.PublicationFormatMissing,
-                    MetadataCompatibilityFindingSeverity.Error,
-                    MetadataCompatibilityFindingKind.Publication,
-                    source.Metadata.Id,
-                    MetadataSemanticArtifactKind.Publication,
-                    source.ResourceId,
-                    source.TitleOverride ?? source.Metadata.Title ?? source.Metadata.Name,
-                    "The target publication is missing a required supported format.",
-                    Value("format", format),
-                    Value("format", "missing"),
-                    MetadataCompatibilityRequiredAction.UpdatePublication,
-                    MetadataCompatibilityCoverageState.Uncovered));
-            }
+            findings.Add(Finding(
+                MetadataCompatibilityCode.PublicationFormatMissing,
+                MetadataCompatibilityFindingSeverity.Error,
+                MetadataCompatibilityFindingKind.Publication,
+                source.Metadata.Id,
+                MetadataSemanticArtifactKind.Publication,
+                source.ResourceId,
+                source.TitleOverride ?? source.Metadata.Title ?? source.Metadata.Name,
+                "The target publication is missing a required supported format.",
+                Value("format", format),
+                Value("format", "missing"),
+                MetadataCompatibilityRequiredAction.UpdatePublication,
+                MetadataCompatibilityCoverageState.Uncovered));
         }
 
-        foreach (var capability in source.Capabilities)
+        foreach (var capability in source.Capabilities.Where(capability => !target.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase)))
         {
-            if (!target.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase))
-            {
-                findings.Add(Finding(
-                    MetadataCompatibilityCode.PublicationCapabilityMissing,
-                    MetadataCompatibilityFindingSeverity.Error,
-                    MetadataCompatibilityFindingKind.Publication,
-                    source.Metadata.Id,
-                    MetadataSemanticArtifactKind.Publication,
-                    source.ResourceId,
-                    source.TitleOverride ?? source.Metadata.Title ?? source.Metadata.Name,
-                    "The target publication is missing a required capability.",
-                    Value("capability", capability),
-                    Value("capability", "missing"),
-                    MetadataCompatibilityRequiredAction.UpdatePublication,
-                    MetadataCompatibilityCoverageState.Uncovered));
-            }
+            findings.Add(Finding(
+                MetadataCompatibilityCode.PublicationCapabilityMissing,
+                MetadataCompatibilityFindingSeverity.Error,
+                MetadataCompatibilityFindingKind.Publication,
+                source.Metadata.Id,
+                MetadataSemanticArtifactKind.Publication,
+                source.ResourceId,
+                source.TitleOverride ?? source.Metadata.Title ?? source.Metadata.Name,
+                "The target publication is missing a required capability.",
+                Value("capability", capability),
+                Value("capability", "missing"),
+                MetadataCompatibilityRequiredAction.UpdatePublication,
+                MetadataCompatibilityCoverageState.Uncovered));
         }
     }
 
@@ -1309,12 +1298,10 @@ public static class MetadataCompatibilityAnalyzer
         }
 
         var actual = new HashSet<string>(actualValues, StringComparer.OrdinalIgnoreCase);
-        foreach (var expectedValue in expected.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var _ in expected.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(expectedValue => !actual.Contains(expectedValue)))
         {
-            if (!actual.Contains(expectedValue))
-            {
-                return false;
-            }
+            return false;
         }
 
         return true;
@@ -1352,42 +1339,30 @@ public static class MetadataCompatibilityAnalyzer
 
         foreach (var resource in targetSnapshot.Graph.Resources)
         {
-            foreach (var relationship in resource.Relationships)
+            foreach (var relationship in resource.Relationships.Where(relationship => changedSemanticIds.Contains(relationship.RelatedResourceId)))
             {
-                if (changedSemanticIds.Contains(relationship.RelatedResourceId))
-                {
-                    AddDependent(states, targetSnapshot, resource.Metadata.Id, relationship.RelatedResourceId, "resource-relationship", "Resource declares a relationship to a changed resource.", SeverityFor(relationship.RelatedResourceId, findings));
-                }
+                AddDependent(states, targetSnapshot, resource.Metadata.Id, relationship.RelatedResourceId, "resource-relationship", "Resource declares a relationship to a changed resource.", SeverityFor(relationship.RelatedResourceId, findings));
             }
 
-            foreach (var styleResourceId in resource.StyleResourceIds)
+            foreach (var styleResourceId in resource.StyleResourceIds.Where(changedSemanticIds.Contains))
             {
-                if (changedSemanticIds.Contains(styleResourceId))
-                {
-                    AddDependent(states, targetSnapshot, resource.Metadata.Id, styleResourceId, "style-resource", "Resource references a changed style resource.", SeverityFor(styleResourceId, findings));
-                }
+                AddDependent(states, targetSnapshot, resource.Metadata.Id, styleResourceId, "style-resource", "Resource references a changed style resource.", SeverityFor(styleResourceId, findings));
             }
         }
 
         foreach (var profile in targetSnapshot.Graph.ProjectionProfiles)
         {
-            foreach (var required in profile.RequiredSemantics)
+            foreach (var required in profile.RequiredSemantics.Where(changedSemanticIds.Contains))
             {
-                if (changedSemanticIds.Contains(required))
-                {
-                    AddDependent(states, targetSnapshot, profile.Metadata.Id, required, "projection-required-semantics", "Projection profile requires a changed semantic.", SeverityFor(required, findings));
-                }
+                AddDependent(states, targetSnapshot, profile.Metadata.Id, required, "projection-required-semantics", "Projection profile requires a changed semantic.", SeverityFor(required, findings));
             }
         }
 
         foreach (var role in targetSnapshot.Graph.Roles)
         {
-            foreach (var policyId in role.PolicyIds)
+            foreach (var policyId in role.PolicyIds.Where(changedSemanticIds.Contains))
             {
-                if (changedSemanticIds.Contains(policyId))
-                {
-                    AddDependent(states, targetSnapshot, role.Metadata.Id, policyId, "role-policy", "Role references a changed policy.", SeverityFor(policyId, findings));
-                }
+                AddDependent(states, targetSnapshot, role.Metadata.Id, policyId, "role-policy", "Role references a changed policy.", SeverityFor(policyId, findings));
             }
         }
 
@@ -1438,6 +1413,8 @@ public static class MetadataCompatibilityAnalyzer
         IReadOnlyList<MetadataCompatibilityFinding> findings)
     {
         var severity = MetadataCompatibilityFindingSeverity.Info;
+        // judgment call: predicate depends on `severity`, which the loop body mutates on each
+        // iteration — not a clean .Where() candidate since the filter condition changes as it runs.
         foreach (var finding in findings)
         {
             if ((string.Equals(finding.AffectedSemanticId, semanticId, StringComparison.Ordinal) ||
@@ -1778,12 +1755,9 @@ public static class MetadataCompatibilityAnalyzer
                     tokens.Add(key == IndexedKey ? "indexed" : key);
                     break;
                 case JsonValueKind.Array:
-                    foreach (var item in element.EnumerateArray())
+                    foreach (var item in element.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String))
                     {
-                        if (item.ValueKind == JsonValueKind.String)
-                        {
-                            AddToken(tokens, item.GetString());
-                        }
+                        AddToken(tokens, item.GetString());
                     }
                     break;
             }

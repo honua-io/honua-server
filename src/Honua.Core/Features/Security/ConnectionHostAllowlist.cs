@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using Honua.Core.Features.Infrastructure.Validation;
@@ -175,14 +176,6 @@ public sealed class ConnectionHostAllowlist : IConnectionHostAllowlist
             return true;
         }
 
-        foreach (var address in addresses)
-        {
-            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress);
     }
 }

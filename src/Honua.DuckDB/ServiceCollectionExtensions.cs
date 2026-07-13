@@ -218,6 +218,10 @@ internal static class ServiceCollectionExtensions
 
             return (columns, types);
         }
+        // Intentionally generic: this is best-effort attribute-column discovery run
+        // during startup wiring for one configured layer. Any failure (connection,
+        // missing table, driver bug) is logged and degrades to an empty attribute set
+        // rather than aborting startup for every other configured layer.
         catch (Exception ex)
         {
             DuckDbLog.AttributeDiscoveryFailed(logger, layerOpt.Id, layerOpt.Table, ex);

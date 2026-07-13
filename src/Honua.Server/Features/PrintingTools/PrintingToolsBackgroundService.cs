@@ -143,7 +143,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 return;
             }
 
-            var (outputBytes, contentType, fileName) = result.Value;
+            var (outputBytes, contentType, _) = result.Value;
 
             // Check cancellation before storing the file to avoid orphaning
             // a temp file when a cancel request arrived during rendering.

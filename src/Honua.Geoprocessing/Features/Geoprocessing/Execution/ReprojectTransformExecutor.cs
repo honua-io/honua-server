@@ -92,7 +92,7 @@ internal sealed class ReprojectTransformExecutor(
             else
             {
                 var editor = new GeometryEditor(geometry.Factory);
-                projected = editor.Edit(geometry, new CoordinateOperation(fromSrid, toSrid));
+                projected = editor.Edit(geometry, new SridCoordinateOperation(fromSrid, toSrid));
             }
 
             projected.SRID = toSrid;
@@ -112,7 +112,9 @@ internal sealed class ReprojectTransformExecutor(
         return srid;
     }
 
-    private sealed class CoordinateOperation(int fromSrid, int toSrid) : GeometryEditor.CoordinateOperation
+    // Named distinctly from the NTS base type (GeometryEditor.CoordinateOperation) it
+    // overrides so the two are never ambiguous at a glance.
+    private sealed class SridCoordinateOperation(int fromSrid, int toSrid) : GeometryEditor.CoordinateOperation
     {
         public override Coordinate[] Edit(Coordinate[] coordinates, Geometry geometry)
         {

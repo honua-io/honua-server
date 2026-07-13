@@ -213,9 +213,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             collections = NonNumericCollectionIds
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -261,9 +260,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             ids = new[] { itemId }
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -384,9 +382,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             collections = new[] { WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture) }
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -410,9 +407,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             sortby = new[] { new { field = "name", direction = "sideways" } }
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
@@ -430,9 +426,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             limit = 5
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -482,9 +477,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             bbox = ValidThreeDimensionalBbox
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -499,9 +493,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             bbox = InvalidThreeDimensionalBbox
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -516,9 +509,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             bbox = OutOfRangeBbox
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -530,9 +522,8 @@ public sealed class StacSearchTests : IAsyncLifetime
     {
         var body = JsonSerializer.Serialize(new { limit = 3 });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -727,9 +718,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             limit = 1
         });
 
-        var page1Response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(page1Body, Encoding.UTF8, "application/json"));
+        using var page1BodyContent = new StringContent(page1Body, Encoding.UTF8, "application/json");
+        var page1Response = await _fixture.Client.PostAsync("/stac/search", page1BodyContent);
 
         var page1Content = await page1Response.Content.ReadAsStringAsync();
         page1Response.StatusCode.Should().Be(HttpStatusCode.OK, page1Content);
@@ -764,9 +754,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             token
         });
 
-        var page2Response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(page2Body, Encoding.UTF8, "application/json"));
+        using var page2BodyContent = new StringContent(page2Body, Encoding.UTF8, "application/json");
+        var page2Response = await _fixture.Client.PostAsync("/stac/search", page2BodyContent);
 
         var page2Content = await page2Response.Content.ReadAsStringAsync();
         page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
@@ -799,9 +788,8 @@ public sealed class StacSearchTests : IAsyncLifetime
             token = "not-a-valid-token"
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/stac/search",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+        using var bodyContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/stac/search", bodyContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

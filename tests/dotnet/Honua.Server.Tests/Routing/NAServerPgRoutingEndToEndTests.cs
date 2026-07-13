@@ -83,7 +83,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     public async Task RouteSolve_OverRealPgRouting_ReturnsEsriRouteWithPaths()
     {
         // Two stops at the SW (0,0 -> vertex 1) and NE (.02,.02 -> vertex 9) corners.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
@@ -119,7 +119,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     {
         async Task<double> SolveAsync(string travelMode)
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
@@ -147,7 +147,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
         // A polygon barrier over the central vertex (5) excludes the edges that
         // touch it. The 3x3 lattice still has a perimeter path between the SW (1)
         // and NE (9) corners, so the route solves but must avoid the blocked edges.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
@@ -179,7 +179,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     {
         // The PgRoutingProvider advertises driving only; cycling is rejected with a
         // GeoServices 400 envelope (no fabricated solve).
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "0.0,0.0;0.02,0.02"),
@@ -198,7 +198,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     public async Task ServiceAreaSolve_OverRealPgRouting_ReturnsSaPolygons()
     {
         // One facility at vertex 1 (SW corner) with breaks at cost 1 and 2.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("facilities", "0.0,0.0"),
@@ -235,7 +235,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     {
         // Incident at vertex 1 (SW corner). Two facilities: vertex 2 (1 hop) and
         // vertex 9 (NE corner, 4 hops). The nearest (vertex 2) must rank 1.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("incidents", "0.0,0.0"),
@@ -263,7 +263,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     {
         // 2x2 over the uniform-cost lattice: origins at vertices 1 & 3, destinations
         // at vertices 7 & 9. Every edge cost = 1, so each pair has an integer cost.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("origins", "0.0,0.0;0.02,0.0"),
@@ -288,7 +288,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     [RoutingTest(RoutingTestEnv)]
     public async Task OdCostMatrix_StraightLines_OverRealPgRouting_TransformsGeometryToOutSrid()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("origins", "0.0,0.0"),
@@ -320,7 +320,7 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     {
         // Each bottom-corner facility reaches its top-corner demand in two hops;
         // the cross-corner path costs four, so a two-minute cutoff requires both.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("facilities", "0.0,0.0;0.02,0.0"),

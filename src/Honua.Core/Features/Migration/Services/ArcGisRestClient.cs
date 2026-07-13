@@ -467,9 +467,15 @@ internal sealed partial class ArcGisRestClient
             return;
         }
 
+        // Pattern-match to a non-null local rather than repeating `credentials?.` on Username
+        // and Password: once AccessToken is absent/blank, credentials being null makes the
+        // whole `credentialsSupplied` expression false anyway, so the null-conditional on the
+        // second branch was provably redundant (flagged by static analysis) — the `is { } c`
+        // guard makes that non-nullness explicit instead of relying on flow inference.
         var credentialsSupplied = !string.IsNullOrWhiteSpace(credentials?.AccessToken)
-            || (!string.IsNullOrWhiteSpace(credentials?.Username)
-                && !string.IsNullOrWhiteSpace(credentials?.Password));
+            || (credentials is { } c
+                && !string.IsNullOrWhiteSpace(c.Username)
+                && !string.IsNullOrWhiteSpace(c.Password));
 
         var kind = statusCode switch
         {
@@ -664,12 +670,9 @@ internal sealed partial class ArcGisRestClient
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
-        foreach (var address in addresses)
+        if (addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
         {
-            if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
-            {
-                throw new HttpRequestException(DisallowedNetworkAddressMessage);
-            }
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
@@ -689,6 +692,11 @@ internal sealed partial class ArcGisRestClient
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // Intentionally not `using var socket = ...`: on success the socket's ownership
+            // transfers to the returned NetworkStream (ownsSocket: true). A `using`
+            // declaration would dispose the socket during the `return` unwind, before the
+            // caller ever sees the stream, closing the connection out from under it. The
+            // `connected` flag makes disposal conditional on transfer *not* having happened.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 

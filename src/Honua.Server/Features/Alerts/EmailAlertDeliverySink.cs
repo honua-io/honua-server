@@ -11,13 +11,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
 {
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<EmailAlertDeliverySink>? _logger;
 
-    public EmailAlertDeliverySink(IOptions<AlertDeliveryOptions> options)
+    public EmailAlertDeliverySink(IOptions<AlertDeliveryOptions> options, ILogger<EmailAlertDeliverySink>? logger = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger;
     }
 
     public AlertChannelType ChannelType => AlertChannelType.Email;
@@ -108,8 +110,12 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
                 Error = $"SMTP error ({ex.StatusCode})."
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            if (_logger is not null)
+            {
+                LogDeliveryFailed(_logger, alertEvent.DedupeKey, ex);
+            }
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -153,4 +159,7 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
     /// <param name="Body">Plain-text email body.</param>
     /// <param name="RuleHeader">Value for the <c>X-Honua-Alert-Rule</c> header, or null to omit it (ops events).</param>
     internal readonly record struct EmailAlertContent(string Subject, string Body, string? RuleHeader);
+
+    [LoggerMessage(EventId = 9441, Level = LogLevel.Warning, Message = "Email alert delivery failed for event {DedupeKey}.")]
+    private static partial void LogDeliveryFailed(ILogger logger, string dedupeKey, Exception exception);
 }

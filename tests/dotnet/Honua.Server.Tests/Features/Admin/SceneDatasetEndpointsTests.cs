@@ -192,9 +192,10 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         var requestNode = JsonSerializer.SerializeToNode(request, _jsonOptions)!.AsObject();
         requestNode["extent"] = partialExtent;
 
+        using var content = new StringContent(requestNode.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/scenes",
-            new StringContent(requestNode.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
+            content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

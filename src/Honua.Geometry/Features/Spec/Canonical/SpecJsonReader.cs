@@ -88,12 +88,9 @@ public static class SpecJsonReader
             {
                 ReferenceNode? target = null;
                 SpecExpression? where = null;
-                if (clause.TryGetProperty("target", out var targetEl))
+                if (clause.TryGetProperty("target", out var targetEl) && ReadExpression(targetEl) is ReferenceNode r)
                 {
-                    if (ReadExpression(targetEl) is ReferenceNode r)
-                    {
-                        target = r;
-                    }
+                    target = r;
                 }
 
                 if (clause.TryGetProperty("where", out var whereEl))
@@ -182,12 +179,9 @@ public static class SpecJsonReader
             metaEl.TryGetProperty("comments", out var commentsEl) &&
             commentsEl.ValueKind == JsonValueKind.Object)
         {
-            foreach (var entry in commentsEl.EnumerateObject())
+            foreach (var entry in commentsEl.EnumerateObject().Where(e => e.Value.ValueKind == JsonValueKind.String))
             {
-                if (entry.Value.ValueKind == JsonValueKind.String)
-                {
-                    comments[entry.Name] = entry.Value.GetString() ?? string.Empty;
-                }
+                comments[entry.Name] = entry.Value.GetString() ?? string.Empty;
             }
         }
 

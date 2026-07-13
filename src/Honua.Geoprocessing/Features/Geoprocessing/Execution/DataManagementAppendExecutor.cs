@@ -100,6 +100,8 @@ internal sealed class DataManagementAppendExecutor(
                     continue;
                 }
 
+                // Not a .Where(...) candidate: seen.Add(name) is the dedup side effect
+                // itself, so a filter predicate here would double as the mutation.
                 foreach (var name in feature.Attributes.GetNames())
                 {
                     if (seen.Add(name))

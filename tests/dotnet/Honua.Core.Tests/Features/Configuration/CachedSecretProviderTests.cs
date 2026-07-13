@@ -307,9 +307,8 @@ internal sealed class CachedSecretProvider
         var results = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         foreach (var provider in _secretResolver.GetSupportedProviders())
         {
-            results[provider] = provider.Equals("env", StringComparison.OrdinalIgnoreCase)
-                ? await _secretResolver.CanResolveSecretAsync("env:PATH", cancellationToken)
-                : true;
+            results[provider] = !provider.Equals("env", StringComparison.OrdinalIgnoreCase)
+                || await _secretResolver.CanResolveSecretAsync("env:PATH", cancellationToken);
         }
 
         await _cacheService.SetAsync(GetConnectivityCacheKey(), results, ConnectivityCacheTtl, cancellationToken);

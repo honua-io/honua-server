@@ -3,6 +3,7 @@
 
 using System.Collections;
 using System.Globalization;
+using System.Linq;
 using Honua.TestKit.Performance;
 using NBomber.Contracts.Stats;
 using NBomber.CSharp;
@@ -99,12 +100,9 @@ internal static class Program
     private static HashSet<string> NormalizeTargets(string[] targets)
     {
         var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var target in targets)
+        foreach (var target in targets.Where(t => !string.IsNullOrWhiteSpace(t)))
         {
-            if (!string.IsNullOrWhiteSpace(target))
-            {
-                normalized.Add(target.Trim());
-            }
+            normalized.Add(target.Trim());
         }
 
         return normalized;

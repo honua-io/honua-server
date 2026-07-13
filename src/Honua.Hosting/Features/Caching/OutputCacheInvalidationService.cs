@@ -381,7 +381,7 @@ internal sealed partial class OutputCacheInvalidationService
                     continue;
                 }
                 var resource = snapshot.ResolveResource(pub);
-                if (!string.IsNullOrWhiteSpace(resource?.Metadata.Name))
+                if (resource is not null && !string.IsNullOrWhiteSpace(resource.Metadata.Name))
                 {
                     collectionIds.Add(resource.Metadata.Name);
                 }
@@ -431,6 +431,9 @@ internal sealed partial class OutputCacheInvalidationService
 
             if (matchedResource is null)
             {
+                // Not rewritten as .Where(...).FirstOrDefault(): the matched resource
+                // and its publication must be assigned together from the same match,
+                // which a single Where/FirstOrDefault projection can't express cleanly.
                 foreach (var resource in snapshot.Graph.Resources)
                 {
                     if (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase))

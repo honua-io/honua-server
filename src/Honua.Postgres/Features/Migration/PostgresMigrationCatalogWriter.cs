@@ -699,15 +699,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             return false;
         }
 
-        foreach (var ch in identifier)
-        {
-            if (!(char.IsAsciiLetterOrDigit(ch) || ch == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return identifier.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_');
     }
 
     private static partial class Log

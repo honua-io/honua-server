@@ -64,10 +64,11 @@ public sealed class ODataCrsUtilitiesTests
 
         result.IsValid.Should().BeTrue(result.ErrorMessage);
         result.Definition.Should().NotBeNull();
-        result.Definition!.Value.Uri.Should().Be("http://www.opengis.net/def/crs/EPSG/0/4326");
-        result.Definition.Value.Srid.Should().Be(4326);
-        result.Definition.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
-        result.Definition.Value.IsGeographic.Should().BeTrue();
+        var definition = result.Definition!.Value;
+        definition.Uri.Should().Be("http://www.opengis.net/def/crs/EPSG/0/4326");
+        definition.Srid.Should().Be(4326);
+        definition.AxisOrder.Should().Be(AxisOrder.EastNorth);
+        definition.IsGeographic.Should().BeTrue();
     }
 
     private sealed class StubCrsRegistry(CrsDefinition? definition) : ICrsRegistry

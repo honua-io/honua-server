@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text.Json;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
@@ -157,12 +158,10 @@ internal static class I3sProtocolShapeValidator
                 }
                 else
                 {
-                    foreach (var child in children.EnumerateArray())
+                    foreach (var child in children.EnumerateArray()
+                        .Where(c => c.ValueKind != JsonValueKind.Number || c.GetInt32() < 0))
                     {
-                        if (child.ValueKind != JsonValueKind.Number || child.GetInt32() < 0)
-                        {
-                            violations.Add($"node[{index}].children must be non-negative integer indices.");
-                        }
+                        violations.Add($"node[{index}].children must be non-negative integer indices.");
                     }
                 }
             }

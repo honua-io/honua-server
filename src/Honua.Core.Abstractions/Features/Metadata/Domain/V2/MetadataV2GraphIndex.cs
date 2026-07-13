@@ -139,12 +139,9 @@ public sealed class MetadataV2GraphIndex
         // Multiple resources may share the same display name (different IDs / namespaces).
         // First-wins keeps the index deterministic and avoids ArgumentException on construction.
         var resourcesByName = new Dictionary<string, MetadataV2Resource>(StringComparer.OrdinalIgnoreCase);
-        foreach (var r in graph.Resources)
+        foreach (var r in graph.Resources.Where(r => !string.IsNullOrEmpty(r.Metadata.Name)))
         {
-            if (!string.IsNullOrEmpty(r.Metadata.Name))
-            {
-                resourcesByName.TryAdd(r.Metadata.Name, r);
-            }
+            resourcesByName.TryAdd(r.Metadata.Name, r);
         }
 
         var connectionsById = new Dictionary<string, MetadataV2Connection>(StringComparer.Ordinal);
@@ -156,6 +153,9 @@ public sealed class MetadataV2GraphIndex
 
         var storageBindingsByStorageLayerId = new Dictionary<int, MetadataV2StorageBinding>();
         var resourcesByStorageLayerId = new Dictionary<int, MetadataV2Resource>();
+        // judgment call: the `is not int storageLayerId` pattern-match both filters and binds the
+        // extracted value used below; a .Where() would have to re-extract it, which is messier
+        // than the guard-clause form here.
         foreach (var binding in graph.StorageBindings)
         {
             if (binding.StorageLayerId is not int storageLayerId) continue;
@@ -177,12 +177,9 @@ public sealed class MetadataV2GraphIndex
         // the index deterministic; consumers that need ambiguity-aware routing use
         // BuildPrimaryServiceMapV2 instead.
         var servicesByName = new Dictionary<string, MetadataV2Service>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in graph.Services)
+        foreach (var s in graph.Services.Where(s => !string.IsNullOrEmpty(s.Metadata.Name)))
         {
-            if (!string.IsNullOrEmpty(s.Metadata.Name))
-            {
-                servicesByName.TryAdd(s.Metadata.Name, s);
-            }
+            servicesByName.TryAdd(s.Metadata.Name, s);
         }
 
         var publicationsById = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);

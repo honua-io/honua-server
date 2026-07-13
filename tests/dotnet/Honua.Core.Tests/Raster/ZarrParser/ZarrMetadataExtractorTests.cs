@@ -21,7 +21,7 @@ public class ZarrMetadataExtractorTests
             cols: 8,
             chunkRows: 4,
             chunkCols: 4,
-            sample: (r, c) => r * 10 + c);
+            sample: (r, c) => (float)r * 10 + c);
         var reader = new InMemoryZarrRangeReader(objects);
         var extractor = new ZarrMetadataExtractor();
 
@@ -143,7 +143,7 @@ public class ZarrMetadataExtractorTests
             cols: 8,
             chunkRows: 4,
             chunkCols: 4,
-            sample: (r, c) => r * 10 + c,
+            sample: (r, c) => (float)r * 10 + c,
             gzip: false);
         var reader = new InMemoryZarrRangeReader(objects);
         var extractor = new ZarrMetadataExtractor();

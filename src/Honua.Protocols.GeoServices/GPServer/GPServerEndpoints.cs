@@ -360,6 +360,10 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: this is the request-handling boundary for the
+            // submitJob endpoint. MapExceptionToResult records telemetry and always
+            // logs (LogAndReturn) before translating any exception type into a
+            // GeoServices-format error response, so nothing here is silently swallowed.
             return MapExceptionToResult(context, logger, "SubmitJob", ex);
         }
     }
@@ -498,6 +502,9 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: final fallback after the TimeoutException/
+            // OperationCanceledException cases above. MapExceptionToResult logs and
+            // records telemetry for every exception type before mapping to a response.
             return MapExceptionToResult(context, logger, "Execute", ex);
         }
     }
@@ -764,6 +771,9 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: request-handling boundary for the jobs-list
+            // endpoint; MapExceptionToResult logs and records telemetry for every
+            // exception type before mapping to a GeoServices-format error response.
             return MapExceptionToResult(context, logger, "JobsList", ex);
         }
     }
@@ -924,6 +934,9 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: request-handling boundary for the job-status
+            // endpoint; MapExceptionToResult logs and records telemetry for every
+            // exception type before mapping to a GeoServices-format error response.
             return MapExceptionToResult(context, logger, "JobStatus", ex);
         }
     }
@@ -1020,6 +1033,9 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: request-handling boundary for the job-result
+            // endpoint; MapExceptionToResult logs and records telemetry for every
+            // exception type before mapping to a GeoServices-format error response.
             return MapExceptionToResult(context, logger, "JobResult", ex);
         }
     }
@@ -1102,6 +1118,9 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: request-handling boundary for the cancel-job
+            // endpoint; MapExceptionToResult logs and records telemetry for every
+            // exception type before mapping to a GeoServices-format error response.
             return MapExceptionToResult(context, logger, "CancelJob", ex);
         }
     }
@@ -1464,15 +1483,8 @@ internal static class GPServerEndpoints
     /// </summary>
     private static bool IsAliasShadowedByCatalogProcess(IProcessCatalog processCatalog, string taskName)
     {
-        foreach (var process in processCatalog.ListProcesses())
-        {
-            if (string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return processCatalog.ListProcesses()
+            .Any(process => string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
@@ -1603,6 +1615,10 @@ internal static class GPServerEndpoints
         IReadOnlyDictionary<string, string> rawParameters,
         int? derivedSrid)
     {
+        // Not rewritten as .Where(...): this is a priority-ordered first-match search over
+        // the Try-pattern (TryGetValue + int.TryParse), not a pure filter — it needs the
+        // parsed int value, not just the matching key, so a LINQ equivalent would need an
+        // intermediate nullable projection and would be harder to read than the loop.
         foreach (var key in new[] { "srid", "toSrid", "targetSrid", "outSr" })
         {
             if (rawParameters.TryGetValue(key, out var value) &&

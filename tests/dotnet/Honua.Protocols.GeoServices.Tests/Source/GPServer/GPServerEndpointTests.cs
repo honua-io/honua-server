@@ -127,9 +127,10 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_PostWithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        using var requestContent = new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain");
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer",
-            new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
     }
@@ -504,7 +505,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_UnknownTask_ReturnsNotFound()
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["input_features"] = "test-layer",
@@ -523,9 +524,10 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        using var requestContent = new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain");
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
-            new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
     }
@@ -882,9 +884,10 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel")]
     public async Task CancelJobPost_WithInvalidJobId_ReturnsError()
     {
+        using var requestContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/jobs/nonexistent/cancel",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(404, 503);
     }
@@ -1122,7 +1125,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         // env:outSR is now recognized (not rejected) on submitJob, matching the
         // synchronous execute route's behavior. See #1228.
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["wkb"] = PointWkbBase64,
@@ -1147,7 +1150,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     {
         // POST with form body but env control in query string â€” the query-string
         // parameter must still be read and honored (not silently dropped).
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["wkb"] = PointWkbBase64,
@@ -1236,7 +1239,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithInvalidEnvOverwriteOutput_ReturnsBadRequest()
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["wkb"] = PointWkbBase64,
@@ -1358,7 +1361,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             // auth were skipped. env:outSR/env:processSR/env:workspace/
             // env:overwriteOutput are now recognized (not rejected) on submitJob,
             // so this uses a control that stays unsupported.
-            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
                 ["wkb"] = PointWkbBase64,

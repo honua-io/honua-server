@@ -69,6 +69,8 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         });
         builder.ConfigureAppConfiguration((context, configBuilder) =>
         {
+            // "honua-test-storage" is a fixed literal, so this combine can't drop the
+            // temp path.
             var attachmentsPath = Path.Combine(Path.GetTempPath(), "honua-test-storage");
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {

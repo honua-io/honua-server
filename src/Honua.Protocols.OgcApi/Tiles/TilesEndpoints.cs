@@ -40,7 +40,7 @@ internal static partial class TilesEndpoints
 
     public static IEndpointRouteBuilder MapTilesEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var datasetTilesets = endpoints.MapGet("/ogc/tiles/tiles", HandleGetDatasetTilesets)
+        endpoints.MapGet("/ogc/tiles/tiles", HandleGetDatasetTilesets)
             .WithDisplayName("OGC API Tiles Tilesets List")
             .WithName("OgcTilesTilesets")
             .WithSummary("Get available tilesets for the dataset")
@@ -50,7 +50,7 @@ internal static partial class TilesEndpoints
             .Produces<TileSetsList>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var datasetTileset = endpoints.MapGet("/ogc/tiles/tiles/{tileMatrixSetId}", HandleGetDatasetTileset)
+        endpoints.MapGet("/ogc/tiles/tiles/{tileMatrixSetId}", HandleGetDatasetTileset)
             .WithDisplayName("OGC API Tiles Dataset Tileset")
             .WithName("OgcTilesDatasetTileset")
             .WithSummary("Get tileset metadata for the dataset")
@@ -60,7 +60,7 @@ internal static partial class TilesEndpoints
             .Produces<TileSet>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var datasetTileItem = endpoints.MapGet("/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}", HandleGetDatasetTileItem)
+        endpoints.MapGet("/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}", HandleGetDatasetTileItem)
             .WithDisplayName("OGC API Tiles Dataset Tile")
             .WithName("OgcTilesDatasetTile")
             .WithSummary("Get a tile for the dataset")
@@ -68,7 +68,7 @@ internal static partial class TilesEndpoints
             .WithTags("OGC API Tiles")
             .CacheOutput("OgcTilesDatasetTile");
 
-        var collectionTilesets = endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles", HandleGetCollectionTilesets)
+        endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles", HandleGetCollectionTilesets)
             .WithDisplayName("OGC API Tiles Collection Tilesets List")
             .WithName("OgcTilesCollectionTilesets")
             .WithSummary("Get available tilesets for a collection")
@@ -78,7 +78,7 @@ internal static partial class TilesEndpoints
             .Produces<TileSetsList>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var collectionTileset = endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}", HandleGetCollectionTileset)
+        endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}", HandleGetCollectionTileset)
             .WithDisplayName("OGC API Tiles Collection Tileset")
             .WithName("OgcTilesCollectionTileset")
             .WithSummary("Get tileset metadata for a collection")
@@ -88,7 +88,7 @@ internal static partial class TilesEndpoints
             .Produces<TileSet>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var collectionTile = endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}", HandleGetCollectionTile)
+        endpoints.MapGet("/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow:int}/{tileCol:int}", HandleGetCollectionTile)
             .WithDisplayName("OGC API Tiles Collection Tile")
             .WithName("OgcTilesCollectionTile")
             .WithSummary("Get a tile for a collection")
@@ -1654,17 +1654,7 @@ internal static partial class TilesEndpoints
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)
-    {
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
 
     private static IResult? ValidateTileQueryParameters(
         HttpContext context,

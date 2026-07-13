@@ -36,7 +36,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_TwoStops_ReturnsEsriRouteFeatureSet()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -98,7 +98,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_DefaultBreaks_ReturnsSaPolygonsWithFromToBreak()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
@@ -133,7 +133,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_PJsonFormat_ReturnsIndentedJson()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "pjson"),
             new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -159,7 +159,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_MissingStops_Returns400()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "-157.858333,21.306944"),
@@ -181,7 +181,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
@@ -217,7 +217,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -252,7 +252,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithRoutingProviderAsync(provider);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -291,7 +291,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
@@ -325,7 +325,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     {
         // The shared fixture's TestRoutingProvider advertises all barrier kinds and
         // driving/walking modes, so a barrier+mode request is accepted and solved.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -355,7 +355,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -387,7 +387,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     public async Task RouteSolve_WithUnsupportedTravelMode_Returns400()
     {
         // The shared fixture provider advertises only driving/walking; trucking is rejected.
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
@@ -412,7 +412,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     {
         async Task<double> SolveAsync(string mode)
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("stops", "-157.86,21.30;-157.80,21.40"),
@@ -437,7 +437,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_WithUnsupportedTravelMode_Returns400()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("facilities", "-157.858333,21.306944"),
@@ -487,7 +487,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility")]
     public async Task SolveClosestFacility_WithIncidentAndFacilities_ReturnsRankedRoute()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("incidents", "-157.858333,21.306944"),
@@ -519,7 +519,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("incidents", "-157.858333,21.306944"),
@@ -547,7 +547,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
     public async Task SolveOdCostMatrix_TwoByTwo_ReturnsRankedLines()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("origins", "-157.86,21.30;-157.80,21.40"),
@@ -576,7 +576,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
     public async Task SolveOdCostMatrix_StraightLines_ReturnsGeometryInRequestedSpatialReference()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("origins", "-157.86,21.30"),
@@ -604,7 +604,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix")]
     public async Task SolveOdCostMatrix_TrueShape_ReturnsPrecise400()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("origins", "-157.86,21.30"),
@@ -636,7 +636,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("origins", "-157.86,21.30"),
@@ -671,7 +671,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("origins", "-157.86,21.30"),
@@ -700,7 +700,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
     public async Task SolveLocationAllocation_MinimizeImpedance_ChoosesFacilityAndAllocatesDemand()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             // Two candidate facilities; demand clusters near the first.
@@ -733,7 +733,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
     public async Task SolveLocationAllocation_MinimizeFacilities_CoversDemandWithDeterministicFacilitySet()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("facilities", "0,0;0.02,0;0.1,0.1"),
@@ -764,7 +764,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation")]
     public async Task SolveLocationAllocation_UnsupportedProblemType_Returns400()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("facilities", "-157.86,21.30"),
@@ -805,7 +805,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("facilities", "0,0"),
@@ -841,7 +841,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var fixture = await CreateFixtureWithCapabilitiesAsync(capabilities);
         try
         {
-            var payload = new FormUrlEncodedContent(
+            using var payload = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("facilities", "-157.86,21.30"),

@@ -123,6 +123,8 @@ internal sealed partial class FeatureQueryBuilder
             .Where(field => !maskedFields.Contains(field.Name))
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
+        // Not rewritten as .Where(...): TryGetValue does the existence check and value fetch (and
+        // preserves the requested-order iteration over requestedOutFields) in a single dictionary lookup.
         var orderedFields = new List<MetadataV2Field>(requestedOutFields.Length);
         foreach (var fieldName in requestedOutFields)
         {

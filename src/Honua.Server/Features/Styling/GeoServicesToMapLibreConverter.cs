@@ -11,6 +11,13 @@ namespace Honua.Server.Features.Styling;
 internal static class GeoServicesToMapLibreConverter
 {
     /// <summary>
+    /// Tolerance for comparing picture-marker offset/rotation values (in pixels/degrees)
+    /// against zero or against each other. Matches the tolerance already used to detect
+    /// uniform per-stop layouts below; avoids exact double equality on style-authored values.
+    /// </summary>
+    private const double OffsetEqualityEpsilon = 0.01d;
+
+    /// <summary>
     /// Converts a GeoServices drawingInfo payload to canonical MapLibre Style Spec v8 JSON
     /// and reports any symbolizer inputs that could not be losslessly translated.  When
     /// inputs are unsupported, callers still receive a best-effort default MapLibre style
@@ -120,12 +127,9 @@ internal static class GeoServicesToMapLibreConverter
             return;
         }
 
-        foreach (var allowed in supported)
+        if (supported.Any(allowed => string.Equals(allowed, symbolType, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(allowed, symbolType, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         unsupported.Add(new UnsupportedSymbolizerInfo
@@ -156,15 +160,10 @@ internal static class GeoServicesToMapLibreConverter
             return;
         }
 
-        var hasLayoutHints = false;
-        foreach (var payload in payloads)
-        {
-            if ((payload.XOffset ?? 0d) != 0d || (payload.YOffset ?? 0d) != 0d || (payload.Angle ?? 0d) != 0d)
-            {
-                hasLayoutHints = true;
-                break;
-            }
-        }
+        var hasLayoutHints = payloads.Any(payload =>
+            Math.Abs(payload.XOffset ?? 0d) > OffsetEqualityEpsilon
+            || Math.Abs(payload.YOffset ?? 0d) > OffsetEqualityEpsilon
+            || Math.Abs(payload.Angle ?? 0d) > OffsetEqualityEpsilon);
 
         if (!hasLayoutHints)
         {
@@ -746,7 +745,7 @@ internal static class GeoServicesToMapLibreConverter
         var fallbackId = images[0].Id;
         if (defaultPayload is { } defaultPayloadForImage)
         {
-            fallbackId = BuildPictureMarkerId(layer.Id, index++);
+            fallbackId = BuildPictureMarkerId(layer.Id, index);
             images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
@@ -892,7 +891,7 @@ internal static class GeoServicesToMapLibreConverter
         var fallbackId = baseId;
         if (defaultPayload is { } defaultPayloadForImage)
         {
-            fallbackId = BuildPictureMarkerId(layer.Id, index++);
+            fallbackId = BuildPictureMarkerId(layer.Id, index);
             images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
@@ -1153,13 +1152,15 @@ internal static class GeoServicesToMapLibreConverter
                 baselineX = x;
                 baselineY = y;
                 baselineAngle = angle;
-                hasValue = x != 0d || y != 0d || angle != 0d;
+                hasValue = Math.Abs(x) > OffsetEqualityEpsilon
+                    || Math.Abs(y) > OffsetEqualityEpsilon
+                    || Math.Abs(angle) > OffsetEqualityEpsilon;
                 continue;
             }
 
-            if (Math.Abs(x - baselineX) > 0.01d
-                || Math.Abs(y - baselineY) > 0.01d
-                || Math.Abs(angle - baselineAngle) > 0.01d)
+            if (Math.Abs(x - baselineX) > OffsetEqualityEpsilon
+                || Math.Abs(y - baselineY) > OffsetEqualityEpsilon
+                || Math.Abs(angle - baselineAngle) > OffsetEqualityEpsilon)
             {
                 return false;
             }
@@ -1176,12 +1177,12 @@ internal static class GeoServicesToMapLibreConverter
 
     private static void ApplyPictureMarkerLayout(Dictionary<string, object?> layout, PictureMarkerLayout markerLayout)
     {
-        if (markerLayout.XOffset != 0d || markerLayout.YOffset != 0d)
+        if (Math.Abs(markerLayout.XOffset) > OffsetEqualityEpsilon || Math.Abs(markerLayout.YOffset) > OffsetEqualityEpsilon)
         {
             layout["icon-offset"] = new[] { markerLayout.XOffset, markerLayout.YOffset };
         }
 
-        if (markerLayout.Angle != 0d)
+        if (Math.Abs(markerLayout.Angle) > OffsetEqualityEpsilon)
         {
             layout["icon-rotate"] = markerLayout.Angle;
         }

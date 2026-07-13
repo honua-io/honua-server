@@ -208,6 +208,9 @@ internal sealed partial class FeatureServerQueryHandler(
         string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
+        // Not converted to a `using` declaration: featureActivity starts as null and is
+        // reassigned once telemetry context is available further down, but using-declared
+        // variables are read-only (CS1656) — the manual finally-dispose is required here.
         Activity? featureActivity = null;
         try
         {
@@ -397,6 +400,9 @@ internal sealed partial class FeatureServerQueryHandler(
         string? requiredProtocol,
         CancellationToken cancellationToken = default)
     {
+        // Not converted to a `using` declaration: featureActivity starts as null and is
+        // reassigned once telemetry context is available further down, but using-declared
+        // variables are read-only (CS1656) — the manual finally-dispose is required here.
         Activity? featureActivity = null;
         try
         {
@@ -2785,13 +2791,11 @@ internal sealed partial class FeatureServerQueryHandler(
             FieldNames.ObjectId
         };
 
-        foreach (var field in parsed)
+        var missingField = parsed.FirstOrDefault(field => !fieldNames.Contains(field));
+        if (missingField != null)
         {
-            if (!fieldNames.Contains(field))
-            {
-                error = $"Field '{field}' referenced in groupByFieldsForStatistics does not exist on the layer.";
-                return false;
-            }
+            error = $"Field '{missingField}' referenced in groupByFieldsForStatistics does not exist on the layer.";
+            return false;
         }
 
         groupByFields = parsed;
@@ -3029,19 +3033,14 @@ internal sealed partial class FeatureServerQueryHandler(
         for (var i = 0; i < outFields.Length; i++)
         {
             var fieldName = outFields[i];
-            if (feature.Attributes.TryGetValue(fieldName, out var value) && value != null)
-            {
-                parts[i] = value switch
+            parts[i] = feature.Attributes.TryGetValue(fieldName, out var value) && value != null
+                ? value switch
                 {
                     IConvertible convertible => convertible.ToString(CultureInfo.InvariantCulture),
                     IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
                     _ => value.ToString() ?? string.Empty
-                };
-            }
-            else
-            {
-                parts[i] = "\0null\0";
-            }
+                }
+                : "\0null\0";
         }
 
         return string.Join("\0", parts);

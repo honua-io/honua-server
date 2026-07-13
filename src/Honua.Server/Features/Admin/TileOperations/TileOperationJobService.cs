@@ -53,12 +53,15 @@ internal sealed partial class TileOperationJobService(
     // batch-dispatched path (TileCacheJobExecutor) lifts this via TileCacheBatchOptions.
     private const int InProcessMaxTilesCeiling = 5_000;
 
+    // progressStore/logger are already guaranteed non-null here: the _progressStore and
+    // _logger field initializers above run first (declaration order) and would have
+    // already thrown if either parameter were null.
     private readonly TileOperationExecutionCore _executionCore = new(
-        progressStore ?? throw new ArgumentNullException(nameof(progressStore)),
+        progressStore,
         cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService)),
         tileOptions ?? throw new ArgumentNullException(nameof(tileOptions)),
         limitsOptions ?? throw new ArgumentNullException(nameof(limitsOptions)),
-        logger ?? throw new ArgumentNullException(nameof(logger)),
+        logger,
         InProcessMaxTilesCeiling);
 
     private const int JobRequestRetentionHours = 24;
@@ -353,6 +356,10 @@ internal sealed partial class TileOperationJobService(
         }
         finally
         {
+            // Not a plain `using`: the coordinator must first have its renewal loop
+            // cancelled and awaited, then release its Redis claim asynchronously, and
+            // only then be disposed - a `using` declaration can't sequence that
+            // async cleanup ahead of disposal.
             if (renewalCts != null)
             {
                 renewalCts.Cancel();
@@ -452,6 +459,8 @@ internal sealed partial class TileOperationJobService(
         }
         catch (JsonException)
         {
+            // Neither the current nor legacy persisted-request shape could be parsed;
+            // treat the cached entry as unrecoverable rather than surfacing a parse error.
         }
 
         return null;
@@ -640,6 +649,7 @@ internal sealed partial class TileOperationJobService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Expected: the lease was released (or the job finished) and renewal was cancelled.
         }
     }
 

@@ -419,21 +419,20 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             }
         }
 
-        foreach (var r in editResult.DeleteResults)
+        foreach (var r in editResult.DeleteResults.Where(r => r.IsSuccess && r.ObjectId.HasValue))
         {
-            if (r.IsSuccess && r.ObjectId.HasValue)
-            {
-                await _mutationEventService.PublishAsync(
-                    context.GetHttpContext(),
-                    layerId,
-                    r.ObjectId.Value,
-                    "delete",
-                    HonuaTelemetry.Protocols.Grpc,
-                    CancellationToken.None,
-                    serviceId: serviceId,
-                    requestId: requestId,
-                    layerSrid: layerSrid).ConfigureAwait(false);
-            }
+            // The Where clause above already guarantees ObjectId.HasValue, but the compiler
+            // can't propagate that narrowing across the LINQ lambda boundary back into this loop.
+            await _mutationEventService.PublishAsync(
+                context.GetHttpContext(),
+                layerId,
+                r.ObjectId!.Value,
+                "delete",
+                HonuaTelemetry.Protocols.Grpc,
+                CancellationToken.None,
+                serviceId: serviceId,
+                requestId: requestId,
+                layerSrid: layerSrid).ConfigureAwait(false);
         }
     }
 

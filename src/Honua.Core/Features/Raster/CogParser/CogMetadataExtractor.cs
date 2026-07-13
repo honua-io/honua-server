@@ -176,6 +176,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                     xMax = xMin + pixelScaleX * width;
                     yMin = yMax - pixelScaleY * height;
                 }
+                // Exact-zero check is intentional and safe here: xMax/xMin are
+                // declared with a literal 0 default (line above) and are only
+                // ever reassigned via floating-point math in the hasPixelScale
+                // branch above, which this else-if cannot reach. There is no
+                // computed floating value being compared — only "has this
+                // sentinel default been overwritten yet".
                 else if (xMax == 0 && xMin == 0 && width > 0)
                 {
                     // Fallback: unit extent when no georeferencing tags present

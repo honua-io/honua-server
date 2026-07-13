@@ -50,6 +50,8 @@ internal sealed class InMemoryZarrRangeReader : ICloudRangeReader
         {
             throw new FileNotFoundException(key);
         }
+        // Stream ownership transfers to the caller via the return value; the
+        // reader consuming this stream is responsible for disposing it.
         return Task.FromResult<Stream>(new MemoryStream(data, (int)offset, System.Math.Min(length, data.Length - (int)offset)));
     }
 

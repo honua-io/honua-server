@@ -319,12 +319,9 @@ internal static class MetadataV2AttributeValidation
             {
                 return null;
             }
-            foreach (var coded in domain.CodedValues)
+            if (domain.CodedValues.Any(coded => CodedValueMatches(coded.Code, value)))
             {
-                if (CodedValueMatches(coded.Code, value))
-                {
-                    return null;
-                }
+                return null;
             }
             return $"Field '{field.Name}' value is not in the coded-value domain.";
         }

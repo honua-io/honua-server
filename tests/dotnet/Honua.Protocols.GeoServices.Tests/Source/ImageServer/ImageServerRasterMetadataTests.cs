@@ -112,9 +112,10 @@ public class ImageServerRasterMetadataTests
             stats[0].GetProperty("mean").GetDouble().Should().Be(128);
             stats[0].GetProperty("standardDeviation").GetDouble().Should().Be(45);
 
+            using var statisticsContent = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") });
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/statistics",
-                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") }));
+                statisticsContent);
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
             postJson.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
@@ -146,9 +147,10 @@ public class ImageServerRasterMetadataTests
             histograms[0].GetProperty("size").GetInt32().Should().Be(4);
             histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
 
+            using var histogramsContent = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") });
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/histograms",
-                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") }));
+                histogramsContent);
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
             postJson.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
@@ -181,9 +183,10 @@ public class ImageServerRasterMetadataTests
             names.Should().Contain("Stretch");
             names.Should().Contain("Clip");
 
+            using var rasterFunctionInfosContent = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") });
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/rasterFunctionInfos",
-                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") }));
+                rasterFunctionInfosContent);
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -213,9 +216,10 @@ public class ImageServerRasterMetadataTests
             // Continuous rasters carry no value/attribute table, so features is empty but present.
             json.RootElement.GetProperty("features").GetArrayLength().Should().Be(0);
 
+            using var rasterAttributeTableContent = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") });
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/rasterAttributeTable",
-                new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("f", "json") }));
+                rasterAttributeTableContent);
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -262,13 +266,14 @@ public class ImageServerRasterMetadataTests
             byServiceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             // POST mirror accepts the renderingRule via the form body.
+            using var colormapContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("renderingRule", renderingRule),
+            });
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/colormap",
-                new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("renderingRule", renderingRule),
-                }));
+                colormapContent);
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
             postJson.RootElement.GetProperty("colormap").GetArrayLength().Should().Be(2);

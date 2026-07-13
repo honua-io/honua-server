@@ -87,6 +87,8 @@ public static class EvalScenarioLoader
             return null;
         }
 
+        // `root` is always the first argument here and `scenarioId` is a scenario
+        // identifier (never an absolute path), so this combine can't drop `root`.
         var candidate = Path.Combine(root, $"{scenarioId}.json");
         return File.Exists(candidate) ? candidate : null;
     }
@@ -112,12 +114,16 @@ public static class EvalScenarioLoader
             return null;
         }
 
+        // ScenarioRootSegment is a fixed relative literal (with separators normalized),
+        // so this combine can't drop solutionRoot.
         var fromSolution = Path.Combine(solutionRoot, ScenarioRootSegment.Replace('/', Path.DirectorySeparatorChar));
         return Directory.Exists(fromSolution) ? fromSolution : null;
     }
 
     private static string? FindAncestorContaining(string marker)
     {
+        // `marker` (e.g. "Honua.sln") is a fixed literal filename, never rooted, so this
+        // combine can't drop directory.FullName.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, marker)))
         {

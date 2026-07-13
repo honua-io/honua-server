@@ -189,12 +189,9 @@ public sealed class DependencyInjectionLimitsTests
                 types = ex.Types;
             }
 
-            foreach (var type in types)
+            foreach (var type in types.OfType<Type>())
             {
-                if (type is not null)
-                {
-                    yield return type;
-                }
+                yield return type;
             }
         }
     }
@@ -227,17 +224,7 @@ public sealed class DependencyInjectionLimitsTests
     };
 
     private static bool HasServiceLikeName(string typeName)
-    {
-        foreach (var suffix in ServiceLikeSuffixes)
-        {
-            if (typeName.EndsWith(suffix, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => ServiceLikeSuffixes.Any(suffix => typeName.EndsWith(suffix, StringComparison.Ordinal));
 
     /// <summary>
     /// Detects C# records (and record structs) by their compiler-synthesized clone member so that
@@ -264,9 +251,8 @@ public sealed class DependencyInjectionLimitsTests
         }
 
         var count = 0;
-        foreach (var parameter in primaryConstructor.GetParameters())
+        foreach (var parameterType in primaryConstructor.GetParameters().Select(parameter => parameter.ParameterType))
         {
-            var parameterType = parameter.ParameterType;
             if (IsPrimitiveOrRouteParameter(parameterType) ||
                 parameterType == typeof(CancellationToken) ||
                 IsLoggerType(parameterType) ||
@@ -331,10 +317,8 @@ public sealed class DependencyInjectionLimitsTests
     {
         var injectedCount = 0;
 
-        foreach (var param in parameters)
+        foreach (var paramType in parameters.Select(param => param.ParameterType))
         {
-            var paramType = param.ParameterType;
-
             if (IsPrimitiveOrRouteParameter(paramType))
                 continue;
 

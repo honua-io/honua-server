@@ -199,13 +199,16 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
         // ---- Subject.
         var subjectElement = assertion.Element(XName.Get("Subject", SamlAssertionNs));
         var nameId = subjectElement?.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
-        if (string.IsNullOrEmpty(nameId))
+        // The subjectElement is null check is redundant in practice (a null subjectElement
+        // always yields a null/empty nameId above too) but makes subjectElement's non-null
+        // state after this guard provable to the compiler, avoiding a redundant `?.` below.
+        if (string.IsNullOrEmpty(nameId) || subjectElement is null)
         {
             return SamlValidationResult.Failure("SAML assertion has no Subject NameID.");
         }
 
         // ---- SubjectConfirmationData NotOnOrAfter (bearer expiry).
-        var confirmationData = subjectElement?
+        var confirmationData = subjectElement
             .Element(XName.Get("SubjectConfirmation", SamlAssertionNs))?
             .Element(XName.Get("SubjectConfirmationData", SamlAssertionNs));
         if (confirmationData is not null &&

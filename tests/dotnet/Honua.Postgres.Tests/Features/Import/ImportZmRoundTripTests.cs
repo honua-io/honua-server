@@ -177,7 +177,7 @@ public sealed class ImportZmRoundTripTests
 
         // Spot-check a known Z value is present somewhere in the ring.
         var anyZ = firstRing.EnumerateArray()
-            .Any(c => c.GetArrayLength() == 3 && c[2].GetDouble() == 12.0);
+            .Any(c => c.GetArrayLength() == 3 && Math.Abs(c[2].GetDouble() - 12.0) < 1e-9);
         anyZ.Should().BeTrue();
     }
 

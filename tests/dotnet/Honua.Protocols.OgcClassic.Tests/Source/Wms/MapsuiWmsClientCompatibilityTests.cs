@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using FluentAssertions;
 using Honua.TestKit;
@@ -74,9 +75,8 @@ public sealed class MapsuiWmsClientCompatibilityTests : IClassFixture<WebAppFixt
             return layer.Name;
         }
 
-        foreach (var child in layer.ChildLayers ?? [])
+        foreach (var name in (layer.ChildLayers ?? []).Select(GetFirstAdvertisedLayerName))
         {
-            var name = GetFirstAdvertisedLayerName(child);
             if (!string.IsNullOrWhiteSpace(name))
             {
                 return name;

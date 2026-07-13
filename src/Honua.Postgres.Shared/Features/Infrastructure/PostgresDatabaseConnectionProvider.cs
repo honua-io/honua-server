@@ -93,6 +93,9 @@ internal sealed class PostgresDatabaseConnectionProvider(
         }
         catch (Exception ex)
         {
+            // Map any connection-open failure (auth, network, pool exhaustion, etc.) to the shared
+            // ServiceUnavailableException so callers/protocol adapters get a consistent 503 without
+            // leaking driver/connection-string internals.
             throw new ServiceUnavailableException("Database connection failed.", ex);
         }
 

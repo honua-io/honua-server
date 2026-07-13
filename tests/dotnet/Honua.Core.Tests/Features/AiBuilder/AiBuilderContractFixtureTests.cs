@@ -403,7 +403,7 @@ public sealed class AiBuilderContractFixtureTests
     private static async Task<JsonDocument> LoadFixtureAsync(string fileName = "spatial-query-contract-v1.json")
     {
         await using var stream = File.OpenRead(ResolveRepoPath(
-            Path.Combine("tests", "fixtures", "ai-builder", fileName)));
+            Path.Join("tests", "fixtures", "ai-builder", fileName)));
 
         return await JsonDocument.ParseAsync(stream);
     }
@@ -413,7 +413,7 @@ public sealed class AiBuilderContractFixtureTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            var candidate = Path.Combine(directory.FullName, relativePath);
+            var candidate = Path.Join(directory.FullName, relativePath);
             if (File.Exists(candidate))
             {
                 return candidate;
