@@ -72,6 +72,8 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
     }
 
     public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+        // Ownership of the MemoryStream transfers to the caller via the returned Stream;
+        // the caller reads and disposes it, so it is intentionally not disposed here.
         => Task.FromResult<Stream?>(
             _objects.TryGetValue(fileId, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
 
