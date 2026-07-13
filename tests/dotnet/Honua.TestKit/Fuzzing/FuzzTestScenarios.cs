@@ -58,6 +58,8 @@ public static class FuzzTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
+                // exception type is a possible (and recordable) outcome, not just expected ones.
                 results.Add(new FuzzTestAttempt
                 {
                     Input = mutatedExpression,
@@ -104,7 +106,7 @@ public static class FuzzTestScenarios
             try
             {
                 var content = new StringContent(mutatedJson, Encoding.UTF8, "application/json");
-                var request = new HttpRequestMessage(method, endpoint) { Content = content };
+                using var request = new HttpRequestMessage(method, endpoint) { Content = content };
                 var response = await client.SendAsync(request);
 
                 results.Add(new FuzzTestAttempt
@@ -117,6 +119,8 @@ public static class FuzzTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
+                // exception type is a possible (and recordable) outcome, not just expected ones.
                 results.Add(new FuzzTestAttempt
                 {
                     Input = mutatedJson,
@@ -181,6 +185,8 @@ public static class FuzzTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
+                // exception type is a possible (and recordable) outcome, not just expected ones.
                 results.Add(new FuzzTestAttempt
                 {
                     Input = url,
@@ -256,6 +262,8 @@ public static class FuzzTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
+                // exception type is a possible (and recordable) outcome, not just expected ones.
                 results.Add(new FuzzTestAttempt
                 {
                     Input = "Header fuzzing iteration " + i,

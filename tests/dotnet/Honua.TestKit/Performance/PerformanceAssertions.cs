@@ -90,7 +90,8 @@ public static class PerformanceAssertions
             }
             catch
             {
-                // Ignored: surfaced by the measured iterations below.
+                // Broad catch is intentional (see comment above): warmup failures are
+                // ignored here and surfaced by the measured iterations below instead.
             }
         }
 
@@ -106,6 +107,8 @@ public static class PerformanceAssertions
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: any failure counts against SuccessRate/ErrorCount
+                // rather than aborting the whole benchmark run.
                 errors.Add(ex);
             }
 
