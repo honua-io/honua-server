@@ -229,6 +229,9 @@ internal static class GeoPackageExportWriter
 
         var insertSql = $"INSERT INTO \"{TableName}\" ({string.Join(", ", fieldNames)}) VALUES ({string.Join(", ", paramNames)});";
 
+        // Not a `using` declaration: the loop below commits and reassigns `transaction` to a
+        // fresh instance every BatchSize rows, disposing the prior one explicitly. The final
+        // `finally` disposes whichever transaction is current on exit (normal or exceptional).
         SqliteTransaction? transaction = null;
 
         // Create command once and reuse across all rows
@@ -388,6 +391,11 @@ internal static class GeoPackageExportWriter
         }
         catch
         {
+            // Best-effort, per-feature probe over a potentially large feature stream: this only
+            // feeds the aggregate has-Z/has-M metadata flags written to the GeoPackage header,
+            // not the feature's own geometry write (ToGpkgBinary always writes the raw WKB
+            // unconditionally). No ILogger is threaded through this static writer, and logging
+            // per-feature here would be noisy for what is, at worst, an imprecise dimension flag.
             hasZ = false;
             hasM = false;
             return false;

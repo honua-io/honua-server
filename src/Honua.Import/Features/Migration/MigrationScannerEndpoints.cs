@@ -25,7 +25,7 @@ namespace Honua.Migration;
 /// <summary>
 /// Unified migration source scanner endpoints.
 /// </summary>
-internal static class MigrationScannerEndpoints
+internal static partial class MigrationScannerEndpoints
 {
     /// <summary>
     /// Maps migration source scanner endpoints.
@@ -58,8 +58,9 @@ internal static class MigrationScannerEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -352,15 +353,7 @@ internal static class MigrationScannerEndpoints
             return false;
         }
 
-        foreach (var value in values)
-        {
-            if (string.Equals(value, "json", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return values.Any(value => string.Equals(value, "json", StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task WriteIndentedJsonAttachmentAsync(
@@ -419,13 +412,10 @@ internal static class MigrationScannerEndpoints
                 builder.Append(ch);
                 lastWasSeparator = false;
             }
-            else if (ch == '-' || ch == '_' || ch == ' ')
+            else if ((ch == '-' || ch == '_' || ch == ' ') && !lastWasSeparator && builder.Length > 0)
             {
-                if (!lastWasSeparator && builder.Length > 0)
-                {
-                    builder.Append('-');
-                    lastWasSeparator = true;
-                }
+                builder.Append('-');
+                lastWasSeparator = true;
             }
         }
 
@@ -454,6 +444,18 @@ internal static class MigrationScannerEndpoints
         }
 
         return builder.Length == 0 ? Fallback : builder.ToString();
+    }
+
+    private static ILogger<MigrationScannerEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<MigrationScannerEndpointsLog>>();
+
+    /// <summary>Log category marker for migration scanner endpoint operations.</summary>
+    internal sealed class MigrationScannerEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8150, LogLevel.Warning, "Failed to deserialize migration scan request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
     }
 }
 

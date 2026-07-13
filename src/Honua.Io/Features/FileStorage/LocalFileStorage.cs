@@ -53,6 +53,11 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
         var stopwatch = Stopwatch.StartNew();
         var uploadId = request.UploadId;
+        // Not a `using` declaration: this token source is published to UploadCancellationTokens
+        // below and must outlive this method call so a concurrent CancelUploadAsync request (on
+        // another request/thread) can look it up and cancel it. Ownership transfers to whichever
+        // path removes it from the dictionary first; the finally block below disposes it once
+        // this upload's own processing has removed its entry.
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -400,6 +405,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             .Where(f => f.ExpiresAt.HasValue && f.ExpiresAt.Value <= now)
             .ToList();
 
+        // Not a `.Where(...).Count()`: DeleteAsync is an awaited side-effecting deletion
+        // attempted for every expired file, not a pure predicate, so every element must still
+        // be visited regardless of its outcome; only the counting is conditional.
         var cleanedCount = 0;
         foreach (var file in expiredFiles)
         {

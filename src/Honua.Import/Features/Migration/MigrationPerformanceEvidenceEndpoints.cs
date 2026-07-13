@@ -155,15 +155,10 @@ internal static class MigrationPerformanceEvidenceEndpoints
             return null;
         }
 
-        foreach (var candidate in values)
-        {
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate.Trim();
-            }
-        }
-
-        return null;
+        return values
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+            .Select(candidate => candidate!.Trim())
+            .FirstOrDefault();
     }
 
     private static bool TryReadLimit(HttpContext context, out int limit, out string error)
