@@ -505,7 +505,13 @@ internal static class ServiceCollectionExtensions
                         limits.MaxArchiveExtractedBytes),
                     MaxArchiveCompressionRatio = ParsePositiveDoubleOrDefault(
                         section["MaxArchiveCompressionRatio"],
-                        limits.MaxArchiveCompressionRatio)
+                        limits.MaxArchiveCompressionRatio),
+                    GeometryValidityMode = Enum.TryParse<Core.Configuration.ValidationMode>(
+                        section["GeometryValidityMode"],
+                        ignoreCase: true,
+                        out var geometryValidityMode)
+                            ? geometryValidityMode
+                            : limits.GeometryValidityMode
                 };
             }
 

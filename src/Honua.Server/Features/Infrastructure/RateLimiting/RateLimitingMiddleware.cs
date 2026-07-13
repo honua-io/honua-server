@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -18,10 +19,27 @@ namespace Honua.Infrastructure.RateLimiting;
 /// Middleware for enforcing rate limits on incoming requests.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Requests are partitioned independently per tenant, per authenticated user/API key,
-/// and per source IP for anonymous traffic (issue #355). Limits are off by default and
-/// must be enabled and tuned through the <c>RateLimiting</c> configuration section; the
-/// MVP posture remains edge enforcement (ADR-0004) unless an operator opts in.
+/// and per source IP for anonymous traffic (issue #355).
+/// </para>
+/// <para>
+/// Every request is metered against the subject's shared tier/global counter — the ceiling that
+/// bounds total traffic for the subject across all endpoints. When an endpoint additionally
+/// declares an explicit per-endpoint limit (<see cref="RateLimitAttribute"/>), the request is
+/// metered against <em>both</em> the shared subject counter and a second counter partitioned by
+/// that endpoint's policy scope (issue #2779). The request is allowed only if both counters are
+/// under their limits, and both counters are incremented. This keeps a per-endpoint limit metering
+/// only that endpoint's traffic (so ordinary Console traffic can't drain the OIDC authorize-url
+/// 5/min budget) while still counting attributed-endpoint traffic toward the subject's global
+/// ceiling. On a block, the advised <c>Retry-After</c> is the larger of the failing counters'
+/// windows.
+/// </para>
+/// <para>
+/// Limits are off by default and must be enabled and tuned through the <c>RateLimiting</c>
+/// configuration section; the MVP posture remains edge enforcement (ADR-0004) unless an operator
+/// opts in.
+/// </para>
 /// </remarks>
 internal sealed partial class RateLimitingMiddleware
 {
@@ -172,21 +190,29 @@ internal sealed partial class RateLimitingMiddleware
     {
         try
         {
-            // Resolve the applicable limit and window once: an explicit per-endpoint override,
-            // else the most specific matching tier policy (api-key > tenant > plan), else the
-            // global default. Tier resolution feeds the same distributed counter so the limit is
-            // enforced consistently across instances.
-            var resolved = await ResolveLimitAsync(context);
+            // Always meter the subject's shared tier/global counter: the ceiling that bounds total
+            // traffic for the subject across every endpoint. Tier resolution (api-key > tenant >
+            // plan, else global default) feeds the same unscoped counter so the limit is enforced
+            // consistently across instances.
+            var subjectLimit = await ResolveSubjectLimitAsync(context);
+            var subjectResult = await CheckCounterAsync(rateLimitKey, subjectLimit);
 
-            // Use Redis-based sliding window if available, otherwise fall back to fixed window
-            if (_redis != null)
+            // When an endpoint declares an explicit per-endpoint limit, additionally meter a
+            // counter partitioned by the endpoint's policy scope (issue #2779) so that limit meters
+            // only that endpoint's traffic — high-volume traffic to one endpoint must not drain
+            // another endpoint's allowance for the same subject. The request passes only if BOTH
+            // the shared subject ceiling and the endpoint counter are under limit, and both have
+            // already been incremented above/below.
+            var endpointLimit = ResolveEndpointLimit(context);
+            if (endpointLimit is null)
             {
-                return await CheckRateLimitRedisAsync(rateLimitKey, resolved);
+                return subjectResult;
             }
-            else
-            {
-                return CheckRateLimitMemory(rateLimitKey, resolved);
-            }
+
+            var scopedKey = $"{rateLimitKey}|policy:{endpointLimit.Value.Scope}";
+            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value);
+
+            return CombineResults(subjectResult, endpointResult);
         }
         catch (Exception ex)
         {
@@ -204,19 +230,53 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
+    /// Meters a single counter (identified by <paramref name="counterKey"/>) against
+    /// <paramref name="resolved"/>, using the Redis sliding window when available and falling back
+    /// to a process-local fixed window otherwise. Every call increments the counter.
+    /// </summary>
+    private async Task<RateLimitResult> CheckCounterAsync(string counterKey, ResolvedRateLimit resolved)
+    {
+        return _redis != null
+            ? await CheckRateLimitRedisAsync(counterKey, resolved)
+            : CheckRateLimitMemory(counterKey, resolved);
+    }
+
+    /// <summary>
+    /// Combines the shared subject-ceiling result with a per-endpoint counter result. The request
+    /// is allowed only when both counters are under limit. When allowed, the tighter remaining
+    /// budget is surfaced so clients see the real ceiling; when blocked, the failing counter with
+    /// the longer window drives the 429 response and <c>Retry-After</c>.
+    /// </summary>
+    private static RateLimitResult CombineResults(RateLimitResult subject, RateLimitResult endpoint)
+    {
+        if (subject.IsAllowed && endpoint.IsAllowed)
+        {
+            return endpoint.RequestsRemaining <= subject.RequestsRemaining ? endpoint : subject;
+        }
+
+        // At least one counter tripped. Advise the longest wait among the counters that failed.
+        if (!subject.IsAllowed && !endpoint.IsAllowed)
+        {
+            return subject.WindowReset >= endpoint.WindowReset ? subject : endpoint;
+        }
+
+        return subject.IsAllowed ? endpoint : subject;
+    }
+
+    /// <summary>
     /// Checks rate limit using Redis sliding window algorithm.
     /// </summary>
-    /// <param name="rateLimitKey">The rate limit key.</param>
+    /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
     /// <param name="resolved">The resolved limit and window for this request.</param>
     /// <returns>Rate limit check result.</returns>
-    private async Task<RateLimitResult> CheckRateLimitRedisAsync(string rateLimitKey, ResolvedRateLimit resolved)
+    private async Task<RateLimitResult> CheckRateLimitRedisAsync(string counterKey, ResolvedRateLimit resolved)
     {
         var database = _redis!.GetDatabase();
         var now = DateTimeOffset.UtcNow;
         var window = resolved.Window;
         var windowStart = now - window;
 
-        var cacheKey = $"rate_limit:{rateLimitKey}";
+        var cacheKey = $"rate_limit:{counterKey}";
         var windowKey = $"{cacheKey}:window";
 
         // Use Redis sorted set for sliding window
@@ -261,10 +321,10 @@ internal sealed partial class RateLimitingMiddleware
     /// same key are counted exactly (the previous get-increment-set round trip lost
     /// updates under concurrency, letting clients exceed the limit).
     /// </summary>
-    /// <param name="rateLimitKey">The rate limit key.</param>
+    /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
     /// <param name="resolved">The resolved limit and window for this request.</param>
     /// <returns>Rate limit check result.</returns>
-    private static RateLimitResult CheckRateLimitMemory(string rateLimitKey, ResolvedRateLimit resolved)
+    private static RateLimitResult CheckRateLimitMemory(string counterKey, ResolvedRateLimit resolved)
     {
         var now = DateTimeOffset.UtcNow;
         var window = resolved.Window;
@@ -276,7 +336,7 @@ internal sealed partial class RateLimitingMiddleware
         var bucketStartTicks = now.UtcTicks / windowTicks * windowTicks;
         var windowStart = new DateTimeOffset(bucketStartTicks, TimeSpan.Zero);
 
-        var counter = _memoryCounters.GetOrAdd(rateLimitKey, static _ => new FixedWindowCounter());
+        var counter = _memoryCounters.GetOrAdd(counterKey, static _ => new FixedWindowCounter());
         int currentCount;
         lock (counter)
         {
@@ -339,27 +399,44 @@ internal sealed partial class RateLimitingMiddleware
     }
 
     /// <summary>
-    /// Resolves the limit and window for the current request using the documented precedence:
-    /// an explicit per-endpoint <see cref="RateLimitAttribute"/> override, then the most specific
-    /// matching tier policy (api-key &gt; tenant &gt; plan) from the policy store, then the global
-    /// default. Tier policies carry their own <see cref="RateLimitPolicy.WindowDuration"/>; the
-    /// endpoint and global fallbacks use a one-minute window.
+    /// Resolves the per-endpoint override for the current request, when one is declared. A
+    /// <see cref="RateLimitAttribute"/> is the most explicit operator intent; its counter is scoped
+    /// to the endpoint (method + route) so it meters only that endpoint's traffic (issue #2779).
+    /// Returns <see langword="null"/> when the matched endpoint declares no explicit limit.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
-    /// <returns>The resolved limit and window.</returns>
-    private async Task<ResolvedRateLimit> ResolveLimitAsync(HttpContext context)
+    /// <returns>The scoped endpoint limit, or <see langword="null"/> when none is declared.</returns>
+    private static ResolvedRateLimit? ResolveEndpointLimit(HttpContext context)
     {
-        // A per-endpoint override is the most explicit operator intent and wins outright.
         var endpoint = context.GetEndpoint();
         var endpointRateLimit = endpoint?.Metadata.GetMetadata<RateLimitAttribute>();
-        if (endpointRateLimit != null)
+        if (endpointRateLimit is null)
         {
-            return new ResolvedRateLimit(endpointRateLimit.RequestsPerMinute, TimeSpan.FromMinutes(1));
+            return null;
         }
 
-        // Subject-tier policies (per-plan / per-tenant / per-api-key) drive the limit when one
+        return new ResolvedRateLimit(
+            endpointRateLimit.RequestsPerMinute,
+            TimeSpan.FromMinutes(1),
+            GetEndpointScope(endpoint, context));
+    }
+
+    /// <summary>
+    /// Resolves the subject-wide (unscoped) limit that bounds the subject's total traffic across
+    /// all endpoints: the most specific matching tier policy (api-key &gt; tenant &gt; plan) from
+    /// the policy store, else the global default. This is always metered, including for endpoints
+    /// that also declare their own <see cref="RateLimitAttribute"/> override. Tier policies carry
+    /// their own <see cref="RateLimitPolicy.WindowDuration"/>; the global fallback uses a one-minute
+    /// window.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The resolved subject-wide limit and window.</returns>
+    private async Task<ResolvedRateLimit> ResolveSubjectLimitAsync(HttpContext context)
+    {
+        // Subject-tier policies (per-plan / per-tenant / per-api-key) drive the ceiling when one
         // matches. Resolution order is centralized in RateLimitPolicyResolver so the precedence is
-        // identical everywhere it is applied.
+        // identical everywhere it is applied. Tier limits meter the subject across all endpoints, so
+        // they carry no endpoint scope.
         var policies = await _policyStore.ListPoliciesAsync(context.RequestAborted);
         if (policies is { Count: > 0 })
         {
@@ -367,12 +444,45 @@ internal sealed partial class RateLimitingMiddleware
             var policy = RateLimitPolicyResolver.Resolve(policies, descriptor);
             if (policy is not null && policy.RequestsPerWindow > 0 && policy.WindowDuration > TimeSpan.Zero)
             {
-                return new ResolvedRateLimit(policy.RequestsPerWindow, policy.WindowDuration);
+                return new ResolvedRateLimit(policy.RequestsPerWindow, policy.WindowDuration, string.Empty);
             }
         }
 
-        // Global default (one-minute window).
-        return new ResolvedRateLimit(_options.GlobalRequestsPerMinute, TimeSpan.FromMinutes(1));
+        // Global default (one-minute window), shared across endpoints for the subject.
+        return new ResolvedRateLimit(_options.GlobalRequestsPerMinute, TimeSpan.FromMinutes(1), string.Empty);
+    }
+
+    /// <summary>
+    /// Derives a stable per-endpoint policy scope used to partition the rate-limit counter so that
+    /// an endpoint's explicit limit meters only that endpoint's traffic. The scope combines the
+    /// HTTP method with the route template (stable across hosts and request values) — e.g.
+    /// <c>POST /rest/.../authorize-url</c> — so the same route reached by different verbs is metered
+    /// separately. Falls back to the endpoint display name, and finally to a method-prefixed
+    /// constant when neither a route template nor a display name is available.
+    /// </summary>
+    /// <param name="endpoint">The matched endpoint carrying the <see cref="RateLimitAttribute"/>.</param>
+    /// <param name="context">The HTTP context (source of the request verb when metadata is absent).</param>
+    /// <returns>A non-empty scope identifier for the endpoint.</returns>
+    private static string GetEndpointScope(Endpoint? endpoint, HttpContext context)
+    {
+        // Prefer the routed method metadata (may enumerate several verbs); fall back to the actual
+        // request verb so a non-routed endpoint still partitions per method.
+        var methods = endpoint?.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
+        var method = methods is { Count: > 0 }
+            ? string.Join(",", methods)
+            : context.Request.Method;
+
+        if (endpoint is RouteEndpoint routeEndpoint)
+        {
+            var routeTemplate = routeEndpoint.RoutePattern.RawText;
+            if (!string.IsNullOrEmpty(routeTemplate))
+            {
+                return $"{method} {routeTemplate}";
+            }
+        }
+
+        var target = string.IsNullOrEmpty(endpoint?.DisplayName) ? "endpoint" : endpoint.DisplayName;
+        return $"{method} {target}";
     }
 
     /// <summary>
@@ -527,7 +637,12 @@ internal sealed partial class RateLimitingMiddleware
 /// </summary>
 /// <param name="Limit">Maximum requests permitted within <paramref name="Window"/>.</param>
 /// <param name="Window">The rolling/fixed window the limit applies over.</param>
-internal readonly record struct ResolvedRateLimit(int Limit, TimeSpan Window);
+/// <param name="Scope">
+/// The policy scope that partitions the counter. Empty for subject-wide (tier/global) limits;
+/// a per-endpoint identifier when an endpoint declares its own limit so that limit meters only
+/// that endpoint's traffic (issue #2779).
+/// </param>
+internal readonly record struct ResolvedRateLimit(int Limit, TimeSpan Window, string Scope);
 
 /// <summary>
 /// Result of a rate limit check.

@@ -47,9 +47,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 99, 0, 0, 0, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -59,9 +57,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, -1, 0, 0, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -71,9 +67,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 29, 0, 0, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -84,9 +78,7 @@ public class ImageServerTileHandlerTests
         // At level 2, max row is 3 (2^2 - 1)
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 2, 4, 0, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -97,9 +89,7 @@ public class ImageServerTileHandlerTests
         // At level 1, max col is 1 (2^1 - 1)
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 1, 0, 2, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -109,9 +99,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "bmp");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
         await _rasterStore.DidNotReceive()
             .QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
     }
@@ -125,9 +113,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -141,9 +127,7 @@ public class ImageServerTileHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]

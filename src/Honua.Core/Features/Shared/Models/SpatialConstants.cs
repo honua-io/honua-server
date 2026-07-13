@@ -65,19 +65,8 @@ public static class SpatialConstants
     /// </summary>
     public const int DefaultSrid = 4326;
 
-    // Well-known geographic SRIDs for distance function selection
-    /// <summary>
-    /// Geographic SRIDs that use latitude/longitude degree-based coordinate systems.
-    /// Used to determine appropriate distance calculation functions.
-    /// </summary>
-    public static readonly int[] GeographicSrids =
-    [
-        4326,   // WGS 84
-        4269,   // NAD83
-        4267,   // NAD27
-        4258,   // ETRS89
-        4283,   // GDA94
-        4617,   // NAD83(CSRS)
-        4759    // NAD83(NSRS2007)
-    ];
+    // The former SpatialConstants.GeographicSrids shim was removed in #2732 follow-ups: it held the
+    // narrow geodesic-safe subset under a misleadingly broad name and had no production consumers.
+    // Call GeographicSridClassifier.GeodesicDistanceSafeSrids / IsGeodesicDistanceSafeSrid (geodesic
+    // routing) or GeographicSridClassifier.IsGeographicSrid (axis order / degree routing) directly.
 }

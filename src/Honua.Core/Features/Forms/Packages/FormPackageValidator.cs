@@ -1167,7 +1167,7 @@ public sealed class FormPackageValidator
     }
 
     private static int NormalizeSrid(int srid)
-        => srid is 102100 or 102113 or 900913 or 3785 ? 3857 : srid;
+        => Shared.Models.SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid);
 
     private static string JsonElementToString(JsonElement element)
         => element.ValueKind switch

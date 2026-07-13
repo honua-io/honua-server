@@ -37,7 +37,10 @@ internal static class CompactTilePackageWriter
     private const int IndexSize = TileCount * sizeof(ulong);
     private const int BundleDataOffset = HeaderSize + IndexSize;
     private const int FixedBundleOverheadBytes = BundleDataOffset;
-    private const double WebMercatorOrigin = 20_037_508.342787;
+    // Canonical Web Mercator half-circumference (#2732): route through SpatialConstants so this
+    // writer's tiling-scheme origin matches TilePackageWriter and the shared math to the full
+    // precision (20037508.342789244) instead of the previously-truncated 20037508.342787.
+    private const double WebMercatorOrigin = Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent;
     private const double ZeroLevelResolution = (WebMercatorOrigin * 2d) / 256d;
     private const int MaximumCompactTileSize = 0xFF_FF_FF;
     private static readonly DateTimeOffset ArchiveTimestamp = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);

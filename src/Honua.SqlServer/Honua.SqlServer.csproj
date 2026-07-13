@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
   </ItemGroup>
 
 </Project>

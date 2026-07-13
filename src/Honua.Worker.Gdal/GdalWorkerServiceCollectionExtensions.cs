@@ -144,12 +144,36 @@ public static class GdalWorkerServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        // ConfigurationBinder APPENDS array/list items onto a pre-populated list rather
+        // than replacing it, so a bound AllowedRasterInputFormats would only ever GROW
+        // the default TIFF/PNG/JPEG allowlist — an operator could never TIGHTEN it to a
+        // narrower set (e.g. TIFF-only), which is exactly the workflow the XML docs
+        // promise. When the config actually supplies the list, REPLACE the bound defaults
+        // with precisely the configured values (#2784 follow-up).
+        services.PostConfigure<GdalWorkerOptions>(options =>
+            ReplaceListWhenConfigured(
+                configuration
+                    .GetSection(GdalWorkerOptions.SectionName)
+                    .GetSection(nameof(GdalWorkerOptions.AllowedRasterInputFormats)),
+                options.AllowedRasterInputFormats));
+
         // Restrictive-by-default GDAL runtime hardening (#2765): the driver-skip and
         // remote-VSI-disable policy every GDAL/OGR subprocess inherits. Bound here so
         // both the in-process and container-exec runner seams resolve it.
         services
             .AddOptions<GdalHardeningOptions>()
             .Bind(configuration.GetSection(GdalHardeningOptions.SectionName));
+
+        // Same append-vs-replace hazard as above: SkipDrivers ships ~30 default denials,
+        // and Bind would only ADD to them — an operator could never REMOVE a default skip
+        // driver (the documented way to actually open a bomb-capable format alongside an
+        // AllowedRasterInputFormats opt-in). Replace with the configured set when present.
+        services.PostConfigure<GdalHardeningOptions>(options =>
+            ReplaceListWhenConfigured(
+                configuration
+                    .GetSection(GdalHardeningOptions.SectionName)
+                    .GetSection(nameof(GdalHardeningOptions.SkipDrivers)),
+                options.SkipDrivers));
 
         if (mode == GdalProcessExecutorMode.Container)
         {
@@ -226,6 +250,41 @@ public static class GdalWorkerServiceCollectionExtensions
             new GlassBoxGdalCommandRunner(MaterializeInner(sp, inner), capture));
 
         return services;
+    }
+
+    /// <summary>
+    /// When <paramref name="section"/> actually supplies values, REPLACES the
+    /// pre-populated <paramref name="target"/> list contents with exactly the configured
+    /// values (trimmed, blanks dropped, de-duplicated case-insensitively). This undoes
+    /// ConfigurationBinder's append-onto-defaults behavior so an operator can genuinely
+    /// TIGHTEN (or shrink) a default list — not only grow it. When the section is empty
+    /// the defaults are left intact.
+    /// </summary>
+    private static void ReplaceListWhenConfigured(IConfigurationSection section, IList<string> target)
+    {
+        var children = section.GetChildren().ToList();
+        if (children.Count == 0)
+        {
+            // No config for this list — keep the bound-in defaults as-is.
+            return;
+        }
+
+        target.Clear();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var child in children)
+        {
+            var value = child.Value;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var trimmed = value.Trim();
+            if (seen.Add(trimmed))
+            {
+                target.Add(trimmed);
+            }
+        }
     }
 
     private static IGdalCommandRunner MaterializeInner(IServiceProvider sp, ServiceDescriptor inner)

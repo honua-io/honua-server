@@ -35,6 +35,28 @@ public sealed class SpatialReferenceExtensionsTests
         SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid).Should().Be(srid);
     }
 
+    [Theory]
+    [InlineData(3857)]
+    [InlineData(102100)]
+    [InlineData(102113)]
+    [InlineData(900913)]
+    [InlineData(3785)]
+    public void IsWebMercatorSrid_CanonicalOrAlias_ReturnsTrue(int srid)
+    {
+        SpatialReferenceExtensions.IsWebMercatorSrid(srid).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(4326)]
+    [InlineData(4269)]
+    [InlineData(2154)]
+    [InlineData(32633)]
+    [InlineData(0)]
+    public void IsWebMercatorSrid_NonWebMercator_ReturnsFalse(int srid)
+    {
+        SpatialReferenceExtensions.IsWebMercatorSrid(srid).Should().BeFalse();
+    }
+
     // PA-024: GetAuthorityName and GetAuthorityCode must return the OGC-defined values for WKID 4326
     // (CRS84) so that WFS 2.0 / OGC API conformance URNs are formed correctly.
 

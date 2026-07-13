@@ -54,9 +54,7 @@ public class ImageServerMetadataHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 99);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -68,9 +66,7 @@ public class ImageServerMetadataHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -84,9 +80,10 @@ public class ImageServerMetadataHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
-        await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().BeOneOf(
+        await AssertGeoServicesErrorAsync(
+            context,
+            result,
             StatusCodes.Status500InternalServerError,
             StatusCodes.Status404NotFound);
     }
@@ -348,9 +345,7 @@ public class ImageServerMetadataHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]

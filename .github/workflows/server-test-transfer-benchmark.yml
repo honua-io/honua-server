@@ -113,7 +113,7 @@ jobs:
         shell: bash
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
       - name: Save exact-head project cache
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: payload/
           key: server-test-v1-${{ runner.os }}-${{ github.sha }}-${{ steps.toolchain.outputs.sdk }}-${{ matrix.suffix }}-${{ hashFiles('.github/server-test-artifact-projects.json') }}
@@ -260,7 +260,7 @@ jobs:
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
       - id: cache
         name: Restore exact-head project cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: payload/
           key: server-test-v1-${{ runner.os }}-${{ github.sha }}-${{ steps.toolchain.outputs.sdk }}-${{ matrix.suffix }}-${{ hashFiles('.github/server-test-artifact-projects.json') }}
@@ -314,7 +314,7 @@ jobs:
       - id: missing_cache
         name: Reject missing or evicted exact-head cache
         continue-on-error: true
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: missing-cache/
           key: deliberately-missing-v1-${{ github.sha }}

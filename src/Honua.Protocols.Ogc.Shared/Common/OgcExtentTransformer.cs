@@ -76,7 +76,7 @@ internal static class OgcExtentTransformer
     }
 
     private static bool IsWebMercatorSrid(int srid)
-        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+        => Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(srid);
 
     private static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
     {

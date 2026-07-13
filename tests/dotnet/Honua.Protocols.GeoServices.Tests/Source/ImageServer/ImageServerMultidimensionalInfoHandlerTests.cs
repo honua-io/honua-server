@@ -44,9 +44,7 @@ public class ImageServerMultidimensionalInfoHandlerTests
         var context = CreateImageServerContext();
 
         var result = await handler.GetMultidimensionalInfoAsync(context, 99);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]

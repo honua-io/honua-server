@@ -47,9 +47,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 99, EmptyValues(), CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -61,9 +59,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, EmptyValues(), CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
     }
 
     [UnitTest]
@@ -78,9 +74,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -192,9 +186,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -209,9 +201,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -440,9 +430,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -457,9 +445,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -474,9 +460,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -490,9 +474,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, EmptyValues(), CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]
@@ -553,9 +535,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     [UnitTest]
@@ -571,9 +551,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -589,10 +567,10 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
 
-        // ExtractBand changes the band set; computeStatisticsHistograms does not yet honour it.
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        // ExtractBand changes the band set; computeStatisticsHistograms does not yet honour it, so it
+        // returns NotImplemented (501), which GeoServices maps to body error.code 500 (FromHttpStatusCode default).
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
     }
 
     private void SetupSuccessfulCompute()
