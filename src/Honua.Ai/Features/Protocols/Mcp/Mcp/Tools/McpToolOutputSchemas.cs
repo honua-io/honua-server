@@ -703,6 +703,11 @@ internal static class McpToolOutputSchemas
                 "features": { "type": "array", "items": { "type": "object" } }
               }
             },
+            "warnings": {
+              "type": "array",
+              "description": "Non-fatal advisories about this result. Present when a bbox-filtered query returns zero features to warn that the bbox may be in a different CRS than bboxSrid declares (metres vs lon/lat degrees), so 0 features is not silently read as 'no data here'.",
+              "items": { "type": "string" }
+            },
             {{ToolErrorProperties}}
           }
         }

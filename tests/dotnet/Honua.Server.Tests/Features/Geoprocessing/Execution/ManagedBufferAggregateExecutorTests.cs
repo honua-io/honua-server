@@ -46,6 +46,7 @@ public sealed class ManagedBufferAggregateExecutorTests
             ("input", input),
             ("distance", "1"),
             ("unit", "meters"),
+            ("srid", "3857"),
             ("dissolve", "true"),
             ("groupByFields", "kind"));
 
@@ -80,7 +81,8 @@ public sealed class ManagedBufferAggregateExecutorTests
             executor,
             ManagedBufferAggregateExecutor.HandledProcessId,
             ("input", input),
-            ("distance", "0.5"));
+            ("distance", "0.5"),
+            ("srid", "3857"));
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         var features = ReadFeatures(uri!);
@@ -103,6 +105,7 @@ public sealed class ManagedBufferAggregateExecutorTests
             ManagedBufferAggregateExecutor.HandledProcessId,
             ("input", input),
             ("distance", "1"),
+            ("srid", "3857"),
             ("dissolve", "false"));
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
@@ -125,7 +128,8 @@ public sealed class ManagedBufferAggregateExecutorTests
             ManagedBufferAggregateExecutor.HandledProcessId,
             ("input", input),
             ("distance", "1"),
-            ("unit", "kilometers"));
+            ("unit", "kilometers"),
+            ("srid", "3857"));
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         var features = ReadFeatures(uri!);
@@ -133,6 +137,70 @@ public sealed class ManagedBufferAggregateExecutorTests
         var polygon = (Polygon)features[0].Geometry;
         // 1 km buffer ≈ 1000 CRS-unit envelope half-extent.
         polygon.EnvelopeInternal.Width.Should().BeApproximately(2000, 10);
+    }
+
+    [UnitTest]
+    public async Task Unit_MetersOnGeographicCrs_IsRejected()
+    {
+        // #2808: a linear (metric) unit buffer on a geographic (lon/lat degree) CRS
+        // silently produces wrong-scale geometry (metres applied as degrees). The
+        // executor must reject it rather than return a plausible-but-wrong result.
+        var executor = new ManagedBufferAggregateExecutor(Options());
+
+        var input = BuildUri(Feature(Point(0, 0)));
+
+        var (status, uri) = await RunAsync(
+            executor,
+            ManagedBufferAggregateExecutor.HandledProcessId,
+            ("input", input),
+            ("distance", "500"),
+            ("unit", "meters"),
+            ("srid", "4326"));
+
+        status.Should().Be(ExecutionJobStatus.Failed, "a metres buffer on a geographic CRS must be rejected, not silently applied as degrees");
+        uri.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Unit_MetersDefaultingToGeojson4326_IsRejected()
+    {
+        // Without an explicit 'srid' the input GeoJSON CRS defaults to WGS 84 (4326),
+        // so a metres buffer is still the wrong-scale hazard and must be rejected.
+        var executor = new ManagedBufferAggregateExecutor(Options());
+
+        var input = BuildUri(Feature(Point(0, 0)));
+
+        var (status, _) = await RunAsync(
+            executor,
+            ManagedBufferAggregateExecutor.HandledProcessId,
+            ("input", input),
+            ("distance", "500"),
+            ("unit", "meters"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task Unit_MetersOnProjectedCrs_Succeeds()
+    {
+        // The same buffer against a projected metric CRS (Web Mercator) is valid.
+        var executor = new ManagedBufferAggregateExecutor(Options());
+
+        var input = BuildUri(Feature(Point(0, 0)));
+
+        var (status, uri) = await RunAsync(
+            executor,
+            ManagedBufferAggregateExecutor.HandledProcessId,
+            ("input", input),
+            ("distance", "500"),
+            ("unit", "meters"),
+            ("srid", "3857"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().HaveCount(1);
+        var polygon = (Polygon)features[0].Geometry;
+        polygon.EnvelopeInternal.Width.Should().BeApproximately(1000, 10);
     }
 
     [UnitTest]
