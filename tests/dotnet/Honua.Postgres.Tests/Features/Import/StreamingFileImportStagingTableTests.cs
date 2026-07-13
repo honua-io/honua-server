@@ -397,6 +397,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         // id — end to end: CRS detection resolves 27700, the reader stamps it over the blob header
         // SRID, and the insert transforms 27700 -> 4326 (#2743).
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        // The filename segment is a fixed literal + GUID token and can never be rooted, so
+        // Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
         var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
         try
         {

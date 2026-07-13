@@ -53,7 +53,7 @@ public sealed class ImportGeometrySizeGuardTests
         var polygons = new Polygon[5];
         for (var i = 0; i < polygons.Length; i++)
         {
-            polygons[i] = CreateSquare(offset: i * 10);
+            polygons[i] = CreateSquare(offset: i * 10.0);
         }
 
         var multiPolygon = Factory.CreateMultiPolygon(polygons);

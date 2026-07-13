@@ -41,9 +41,10 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
         var definition = await _registry!.ResolveBySridAsync(TestSrid);
 
         definition.Should().NotBeNull();
-        definition!.Value.Srid.Should().Be(TestSrid);
-        definition.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
-        definition.Value.IsGeographic.Should().BeTrue();
+        var crsDefinition = definition is { } d ? d : throw new InvalidOperationException("Expected a CRS definition.");
+        crsDefinition.Srid.Should().Be(TestSrid);
+        crsDefinition.AxisOrder.Should().Be(AxisOrder.EastNorth);
+        crsDefinition.IsGeographic.Should().BeTrue();
     }
 
     [Fact]
@@ -54,9 +55,10 @@ public sealed class PostgresCrsRegistryTests : IAsyncLifetime
         var definition = await _registry!.ResolveBySridAsync(GeocentricTestSrid);
 
         definition.Should().NotBeNull();
-        definition!.Value.Srid.Should().Be(GeocentricTestSrid);
-        definition.Value.IsGeographic.Should().BeFalse();
-        definition.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
+        var crsDefinition = definition is { } d ? d : throw new InvalidOperationException("Expected a CRS definition.");
+        crsDefinition.Srid.Should().Be(GeocentricTestSrid);
+        crsDefinition.IsGeographic.Should().BeFalse();
+        crsDefinition.AxisOrder.Should().Be(AxisOrder.EastNorth);
     }
 
     private async Task InsertTestCrsAsync()

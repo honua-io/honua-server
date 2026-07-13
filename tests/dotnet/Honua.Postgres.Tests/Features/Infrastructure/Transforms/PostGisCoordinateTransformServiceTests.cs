@@ -44,8 +44,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(-122.4, 37.7, 4326, 4326);
 
         result.Should().NotBeNull();
-        result!.Value.X.Should().Be(-122.4);
-        result.Value.Y.Should().Be(37.7);
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        point.X.Should().Be(-122.4);
+        point.Y.Should().Be(37.7);
     }
 
     [IntegrationTest]
@@ -54,8 +55,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(100000.0, 200000.0, 3857, 102100);
 
         result.Should().NotBeNull();
-        result!.Value.X.Should().Be(100000.0);
-        result.Value.Y.Should().Be(200000.0);
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        point.X.Should().Be(100000.0);
+        point.Y.Should().Be(200000.0);
     }
 
     [IntegrationTest]
@@ -64,8 +66,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(0.0, 51.5, 4326, 3857);
 
         result.Should().NotBeNull();
-        result!.Value.X.Should().BeApproximately(0.0, 1.0);
-        result.Value.Y.Should().BeApproximately(6_711_455.0, 10_000.0);
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        point.X.Should().BeApproximately(0.0, 1.0);
+        point.Y.Should().BeApproximately(6_711_455.0, 10_000.0);
     }
 
     // --- PostGIS fallback datum transform tests ---
@@ -78,8 +81,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         // The offset should be small but the transform should not be identity
-        result!.Value.X.Should().BeApproximately(-122.4194, 0.01);
-        result.Value.Y.Should().BeApproximately(37.7749, 0.01);
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        point.X.Should().BeApproximately(-122.4194, 0.01);
+        point.Y.Should().BeApproximately(37.7749, 0.01);
     }
 
     [IntegrationTest]
@@ -90,8 +94,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         // NAD27 to WGS84 offset is typically 10-100m, so coordinates should be close but measurably different
-        result!.Value.X.Should().BeApproximately(-122.4194, 0.1);
-        result.Value.Y.Should().BeApproximately(37.7749, 0.1);
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        point.X.Should().BeApproximately(-122.4194, 0.1);
+        point.Y.Should().BeApproximately(37.7749, 0.1);
     }
 
     [IntegrationTest]
@@ -102,12 +107,14 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
 
         var toMerc = await _service!.TransformPointAsync(lon, lat, 4326, 3857);
         toMerc.Should().NotBeNull();
+        var mercPoint = toMerc is { } tm ? tm : throw new InvalidOperationException("Expected a Web Mercator transform result.");
 
-        var backToGeo = await _service!.TransformPointAsync(toMerc!.Value.X, toMerc.Value.Y, 3857, 4326);
+        var backToGeo = await _service!.TransformPointAsync(mercPoint.X, mercPoint.Y, 3857, 4326);
         backToGeo.Should().NotBeNull();
+        var geoPoint = backToGeo is { } bg ? bg : throw new InvalidOperationException("Expected a round-trip transform result.");
 
-        backToGeo!.Value.X.Should().BeApproximately(lon, 0.0001);
-        backToGeo.Value.Y.Should().BeApproximately(lat, 0.0001);
+        geoPoint.X.Should().BeApproximately(lon, 0.0001);
+        geoPoint.Y.Should().BeApproximately(lat, 0.0001);
     }
 
     [IntegrationTest]
@@ -206,10 +213,11 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
             4269, 4326);
 
         result.Should().NotBeNull();
-        result!.Value.MinX.Should().BeApproximately(-123.0, 0.01);
-        result.Value.MinY.Should().BeApproximately(37.0, 0.01);
-        result.Value.MaxX.Should().BeApproximately(-122.0, 0.01);
-        result.Value.MaxY.Should().BeApproximately(38.0, 0.01);
+        var extent = result is { } r ? r : throw new InvalidOperationException("Expected a transformed extent.");
+        extent.MinX.Should().BeApproximately(-123.0, 0.01);
+        extent.MinY.Should().BeApproximately(37.0, 0.01);
+        extent.MaxX.Should().BeApproximately(-122.0, 0.01);
+        extent.MaxY.Should().BeApproximately(38.0, 0.01);
     }
 
     [IntegrationTest]
@@ -226,10 +234,11 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var reference = await GetDensifiedReferenceExtentAsync(minX, minY, maxX, maxY, fromSrid, toSrid);
 
         result.Should().NotBeNull();
-        result!.Value.MinX.Should().BeApproximately(reference.MinX, 0.05);
-        result.Value.MinY.Should().BeApproximately(reference.MinY, 0.05);
-        result.Value.MaxX.Should().BeApproximately(reference.MaxX, 0.05);
-        result.Value.MaxY.Should().BeApproximately(reference.MaxY, 0.05);
+        var extent = result is { } r ? r : throw new InvalidOperationException("Expected a transformed extent.");
+        extent.MinX.Should().BeApproximately(reference.MinX, 0.05);
+        extent.MinY.Should().BeApproximately(reference.MinY, 0.05);
+        extent.MaxX.Should().BeApproximately(reference.MaxX, 0.05);
+        extent.MaxY.Should().BeApproximately(reference.MaxY, 0.05);
     }
 
     [IntegrationTest]
@@ -256,11 +265,12 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var projectedSouth = ProjectLonLatToWebMercator(0.0, minY).Y;
         var projectedNorth = ProjectLonLatToWebMercator(0.0, maxY).Y;
 
-        result!.Value.MinX.Should().BeApproximately(projectedEastEdge, 1.0);
-        result.Value.MaxX.Should().BeApproximately(projectedWestEdge, 1.0);
-        result.Value.MinX.Should().BeGreaterThan(result.Value.MaxX);
-        result.Value.MinY.Should().BeApproximately(projectedSouth, 1.0);
-        result.Value.MaxY.Should().BeApproximately(projectedNorth, 1.0);
+        var extent = result is { } r ? r : throw new InvalidOperationException("Expected a transformed extent.");
+        extent.MinX.Should().BeApproximately(projectedEastEdge, 1.0);
+        extent.MaxX.Should().BeApproximately(projectedWestEdge, 1.0);
+        extent.MinX.Should().BeGreaterThan(extent.MaxX);
+        extent.MinY.Should().BeApproximately(projectedSouth, 1.0);
+        extent.MaxY.Should().BeApproximately(projectedNorth, 1.0);
     }
 
     [IntegrationTest]
@@ -271,10 +281,11 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
             4326, 4326);
 
         result.Should().NotBeNull();
-        result!.Value.MinX.Should().Be(-180);
-        result.Value.MinY.Should().Be(-90);
-        result.Value.MaxX.Should().Be(180);
-        result.Value.MaxY.Should().Be(90);
+        var extent = result is { } r ? r : throw new InvalidOperationException("Expected a transformed extent.");
+        extent.MinX.Should().Be(-180);
+        extent.MinY.Should().Be(-90);
+        extent.MaxX.Should().Be(180);
+        extent.MaxY.Should().Be(90);
     }
 
     [UnitTest]
@@ -302,10 +313,12 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
 
         minResult.Should().NotBeNull();
         maxResult.Should().NotBeNull();
-        double.IsFinite(minResult!.Value.X).Should().BeTrue();
-        double.IsFinite(minResult.Value.Y).Should().BeTrue();
-        double.IsFinite(maxResult!.Value.X).Should().BeTrue();
-        double.IsFinite(maxResult.Value.Y).Should().BeTrue();
+        var min = minResult is { } mn ? mn : throw new InvalidOperationException("Expected a min-corner transform result.");
+        var max = maxResult is { } mx ? mx : throw new InvalidOperationException("Expected a max-corner transform result.");
+        double.IsFinite(min.X).Should().BeTrue();
+        double.IsFinite(min.Y).Should().BeTrue();
+        double.IsFinite(max.X).Should().BeTrue();
+        double.IsFinite(max.Y).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -314,8 +327,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(180.0, 0.0, 4326, 3857);
 
         result.Should().NotBeNull();
-        double.IsFinite(result!.Value.X).Should().BeTrue();
-        double.IsFinite(result.Value.Y).Should().BeTrue();
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        double.IsFinite(point.X).Should().BeTrue();
+        double.IsFinite(point.Y).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -324,8 +338,9 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(-180.0, 0.0, 4326, 3857);
 
         result.Should().NotBeNull();
-        double.IsFinite(result!.Value.X).Should().BeTrue();
-        double.IsFinite(result.Value.Y).Should().BeTrue();
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        double.IsFinite(point.X).Should().BeTrue();
+        double.IsFinite(point.Y).Should().BeTrue();
     }
 
     private async Task<(double MinX, double MinY, double MaxX, double MaxY)> GetDensifiedReferenceExtentAsync(
