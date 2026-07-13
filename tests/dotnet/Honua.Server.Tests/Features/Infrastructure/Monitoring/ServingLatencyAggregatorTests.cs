@@ -119,6 +119,55 @@ public sealed class ServingLatencyAggregatorTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void GetSnapshot_ErrorRate_IsWindowed_ErrorsAgeOut()
+    {
+        // #2809: the error rate is a WINDOWED signal (the source ProductionMetricsCollector now reads),
+        // not a lifetime ratio. A burst of errors must decay out of the window as it slides past them.
+        long now = 0;
+        var aggregator = new ServingLatencyAggregator(TimeSpan.FromSeconds(60), samplesPerProtocol: 128, timestampProvider: () => now);
+
+        // A burst of server errors at t=0: 100% error rate in the window.
+        for (var i = 0; i < 10; i++)
+        {
+            aggregator.Record("WMS", 50, statusCode: 500);
+        }
+
+        Assert.Equal(1.0d, Assert.Single(aggregator.GetSnapshot().Protocols).ErrorRate);
+
+        // Slide the window past the burst and record only healthy traffic: the error rate falls to 0 because
+        // the old errors have aged out (a lifetime ratio would still report a nonzero rate here).
+        now = 120 * TicksPerSecond;
+        for (var i = 0; i < 10; i++)
+        {
+            aggregator.Record("WMS", 50, statusCode: 200);
+        }
+
+        var entry = Assert.Single(aggregator.GetSnapshot().Protocols);
+        Assert.Equal(10, entry.RequestCount);
+        Assert.Equal(0d, entry.ErrorRate);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void GetSnapshot_PopulatesMergeableDistribution()
+    {
+        // #2809: each snapshot carries a mergeable distribution so cluster percentiles can be recomputed
+        // from summed per-replica distributions instead of a mean of percentiles.
+        long now = 1_000 * TicksPerSecond;
+        var aggregator = new ServingLatencyAggregator(TimeSpan.FromMinutes(5), samplesPerProtocol: 256, timestampProvider: () => now);
+
+        for (var ms = 1; ms <= 100; ms++)
+        {
+            aggregator.Record("FeatureServer", ms, statusCode: 200);
+        }
+
+        var entry = Assert.Single(aggregator.GetSnapshot().Protocols);
+        Assert.NotNull(entry.Distribution);
+        Assert.Equal(100, entry.Distribution!.TotalCount);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void Record_InvalidInputs_AreIgnored()
     {
         long now = 5 * TicksPerSecond;

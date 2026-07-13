@@ -83,6 +83,16 @@ public interface ILeaderElectionStrategy
     bool IsLeader { get; }
 
     /// <summary>
+    /// Indicates whether the most recent <see cref="TryAcquireAsync"/> attempt <b>faulted</b> —
+    /// the coordinator could not determine leadership because the attempt itself errored (for
+    /// example a connection-pool exhaustion or database outage), as opposed to cleanly observing
+    /// that another instance holds the lease. A healthy follower that simply lost the race reports
+    /// <c>false</c>. This lets the evaluation loop distinguish "someone else leads" (healthy) from
+    /// "nobody can acquire" (a fleet-wide stall) so a no-leader fault can be surfaced.
+    /// </summary>
+    bool LastAcquireFaulted { get; }
+
+    /// <summary>
     /// Unique instance identifier used for diagnostics.
     /// </summary>
     string InstanceId { get; }

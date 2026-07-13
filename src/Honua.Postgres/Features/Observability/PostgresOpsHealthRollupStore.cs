@@ -51,8 +51,8 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
 
         var latencySql = $"""
             INSERT INTO {_latencyTable}
-                (replica_id, tier, bucket_start, protocol, request_count, error_count, p50_ms, p95_ms, p99_ms, max_ms, updated_at)
-            VALUES (@replica_id, @tier, @bucket_start, @protocol, @request_count, @error_count, @p50_ms, @p95_ms, @p99_ms, @max_ms, @updated_at)
+                (replica_id, tier, bucket_start, protocol, request_count, error_count, p50_ms, p95_ms, p99_ms, max_ms, distribution, updated_at)
+            VALUES (@replica_id, @tier, @bucket_start, @protocol, @request_count, @error_count, @p50_ms, @p95_ms, @p99_ms, @max_ms, @distribution, @updated_at)
             ON CONFLICT (replica_id, tier, bucket_start, protocol) DO UPDATE SET
                 request_count = EXCLUDED.request_count,
                 error_count = EXCLUDED.error_count,
@@ -60,6 +60,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
                 p95_ms = EXCLUDED.p95_ms,
                 p99_ms = EXCLUDED.p99_ms,
                 max_ms = EXCLUDED.max_ms,
+                distribution = EXCLUDED.distribution,
                 updated_at = EXCLUDED.updated_at
             """;
 
@@ -76,6 +77,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
             command.Parameters.AddWithValue("p95_ms", NpgsqlDbType.Double, point.P95Ms);
             command.Parameters.AddWithValue("p99_ms", NpgsqlDbType.Double, point.P99Ms);
             command.Parameters.AddWithValue("max_ms", NpgsqlDbType.Double, point.MaxMs);
+            command.Parameters.AddWithValue("distribution", NpgsqlDbType.Jsonb, (object?)SerializeDistribution(point.Distribution) ?? DBNull.Value);
             command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, now);
             _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -197,7 +199,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
     {
         var filter = string.IsNullOrWhiteSpace(excludeReplicaId) ? string.Empty : " AND replica_id <> @exclude_replica_id";
         var sql = $"""
-            SELECT replica_id, bucket_start, protocol, request_count, error_count, p50_ms, p95_ms, p99_ms, max_ms
+            SELECT replica_id, bucket_start, protocol, request_count, error_count, p50_ms, p95_ms, p99_ms, max_ms, distribution
             FROM {_latencyTable}
             WHERE tier = @tier AND bucket_start >= @from AND bucket_start <= @to{filter}
             ORDER BY bucket_start, protocol, replica_id
@@ -230,6 +232,7 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
                     P95Ms = reader.GetDouble(6),
                     P99Ms = reader.GetDouble(7),
                     MaxMs = reader.GetDouble(8),
+                    Distribution = ParseDistribution(reader.IsDBNull(9) ? null : reader.GetString(9)),
                 },
             });
         }
@@ -411,6 +414,61 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
         }
 
         return result;
+    }
+
+    // Serializes the mergeable latency distribution as a compact JSON array of per-bucket counts (#2809),
+    // AOT-safe with no serializer context. Returns null when the point carries no sketch so the column stays
+    // NULL and the merge falls back to the weighted-mean approximation.
+    private static string? SerializeDistribution(LatencyDistribution? distribution)
+    {
+        if (distribution is null)
+        {
+            return null;
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartArray();
+            foreach (var count in distribution.BucketCounts)
+            {
+                writer.WriteNumberValue(count);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static LatencyDistribution? ParseDistribution(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var counts = new long[LatencyDistribution.BucketCount];
+        var index = 0;
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            if (index >= counts.Length)
+            {
+                // Length mismatch (bucket layout changed): treat as unavailable rather than misaligned.
+                return null;
+            }
+
+            counts[index++] = element.TryGetInt64(out var value) ? value : 0;
+        }
+
+        // Only accept an exactly-sized vector; a short array means a layout change we cannot safely realign.
+        return index == counts.Length ? new LatencyDistribution { BucketCounts = counts } : null;
     }
 
     private static readonly IReadOnlyDictionary<string, int> EmptyBreakdown =

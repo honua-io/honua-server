@@ -73,6 +73,7 @@ public sealed class AlertDispatchHealthCheckTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 0 },
         };
         var sut = Create(health, degradedBacklogThreshold: 1_000, unhealthyDeadLetterThreshold: 1);
@@ -80,6 +81,56 @@ public sealed class AlertDispatchHealthCheckTests
         var result = await sut.CheckHealthAsync(new HealthCheckContext());
 
         result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenHeartbeatStale_ReportsUnhealthy()
+    {
+        // Running dispatcher whose last poll aged well past the staleness threshold: hung loop.
+        var now = new DateTimeOffset(2026, 07, 12, 12, 0, 0, TimeSpan.Zero);
+        var health = new FakeDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = now - TimeSpan.FromMinutes(10),
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 },
+        };
+        var sut = Create(health);
+
+        var result = sut.Evaluate(now);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("stale");
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenHeartbeatFresh_ReportsHealthy()
+    {
+        var now = new DateTimeOffset(2026, 07, 12, 12, 0, 0, TimeSpan.Zero);
+        var health = new FakeDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = now - TimeSpan.FromSeconds(3),
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 },
+        };
+
+        Create(health).Evaluate(now).Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [UnitTest]
+    public void Evaluate_WhenNeverPolledYet_IsNotStale()
+    {
+        // Fresh start: LastPollAt null must not be treated as stale (no false depool at boot).
+        var now = new DateTimeOffset(2026, 07, 12, 12, 0, 0, TimeSpan.Zero);
+        var health = new FakeDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = null,
+        };
+
+        Create(health).Evaluate(now).Status.Should().Be(HealthStatus.Healthy);
     }
 
     private static AlertDispatchHealthCheck Create(

@@ -7,12 +7,17 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed partial class AlertEvaluationBackgroundService : BackgroundService
+internal sealed partial class AlertEvaluationBackgroundService : BackgroundService, IAlertEvaluationHealth
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILeaderElectionStrategy _leaderElection;
     private readonly AlertOptions _options;
     private readonly ILogger<AlertEvaluationBackgroundService> _logger;
+
+    private volatile bool _isRunning;
+    private long _lastHeartbeatAtTicks;
+    private long _lastLeaderPassAtTicks;
+    private long _leaderAcquisitionFailingSinceTicks;
 
     public AlertEvaluationBackgroundService(
         IServiceScopeFactory scopeFactory,
@@ -24,6 +29,30 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         _leaderElection = leaderElection ?? throw new ArgumentNullException(nameof(leaderElection));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc />
+    public bool IsEvaluatorEnabled => _options.Enabled;
+
+    /// <inheritdoc />
+    public bool IsEvaluatorRunning => _isRunning;
+
+    /// <inheritdoc />
+    public bool IsLeader => _leaderElection.IsLeader;
+
+    /// <inheritdoc />
+    public DateTimeOffset? LastHeartbeatAt => ReadTimestamp(ref _lastHeartbeatAtTicks);
+
+    /// <inheritdoc />
+    public DateTimeOffset? LastLeaderPassAt => ReadTimestamp(ref _lastLeaderPassAtTicks);
+
+    /// <inheritdoc />
+    public DateTimeOffset? LeaderAcquisitionFailingSince => ReadTimestamp(ref _leaderAcquisitionFailingSinceTicks);
+
+    private static DateTimeOffset? ReadTimestamp(ref long ticks)
+    {
+        var value = Interlocked.Read(ref ticks);
+        return value == 0 ? null : new DateTimeOffset(value, TimeSpan.Zero);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -39,11 +68,19 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
         LogStarting(_logger, workerName, checkpoint.LastGeneration);
 
+        _isRunning = true;
+        try
+        {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                // Heartbeat every iteration so the health check can prove the loop is alive
+                // independently of whether this node currently leads.
+                Interlocked.Exchange(ref _lastHeartbeatAtTicks, DateTimeOffset.UtcNow.UtcTicks);
+
                 var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
+                UpdateLeaderAcquisitionState();
                 if (!isLeader)
                 {
                     await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
@@ -78,6 +115,10 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                     await checkpointStore.SetAsync(checkpoint, stoppingToken).ConfigureAwait(false);
                 }
 
+                // Record a productive leader-pass heartbeat: this node holds leadership and
+                // completed a pass, so a stale value here means the leader is wedged.
+                Interlocked.Exchange(ref _lastLeaderPassAtTicks, DateTimeOffset.UtcNow.UtcTicks);
+
                 // Delay only when the batch made no progress; a productive batch loops
                 // immediately so a change backlog drains at full speed.
                 if (nextGeneration == previousGeneration && !shouldSweep)
@@ -95,9 +136,36 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
             }
         }
+        }
+        finally
+        {
+            _isRunning = false;
+        }
 
         await _leaderElection.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
         LogStopped(_logger);
+    }
+
+    /// <summary>
+    /// Tracks the fleet-wide no-leader signal from the coordinator's last acquisition attempt.
+    /// A faulted attempt (the coordinator errored) starts/continues a "failing since" window; any
+    /// determinate result (led, or cleanly conceded to another holder) clears it. The evaluation
+    /// health check compares the window age to <see cref="AlertEvaluationOptions.NoLeaderThreshold"/>.
+    /// The gauge mirrors the boolean failing state for scrape-time visibility.
+    /// </summary>
+    private void UpdateLeaderAcquisitionState()
+    {
+        if (_leaderElection.LastAcquireFaulted)
+        {
+            // Start the window on the first fault; keep the original start on subsequent faults.
+            Interlocked.CompareExchange(ref _leaderAcquisitionFailingSinceTicks, DateTimeOffset.UtcNow.UtcTicks, 0);
+            AlertPipelineMetrics.RecordEvaluationLeaderAcquisitionFailing(true);
+        }
+        else
+        {
+            Interlocked.Exchange(ref _leaderAcquisitionFailingSinceTicks, 0);
+            AlertPipelineMetrics.RecordEvaluationLeaderAcquisitionFailing(false);
+        }
     }
 
     private async Task<AlertWorkerCheckpoint> GetCheckpointAsync(string workerName, CancellationToken cancellationToken)

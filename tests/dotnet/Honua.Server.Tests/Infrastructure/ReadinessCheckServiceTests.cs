@@ -341,6 +341,101 @@ public sealed class ReadinessCheckServiceTests
         result.Exception.Should().BeNull();
     }
 
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithStaleAlertDispatchHeartbeat_ReturnsNotReady()
+    {
+        // Alert control loops surface on the paged readiness path (#2810): a hung dispatcher
+        // (stale poll heartbeat) must fail readiness.
+        var dispatch = new StubDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10),
+        };
+        var service = CreateAlertService(dispatchHealth: dispatch);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Contain("Alert dispatcher heartbeat is stale");
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithFreshAlertDispatchHeartbeat_ReturnsReady()
+    {
+        var dispatch = new StubDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
+        };
+        var service = CreateAlertService(dispatchHealth: dispatch);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithDisabledAlertDispatch_ReturnsReady()
+    {
+        // A disabled dispatcher is an operating choice, never a readiness fault — even with a very
+        // old (irrelevant) LastPollAt.
+        var dispatch = new StubDispatchHealth
+        {
+            IsDispatcherEnabled = false,
+            LastPollAt = DateTimeOffset.UtcNow - TimeSpan.FromDays(1),
+        };
+        var service = CreateAlertService(dispatchHealth: dispatch);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithNoLeaderEvaluationStall_ReturnsNotReady()
+    {
+        var evaluation = new StubEvaluationHealth
+        {
+            IsEvaluatorEnabled = true,
+            IsEvaluatorRunning = true,
+            IsLeader = false,
+            LeaderAcquisitionFailingSince = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(10),
+        };
+        var service = CreateAlertService(evaluationHealth: evaluation);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeFalse();
+        result.StatusCode.Should().Be(503);
+        result.Message.Should().Contain("no leader");
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithHealthyEvaluationFollower_ReturnsReady()
+    {
+        // A healthy follower (cleanly conceded leadership, no acquisition fault) never depools.
+        var evaluation = new StubEvaluationHealth
+        {
+            IsEvaluatorEnabled = true,
+            IsEvaluatorRunning = true,
+            IsLeader = false,
+            LeaderAcquisitionFailingSince = null,
+        };
+        var service = CreateAlertService(evaluationHealth: evaluation);
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
+    }
+
     private static ReadinessCheckService CreateService(
         IDatabaseHealthChecker databaseChecker,
         ICacheHealthChecker? cacheChecker = null,
@@ -359,6 +454,44 @@ public sealed class ReadinessCheckServiceTests
             new MockLogger<ReadinessCheckService>(),
             cacheChecker,
             featureChangeEventStoreHealth);
+    }
+
+    private static ReadinessCheckService CreateAlertService(
+        Honua.Alerts.IAlertDispatchHealth? dispatchHealth = null,
+        Honua.Alerts.IAlertEvaluationHealth? evaluationHealth = null)
+    {
+        var state = new MigrationState();
+        state.MarkSucceeded();
+
+        return new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(),
+            state,
+            new MockLogger<ReadinessCheckService>(),
+            alertDispatchHealth: dispatchHealth,
+            alertEvaluationHealth: evaluationHealth,
+            alertOptions: Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Alerts.Domain.AlertOptions()));
+    }
+
+    private sealed class StubDispatchHealth : Honua.Alerts.IAlertDispatchHealth
+    {
+        public bool IsDispatcherRunning { get; init; }
+        public bool IsDispatcherEnabled { get; init; }
+        public DateTimeOffset? LastPollAt { get; init; }
+        public Honua.Core.Features.Alerts.Domain.AlertDispatchBacklog? LastBacklog { get; init; }
+        public bool IsStoragePollFailing { get; init; }
+
+        public Task<Honua.Core.Features.Alerts.Domain.AlertDispatchBacklog> RefreshBacklogAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(LastBacklog ?? new Honua.Core.Features.Alerts.Domain.AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 });
+    }
+
+    private sealed class StubEvaluationHealth : Honua.Alerts.IAlertEvaluationHealth
+    {
+        public bool IsEvaluatorEnabled { get; init; }
+        public bool IsEvaluatorRunning { get; init; }
+        public bool IsLeader { get; init; }
+        public DateTimeOffset? LastHeartbeatAt { get; init; }
+        public DateTimeOffset? LastLeaderPassAt { get; init; }
+        public DateTimeOffset? LeaderAcquisitionFailingSince { get; init; }
     }
 }
 

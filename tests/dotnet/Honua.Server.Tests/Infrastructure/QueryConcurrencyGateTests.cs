@@ -441,6 +441,56 @@ public sealed class QueryConcurrencyGateTests
             "raising the admission target must admit queued waiters");
     }
 
+    // ------------------------------------------------------------------
+    // Admission pressure signal (DatabaseAdmissionPressure, #2805)
+    // ------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetPressure_UnderExhaustion_ReportsSaturationAndWindowedTimeout()
+    {
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+        });
+
+        // Lease the only slot, then a second acquisition times out — the real exhaustion path.
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeFalse("the pool is exhausted");
+
+        var pressure = gate.GetPressure();
+
+        pressure.HasUtilization.Should().BeTrue();
+        pressure.CurrentLimit.Should().Be(1);
+        pressure.InFlight.Should().Be(1);
+        pressure.Utilization.Should().Be(1.0);
+        pressure.WindowedAcquisitionTimeouts.Should().BeGreaterThanOrEqualTo(1);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetPressure_AcquisitionTimeouts_AreEvictedAfterWindow()
+    {
+        var clock = new ManualTimeProvider();
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+        }, clock);
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeFalse("the pool is exhausted");
+
+        // The timeout was stamped at the manual clock's current instant.
+        gate.GetPressure().WindowedAcquisitionTimeouts.Should().Be(1);
+
+        // Advance past the trailing window; the timeout must age out so the finding does not latch forever.
+        clock.Advance(TimeSpan.FromSeconds(61));
+
+        gate.GetPressure().WindowedAcquisitionTimeouts.Should().Be(0);
+    }
+
     private sealed class ManualTimeProvider : TimeProvider
     {
         private long _timestamp;
