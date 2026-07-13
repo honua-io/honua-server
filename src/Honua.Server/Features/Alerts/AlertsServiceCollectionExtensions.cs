@@ -53,7 +53,11 @@ internal static class AlertsServiceCollectionExtensions
         services.AddSingleton<IStreamingSubscriptionManager>(sp => sp.GetRequiredService<InMemoryAlertNotificationBroadcaster>());
         services.AddAlertDeliveryChannels(configuration);
 
-        services.AddHostedService<AlertEvaluationBackgroundService>();
+        // Register the evaluator once and expose it both as the hosted service and as the
+        // heartbeat source, so the evaluation health check can fault on a hung/dead loop (#2810).
+        services.AddSingleton<AlertEvaluationBackgroundService>();
+        services.AddSingleton<IAlertEvaluationHealth>(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
+        services.AddHostedService(sp => sp.GetRequiredService<AlertEvaluationBackgroundService>());
 
         // Register the dispatcher once and expose it both as the hosted service and as the
         // health-state source, so the dispatch-backlog health check reads the live snapshot.

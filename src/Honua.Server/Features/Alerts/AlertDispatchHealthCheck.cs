@@ -23,13 +23,16 @@ internal sealed class AlertDispatchHealthCheck : IHealthCheck
 {
     private readonly IAlertDispatchHealth _dispatcherHealth;
     private readonly AlertOptions _options;
+    private readonly TimeProvider _timeProvider;
 
     public AlertDispatchHealthCheck(
         IAlertDispatchHealth dispatcherHealth,
-        IOptions<AlertOptions> options)
+        IOptions<AlertOptions> options,
+        TimeProvider timeProvider)
     {
         _dispatcherHealth = dispatcherHealth ?? throw new ArgumentNullException(nameof(dispatcherHealth));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
@@ -57,6 +60,23 @@ internal sealed class AlertDispatchHealthCheck : IHealthCheck
             return Task.FromResult(HealthCheckResult.Unhealthy(
                 "Alert dispatcher is not running; pending notifications will not be delivered until it restarts.",
                 data: data));
+        }
+
+        // Heartbeat staleness (#2810): the dispatcher stamps LastPollAt at the end of each
+        // successful pass. A loop wedged inside a pass keeps IsDispatcherRunning true while the
+        // heartbeat ages, so without this comparison a hung dispatcher reports Healthy forever.
+        // Compare the heartbeat to now and fault when it exceeds the configured threshold.
+        var staleAfter = _options.Dispatch.HeartbeatStaleAfter;
+        if (staleAfter > TimeSpan.Zero && _dispatcherHealth.LastPollAt is { } heartbeat)
+        {
+            var age = _timeProvider.GetUtcNow() - heartbeat;
+            if (age >= staleAfter)
+            {
+                data["heartbeat_age_seconds"] = age.TotalSeconds;
+                return Task.FromResult(HealthCheckResult.Unhealthy(
+                    $"Alert dispatcher heartbeat is stale ({age.TotalSeconds.ToString("F0", CultureInfo.InvariantCulture)}s old, threshold {staleAfter.TotalSeconds.ToString("F0", CultureInfo.InvariantCulture)}s); the dispatch loop appears hung and notifications are not draining.",
+                    data: data));
+            }
         }
 
         var backlog = _dispatcherHealth.LastBacklog;

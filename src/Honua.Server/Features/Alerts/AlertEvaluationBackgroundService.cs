@@ -7,12 +7,17 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed partial class AlertEvaluationBackgroundService : BackgroundService
+internal sealed partial class AlertEvaluationBackgroundService : BackgroundService, IAlertEvaluationHealth
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILeaderElectionStrategy _leaderElection;
     private readonly AlertOptions _options;
     private readonly ILogger<AlertEvaluationBackgroundService> _logger;
+
+    private volatile bool _isRunning;
+    private volatile bool _isLeader;
+    private long _lastPollAtTicks;
+    private long _runningSinceTicks;
 
     public AlertEvaluationBackgroundService(
         IServiceScopeFactory scopeFactory,
@@ -24,6 +29,27 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         _leaderElection = leaderElection ?? throw new ArgumentNullException(nameof(leaderElection));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc />
+    public bool IsEvaluatorRunning => _isRunning;
+
+    /// <inheritdoc />
+    public bool IsEvaluatorEnabled => _options.Enabled;
+
+    /// <inheritdoc />
+    public bool IsLeader => _isLeader;
+
+    /// <inheritdoc />
+    public DateTimeOffset? LastPollAt => ReadTimestamp(ref _lastPollAtTicks);
+
+    /// <inheritdoc />
+    public DateTimeOffset? RunningSince => ReadTimestamp(ref _runningSinceTicks);
+
+    private static DateTimeOffset? ReadTimestamp(ref long ticks)
+    {
+        var value = Interlocked.Read(ref ticks);
+        return value == 0 ? null : new DateTimeOffset(value, TimeSpan.Zero);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -39,11 +65,37 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
 
         LogStarting(_logger, workerName, checkpoint.LastGeneration);
 
+        _isRunning = true;
+        Interlocked.Exchange(ref _runningSinceTicks, DateTimeOffset.UtcNow.UtcTicks);
+        try
+        {
+            _ = await RunLoopAsync(checkpoint, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _isRunning = false;
+            _isLeader = false;
+        }
+
+        await _leaderElection.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
+        LogStopped(_logger);
+    }
+
+    private async Task<AlertWorkerCheckpoint> RunLoopAsync(
+        AlertWorkerCheckpoint checkpoint,
+        CancellationToken stoppingToken)
+    {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var isLeader = await _leaderElection.TryAcquireAsync(stoppingToken).ConfigureAwait(false);
+                _isLeader = isLeader;
+
+                // Heartbeat: stamp every iteration (leader or not) so a hung loop is detectable
+                // by staleness, while a non-leader node still reports a live loop.
+                Interlocked.Exchange(ref _lastPollAtTicks, DateTimeOffset.UtcNow.UtcTicks);
+
                 if (!isLeader)
                 {
                     await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
@@ -96,8 +148,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
             }
         }
 
-        await _leaderElection.ReleaseAsync(CancellationToken.None).ConfigureAwait(false);
-        LogStopped(_logger);
+        return checkpoint;
     }
 
     private async Task<AlertWorkerCheckpoint> GetCheckpointAsync(string workerName, CancellationToken cancellationToken)

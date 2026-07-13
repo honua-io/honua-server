@@ -35,6 +35,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     internal const string RuleDbBoundedAdmissionPressure = "db-bounded-admission-pressure";
     internal const string RuleServingLatencySlo = "serving-latency-slo-breach";
     internal const string RulePlatformReleaseRuntimeDivergence = "platform-release-runtime-divergence";
+    internal const string RuleAlertEvaluationNoLeader = "alert-evaluation-no-leader";
+    internal const string RuleAuditChainIntegrity = "audit-chain-integrity";
 
     // BackendName of the in-process baseline batch backend (which reports a KubernetesJob target kind).
     private const string InProcessLocalBackendName = "local";
@@ -51,6 +53,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     private readonly IOpsDatabasePressureSignal? _databasePressureSignal;
     private readonly IRuntimeTunableAdmissionGate? _admissionGate;
     private readonly IOpsHealthRollupStore? _rollupStore;
+    private readonly AlertEvaluationLeaderProbe? _evaluationLeader;
+    private readonly IAuditChainVerificationSignal? _auditChainVerification;
 
     public OpsFindingsService(
         IOptionsMonitor<OpsFindingsOptions> options,
@@ -76,6 +80,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         _databasePressureSignal = extendedSignals?.DatabasePressureSignal;
         _admissionGate = extendedSignals?.AdmissionGate;
         _rollupStore = extendedSignals?.RollupStore;
+        _evaluationLeader = extendedSignals?.EvaluationLeader;
+        _auditChainVerification = extendedSignals?.AuditChainVerification;
     }
 
     public async Task<IReadOnlyList<OpsFinding>> EvaluateAsync(CancellationToken cancellationToken = default)
@@ -89,6 +95,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         EvaluateLocalBackendSubstrate(now, findings);
         EvaluatePlatformReleaseSkew(now, findings);
         EvaluateDbBoundedAdmissionPressure(now, options, findings);
+        EvaluateAuditChainIntegrity(now, findings);
+        await EvaluateAlertEvaluationNoLeaderAsync(now, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePendingContractMigrationsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateGpQueueDepthAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateDeployManualInterventionAsync(now, findings, cancellationToken).ConfigureAwait(false);
@@ -374,6 +382,113 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             Subject = subject,
             EvidenceRefs = evidence,
             RecommendedAction = action,
+        });
+    }
+
+    // Rule (i, #2810): no node holds the alert-evaluation lease. Leader election handles crash
+    // failover, but if NO node can acquire the advisory lock (e.g. pool exhaustion makes every
+    // TryAcquire return false), evaluation stops fleet-wide with zero visibility. The shared
+    // checkpoint's last dwell-sweep timestamp is the leader's fleet-wide heartbeat: the leader
+    // stamps it every sweep, so a stale (or, after the loop has been up long enough, never-set)
+    // heartbeat means no leader is making progress. Critical — evaluation has silently halted.
+    // No automatic action: a leaderless cluster is an infrastructure condition (lock/pool), not
+    // something a runtime action can clear.
+    private async Task EvaluateAlertEvaluationNoLeaderAsync(DateTimeOffset now, List<OpsFinding> findings, CancellationToken cancellationToken)
+    {
+        if (_evaluationLeader is null || !_evaluationLeader.IsEvaluatorEnabled)
+        {
+            return;
+        }
+
+        // Only judge leaderlessness once the local loop has been up longer than the staleness
+        // window, so a cold start that simply has not swept yet does not flap the finding.
+        var runningSince = _evaluationLeader.RunningSince;
+        var staleAfter = _evaluationLeader.NoLeaderStaleAfter;
+        if (staleAfter <= TimeSpan.Zero || runningSince is null || now - runningSince.Value < staleAfter)
+        {
+            return;
+        }
+
+        DateTimeOffset? lastLeaderHeartbeat;
+        try
+        {
+            lastLeaderHeartbeat = await _evaluationLeader.GetLastLeaderHeartbeatAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Fail open: an unreadable checkpoint must not fabricate a no-leader finding.
+            return;
+        }
+
+        var isLeaderless = lastLeaderHeartbeat is null || now - lastLeaderHeartbeat.Value >= staleAfter;
+        if (!isLeaderless)
+        {
+            return;
+        }
+
+        var subject = new OpsFindingSubject { Channel = "alert-evaluation" };
+        var heartbeatText = lastLeaderHeartbeat is { } hb
+            ? $"the last leader progress was {(now - hb).TotalSeconds:F0}s ago"
+            : "no leader has ever recorded progress since this node started";
+
+        findings.Add(new OpsFinding
+        {
+            Id = OpsFindingId.Create(RuleAlertEvaluationNoLeader, subject),
+            Rule = RuleAlertEvaluationNoLeader,
+            Severity = OpsFindingSeverity.Critical,
+            Title = "No node holds the alert-evaluation lease",
+            Explanation = $"The alert evaluator is enabled but {heartbeatText}, exceeding the {staleAfter.TotalSeconds:F0}s no-leader threshold. "
+                + "Leader election handles crash failover, but when no node can acquire the evaluation advisory lock — for example under connection-pool exhaustion — evaluation stops fleet-wide and feature changes are no longer turned into alert events. "
+                + "No automatic action is offered: restore the shared lock/pool availability (or restart a node) so a leader can be re-elected.",
+            DetectedAt = now,
+            Subject = subject,
+            EvidenceRefs =
+            [
+                "healthcheck:alert-evaluation",
+                "GET /monitoring/health/comprehensive",
+                lastLeaderHeartbeat is { } h ? $"last-leader-heartbeat:{h:O}" : "last-leader-heartbeat:none",
+            ],
+            RecommendedAction = null,
+        });
+    }
+
+    // Rule (j, #2810): the tamper-evident audit_log hash chain failed its most recent scheduled
+    // verification. The chain is append-only (rules block UPDATE/DELETE, migration 033) with a
+    // hash-chain integrity verifier, but /verify was pull-only — so tail-tampering by a superuser
+    // who can DROP RULE was invisible until someone manually checked. A background loop now replays
+    // the chain on a cadence and publishes the result here; a broken chain is Critical. No automatic
+    // action: a broken audit chain demands forensic operator investigation, not a runtime fix.
+    private void EvaluateAuditChainIntegrity(DateTimeOffset now, List<OpsFinding> findings)
+    {
+        if (_auditChainVerification?.LastReport is not { Verified: false } report)
+        {
+            return;
+        }
+
+        var subject = new OpsFindingSubject { Channel = "audit-log" };
+        var verifiedAtText = _auditChainVerification.LastVerifiedAt is { } at
+            ? at.ToString("O", System.Globalization.CultureInfo.InvariantCulture)
+            : "unknown";
+
+        findings.Add(new OpsFinding
+        {
+            Id = OpsFindingId.Create(RuleAuditChainIntegrity, subject),
+            Rule = RuleAuditChainIntegrity,
+            Severity = OpsFindingSeverity.Critical,
+            Title = "Audit-chain integrity verification failed",
+            Explanation = $"The tamper-evident audit_log hash chain failed scheduled verification (checked {verifiedAtText}): {report.FailureReason ?? "the recomputed hash diverged from the stored value"}. "
+                + $"The first broken link is audit_id {report.FirstBrokenAuditId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown"} out of {report.RowsChecked.ToString(System.Globalization.CultureInfo.InvariantCulture)} row(s) examined. "
+                + "The audit trail is append-only and hash-chained; a broken chain means rows were altered or removed after the fact. No automatic action is offered: investigate for tampering (including a superuser who may have dropped the append-only rules) and preserve evidence.",
+            DetectedAt = now,
+            Subject = subject,
+            EvidenceRefs =
+            [
+                "GET /api/v1/admin/observability/audit/verify",
+                report.FirstBrokenAuditId is { } id
+                    ? $"audit-id:{id.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                    : "audit-id:unknown",
+            ],
+            RecommendedAction = null,
         });
     }
 

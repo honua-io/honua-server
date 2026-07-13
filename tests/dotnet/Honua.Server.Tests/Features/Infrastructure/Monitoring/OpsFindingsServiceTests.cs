@@ -607,6 +607,113 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_NoLeaderHeartbeatStale_ProducesCriticalNoLeaderFinding()
+    {
+        // #2810: the evaluator has been up longer than the no-leader window but the shared checkpoint
+        // heartbeat has not advanced — no node holds the lease, so evaluation has stalled fleet-wide.
+        var now = DateTimeOffset.UtcNow;
+        var probe = CreateEvaluationLeaderProbe(
+            enabled: true,
+            runningSince: now - TimeSpan.FromMinutes(30),
+            lastLeaderHeartbeat: now - TimeSpan.FromMinutes(20),
+            noLeaderStaleAfter: TimeSpan.FromMinutes(5));
+        var service = CreateService(evaluationLeader: probe);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleAlertEvaluationNoLeader);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Equal("alert-evaluation", finding.Subject.Channel);
+        Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_LeaderHeartbeatFresh_ProducesNoNoLeaderFinding()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var probe = CreateEvaluationLeaderProbe(
+            enabled: true,
+            runningSince: now - TimeSpan.FromMinutes(30),
+            lastLeaderHeartbeat: now - TimeSpan.FromSeconds(5),
+            noLeaderStaleAfter: TimeSpan.FromMinutes(5));
+        var service = CreateService(evaluationLeader: probe);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleAlertEvaluationNoLeader);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ColdStartWithinWindow_ProducesNoNoLeaderFinding()
+    {
+        // A cold start that has not swept yet (null heartbeat) but has been up less than the window
+        // must not flap the finding.
+        var now = DateTimeOffset.UtcNow;
+        var probe = CreateEvaluationLeaderProbe(
+            enabled: true,
+            runningSince: now - TimeSpan.FromSeconds(10),
+            lastLeaderHeartbeat: null,
+            noLeaderStaleAfter: TimeSpan.FromMinutes(5));
+        var service = CreateService(evaluationLeader: probe);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleAlertEvaluationNoLeader);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AuditChainBroken_ProducesCriticalAuditFinding()
+    {
+        // #2810: the scheduled verifier published a broken-chain report; the finding surfaces it.
+        var signal = new FakeAuditChainVerificationSignal
+        {
+            LastVerifiedAt = DateTimeOffset.UtcNow,
+            LastReport = new Honua.Core.Features.AuditLog.Abstractions.AuditIntegrityReport
+            {
+                Verified = false,
+                RowsChecked = 42,
+                UnhashedRows = 0,
+                FirstBrokenAuditId = 17,
+                FailureReason = "recomputed hash diverged",
+            },
+        };
+        var service = CreateService(auditChainVerification: signal);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleAuditChainIntegrity);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Equal("audit-log", finding.Subject.Channel);
+        Assert.Contains("audit-id:17", finding.EvidenceRefs);
+        Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_AuditChainVerified_ProducesNoAuditFinding()
+    {
+        var signal = new FakeAuditChainVerificationSignal
+        {
+            LastVerifiedAt = DateTimeOffset.UtcNow,
+            LastReport = new Honua.Core.Features.AuditLog.Abstractions.AuditIntegrityReport
+            {
+                Verified = true,
+                RowsChecked = 42,
+                UnhashedRows = 0,
+            },
+        };
+        var service = CreateService(auditChainVerification: signal);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleAuditChainIntegrity);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_FindingIds_AreDeterministicAcrossEvaluations()
     {
         var alertHealth = new FakeAlertDispatchHealth
@@ -993,7 +1100,9 @@ public sealed class OpsFindingsServiceTests
         IExecutionJobStore? jobStore = null,
         IOpsDatabasePressureSignal? databasePressureSignal = null,
         IRuntimeTunableAdmissionGate? admissionGate = null,
-        IOpsHealthRollupStore? rollupStore = null)
+        IOpsHealthRollupStore? rollupStore = null,
+        AlertEvaluationLeaderProbe? evaluationLeader = null,
+        IAuditChainVerificationSignal? auditChainVerification = null)
         => new(
             new StaticOptionsMonitor<OpsFindingsOptions>(options ?? new OpsFindingsOptions()),
             new StaticOptionsMonitor<ControlPlaneOptions>(controlPlaneOptions ?? new ControlPlaneOptions()),
@@ -1007,7 +1116,67 @@ public sealed class OpsFindingsServiceTests
                 DatabasePressureSignal = databasePressureSignal,
                 AdmissionGate = admissionGate,
                 RollupStore = rollupStore,
+                EvaluationLeader = evaluationLeader,
+                AuditChainVerification = auditChainVerification,
             });
+
+    private static AlertEvaluationLeaderProbe CreateEvaluationLeaderProbe(
+        bool enabled,
+        DateTimeOffset? runningSince,
+        DateTimeOffset? lastLeaderHeartbeat,
+        TimeSpan? noLeaderStaleAfter = null)
+    {
+        var health = new FakeEvaluationHealth
+        {
+            IsEvaluatorEnabled = enabled,
+            IsEvaluatorRunning = runningSince is not null,
+            RunningSince = runningSince,
+        };
+        var options = Options.Create(new AlertOptions
+        {
+            Evaluation = new AlertEvaluationOptions
+            {
+                NoLeaderStaleAfter = noLeaderStaleAfter ?? TimeSpan.FromMinutes(5),
+            },
+        });
+        return new AlertEvaluationLeaderProbe(health, new FakeCheckpointStore(lastLeaderHeartbeat), options);
+    }
+
+    private sealed class FakeEvaluationHealth : IAlertEvaluationHealth
+    {
+        public bool IsEvaluatorRunning { get; init; }
+        public bool IsEvaluatorEnabled { get; init; }
+        public bool IsLeader { get; init; }
+        public DateTimeOffset? LastPollAt { get; init; }
+        public DateTimeOffset? RunningSince { get; init; }
+    }
+
+    private sealed class FakeCheckpointStore(DateTimeOffset? lastDwellSweepAt) : Honua.Core.Features.Alerts.Abstractions.IAlertCheckpointStore
+    {
+        public Task<AlertWorkerCheckpoint> GetAsync(string workerName, CancellationToken cancellationToken = default)
+            => Task.FromResult(new AlertWorkerCheckpoint
+            {
+                WorkerName = workerName,
+                LastGeneration = 0,
+                LastDwellSweepAt = lastDwellSweepAt,
+            });
+
+        public Task SetAsync(AlertWorkerCheckpoint checkpoint, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class FakeAuditChainVerificationSignal : IAuditChainVerificationSignal
+    {
+        public Honua.Core.Features.AuditLog.Abstractions.AuditIntegrityReport? LastReport { get; set; }
+
+        public DateTimeOffset? LastVerifiedAt { get; set; }
+
+        public void Publish(Honua.Core.Features.AuditLog.Abstractions.AuditIntegrityReport report, DateTimeOffset verifiedAt)
+        {
+            LastReport = report;
+            LastVerifiedAt = verifiedAt;
+        }
+    }
 
     private static DeployPreflightSnapshot BuildDeploySnapshot(
         bool hasPendingContractScripts = false,

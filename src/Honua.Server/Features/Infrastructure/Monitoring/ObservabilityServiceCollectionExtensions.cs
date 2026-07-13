@@ -62,11 +62,26 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
+
+        // Ops "who watches the watcher" seams (#2810): a scheduled audit hash-chain verifier that
+        // publishes the last result for the audit-chain-integrity finding, and the fleet-wide
+        // alert-evaluation lease heartbeat probe for the alert-evaluation-no-leader finding. Both
+        // are optional collaborators folded into OpsFindingsExtendedSignals so the findings-service
+        // constructor stays under the DI collaborator ceiling.
+        services.AddOptions<AuditChainVerificationOptions>()
+            .Bind(configuration.GetSection(AuditChainVerificationOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddSingleton<IAuditChainVerificationSignal, AuditChainVerificationSignal>();
+        services.AddHostedService<AuditChainVerificationBackgroundService>();
+
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
+            EvaluationLeader = BuildEvaluationLeaderProbe(sp),
+            AuditChainVerification = sp.GetService<IAuditChainVerificationSignal>(),
         });
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
         services.AddScoped<IOpsAutonomyEvaluator, OpsAutonomyEvaluator>();
@@ -91,6 +106,24 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddOperateStatus(configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Builds the fleet-wide alert-evaluation lease probe when the alert pipeline and its checkpoint
+    /// store are both registered; returns null otherwise so the no-leader rule stays inert on
+    /// deployments without alerts (or without a Postgres checkpoint store).
+    /// </summary>
+    private static AlertEvaluationLeaderProbe? BuildEvaluationLeaderProbe(IServiceProvider sp)
+    {
+        var health = sp.GetService<Honua.Alerts.IAlertEvaluationHealth>();
+        var checkpointStore = sp.GetService<Honua.Core.Features.Alerts.Abstractions.IAlertCheckpointStore>();
+        var options = sp.GetService<Microsoft.Extensions.Options.IOptions<Honua.Core.Features.Alerts.Domain.AlertOptions>>();
+        if (health is null || checkpointStore is null || options is null)
+        {
+            return null;
+        }
+
+        return new AlertEvaluationLeaderProbe(health, checkpointStore, options);
     }
 
     /// <summary>

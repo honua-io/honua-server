@@ -73,6 +73,7 @@ public sealed class AlertDispatchHealthCheckTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 0 },
         };
         var sut = Create(health, degradedBacklogThreshold: 1_000, unhealthyDeadLetterThreshold: 1);
@@ -82,10 +83,32 @@ public sealed class AlertDispatchHealthCheckTests
         result.Status.Should().Be(HealthStatus.Healthy);
     }
 
+    [UnitTest]
+    public async Task CheckHealth_WhenHeartbeatStale_ReportsUnhealthy()
+    {
+        // #2810: a dispatcher hung inside its pass keeps IsDispatcherRunning true while LastPollAt
+        // ages; the check must compare the heartbeat to now and fault rather than report Healthy.
+        var now = DateTimeOffset.UtcNow;
+        var health = new FakeDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = now - TimeSpan.FromMinutes(10),
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 },
+        };
+        var sut = Create(health, timeProvider: new FixedTimeProvider(now));
+
+        var result = await sut.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("heartbeat is stale");
+    }
+
     private static AlertDispatchHealthCheck Create(
         FakeDispatchHealth health,
         int degradedBacklogThreshold = 1_000,
-        int unhealthyDeadLetterThreshold = 1)
+        int unhealthyDeadLetterThreshold = 1,
+        TimeProvider? timeProvider = null)
     {
         var options = Options.Create(new AlertOptions
         {
@@ -96,7 +119,12 @@ public sealed class AlertDispatchHealthCheckTests
             },
         });
 
-        return new AlertDispatchHealthCheck(health, options);
+        return new AlertDispatchHealthCheck(health, options, timeProvider ?? TimeProvider.System);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private sealed class FakeDispatchHealth : IAlertDispatchHealth

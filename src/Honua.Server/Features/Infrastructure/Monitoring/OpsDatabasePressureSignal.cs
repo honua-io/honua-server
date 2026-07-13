@@ -66,4 +66,16 @@ internal sealed class OpsFindingsExtendedSignals
 
     /// <summary>Persisted ops-health rollup store (#2553, Postgres only), or null when unavailable.</summary>
     public IOpsHealthRollupStore? RollupStore { get; init; }
+
+    /// <summary>
+    /// Fleet-wide alert-evaluation lease liveness probe (#2810), or null when the alert pipeline /
+    /// checkpoint store is not registered. Feeds the <c>alert-evaluation-no-leader</c> rule.
+    /// </summary>
+    public AlertEvaluationLeaderProbe? EvaluationLeader { get; init; }
+
+    /// <summary>
+    /// Most recent scheduled audit hash-chain verification result (#2810), or null when the
+    /// verification loop is not registered. Feeds the <c>audit-chain-integrity</c> rule.
+    /// </summary>
+    public IAuditChainVerificationSignal? AuditChainVerification { get; init; }
 }

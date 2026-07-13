@@ -91,6 +91,16 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             AlertsTags);
 
+        // Alert evaluation loop (#2810): the companion "who watches the watcher" check for the
+        // evaluation loop that turns feature changes into alert events. Surfaces a dead or hung
+        // loop (heartbeat compared to now) through the same roll-up so a silently stalled evaluator
+        // is visible before alerts stop firing. Fleet-wide no-leader detection is a separate
+        // ops finding (alert-evaluation-no-leader).
+        healthChecksBuilder.AddCheck<Honua.Alerts.AlertEvaluationHealthCheck>(
+            "alert-evaluation",
+            HealthStatus.Degraded,
+            AlertsTags);
+
         // Real-time feature streams (#2428, GA promotion): surfaces backpressure
         // (slow-consumer disconnects, session saturation) and cross-node broadcast backlog
         // loss through the HealthCheckService roll-up so streaming degradation is visible

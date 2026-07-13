@@ -100,6 +100,22 @@ public sealed class AlertEvaluationOptions
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// Duration after the evaluation loop's last heartbeat (its most recent iteration)
+    /// beyond which the evaluation health check faults. This catches a loop hung inside a
+    /// pass — which keeps <c>IsEvaluatorRunning</c> true while doing no work — rather than a
+    /// clean crash. Must comfortably exceed <see cref="IdleDelay"/>. Default is 2 minutes.
+    /// </summary>
+    public TimeSpan HeartbeatStaleAfter { get; init; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Duration since the shared checkpoint's last leader progress (dwell sweep) beyond
+    /// which the fleet-wide <c>alert-evaluation-no-leader</c> ops finding fires: no node has
+    /// held the evaluation lease and made progress, so evaluation has silently stalled
+    /// cluster-wide. Must comfortably exceed <see cref="DwellSweepInterval"/>. Default is 5 minutes.
+    /// </summary>
+    public TimeSpan NoLeaderStaleAfter { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Lease duration for leader-election heartbeats.
     /// </summary>
     public TimeSpan LeaderLeaseDuration { get; init; } = TimeSpan.FromSeconds(30);
@@ -147,6 +163,15 @@ public sealed class AlertDispatchOptions
     /// Delay when no dispatch work is available.
     /// </summary>
     public TimeSpan IdleDelay { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Duration after the dispatch loop's last heartbeat (its most recent successful pass)
+    /// beyond which the dispatch health check reports the dispatcher heartbeat stale — a loop
+    /// wedged inside a pass that would otherwise keep reporting Healthy while the heartbeat
+    /// ages. Must comfortably exceed <see cref="IdleDelay"/> and
+    /// <see cref="BacklogRefreshInterval"/>. Default is 2 minutes.
+    /// </summary>
+    public TimeSpan HeartbeatStaleAfter { get; init; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Maximum outbound notifications delivered per channel per rolling minute,
