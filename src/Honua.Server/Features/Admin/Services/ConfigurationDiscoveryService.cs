@@ -165,8 +165,8 @@ public sealed class ConfigurationDiscoveryService
                     ? ExtractValidationRules(propertyInfo)
                     : ExtractValidationRules(property.ValidationAttributes),
                 IsSecret = propertyInfo is not null
-                    ? IsSecretProperty(propertyInfo)
-                    : IsSecretPropertyName(property.Name)
+                    ? ConfigurationValueRedactor.IsSecretProperty(propertyInfo)
+                    : ConfigurationValueRedactor.IsSecretPropertyName(property.Name)
             });
         }
 
@@ -247,25 +247,6 @@ public sealed class ConfigurationDiscoveryService
     }
 
     /// <summary>
-    /// Determines if a property contains secret data.
-    /// </summary>
-    private static bool IsSecretProperty(PropertyInfo property)
-    {
-        var name = property.Name.ToLowerInvariant();
-        return IsSecretPropertyName(name)
-            || property.GetCustomAttribute<SecretReferenceAttribute>() != null;
-    }
-
-    /// <summary>
-    /// Determines if a property name implies secret data.
-    /// </summary>
-    private static bool IsSecretPropertyName(string propertyName)
-    {
-        var name = propertyName.ToLowerInvariant();
-        return name.Contains("password") || name.Contains("secret") || name.Contains("key") || name.Contains("token");
-    }
-
-    /// <summary>
     /// Gets current configuration values for a type.
     /// </summary>
     private async Task<Dictionary<string, object?>> GetCurrentConfigurationValuesAsync(
@@ -289,7 +270,7 @@ public sealed class ConfigurationDiscoveryService
                         try
                         {
                             var value = prop.GetValue(instance);
-                            values[prop.Name] = IsSecretProperty(prop) ? "***" : value;
+                            values[prop.Name] = ConfigurationValueRedactor.Redact(prop, value);
                         }
                         catch
                         {
@@ -307,7 +288,7 @@ public sealed class ConfigurationDiscoveryService
                     if (prop.CanRead && prop.GetIndexParameters().Length == 0)
                     {
                         var configValue = section[prop.Name];
-                        values[prop.Name] = IsSecretProperty(prop) && configValue != null ? "***" : configValue;
+                        values[prop.Name] = ConfigurationValueRedactor.Redact(prop, configValue);
                     }
                 }
             }
@@ -637,6 +618,111 @@ public sealed class ConfigurationDiscoveryService
 }
 
 #pragma warning restore IL2070, IL2071, IL2072, IL3000
+
+/// <summary>
+/// Redacts configuration values surfaced by the admin discovery API using a deny-by-default
+/// policy. Only values whose declared type cannot embed secret material (booleans, numbers,
+/// enums, timestamps, and durations) are exposed; strings and structured/nested values are
+/// redacted regardless of property name. This closes the previous name-denylist gap where a
+/// connection string, endpoint, username, or any non-obviously-named field serialized raw
+/// (issue #2804).
+/// </summary>
+internal static class ConfigurationValueRedactor
+{
+    /// <summary>
+    /// Placeholder emitted in place of any redacted configuration value.
+    /// </summary>
+    internal const string RedactedPlaceholder = "***";
+
+    /// <summary>
+    /// Returns the value only when its declaring property is safe to display; otherwise a
+    /// redaction placeholder. A <see langword="null"/> value carries no secret material and is
+    /// preserved so callers can still see that a setting is unset.
+    /// </summary>
+    internal static object? Redact(PropertyInfo property, object? value)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+
+        if (value is null)
+        {
+            return null;
+        }
+
+        return IsDisplaySafe(property) ? value : RedactedPlaceholder;
+    }
+
+    /// <summary>
+    /// Determines whether a property's value may be surfaced. Explicitly-marked secrets and any
+    /// property whose declared type could carry credentials (strings, URIs, and structured or
+    /// nested objects) are never safe.
+    /// </summary>
+    internal static bool IsDisplaySafe(PropertyInfo property)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+
+        if (IsSecretProperty(property))
+        {
+            return false;
+        }
+
+        return IsDisplaySafeType(property.PropertyType);
+    }
+
+    /// <summary>
+    /// Determines whether a CLR type is incapable of embedding secret material and can therefore
+    /// be shown verbatim. Scalar value types (booleans, numbers, enums, timestamps, durations,
+    /// and GUIDs) qualify; strings and all reference/complex types do not.
+    /// </summary>
+    internal static bool IsDisplaySafeType(Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+
+        var underlying = Nullable.GetUnderlyingType(type) ?? type;
+
+        if (underlying.IsEnum)
+        {
+            return true;
+        }
+
+        return Type.GetTypeCode(underlying) switch
+        {
+            TypeCode.Boolean or TypeCode.Char
+                or TypeCode.SByte or TypeCode.Byte
+                or TypeCode.Int16 or TypeCode.UInt16
+                or TypeCode.Int32 or TypeCode.UInt32
+                or TypeCode.Int64 or TypeCode.UInt64
+                or TypeCode.Single or TypeCode.Double or TypeCode.Decimal
+                or TypeCode.DateTime => true,
+            _ => underlying == typeof(TimeSpan)
+                || underlying == typeof(DateTimeOffset)
+                || underlying == typeof(DateOnly)
+                || underlying == typeof(TimeOnly)
+                || underlying == typeof(Guid),
+        };
+    }
+
+    /// <summary>
+    /// Determines if a property is an explicitly-marked secret via a naming hint or a
+    /// <see cref="SecretReferenceAttribute"/>. Retained to flag secret metadata; value exposure
+    /// is governed by the deny-by-default <see cref="IsDisplaySafe(PropertyInfo)"/> policy.
+    /// </summary>
+    internal static bool IsSecretProperty(PropertyInfo property)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+
+        return IsSecretPropertyName(property.Name)
+            || property.GetCustomAttribute<SecretReferenceAttribute>() != null;
+    }
+
+    /// <summary>
+    /// Determines if a property name implies secret data.
+    /// </summary>
+    internal static bool IsSecretPropertyName(string propertyName)
+    {
+        var name = propertyName.ToLowerInvariant();
+        return name.Contains("password") || name.Contains("secret") || name.Contains("key") || name.Contains("token");
+    }
+}
 
 // Additional model classes for the discovery service...
 
