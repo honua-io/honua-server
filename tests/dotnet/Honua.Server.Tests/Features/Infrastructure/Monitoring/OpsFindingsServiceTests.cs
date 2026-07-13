@@ -452,6 +452,77 @@ public sealed class OpsFindingsServiceTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingLatencyBelowMinSampleCount_SuppressesFinding()
+    {
+        // #2809: a single 2.1s request on a quiet protocol yields p95 == 2100ms (nearest-rank of n=1),
+        // which would otherwise breach the 2s threshold and cry wolf. The min-sample guard suppresses it.
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 1,
+                        ErrorCount = 0,
+                        P50Ms = 2100,
+                        P95Ms = 2100,
+                        P99Ms = 2100,
+                        MaxMs = 2100,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingLatencyBreachAtMinSampleCount_ProducesFinding()
+    {
+        // #2809: the same latency breach with a statistically meaningful sample count (>= the guard) still
+        // fires — the guard suppresses only the meaningless low-traffic case, never a real breach.
+        var now = DateTimeOffset.UtcNow;
+        var options = new OpsFindingsOptions { ServingLatencyMinRequestCount = 30 };
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 30,
+                        ErrorCount = 0,
+                        P50Ms = 100,
+                        P95Ms = 2100,
+                        P99Ms = 2200,
+                        MaxMs = 2500,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore, options: options);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Equal("OgcApiFeatures", finding.Subject.Protocol);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_PlatformReleaseRuntimeDivergence_UnknownTargetTreatedAsDivergent()
     {
         var controlPlane = new ControlPlaneOptions

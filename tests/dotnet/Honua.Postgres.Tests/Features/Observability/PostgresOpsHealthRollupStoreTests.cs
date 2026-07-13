@@ -83,7 +83,7 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
-    public async Task DownsampleAndPrune_MaterializesFiveMinuteTierWithWeightedPercentiles()
+    public async Task DownsampleAndPrune_MaterializesFiveMinuteTierWithPeakPercentiles()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresOpsHealthRollupStoreTests));
         try
@@ -106,8 +106,10 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
             var fiveMin = await store.ReadLatencyAsync(OpsHealthRollupTier.FiveMinute, windowStart.AddMinutes(-1), now);
             fiveMin.Should().HaveCount(1);
             fiveMin[0].BucketStart.Should().Be(windowStart);
-            // Weighted p95 = (100*100 + 200*300) / 400 = 175
-            fiveMin[0].Point.P95Ms.Should().BeApproximately(175, 1e-6);
+            // #2809: percentiles store the peak (MAX) rolling-window observation, never a weighted mean that
+            // would average a spike away. Peak p95 = MAX(100, 200) = 200.
+            fiveMin[0].Point.P95Ms.Should().Be(200);
+            fiveMin[0].Point.P99Ms.Should().Be(400);
             // Counts store the peak observation.
             fiveMin[0].Point.RequestCount.Should().Be(300);
             fiveMin[0].Point.MaxMs.Should().Be(300);

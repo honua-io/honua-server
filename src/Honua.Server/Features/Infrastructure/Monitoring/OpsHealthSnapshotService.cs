@@ -90,9 +90,28 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                 ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
                 ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
                 CacheHitRatio = healthMetrics.CacheHitRatio,
-                ErrorRate = healthMetrics.ErrorRate,
+                // #2809: the vitals error rate is persisted into 1-minute rollup buckets, so it must be a
+                // WINDOWED signal — healthMetrics.ErrorRate is a lifetime ratio that dilutes a real spike into
+                // days of history. Derive it from the rolling serving-latency window instead.
+                ErrorRate = ComputeWindowedErrorRate(servingLatency),
             },
         };
+    }
+
+    // Windowed server-error rate over the rolling serving-latency window (the reservoir that backs the
+    // per-protocol percentiles), aggregated across protocols. Windowed so a persisted bucket reflects the
+    // minute it covers rather than a lifetime average (#2809).
+    private static double ComputeWindowedErrorRate(OpsServingLatencyView servingLatency)
+    {
+        long requests = 0;
+        long errors = 0;
+        foreach (var protocol in servingLatency.Protocols)
+        {
+            requests += protocol.RequestCount;
+            errors += protocol.ErrorCount;
+        }
+
+        return requests > 0 ? (double)errors / requests : 0d;
     }
 
     private static OpsHealthChecksView BuildHealthView(HealthReport report)

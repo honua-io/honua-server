@@ -9,16 +9,20 @@ namespace Honua.Core.Features.Observability.Domain;
 /// </summary>
 /// <remarks>
 /// Percentiles cannot be recombined exactly from pre-aggregated percentiles without the raw distribution
-/// (a NON-GOAL here — that stays in the optional Prometheus bundle). Cross-replica merging therefore uses a
-/// request-count-weighted mean of each percentile (falling back to the max when no in-window requests were
-/// observed) and sums the request/error counts, since replicas serve disjoint traffic. This is a documented
-/// approximation suitable for whole-cluster trend and SLO review.
+/// (a NON-GOAL here — the mergeable sketch stays in the optional Prometheus bundle). A request-count-weighted
+/// mean of per-replica percentiles is statistically wrong and, worse, dangerous: the p95 of nine healthy
+/// replicas (100ms) and one sick replica (10s) means to ~1.1s and the sick instance vanishes under the SLO
+/// threshold (#2809). Because the raw distribution is unavailable, cross-replica merging therefore takes the
+/// MAX of each per-replica percentile — a documented conservative aggregation that never hides a sick replica
+/// (the true pooled percentile is bounded above by the max of the per-replica percentiles). Request/error
+/// counts are summed, since replicas serve disjoint traffic. Suitable for whole-cluster trend and SLO review.
 /// </remarks>
 public static class OpsHealthRollupAggregation
 {
     /// <summary>
     /// Merges per-replica latency points for a single protocol into one whole-cluster point. Counts are
-    /// summed (disjoint traffic); percentiles use a request-count-weighted mean and the max feeds the max.
+    /// summed (disjoint traffic); each percentile takes the MAX across replicas (a conservative aggregation
+    /// that never hides a sick replica — see the type remarks and #2809), as does the observed maximum.
     /// </summary>
     /// <param name="protocol">The protocol the merged point describes.</param>
     /// <param name="points">The per-replica points (must be non-empty).</param>
@@ -39,9 +43,6 @@ public static class OpsHealthRollupAggregation
 
         long requestCount = 0;
         long errorCount = 0;
-        double weightedP50 = 0;
-        double weightedP95 = 0;
-        double weightedP99 = 0;
         double maxP50 = 0;
         double maxP95 = 0;
         double maxP99 = 0;
@@ -51,10 +52,6 @@ public static class OpsHealthRollupAggregation
         {
             requestCount += point.RequestCount;
             errorCount += point.ErrorCount;
-            var weight = point.RequestCount;
-            weightedP50 += point.P50Ms * weight;
-            weightedP95 += point.P95Ms * weight;
-            weightedP99 += point.P99Ms * weight;
             maxP50 = Math.Max(maxP50, point.P50Ms);
             maxP95 = Math.Max(maxP95, point.P95Ms);
             maxP99 = Math.Max(maxP99, point.P99Ms);
@@ -66,9 +63,9 @@ public static class OpsHealthRollupAggregation
             Protocol = protocol,
             RequestCount = requestCount,
             ErrorCount = errorCount,
-            P50Ms = requestCount > 0 ? weightedP50 / requestCount : maxP50,
-            P95Ms = requestCount > 0 ? weightedP95 / requestCount : maxP95,
-            P99Ms = requestCount > 0 ? weightedP99 / requestCount : maxP99,
+            P50Ms = maxP50,
+            P95Ms = maxP95,
+            P99Ms = maxP99,
             MaxMs = maxMs,
         };
     }

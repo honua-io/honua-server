@@ -238,8 +238,11 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
     }
 
     // Downsamples the 1-minute latency tier into a coarser tier using an epoch-floor bucket (UTC-stable,
-    // independent of the session TimeZone). Percentiles use a request-count-weighted mean; counts store the
-    // peak (max) rolling-window observation within the coarse bucket. Idempotent via upsert.
+    // independent of the session TimeZone). Both counts and percentiles store the peak (MAX) rolling-window
+    // observation within the coarse bucket: a weighted mean of nearest-rank percentiles is statistically
+    // wrong and averages a real latency spike away, and the 1-minute rows hold overlapping 300s rolling
+    // windows, so summing would over-count traffic — MAX is the honest peak that never hides a spike (#2809).
+    // Idempotent via upsert.
     private async Task DownsampleLatencyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, short targetTier, int bucketSeconds, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var sql = $"""
@@ -252,9 +255,9 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
                 protocol,
                 MAX(request_count),
                 MAX(error_count),
-                CASE WHEN SUM(request_count) > 0 THEN SUM(p50_ms * request_count) / SUM(request_count) ELSE MAX(p50_ms) END,
-                CASE WHEN SUM(request_count) > 0 THEN SUM(p95_ms * request_count) / SUM(request_count) ELSE MAX(p95_ms) END,
-                CASE WHEN SUM(request_count) > 0 THEN SUM(p99_ms * request_count) / SUM(request_count) ELSE MAX(p99_ms) END,
+                MAX(p50_ms),
+                MAX(p95_ms),
+                MAX(p99_ms),
                 MAX(max_ms),
                 @updated_at
             FROM {_latencyTable}

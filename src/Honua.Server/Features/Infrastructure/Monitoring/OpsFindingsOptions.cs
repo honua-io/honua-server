@@ -81,4 +81,14 @@ public sealed class OpsFindingsOptions
     /// </summary>
     [Range(1, 1440)]
     public double ServingLatencyLookbackMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Gets or sets the minimum in-window request count a protocol must have observed before the
+    /// <c>serving-latency-slo-breach</c> rule evaluates its latency/error-rate thresholds. Percentiles are
+    /// exact nearest-rank over the reservoir, so below this count they are statistically meaningless — a
+    /// single slow request yields p95 == that request's latency, and one error yields a 100% error rate.
+    /// The guard suppresses those cry-wolf findings on quiet protocols (#2809). Default is 30.
+    /// </summary>
+    [Range(1, long.MaxValue)]
+    public long ServingLatencyMinRequestCount { get; set; } = 30;
 }

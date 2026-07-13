@@ -625,6 +625,15 @@ internal sealed class OpsFindingsService : IOpsFindingsService
 
         foreach (var point in latestPerProtocol)
         {
+            // #2809 min-sample guard: percentiles are exact nearest-rank over a bounded reservoir, so below a
+            // minimum request count they are statistically meaningless (a single slow request yields
+            // p95 == that request; one error yields a 100% error rate). Suppress the whole protocol's finding
+            // below the guard so a quiet protocol cannot cry wolf on one outlier request.
+            if (point.RequestCount < options.ServingLatencyMinRequestCount)
+            {
+                continue;
+            }
+
             var latencyBreach = point.P95Ms >= options.ServingLatencyP95ThresholdMs;
             var errorRateBreach = point.ErrorRate >= options.ServingErrorRateThreshold;
             if (!latencyBreach && !errorRateBreach)
