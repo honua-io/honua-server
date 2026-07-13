@@ -102,6 +102,127 @@ public sealed class McpMapToolTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ListLayers_HonorsLimitAndOffsetPaging()
+    {
+        var surface = BuildSurface();
+        var services = BuildServices();
+
+        // Page 1 (limit=1): the single seeded layer is returned; totalCount echoes
+        // the full match count and hasMore stays false because it is the last page.
+        var firstPage = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("layers-limit-1", ListLayersTool.ToolName, """{"limit":1}"""),
+            CancellationToken.None);
+
+        var firstStructured = firstPage!.Result!.Value.GetProperty("structuredContent");
+        firstStructured.GetProperty("layerCount").GetInt32().Should().Be(1);
+        firstStructured.GetProperty("totalCount").GetInt32().Should().Be(1);
+        firstStructured.GetProperty("offset").GetInt32().Should().Be(0);
+        firstStructured.GetProperty("hasMore").GetBoolean().Should().BeFalse();
+        firstStructured.TryGetProperty("nextOffset", out _).Should().BeFalse(
+            "the final page must not advertise nextOffset");
+
+        // An offset past the end returns an empty page without error.
+        var pastEnd = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("layers-offset-1", ListLayersTool.ToolName, """{"offset":5}"""),
+            CancellationToken.None);
+
+        var pastStructured = pastEnd!.Result!.Value.GetProperty("structuredContent");
+        pastStructured.GetProperty("layerCount").GetInt32().Should().Be(0);
+        pastStructured.GetProperty("totalCount").GetInt32().Should().Be(1);
+        pastStructured.GetProperty("hasMore").GetBoolean().Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_DescribeLayer_ReturnsFieldSchemaRowCountAndCrs()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(42L);
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("describe-1", DescribeLayerTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("serviceId").GetString().Should().Be(ServiceId);
+        structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.GetProperty("geometryType").GetString().Should().Be(nameof(MetadataV2GeometryType.Polygon));
+        structured.GetProperty("srid").GetInt32().Should().Be(4326);
+        structured.GetProperty("rowCount").GetInt64().Should().Be(42);
+        structured.GetProperty("fieldCount").GetInt32().Should().Be(3);
+        var fields = structured.GetProperty("fields").EnumerateArray().ToArray();
+        fields.Should().HaveCount(3);
+        var objectId = fields[0];
+        objectId.GetProperty("name").GetString().Should().Be("objectid");
+        objectId.GetProperty("type").GetString().Should().Be(nameof(MetadataV2FieldType.Integer));
+        objectId.GetProperty("nullable").GetBoolean().Should().BeFalse();
+        objectId.GetProperty("alias").GetString().Should().Be("OBJECTID");
+
+        await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_DescribeLayer_IncludeRowCountFalse_SkipsCountProbe()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("describe-2", DescribeLayerTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":false}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var structured = response.Result!.Value.GetProperty("structuredContent");
+        structured.TryGetProperty("rowCount", out _).Should().BeFalse(
+            "includeRowCount=false must omit rowCount");
+        structured.GetProperty("fieldCount").GetInt32().Should().Be(3);
+
+        await reader.DidNotReceive().CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_DescribeLayer_UnknownService_ReturnsSchemaValidToolError()
+    {
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices()),
+            ToolCall("describe-missing-1", DescribeLayerTool.ToolName, """
+                {"serviceId":"does-not-exist","layerId":0}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("error").GetProperty("kind").GetString()
+            .Should().Be("UnknownDataset");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_QueryFeatures_ReturnsGeoJson()
@@ -792,6 +913,7 @@ public sealed class McpMapToolTests
     private McpOperatorSurface BuildSurface() => new(
         [
             new ListLayersTool(_jobService, NullLogger<ListLayersTool>.Instance),
+            new DescribeLayerTool(_jobService, NullLogger<DescribeLayerTool>.Instance),
             new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance),
             new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance)
         ],
@@ -808,7 +930,16 @@ public sealed class McpMapToolTests
         };
 
         return new TestMetadataV2GraphBuilder()
-            .AddResource(ResourceId, "Parcels Dataset", spatial: spatial)
+            .AddResource(
+                ResourceId,
+                "Parcels Dataset",
+                spatial: spatial,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "OBJECTID" },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Name" },
+                    new MetadataV2Field { Name = "area_sq_m", Type = MetadataV2FieldType.Double, Nullable = true }
+                ])
             .AddStorageBinding("bind-parcels", ResourceId, "public.parcels", storageLayerId: StorageLayerId)
             .AddService(ServiceId, ServiceName)
             .AddPublication("pub-parcels", ServiceId, ResourceId, layerIndex: LayerIndex, storageBindingId: "bind-parcels")

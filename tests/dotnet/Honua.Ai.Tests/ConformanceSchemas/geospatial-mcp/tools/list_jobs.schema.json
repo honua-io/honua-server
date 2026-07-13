@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/list_jobs.schema.json",
+  "title": "list_jobs inputSchema",
+  "description": "Argument shape for enumerating the caller's geoprocessing jobs (newest first) with an optional status filter and cursor paging. The bare standard taxonomy models job lookup as a job-resource read; the reference implementation exposes a discrete listing tool (advertised name honua_list_jobs). x-honua-extension: this is a documented Honua extension over the bare taxonomy, pending formalization in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["Queued", "Provisioning", "Running", "Succeeded", "Failed", "Cancelled"]
+      },
+      "description": "Optional job status filter. When omitted, jobs of any status are returned."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 50,
+      "description": "Maximum number of jobs to return on this page (capped at 200)."
+    },
+    "cursor": {
+      "type": "string",
+      "description": "Opaque cursor returned as nextCursor by a previous call."
+    }
+  }
+}

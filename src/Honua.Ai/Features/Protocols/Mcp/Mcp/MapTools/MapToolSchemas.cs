@@ -14,6 +14,12 @@ namespace Honua.Ai.Protocols.Mcp.MapTools;
 /// </summary>
 internal static class MapToolSchemas
 {
+    /// <summary>Default number of layers returned by <c>honua_list_layers</c>.</summary>
+    public const int DefaultLayerLimit = 50;
+
+    /// <summary>Hard ceiling on layers returned by <c>honua_list_layers</c> per page.</summary>
+    public const int MaxLayerLimit = 500;
+
     /// <summary>Default feature count returned by <c>honua_query_features</c>.</summary>
     public const int DefaultFeatureLimit = 100;
 
@@ -48,6 +54,19 @@ internal static class MapToolSchemas
             "filter": {
               "type": "string",
               "description": "Optional case-insensitive substring to match against service and layer name/title. When omitted, all published layers are returned."
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50,
+              "description": "Maximum number of layers to return on this page (capped at 500)."
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "description": "Number of matching layers to skip before returning results (pagination). When a response reports hasMore=true, re-issue the same call with offset set to the returned nextOffset until hasMore is false."
             }
           }
         }

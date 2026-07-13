@@ -61,10 +61,32 @@ internal sealed class ListLayersTool : IMcpTool
             .ConfigureAwait(false);
 
         string? filter = null;
+        var limit = MapToolSchemas.DefaultLayerLimit;
+        var offset = 0;
         if (arguments is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined })
         {
             var argument = McpToolHelpers.ParseArguments(arguments, MapToolJsonContext.Default.McpListLayersArgument);
             filter = string.IsNullOrWhiteSpace(argument.Filter) ? null : argument.Filter.Trim();
+
+            if (argument.Limit is { } requestedLimit)
+            {
+                if (requestedLimit < 1)
+                {
+                    throw new GeoprocessingValidationException("'limit' must be a positive integer.");
+                }
+
+                limit = Math.Min(requestedLimit, MapToolSchemas.MaxLayerLimit);
+            }
+
+            if (argument.Offset is { } requestedOffset)
+            {
+                if (requestedOffset < 0)
+                {
+                    throw new GeoprocessingValidationException("'offset' must be a non-negative integer.");
+                }
+
+                offset = requestedOffset;
+            }
         }
 
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
@@ -96,10 +118,20 @@ internal sealed class ListLayersTool : IMcpTool
             return byService != 0 ? byService : a.LayerId.CompareTo(b.LayerId);
         });
 
+        var totalCount = layers.Count;
+        var page = offset >= totalCount
+            ? []
+            : layers.GetRange(offset, Math.Min(limit, totalCount - offset));
+        var hasMore = offset + page.Count < totalCount;
+
         var output = new McpListLayersOutput
         {
-            LayerCount = layers.Count,
-            Layers = layers
+            LayerCount = page.Count,
+            TotalCount = totalCount,
+            Offset = offset,
+            HasMore = hasMore,
+            NextOffset = hasMore ? offset + page.Count : null,
+            Layers = page
         };
 
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpListLayersOutput);
