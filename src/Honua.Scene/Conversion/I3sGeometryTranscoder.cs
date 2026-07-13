@@ -164,10 +164,8 @@ public static class I3sGeometryTranscoder
         }
 
         var ringCount = ring.Count;
-        // Drop a closing duplicate vertex (first == last) if present.
-        if (ring[0].Longitude == ring[ringCount - 1].Longitude
-            && ring[0].Latitude == ring[ringCount - 1].Latitude
-            && (ring[0].Height ?? 0.0) == (ring[ringCount - 1].Height ?? 0.0))
+        // Drop a closing duplicate vertex (first == last, within tolerance) if present.
+        if (SceneVertexCoordinates.IsRingClosingDuplicate(ring[0], ring[ringCount - 1]))
         {
             ringCount--;
         }
