@@ -40,7 +40,7 @@ public sealed class SlackAlertDeliverySinkTests
     public async Task DeliverAsync_WithSuccessfulPost_ReturnsSuccess()
     {
         var handler = new FakeHttpMessageHandler(HttpStatusCode.OK);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
@@ -57,7 +57,7 @@ public sealed class SlackAlertDeliverySinkTests
     public async Task DeliverAsync_WithServerError_ReturnsRetryableFailure()
     {
         var handler = new FakeHttpMessageHandler(HttpStatusCode.InternalServerError);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
@@ -74,7 +74,7 @@ public sealed class SlackAlertDeliverySinkTests
     public async Task DeliverAsync_WithRateLimitResponse_ReturnsRetryableFailure()
     {
         var handler = new FakeHttpMessageHandler(HttpStatusCode.TooManyRequests);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
@@ -91,7 +91,7 @@ public sealed class SlackAlertDeliverySinkTests
     public async Task DeliverAsync_WithOpsEvent_RendersOpsTitleAndOperationIdNotRuleZero()
     {
         var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK);
-        var client = new HttpClient(handler);
+        using var client = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 

@@ -37,8 +37,9 @@ public sealed class DigestAlertDeliverySinkTests
             .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-102"));
 
         var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var httpClient = new HttpClient(handler);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        httpClientFactory.CreateClient("alerts-digest").Returns(new HttpClient(handler));
+        httpClientFactory.CreateClient("alerts-digest").Returns(httpClient);
 
         using var provider = CreateServiceProvider(dispatchStore, eventStore);
         var service = new DigestFlushBackgroundService(
@@ -77,9 +78,10 @@ public sealed class DigestAlertDeliverySinkTests
         eventStore.GetAsync(201, Arg.Any<CancellationToken>())
             .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-201"));
 
+        using var httpClient = new HttpClient(new CapturingHandler(HttpStatusCode.InternalServerError));
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-digest")
-            .Returns(new HttpClient(new CapturingHandler(HttpStatusCode.InternalServerError)));
+            .Returns(httpClient);
 
         using var provider = CreateServiceProvider(dispatchStore, eventStore);
         var service = new DigestFlushBackgroundService(
@@ -150,6 +152,8 @@ public sealed class DigestAlertDeliverySinkTests
             SignatureHeader = Assert.Single(request.Headers.GetValues("X-Honua-Signature"));
             DigestCountHeader = Assert.Single(request.Headers.GetValues("X-Honua-Digest-Count"));
 
+            // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
+            // it disposes the response after the caller finishes with it.
             return new HttpResponseMessage(_statusCode);
         }
     }
