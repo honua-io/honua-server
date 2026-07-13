@@ -335,6 +335,49 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     public Func<AnalysisPlan, string?, ExecutionJobRecord>? OnSubmit { get; set; }
 
     /// <summary>
+    /// Plan ids for which <see cref="EnsurePlanExecutionAuthorizedAsync"/> throws, simulating a
+    /// mutating-process tier denial evaluated against the requesting principal at workflow run
+    /// creation (#2798).
+    /// </summary>
+    public HashSet<string> DenyExecutionAuthorizationForPlanIds { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Plans passed to <see cref="EnsurePlanExecutionAuthorizedAsync"/>, in call order, so tests
+    /// can assert the requesting principal was gated before any step job was submitted.
+    /// </summary>
+    public IReadOnlyList<AnalysisPlan> ExecutionAuthorizationChecked
+    {
+        get
+        {
+            lock (_executionAuthChecked)
+            {
+                return _executionAuthChecked.ToArray();
+            }
+        }
+    }
+
+    private readonly List<AnalysisPlan> _executionAuthChecked = [];
+
+    public Task EnsurePlanExecutionAuthorizedAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_executionAuthChecked)
+        {
+            _executionAuthChecked.Add(plan);
+        }
+
+        if (DenyExecutionAuthorizationForPlanIds.Contains(plan.PlanId))
+        {
+            throw new UnauthorizedAccessException(
+                $"Requesting principal is not authorized to execute mutating plan '{plan.PlanId}'.");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// When set, <see cref="GetJobAsync"/> raises this exception on the first call and clears
     /// itself so subsequent reconcile ticks can succeed. Used to verify that transient
     /// observation failures do not terminalise a workflow step.

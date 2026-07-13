@@ -24,6 +24,12 @@ internal sealed class GeoprocessingWorkflowJobExecutor : IWorkflowJobExecutor
         _jobService = jobService;
     }
 
+    public Task EnsurePlanExecutionAuthorizedAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+        => _jobService.EnsurePlanExecutionTierAuthorizedAsync(plan, principal, cancellationToken);
+
     public Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,
         string? idempotencyKey,

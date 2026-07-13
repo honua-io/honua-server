@@ -613,6 +613,12 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task EnsurePlanExecutionTierAuthorizedAsync(
+            AnalysisPlan plan,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => new() { IsExecutable = true };
 

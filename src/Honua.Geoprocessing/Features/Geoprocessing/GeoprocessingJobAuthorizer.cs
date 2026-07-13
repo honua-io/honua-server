@@ -60,8 +60,17 @@ internal sealed class GeoprocessingJobAuthorizer
             return;
         }
 
+        // Carry the actual denied operation into both the structured security log and the
+        // surfaced exception message so a mutating-process denial is distinguishable from a
+        // baseline Execute denial rather than reading as a generic "Execute" 403 (#2798).
         GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
-        throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
+        throw new GeoprocessingAuthorizationException(
+            decision.RequiresAuthentication,
+            decision.RequiresAuthentication
+                ? "Authentication is required for this operation."
+                : $"You do not have permission to perform '{operation}' on {resourceType}.",
+            resourceType,
+            operation);
     }
 
     /// <summary>

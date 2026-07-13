@@ -22,6 +22,47 @@ public sealed class WorkflowOrchestrationEngineTests
         new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "tester") }, "TestAuth"));
 
     [Fact]
+    public async Task CreateRun_MutatingStepWithoutRequestingPrincipalTier_ThrowsAndPersistsNoRun()
+    {
+        // #2798: the reconcile loop submits step jobs under an admin-bypassing orchestrator
+        // principal, so the mutating-process tier must be evaluated against the REQUESTING
+        // principal at run creation. A denial there must fail the run before any state is
+        // persisted or any step job is submitted.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        harness.JobService.DenyExecutionAuthorizationForPlanIds.Add("plan-a");
+
+        var act = async () => await harness.Engine.CreateRunAsync(
+            definition, WorkflowTriggerKind.Manual, Operator);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(act);
+        Assert.Contains(harness.JobService.ExecutionAuthorizationChecked, p => p.PlanId == "plan-a");
+        Assert.Empty(harness.RunStore.Snapshot);
+        Assert.Empty(harness.JobService.Submitted);
+    }
+
+    [Fact]
+    public async Task CreateRun_RequestingPrincipalTierAuthorized_CreatesRunAndSubmits()
+    {
+        // The authorized counterpart: when the requesting principal clears the execution
+        // tier, the run is created and the step is submitted on the next reconcile tick.
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+
+        Assert.Contains(harness.JobService.ExecutionAuthorizationChecked, p => p.PlanId == "plan-a");
+        Assert.Single(harness.RunStore.Snapshot);
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+        Assert.Single(harness.JobService.Submitted);
+    }
+
+    [Fact]
     public async Task ReconcileWorkflowRun_ChainsStepsWithArtifactBinding()
     {
         var harness = new OrchestrationTestHarness();
