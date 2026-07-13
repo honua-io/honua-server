@@ -56,16 +56,9 @@ internal static class Wfs20DispatcherEndpoint
                 return primaryValue;
             }
 
-            foreach (var alias in aliases)
-            {
-                if (_values.TryGetValue(alias, out var value) &&
-                    !string.IsNullOrWhiteSpace(value))
-                {
-                    return value;
-                }
-            }
-
-            return null;
+            return aliases
+                .Select(alias => _values.GetValueOrDefault(alias))
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
         }
     }
 
@@ -205,6 +198,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process WFS request");
         }
@@ -319,6 +314,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
             return Wfs20Handler.CreateLegacyWfsException(
                 version,
@@ -501,6 +498,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.DescribeFeatureTypeRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DescribeFeatureType request");
         }
@@ -580,6 +579,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.GetFeatureRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetFeature request");
         }
@@ -652,6 +653,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.GetPropertyValueRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetPropertyValue request");
         }
@@ -703,6 +706,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.TransactionRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process Transaction request");
         }
@@ -741,6 +746,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.ListStoredQueriesRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process ListStoredQueries request");
         }
@@ -780,6 +787,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.DescribeStoredQueriesRequestFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DescribeStoredQueries request");
         }
@@ -818,6 +827,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
             return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Failed to process CreateStoredQuery request"));
         }
@@ -857,6 +868,8 @@ internal static class Wfs20DispatcherEndpoint
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost per-operation dispatcher boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20DispatcherLog.WfsRequestFailed(logger, ex);
             return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Failed to process DropStoredQuery request"));
         }
@@ -1083,16 +1096,16 @@ internal static class Wfs20DispatcherEndpoint
             return null;
         }
 
-        foreach (var query in queries)
+        var missingTypeNames = queries.Any(query =>
+            string.IsNullOrWhiteSpace(query.TypeNames) &&
+            !parameters.Contains(Wfs20Utilities.ParameterNames.StoredQueryId));
+
+        if (missingTypeNames)
         {
-            if (string.IsNullOrWhiteSpace(query.TypeNames) &&
-                !parameters.Contains(Wfs20Utilities.ParameterNames.StoredQueryId))
-            {
-                return new WfsValidationError(
-                    "MissingParameterValue",
-                    "typeNames",
-                    "Each WFS XML Query element must include a typeNames attribute.");
-            }
+            return new WfsValidationError(
+                "MissingParameterValue",
+                "typeNames",
+                "Each WFS XML Query element must include a typeNames attribute.");
         }
 
         return null;
@@ -1412,16 +1425,15 @@ internal static class Wfs20DispatcherEndpoint
         string targetName,
         params string[] attributeNames)
     {
-        foreach (var attributeName in attributeNames)
-        {
-            var value = element.Attributes()
+        var value = attributeNames
+            .Select(attributeName => element.Attributes()
                 .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, attributeName, StringComparison.OrdinalIgnoreCase))
-                ?.Value;
-            if (value is not null)
-            {
-                SetRawValue(values, targetName, value);
-                return;
-            }
+                ?.Value)
+            .FirstOrDefault(candidate => candidate is not null);
+
+        if (value is not null)
+        {
+            SetRawValue(values, targetName, value);
         }
     }
 

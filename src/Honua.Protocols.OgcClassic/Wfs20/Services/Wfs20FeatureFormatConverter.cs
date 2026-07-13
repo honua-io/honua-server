@@ -14,6 +14,12 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
 {
     private static readonly XNamespace GmlNamespace = "http://www.opengis.net/gml/3.2";
+    private readonly ILogger<Wfs20FeatureFormatConverter> _logger;
+
+    public Wfs20FeatureFormatConverter(ILogger<Wfs20FeatureFormatConverter> logger)
+    {
+        _logger = logger;
+    }
 
     /// <inheritdoc />
     public Feature ConvertGmlToFeature(XElement gmlElement)
@@ -84,8 +90,9 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
             // For now, return the GML as a string (this would need a proper GML parser)
             return geometryElement.ToString();
         }
-        catch
+        catch (Exception ex)
         {
+            Wfs20Log.FeatureSerializationFailed(_logger, "gml-geometry-extract", ex.Message);
             return null;
         }
     }
@@ -97,16 +104,11 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
 
         var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var element in gmlElement.Elements())
+        // Skip GML namespace elements (geometry, id, etc.) and geometry property elements.
+        foreach (var element in gmlElement.Elements().Where(element =>
+            element.Name.Namespace != GmlNamespace &&
+            !element.Name.LocalName.EndsWith("geometry", StringComparison.OrdinalIgnoreCase)))
         {
-            // Skip GML namespace elements (geometry, id, etc.)
-            if (element.Name.Namespace == GmlNamespace)
-                continue;
-
-            // Skip geometry property elements
-            if (element.Name.LocalName.EndsWith("geometry", StringComparison.OrdinalIgnoreCase))
-                continue;
-
             var name = element.Name.LocalName;
             var value = element.Value;
 
@@ -145,8 +147,11 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
                 _ => value // Fallback to string
             };
         }
-        catch
+        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException)
         {
+            Wfs20Log.ParameterValidationFailed(
+                _logger,
+                $"Failed to convert attribute value '{value}' to {expectedType.Name}: {ex.Message}");
             return value; // Return as string if conversion fails
         }
     }
