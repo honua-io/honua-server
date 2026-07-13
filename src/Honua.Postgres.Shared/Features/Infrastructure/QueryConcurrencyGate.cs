@@ -17,8 +17,15 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     // reverts to the configured limits on restart.
     private const int TunableFloor = 1;
 
+    // Trailing window over which acquisition timeouts are counted for the pressure signal (#2805). A
+    // windowed count reflects a current exhaustion episode instead of a lifetime-monotonic total that,
+    // once incremented, would keep the finding latched forever.
+    private static readonly TimeSpan AcquisitionTimeoutWindow = TimeSpan.FromSeconds(60);
+
     private readonly object _sync = new();
     private readonly Queue<QueuedWaiter> _waiters = new();
+    private readonly Queue<long> _acquisitionTimeouts = new();
+    private readonly long _acquisitionTimeoutWindowTicks;
     private readonly TimeProvider _timeProvider;
     private readonly long _timestampFrequency;
     private readonly TimeSpan _acquisitionTimeout;
@@ -41,6 +48,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         ArgumentNullException.ThrowIfNull(limits);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _timestampFrequency = Math.Max(1, _timeProvider.TimestampFrequency);
+        _acquisitionTimeoutWindowTicks = (long)(AcquisitionTimeoutWindow.TotalSeconds * _timestampFrequency);
 
         var configuredPoolCeiling = limits.MaxConnectionPoolSize > 0
             ? limits.MaxConnectionPoolSize
@@ -100,6 +108,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         {
             if (waiter.Completion.TrySetCanceled(CancellationToken.None))
             {
+                RecordAcquisitionTimeout();
                 return false;
             }
 
@@ -201,6 +210,47 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
                 return Math.Max(0, _targetLimit - _inFlight);
             }
         }
+    }
+
+    /// <inheritdoc />
+    public DatabaseAdmissionPressure GetPressure()
+    {
+        lock (_sync)
+        {
+            return new DatabaseAdmissionPressure(
+                _inFlight,
+                _targetLimit,
+                _waiters.Count,
+                _queueWaitEwmaMs,
+                CountAcquisitionTimeoutsInWindowLocked());
+        }
+    }
+
+    // Records an admission-acquisition timeout at the current timestamp and evicts entries older than the
+    // trailing window so the pressure signal reflects only recent exhaustion.
+    private void RecordAcquisitionTimeout()
+    {
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _acquisitionTimeouts.Enqueue(_timeProvider.GetTimestamp());
+            _ = CountAcquisitionTimeoutsInWindowLocked();
+        }
+    }
+
+    private long CountAcquisitionTimeoutsInWindowLocked()
+    {
+        var cutoff = _timeProvider.GetTimestamp() - _acquisitionTimeoutWindowTicks;
+        while (_acquisitionTimeouts.Count > 0 && _acquisitionTimeouts.Peek() < cutoff)
+        {
+            _acquisitionTimeouts.Dequeue();
+        }
+
+        return _acquisitionTimeouts.Count;
     }
 
     internal QueryConcurrencyGateSnapshot GetSnapshot()

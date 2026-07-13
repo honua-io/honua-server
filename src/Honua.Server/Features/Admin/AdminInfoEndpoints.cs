@@ -85,13 +85,17 @@ internal static class AdminInfoEndpoints
                 [
                     new AdminMetadataSchema { Version = MetadataV2Constants.ApiVersion, Deprecated = false }
                 ],
+                // Manifest capabilities must match the routes actually registered. The write-side
+                // manifest endpoints (apply/dry-run/prune) were removed in the #1035 cutover; only the
+                // read-only export (GET .../release-packages/{id}/gitops-manifest) remains, so advertise
+                // export=true and the removed write operations as false (honua-server#2807).
                 Features = new AdminCompatibilityFeatures
                 {
                     MetadataResources = true,
                     ManifestExport = true,
-                    ManifestApply = true,
-                    ManifestDryRun = true,
-                    ManifestPrune = true
+                    ManifestApply = false,
+                    ManifestDryRun = false,
+                    ManifestPrune = false
                 },
                 AdminApiMajor = AdminApiMajor,
                 MetadataApiVersion = MetadataV2Constants.ApiVersion,

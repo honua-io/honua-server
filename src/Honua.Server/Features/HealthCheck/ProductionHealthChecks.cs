@@ -29,6 +29,7 @@ internal static class ProductionHealthChecks
     private static readonly string[] AlertsTags = ["alerts", "notifications"];
     private static readonly string[] StreamingTags = ["streaming", "realtime"];
     private static readonly string[] PluginTags = ["plugins", "extensibility"];
+    private static readonly string[] AuditTags = ["audit", "security"];
 
     /// <summary>
     /// Adds production health checks to the service collection.
@@ -91,6 +92,15 @@ internal static class ProductionHealthChecks
             HealthStatus.Degraded,
             AlertsTags);
 
+        // Alert evaluation loop (#2810): the evaluator previously had no health coverage. Surfaces a
+        // hung leader (stale productive-pass heartbeat) and a fleet-wide no-leader stall (no node can
+        // acquire the advisory lease) so a silently-halted evaluation loop is visible on the roll-up
+        // and the paged readiness path. Reports Healthy when the pipeline is disabled.
+        healthChecksBuilder.AddCheck<Honua.Alerts.AlertEvaluationHealthCheck>(
+            "alert-evaluation",
+            HealthStatus.Degraded,
+            AlertsTags);
+
         // Real-time feature streams (#2428, GA promotion): surfaces backpressure
         // (slow-consumer disconnects, session saturation) and cross-node broadcast backlog
         // loss through the HealthCheckService roll-up so streaming degradation is visible
@@ -107,6 +117,15 @@ internal static class ProductionHealthChecks
             "plugins",
             HealthStatus.Healthy,
             PluginTags);
+
+        // Scheduled audit hash-chain verification (#2810): surfaces a broken/tampered append-only
+        // audit chain through the roll-up / ops-health snapshot as a paged signal, rather than only
+        // catching it on a manual /verify. Reads the cached signal; never replays the chain on a
+        // probe. Healthy before the first pass and while the chain is intact.
+        healthChecksBuilder.AddCheck<Honua.Server.Features.Infrastructure.AuditLog.AuditChainIntegrityHealthCheck>(
+            "audit-chain-integrity",
+            HealthStatus.Unhealthy,
+            AuditTags);
 
         return services;
     }

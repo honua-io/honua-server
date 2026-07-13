@@ -91,6 +91,110 @@ public sealed class GeoprocessingJobServiceTests
         result.IsExecutable.Should().BeTrue();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_MultiStepPlan_ReportsNotExecutable()
+    {
+        // A job runs a single process, so the submit path rejects multi-step plans. Validate
+        // must surface the same limitation instead of optimistically returning executable (#2806).
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-multi",
+            IntentId = "intent-multi",
+            Steps =
+            [
+                BufferStep("step-1"),
+                BufferStep("step-2"),
+            ]
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().Contain(v => v.Code == "MULTI_STEP_NOT_EXECUTABLE");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_SyncOnlyProcess_ReportsNotExecutable()
+    {
+        // analytics.density has no job-dispatchable executor (only analytics.density-managed
+        // does); it must be rejected at validate rather than passing and failing at dispatch.
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-sync",
+            IntentId = "intent-sync",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-density",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.density",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "42",
+                        ["cellSize"] = "100"
+                    }
+                }
+            ]
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().Contain(v => v.Code == "SYNC_ONLY_PROCESS");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_NonGeoprocessStep_WarnsItIsIgnored()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-query",
+            IntentId = "intent-query",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-query",
+                    Kind = AnalysisPlanStepKind.QueryFeatures,
+                    Inputs = new Dictionary<string, string> { ["layerId"] = "1" }
+                }
+            ]
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.IsExecutable.Should().BeFalse();
+        result.Violations.Should().Contain(v => v.Code == "NO_EXECUTABLE_STEP");
+        result.Warnings.Should().Contain(w => w.Contains("QueryFeatures", StringComparison.Ordinal));
+    }
+
+    // -----------------------------------------------------------------------
+    // DryRunPlan
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_DoesNotFabricateZeroDuration_AndDisclosesUnavailability()
+    {
+        var result = _sut.DryRunPlan(CreateValidPlan(), CreatePrincipal());
+
+        // The 0 is no longer presented as a fact: the availability flag is false and the
+        // side-effects list discloses why (#2806).
+        result.DurationEstimateAvailable.Should().BeFalse();
+        result.SideEffects.Should().Contain(s => s.Contains("No duration estimate", StringComparison.Ordinal));
+        // geometry.buffer produces a feature layer — derived from the catalog when the plan
+        // declares no explicit outputs.
+        result.EstimatedArtifacts.Should().Contain(ArtifactKind.FeatureLayer);
+    }
+
     // -----------------------------------------------------------------------
     // SubmitJobAsync
     // -----------------------------------------------------------------------
@@ -3055,21 +3159,20 @@ public sealed class GeoprocessingJobServiceTests
     {
         PlanId = "plan-1",
         IntentId = "intent-1",
-        Steps =
-        [
-            new AnalysisPlanStep
-            {
-                StepId = "step-1",
-                Kind = AnalysisPlanStepKind.Geoprocess,
-                ProcessId = "geometry.buffer",
-                Inputs = new Dictionary<string, string>
-                {
-                    ["wkb"] = "AAAA",
-                    ["srid"] = "4326",
-                    ["distance"] = "100"
-                }
-            }
-        ]
+        Steps = [BufferStep("step-1")]
+    };
+
+    private static AnalysisPlanStep BufferStep(string stepId) => new()
+    {
+        StepId = stepId,
+        Kind = AnalysisPlanStepKind.Geoprocess,
+        ProcessId = "geometry.buffer",
+        Inputs = new Dictionary<string, string>
+        {
+            ["wkb"] = "AAAA",
+            ["srid"] = "4326",
+            ["distance"] = "100"
+        }
     };
 
     private static AnalysisPlan CreateSinkPlan() => new()

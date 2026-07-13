@@ -13,6 +13,9 @@ internal sealed class SingleInstanceLeaderElectionStrategy : ILeaderElectionStra
 {
     public bool IsLeader { get; private set; }
 
+    /// <summary>Always <c>false</c>: single-instance acquisition never faults.</summary>
+    public bool LastAcquireFaulted => false;
+
     public string InstanceId { get; } = $"{Environment.MachineName}-{Environment.ProcessId}";
 
     public Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)

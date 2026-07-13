@@ -151,6 +151,27 @@ bypassable. The principal/IP partition plus the `Mcp:MaxSessions` cap and idle
 TTL are the memory- and abuse-control mechanisms for `initialize` bursts; the
 edge limiter remains the first line of defense.
 
+## Deployment profiles and the resulting surface
+
+The MCP surface is the same set of tools and resources everywhere, but two
+configuration switches change how progress is delivered and whether
+`honua_plan_analysis` compiles real intents. Pick the profile that matches your
+ingress and planner configuration:
+
+| Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
+|---|---|---|---|---|
+| **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false`; no live planner | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
+| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (still fixture unless a live planner is on) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
+| **Live planner** | `PlanAnalysis:Enabled=true` (+ provider) or `WorkflowGeneration:Enabled=true` | Follows whichever streaming profile above is set | `engine:"live"` — plans compiled from your intent | See [Turn on the live MCP planner](mcp-live-planner.md). Combine with the streaming profile for push progress. |
+
+All three profiles advertise the identical `tools/list`, `resources/list`, and
+`prompts/list`. The difference is operational: whether progress is pushed or
+polled, and whether a plan is compiled from your intent or replayed as a demo.
+The read-only pre-flight tools (`honua_validate_plan`, `honua_dry_run_plan`)
+report the same execution reality in every profile — including that a job runs a
+single process, so multi-step or sync-only plans are flagged rather than silently
+under-executed.
+
 ## Next steps
 
 - [Operating Honua](../operate/README.md)

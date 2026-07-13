@@ -73,8 +73,71 @@ public sealed class DeployHealthProbeTests
         sendCount.Should().Be(0, "a rejected URL must never hit the network");
     }
 
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_BodyContainsToken_Matches()
+    {
+        var probe = new HttpDeployHealthProbe(BodyFactory(HttpStatusCode.OK, "{\"marker\":\"GOLDEN-OK\"}"));
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest { Url = "https://example.com/probe", ExpectedBodyContains = "GOLDEN-OK" },
+            CancellationToken.None);
+
+        result.Validated.Should().BeTrue();
+        result.Matched.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_HealthyStatusButCorruptBody_DoesNotMatch()
+    {
+        // The heart of #2811: status 200 but a wrong/garbled body must be a mismatch (correctness gate).
+        var probe = new HttpDeployHealthProbe(BodyFactory(HttpStatusCode.OK, "<html>error page</html>"));
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest { Url = "https://example.com/probe", ExpectedBodyContains = "GOLDEN-OK" },
+            CancellationToken.None);
+
+        result.Validated.Should().BeTrue();
+        result.Matched.Should().BeFalse("a 200 response with the wrong body is corrupt, not correct");
+        result.Detail.Should().Contain("golden token");
+    }
+
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_ChecksumMismatch_DoesNotMatch()
+    {
+        var probe = new HttpDeployHealthProbe(BodyFactory(HttpStatusCode.OK, "actual-body"));
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest
+            {
+                Url = "https://example.com/probe",
+                ExpectedSha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            CancellationToken.None);
+
+        result.Matched.Should().BeFalse("the body checksum does not match the expected digest");
+    }
+
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_PrivateOrNonHttpsUrl_IsNotValidated()
+    {
+        var sendCount = 0;
+        var probe = new HttpDeployHealthProbe(
+            new StubHttpClientFactory(new HttpClient(new CountingHandler(() => sendCount++))));
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest { Url = "http://localhost:8080/probe", ExpectedBodyContains = "x" },
+            CancellationToken.None);
+
+        result.Validated.Should().BeFalse("a non-HTTPS loopback URL fails outbound-URL validation");
+        result.Matched.Should().BeFalse();
+        sendCount.Should().Be(0, "a rejected URL must never hit the network");
+    }
+
     private static StubHttpClientFactory StubFactory(HttpStatusCode status)
         => new(new HttpClient(new FixedStatusHandler(status)));
+
+    private static StubHttpClientFactory BodyFactory(HttpStatusCode status, string body)
+        => new(new HttpClient(new FixedBodyHandler(status, body)));
 
     private sealed class StubHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
@@ -85,6 +148,12 @@ public sealed class DeployHealthProbeTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(status));
+    }
+
+    private sealed class FixedBodyHandler(HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
     }
 
     private sealed class ThrowingHandler : HttpMessageHandler

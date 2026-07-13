@@ -116,6 +116,14 @@
       "notes": "Reference-implementation discovery tool over the open-core data-access surface; the bare taxonomy models discovery as a CapabilityCatalog read."
     },
     {
+      "standardName": "describe_layer",
+      "referenceToolName": "honua_describe_layer",
+      "family": "Discovery and query (Honua extension)",
+      "schema": "tools/describe_layer.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#2813): a single layer's field schema (name/type/nullability/alias), row count, geometry type, spatial reference, and extent. The bare taxonomy models layer schema as a CapabilityCatalog read; the reference implementation exposes it as a discrete tool. Pending formalization in the standard; schema marks x-honua-extension."
+    },
+    {
       "standardName": "query_features",
       "referenceToolName": "honua_query_features",
       "family": "Discovery and query (reference shape)",
@@ -219,6 +227,14 @@
       "family": "Execution (reference shape)",
       "schema": "tools/cancel_job.schema.json",
       "implementationStatus": "implemented"
+    },
+    {
+      "standardName": "list_jobs",
+      "referenceToolName": "honua_list_jobs",
+      "family": "Execution (Honua extension)",
+      "schema": "tools/list_jobs.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#2813): caller-scoped geoprocessing job enumeration (status filter + cursor paging) so an agent can find a job to cancel. The bare taxonomy models job lookup as a job-resource read; the reference implementation exposes a discrete listing tool. Pending formalization in the standard; schema marks x-honua-extension."
     },
     {
       "standardName": "propose_operation",

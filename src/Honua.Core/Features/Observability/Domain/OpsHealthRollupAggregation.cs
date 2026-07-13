@@ -8,17 +8,21 @@ namespace Honua.Core.Features.Observability.Domain;
 /// a whole-cluster view (both for the live snapshot and the history read API).
 /// </summary>
 /// <remarks>
-/// Percentiles cannot be recombined exactly from pre-aggregated percentiles without the raw distribution
-/// (a NON-GOAL here — that stays in the optional Prometheus bundle). Cross-replica merging therefore uses a
-/// request-count-weighted mean of each percentile (falling back to the max when no in-window requests were
-/// observed) and sums the request/error counts, since replicas serve disjoint traffic. This is a documented
-/// approximation suitable for whole-cluster trend and SLO review.
+/// Percentiles cannot be recombined exactly from pre-aggregated percentiles without the underlying
+/// distribution. When every per-replica point carries a mergeable <see cref="LatencyDistribution"/> sketch
+/// (#2809), cross-replica merging sums the distributions and recomputes the cluster percentiles from the
+/// merged sample set, so a sick replica's tail surfaces instead of being averaged away. When one or more
+/// points lack the sketch (older rows), the merge falls back to a request-count-weighted mean of each
+/// percentile (with the max when no in-window requests were observed). Request/error counts are always
+/// summed, since replicas serve disjoint traffic. This is suitable for whole-cluster trend and SLO review.
 /// </remarks>
 public static class OpsHealthRollupAggregation
 {
     /// <summary>
     /// Merges per-replica latency points for a single protocol into one whole-cluster point. Counts are
-    /// summed (disjoint traffic); percentiles use a request-count-weighted mean and the max feeds the max.
+    /// summed (disjoint traffic). When every point carries a <see cref="LatencyDistribution"/> the cluster
+    /// percentiles are recomputed from the merged distribution; otherwise they use a request-count-weighted
+    /// mean. The max always feeds the max.
     /// </summary>
     /// <param name="protocol">The protocol the merged point describes.</param>
     /// <param name="points">The per-replica points (must be non-empty).</param>
@@ -47,6 +51,10 @@ public static class OpsHealthRollupAggregation
         double maxP99 = 0;
         double maxMs = 0;
 
+        // Prefer the mergeable-distribution path: only usable when EVERY replica point carries a sketch, so a
+        // point without one cannot silently drop its traffic from the merged percentiles.
+        LatencyDistribution? mergedDistribution = LatencyDistribution.Empty;
+
         foreach (var point in points)
         {
             requestCount += point.RequestCount;
@@ -59,6 +67,30 @@ public static class OpsHealthRollupAggregation
             maxP95 = Math.Max(maxP95, point.P95Ms);
             maxP99 = Math.Max(maxP99, point.P99Ms);
             maxMs = Math.Max(maxMs, point.MaxMs);
+
+            if (point.Distribution is { } distribution)
+            {
+                mergedDistribution = mergedDistribution?.Merge(distribution);
+            }
+            else
+            {
+                mergedDistribution = null;
+            }
+        }
+
+        if (mergedDistribution is not null && mergedDistribution.TotalCount > 0)
+        {
+            return new OpsHealthLatencyPoint
+            {
+                Protocol = protocol,
+                RequestCount = requestCount,
+                ErrorCount = errorCount,
+                P50Ms = mergedDistribution.Quantile(0.50),
+                P95Ms = mergedDistribution.Quantile(0.95),
+                P99Ms = mergedDistribution.Quantile(0.99),
+                MaxMs = maxMs,
+                Distribution = mergedDistribution,
+            };
         }
 
         return new OpsHealthLatencyPoint

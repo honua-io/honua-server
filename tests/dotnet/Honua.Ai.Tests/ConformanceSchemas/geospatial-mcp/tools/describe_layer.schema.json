@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/describe_layer.schema.json",
+  "title": "describe_layer inputSchema",
+  "description": "Argument shape for describing a single published layer's field schema, row count, geometry type, spatial reference, and extent. The bare standard taxonomy models layer schema as a CapabilityCatalog read; the reference implementation exposes it as a discrete tool (advertised name honua_describe_layer). x-honua-extension: this is a documented Honua extension over the bare taxonomy, pending formalization in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "x-honua-extension": true,
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["serviceId", "layerId"],
+  "properties": {
+    "serviceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Published service identifier or name (from honua_list_layers.serviceId)."
+    },
+    "layerId": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Service-local layer index (from honua_list_layers.layerId)."
+    },
+    "includeRowCount": {
+      "type": "boolean",
+      "default": true,
+      "description": "When false, skip the row-count probe and omit rowCount."
+    }
+  }
+}

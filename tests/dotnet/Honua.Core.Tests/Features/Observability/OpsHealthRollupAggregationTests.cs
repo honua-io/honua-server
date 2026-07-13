@@ -71,6 +71,85 @@ public class OpsHealthRollupAggregationTests
     }
 
     [Fact]
+    public void MergeAcrossReplicas_WithDistributions_SickReplicaSurfacesInClusterTail()
+    {
+        // Healthy majority: 950 fast requests (~5ms). All percentiles low.
+        var healthyDurations = Enumerable.Repeat(5.0, 950).ToArray();
+        var healthy = new OpsHealthLatencyPoint
+        {
+            Protocol = "FeatureServer",
+            RequestCount = 950,
+            ErrorCount = 0,
+            P50Ms = 5,
+            P95Ms = 5,
+            P99Ms = 5,
+            MaxMs = 5,
+            Distribution = LatencyDistribution.FromDurations(healthyDurations),
+        };
+
+        // Sick minority: 50 requests all at ~9s. Its OWN p99 is 9s, but it is only 5% of cluster traffic.
+        var sickDurations = Enumerable.Repeat(9000.0, 50).ToArray();
+        var sick = new OpsHealthLatencyPoint
+        {
+            Protocol = "FeatureServer",
+            RequestCount = 50,
+            ErrorCount = 0,
+            P50Ms = 9000,
+            P95Ms = 9000,
+            P99Ms = 9000,
+            MaxMs = 9000,
+            Distribution = LatencyDistribution.FromDurations(sickDurations),
+        };
+
+        var merged = OpsHealthRollupAggregation.MergeAcrossReplicas("FeatureServer", [healthy, sick]);
+
+        merged.RequestCount.Should().Be(1000);
+        // Request-weighted mean of percentiles would report p99 ~= (5*950 + 9000*50)/1000 = 454.75ms — the
+        // slow replica is diluted away. Merging distributions keeps the slow 50 samples in the high buckets,
+        // so the 990th-ranked (p99) sample lands in the multi-second range and the tail is not hidden.
+        merged.P99Ms.Should().BeGreaterThan(1000);
+        // p50 remains fast (the healthy majority dominates the median).
+        merged.P50Ms.Should().BeLessThan(50);
+        // The merged point carries the summed distribution for further downstream merges.
+        merged.Distribution.Should().NotBeNull();
+        merged.Distribution!.TotalCount.Should().Be(1000);
+    }
+
+    [Fact]
+    public void MergeAcrossReplicas_WithMissingDistributionOnOnePoint_FallsBackToWeightedMean()
+    {
+        var withSketch = new OpsHealthLatencyPoint
+        {
+            Protocol = "OGC-Features",
+            RequestCount = 100,
+            ErrorCount = 0,
+            P50Ms = 10,
+            P95Ms = 100,
+            P99Ms = 200,
+            MaxMs = 300,
+            Distribution = LatencyDistribution.FromDurations(Enumerable.Repeat(10.0, 100).ToArray()),
+        };
+        var withoutSketch = new OpsHealthLatencyPoint
+        {
+            Protocol = "OGC-Features",
+            RequestCount = 300,
+            ErrorCount = 0,
+            P50Ms = 20,
+            P95Ms = 200,
+            P99Ms = 400,
+            MaxMs = 250,
+            Distribution = null,
+        };
+
+        var merged = OpsHealthRollupAggregation.MergeAcrossReplicas("OGC-Features", [withSketch, withoutSketch]);
+
+        // A missing sketch on any point forces the documented weighted-mean fallback so no traffic is dropped.
+        merged.Distribution.Should().BeNull();
+        merged.P95Ms.Should().BeApproximately(175, 1e-9);
+        merged.P99Ms.Should().BeApproximately(350, 1e-9);
+    }
+
+    [Fact]
     public void MergeAcrossReplicas_WithZeroRequests_FallsBackToMaxPercentiles()
     {
         var a = new OpsHealthLatencyPoint { Protocol = "WFS-2.0", RequestCount = 0, ErrorCount = 0, P50Ms = 5, P95Ms = 9, P99Ms = 12, MaxMs = 20 };

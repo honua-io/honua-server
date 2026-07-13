@@ -860,6 +860,11 @@ builder.Services.AddHonuaAuditLog();
 // push sinks. Pull-based export + tamper-evidence (#2112) remain the baseline.
 Honua.Server.Features.Infrastructure.AuditLog.Export.AuditExportServiceCollectionExtensions
     .AddHonuaAuditExport(builder.Services, builder.Configuration);
+// Scheduled audit hash-chain verifier (#2810): periodically replays the tamper-evident audit chain
+// and publishes the result as a signal so a broken link raises a paged health fault / ops finding
+// instead of being caught only on a manual /verify. On by default (AuditLog:ChainVerification:Enabled).
+Honua.Server.Features.Infrastructure.AuditLog.AuditChainVerificationServiceCollectionExtensions
+    .AddAuditChainVerification(builder.Services, builder.Configuration);
 // Configure tenant context resolution rail (#1144). Defaults are bound from
 // the MultiTenancy configuration section; the inline callback is the wiring
 // point for environment-specific overrides.

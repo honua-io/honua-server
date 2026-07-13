@@ -55,7 +55,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_deploy_operations",
         "honua_supported_operation_kinds",
         "honua_propose_rollback",
+        "honua_list_jobs",
         "honua_list_layers",
+        "honua_describe_layer",
         "honua_query_features",
         // No honua_edit_features: Honua exposes no AI/MCP feature-mutation tool
         // per ADR-0028 (AI operational data editing is not supported).
@@ -243,6 +245,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_deploy_operations",
         "honua_supported_operation_kinds",
         "honua_list_layers",
+        "honua_describe_layer",
+        "honua_list_jobs",
         "honua_query_features",
         "honua_render_map",
         "honua_get_style",
@@ -642,6 +646,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool>.Instance),
+            new ListJobsTool(jobService, NullLogger<ListJobsTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(
