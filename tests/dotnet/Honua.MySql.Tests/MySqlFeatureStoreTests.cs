@@ -93,6 +93,8 @@ public class MySqlFeatureStoreTests
 
         await foreach (var _ in store.StreamFeatureBatchesAsync(LayerId, new FeatureQuery(), batchSize: 1))
         {
+            // Intentionally empty: draining the stream is only needed to trigger the SQL
+            // build captured in dataAccess.LastSql, asserted below.
         }
 
         Assert.NotNull(dataAccess.LastSql);
@@ -147,6 +149,8 @@ public class MySqlFeatureStoreTests
 
         await foreach (var _ in store.StreamFeatureBatchesAsync(LayerId, query, batchSize: 1))
         {
+            // Intentionally empty: draining the stream is only needed to trigger the SQL
+            // build captured in dataAccess.LastSql, asserted below.
         }
 
         Assert.NotNull(dataAccess.LastSql);
