@@ -7,8 +7,6 @@ end-to-end test); these tests focus on ``validate_form`` and
 
 from __future__ import annotations
 
-import pytest
-
 from honua_qgis.auth import HonuaConnection
 from honua_qgis.client import HonuaClientError
 from honua_qgis.dialog_add_server import test_connection as run_connection_test

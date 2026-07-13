@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using Amazon;
 using Amazon.ECS;
 using Amazon.ECS.Model;
@@ -984,15 +985,8 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             };
         }
 
-        AwsEcsDeploymentState? primary = null;
-        foreach (var deployment in state.Deployments)
-        {
-            if (string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase))
-            {
-                primary = deployment;
-                break;
-            }
-        }
+        var primary = state.Deployments.FirstOrDefault(
+            deployment => string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase));
 
         if (primary == null)
         {
@@ -1045,15 +1039,9 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         // Old ACTIVE deployments still serving tasks mean traffic could land on a
         // previous task definition. The PRIMARY may be at steady state but the
         // rollout is not yet complete until those drain.
-        var lingeringActive = 0;
-        foreach (var deployment in state.Deployments)
-        {
-            if (string.Equals(deployment.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) &&
-                deployment.RunningCount > 0)
-            {
-                lingeringActive++;
-            }
-        }
+        var lingeringActive = state.Deployments.Count(deployment =>
+            string.Equals(deployment.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) &&
+            deployment.RunningCount > 0);
 
         if (lingeringActive > 0)
         {

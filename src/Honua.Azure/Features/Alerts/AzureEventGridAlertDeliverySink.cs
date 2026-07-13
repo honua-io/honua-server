@@ -101,6 +101,9 @@ internal sealed partial class AzureEventGridAlertDeliverySink : IAlertDeliverySi
                 Error = "Event Grid topic not found."
             };
         }
+        // Intentionally generic: catches transport/serialization failures beyond the
+        // specific RequestFailedException statuses handled above. Logged and converted
+        // to a non-throwing AlertDeliveryResult so one sink failure never blocks others.
         catch (Exception ex)
         {
             Log.DeliveryFailed(_logger, ex);

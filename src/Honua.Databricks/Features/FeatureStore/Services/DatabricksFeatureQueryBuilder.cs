@@ -159,12 +159,10 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
                     return mapping.AttributeColumns;
                 }
 
-                foreach (var column in mapping.AttributeColumns)
+                foreach (var column in mapping.AttributeColumns.Where(column =>
+                    column.Equals(field, StringComparison.OrdinalIgnoreCase) && !requested.Contains(column)))
                 {
-                    if (column.Equals(field, StringComparison.OrdinalIgnoreCase) && !requested.Contains(column))
-                    {
-                        requested.Add(column);
-                    }
+                    requested.Add(column);
                 }
             }
 

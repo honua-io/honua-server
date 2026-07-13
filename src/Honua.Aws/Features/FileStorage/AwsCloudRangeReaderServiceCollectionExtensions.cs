@@ -54,17 +54,9 @@ internal static class AwsCloudRangeReaderServiceCollectionExtensions
                 config.ServiceURL = s3Options.ServiceUrl;
             }
 
-            IAmazonS3 client;
-            if (!string.IsNullOrWhiteSpace(s3Options.AccessKeyId) && !string.IsNullOrWhiteSpace(s3Options.SecretAccessKey))
-            {
-                client = new AmazonS3Client(
-                    new BasicAWSCredentials(s3Options.AccessKeyId, s3Options.SecretAccessKey),
-                    config);
-            }
-            else
-            {
-                client = new AmazonS3Client(config);
-            }
+            IAmazonS3 client = !string.IsNullOrWhiteSpace(s3Options.AccessKeyId) && !string.IsNullOrWhiteSpace(s3Options.SecretAccessKey)
+                ? new AmazonS3Client(new BasicAWSCredentials(s3Options.AccessKeyId, s3Options.SecretAccessKey), config)
+                : new AmazonS3Client(config);
 
             return new AwsS3RangeReader(client);
         });

@@ -48,6 +48,9 @@ internal sealed partial class DuckDBDatabaseHealthChecker(
         {
             throw;
         }
+        // Intentionally generic: a health check must never throw regardless of the
+        // underlying failure (connection, timeout, driver bug); any failure here means
+        // "unhealthy", logged for diagnosis.
         catch (Exception ex)
         {
             Log.HealthCheckFailed(_logger, ex);

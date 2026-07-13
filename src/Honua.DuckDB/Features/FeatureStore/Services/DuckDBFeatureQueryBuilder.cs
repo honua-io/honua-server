@@ -852,15 +852,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
     private static bool IsTemporalColumnAllowed(DuckDBLayerMapping mapping, string columnName)
     {
-        foreach (var attribute in mapping.AttributeColumns)
-        {
-            if (attribute.Equals(columnName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return mapping.AttributeColumns.Any(attribute => attribute.Equals(columnName, StringComparison.OrdinalIgnoreCase));
     }
 
     // The bound parameter is a naive DateTime carrying UTC wall-clock components
@@ -1089,6 +1081,9 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         var parameterizedExpressions = new List<string>(expressions.Count);
 
+        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
+        // throw, mutate the shared `paramIndex`/`parameters` accumulators, and `continue`
+        // early per branch -- not a pure map of one iteration variable to another.
         foreach (var expression in expressions)
         {
             var trimmed = expression.Trim();

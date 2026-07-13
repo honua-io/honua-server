@@ -18,12 +18,11 @@ _PLUGIN_DIR = os.path.dirname(__file__)
 try:  # pragma: no cover - exercised inside QGIS
     from qgis.PyQt.QtCore import Qt
     from qgis.PyQt.QtGui import QIcon
-    from qgis.PyQt.QtWidgets import QAction, QMenu
+    from qgis.PyQt.QtWidgets import QAction
 except Exception:  # pragma: no cover
     Qt = None  # type: ignore[assignment]
     QIcon = None  # type: ignore[assignment]
     QAction = object  # type: ignore[assignment,misc]
-    QMenu = None  # type: ignore[assignment]
 
 
 class HonuaPlugin:
