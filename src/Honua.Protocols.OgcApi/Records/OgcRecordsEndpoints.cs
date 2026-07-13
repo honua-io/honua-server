@@ -403,7 +403,7 @@ internal static class OgcRecordsEndpoints
         var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceMetadata.Name)}";
         var links = ImmutableArray.CreateBuilder<Link>();
         links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Name));
-        if (service is not null && IsProtocolEnabled(service, FeatureServerProtocolName))
+        if (IsProtocolEnabled(service, FeatureServerProtocolName))
         {
             links.Add(Link.Create($"{servicePath}/FeatureServer", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer"));
         }

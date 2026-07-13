@@ -2286,7 +2286,7 @@ internal sealed class GeometryServiceHandler(
         var dx = last.X - prev.X;
         var dy = last.Y - prev.Y;
         var len = Math.Sqrt((dx * dx) + (dy * dy));
-        if (len == 0)
+        if (NumericTolerance.IsEffectivelyZero(len))
         {
             return polyline;
         }
