@@ -1745,10 +1745,12 @@ internal static partial class WmsRequestHandlers
 
     private static SKRectI ScaleRect(int x, int y, int width, int height, int targetWidth, int targetHeight, int baseWidth, int baseHeight)
     {
-        var left = (int)Math.Round((x * targetWidth) / (double)baseWidth, MidpointRounding.AwayFromZero);
-        var top = (int)Math.Round((y * targetHeight) / (double)baseHeight, MidpointRounding.AwayFromZero);
-        var scaledWidth = Math.Max(1, (int)Math.Round((width * targetWidth) / (double)baseWidth, MidpointRounding.AwayFromZero));
-        var scaledHeight = Math.Max(1, (int)Math.Round((height * targetHeight) / (double)baseHeight, MidpointRounding.AwayFromZero));
+        // Promote to double before multiplying: for large tile/export dimensions, x * targetWidth
+        // (etc.) can overflow int32 when computed first and only cast to double afterwards.
+        var left = (int)Math.Round(((double)x * targetWidth) / baseWidth, MidpointRounding.AwayFromZero);
+        var top = (int)Math.Round(((double)y * targetHeight) / baseHeight, MidpointRounding.AwayFromZero);
+        var scaledWidth = Math.Max(1, (int)Math.Round(((double)width * targetWidth) / baseWidth, MidpointRounding.AwayFromZero));
+        var scaledHeight = Math.Max(1, (int)Math.Round(((double)height * targetHeight) / baseHeight, MidpointRounding.AwayFromZero));
         return SKRectI.Create(left, top, scaledWidth, scaledHeight);
     }
 

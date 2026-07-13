@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Models;
 
@@ -881,9 +882,9 @@ internal sealed partial class FeatureServerQueryHandler
 
     private static string FormatNumber(double value)
     {
-        if (value == Math.Truncate(value) && Math.Abs(value) < 1e15)
+        if (NumericTolerance.IsWholeNumber(value) && Math.Abs(value) < 1e15)
         {
-            return ((long)value).ToString(CultureInfo.InvariantCulture);
+            return ((long)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
         }
 
         return Math.Round(value, 4).ToString("0.####", CultureInfo.InvariantCulture);

@@ -69,11 +69,11 @@ internal static class GeoServicesSpatialFilterBuilder
 
         var isSimpleEnvelope = geometry is
         {
-            Xmin: not null,
+            Xmin: double xmin,
             Ymin: not null,
-            Xmax: not null,
+            Xmax: double xmax,
             Ymax: not null
-        } && geometry.Xmin.Value <= geometry.Xmax.Value;
+        } && xmin <= xmax;
 
         return new SpatialFilter
         {

@@ -639,6 +639,12 @@ internal sealed partial class ODataStreamingQueryHandler(
         IGeometryService geometryService,
         CancellationToken cancellationToken)
     {
+        // deltaState is only meaningfully used below when trackChangesRequested/deltatoken
+        // paging is active, but the parameter itself is always non-null (callers pass the
+        // resolved-or-default delta state unconditionally). Guard once, up front, instead of
+        // repeating an inline "?? throw" at each access site further down.
+        ArgumentNullException.ThrowIfNull(deltaState);
+
         using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
@@ -706,7 +712,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             var nextLink = !string.IsNullOrWhiteSpace(deltatoken)
                 ? ODataUtilityService.GenerateDeltaNextLink(
                     context.Request,
-                    deltaState ?? throw new InvalidOperationException("Delta state is required for delta paging."),
+                    deltaState,
                     nextSkip,
                     pagination.Limit,
                     useSkipToken,

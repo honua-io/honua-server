@@ -1010,12 +1010,12 @@ internal static partial class MapServerEndpoints
             start = null;
         }
 
-        if (options?.TimeOffset.HasValue == true)
+        if (options?.TimeOffset is { } timeOffset)
         {
             if (!TryApplyTimeOffset(
                     start,
                     end,
-                    options.TimeOffset.Value,
+                    timeOffset,
                     options.TimeOffsetUnits,
                     out var adjustedStart,
                     out var adjustedEnd,

@@ -168,7 +168,12 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var replica = ToReplicaState(record.Value);
+        // Snapshot the resolved value once: the record is a nullable struct, and reading
+        // it back through `record.Value` inside the closure below defeats the null guard
+        // above from a static-analysis standpoint even though it is provably non-null here.
+        var replicaRecord = record.Value;
+
+        var replica = ToReplicaState(replicaRecord);
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
@@ -176,15 +181,15 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var layerServerGens = record.Value.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
+        var layerServerGens = replicaRecord.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
             ? System.Text.Json.JsonSerializer.Serialize(
-                record.Value.LayerIds
+                replicaRecord.LayerIds
                     .Distinct()
                     .Select(id => new ReplicaInfoLayerServerGeneration
                     {
                         Id = id,
-                        ServerGen = record.Value.LastSyncGeneration,
-                        ServerSibGen = record.Value.LastSyncGeneration
+                        ServerGen = replicaRecord.LastSyncGeneration,
+                        ServerSibGen = replicaRecord.LastSyncGeneration
                     })
                     .ToArray(),
                 FeatureServerJsonContext.Default.ReplicaInfoLayerServerGenerationArray)
@@ -192,15 +197,15 @@ internal static partial class FeatureServerEndpoints
 
         var response = new ReplicaInfoResponse
         {
-            ReplicaName = record.Value.ReplicaName,
-            ReplicaId = record.Value.ReplicaId,
-            SyncModel = record.Value.SyncModel,
-            ReplicaServerGen = record.Value.SyncModel.Equals("perReplica", StringComparison.OrdinalIgnoreCase)
-                ? record.Value.LastSyncGeneration
+            ReplicaName = replicaRecord.ReplicaName,
+            ReplicaId = replicaRecord.ReplicaId,
+            SyncModel = replicaRecord.SyncModel,
+            ReplicaServerGen = replicaRecord.SyncModel.Equals("perReplica", StringComparison.OrdinalIgnoreCase)
+                ? replicaRecord.LastSyncGeneration
                 : null,
             LayerServerGens = layerServerGens,
-            CreationDate = record.Value.CreatedAt.ToUnixTimeMilliseconds(),
-            LastSyncDate = record.Value.LastSyncTime.ToUnixTimeMilliseconds(),
+            CreationDate = replicaRecord.CreatedAt.ToUnixTimeMilliseconds(),
+            LastSyncDate = replicaRecord.LastSyncTime.ToUnixTimeMilliseconds(),
             Layers = replicaLayers.Select(layer => new ReplicaInfoLayer
             {
                 Id = layer.PublicLayerId

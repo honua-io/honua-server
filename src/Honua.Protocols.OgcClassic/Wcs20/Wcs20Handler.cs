@@ -510,7 +510,7 @@ internal sealed class Wcs20Handler
                     [],
                     Wcs20ErrorResults.CreateNotFound(
                         Wcs20Utilities.ExceptionCodes.NoSuchCoverage,
-                        $"Coverage '{scope.LayerId.Value.ToString(CultureInfo.InvariantCulture)}' was not found.",
+                        $"Coverage '{scope.LayerId!.Value.ToString(CultureInfo.InvariantCulture)}' was not found.",
                         Wcs20Utilities.Parameters.CoverageId))
                 : new CoverageListResult([coverage.Coverage.Value], null);
         }
@@ -1362,7 +1362,7 @@ internal sealed class Wcs20Handler
                 return false;
             }
 
-            if (high != low)
+            if (!NumericTolerance.NearlyEqual(high, low))
             {
                 error = new WcsParameterError(
                     Wcs20Utilities.ExceptionCodes.OperationNotSupported,
@@ -1888,8 +1888,8 @@ internal sealed class Wcs20Handler
 
         if (!TryParseSingleSubset(token, out axis, out var low, out var high, out var isSlice) ||
             isSlice ||
-            low != Math.Floor(low) ||
-            high != Math.Floor(high) ||
+            !NumericTolerance.IsWholeNumber(low) ||
+            !NumericTolerance.IsWholeNumber(high) ||
             high < low)
         {
             return false;
@@ -1977,7 +1977,7 @@ internal sealed class Wcs20Handler
             foreach (var token in rawValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (!TryParseSingleSubset(token, out var axis, out var size, out _, out var isSlice) ||
-                    !isSlice || size <= 0 || size != Math.Floor(size) || size > MaxWcsOutputDimension)
+                    !isSlice || size <= 0 || !NumericTolerance.IsWholeNumber(size) || size > MaxWcsOutputDimension)
                 {
                     error = CreateScaleSizeError(token);
                     return false;

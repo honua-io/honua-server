@@ -519,7 +519,7 @@ internal sealed class OgcCoveragesHandler
 
             var scalingResult = await TryApplyScalingAsync(
                     context,
-                    resolution.Raster.Value,
+                    resolution.Raster!.Value,
                     supportedCrs,
                     storageSrid,
                     rasterQuery,
@@ -538,11 +538,11 @@ internal sealed class OgcCoveragesHandler
                 .WithTag("honua.coverage.id", collectionId)
                 .WithTag("honua.output.format", negotiatedFormat.ContentType)
                 .WithTag("honua.coverage.bbox", rasterQuery.ClipRegion.HasValue)
-                .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster.Value.BandCount);
+                .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster!.Value.BandCount);
 
             var result = await _rasterStore.ExportImageAsync(
-                    resolution.StorageLayerId.Value,
-                    resolution.Raster.Value.Id,
+                    resolution.StorageLayerId!.Value,
+                    resolution.Raster!.Value.Id,
                     rasterQuery,
                     cancellationToken)
                 .ConfigureAwait(false);
