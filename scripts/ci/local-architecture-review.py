@@ -7,7 +7,6 @@ Run before creating PRs to catch architectural issues early
 import os
 import sys
 import subprocess
-import json
 import re
 from pathlib import Path
 from typing import List, Dict, Any
@@ -21,7 +20,6 @@ def get_honua_rules() -> str:
                 content = f.read()
 
             # Extract Critical Rules section (same as CI does)
-            import re
             match = re.search(r'## Critical Rules.*?(?=## Phase-Based Development)', content, re.DOTALL)
             if match:
                 rules_section = match.group(0)
