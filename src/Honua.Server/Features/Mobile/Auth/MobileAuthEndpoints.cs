@@ -161,18 +161,9 @@ internal static class MobileAuthEndpoints
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string? FirstValue(params Microsoft.Extensions.Primitives.StringValues[] values)
-    {
-        foreach (var value in values)
-        {
-            var candidate = value.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
+        => values
+            .Select(value => value.FirstOrDefault())
+            .FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate));
 
     private static bool SecretEquals(string provided, string expected)
     {

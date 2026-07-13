@@ -69,13 +69,11 @@ internal static partial class FeatureStreamEndpoints
                         continue;
                     }
                 }
-                else if (sessionManager is not null && subscriptionId is not null)
-                {
+                else if (sessionManager is not null && subscriptionId is not null &&
                     // Generation-less call site (legacy/test); fall back to the dedup-only path.
-                    if (!sessionManager.TryRememberSubscriptionDelivery(sessionId, subscriptionId, evt.EventId))
-                    {
-                        continue;
-                    }
+                    !sessionManager.TryRememberSubscriptionDelivery(sessionId, subscriptionId, evt.EventId))
+                {
+                    continue;
                 }
 
                 var payload = JsonSerializer.SerializeToUtf8Bytes(envelope, FeatureStreamJsonContext.Default.FeatureStreamEnvelope);

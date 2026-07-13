@@ -87,4 +87,8 @@ internal static partial class FeatureStreamLog
     [LoggerMessage(EventId = 5020, Level = LogLevel.Warning,
         Message = "Feature stream cluster-broadcast backlog exceeded {Capacity} entries; dropping oldest payloads (totalDropped={TotalDropped})")]
     public static partial void ClusterBroadcastBacklogOverflowed(ILogger logger, int capacity, long totalDropped);
+
+    [LoggerMessage(EventId = 5021, Level = LogLevel.Debug,
+        Message = "Feature stream Redis unsubscribe failed during session manager disposal")]
+    public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
 }

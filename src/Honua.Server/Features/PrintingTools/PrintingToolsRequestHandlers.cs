@@ -197,14 +197,16 @@ internal static class PrintingToolsRequestHandlers
 
         var (imageWidth, imageHeight) = ResolveOutputDimensions(webMap, template, dpi);
 
-        var extentSrid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions?.SpatialReference);
+        // webMap.MapOptions is provably non-null here: extent above came from
+        // webMap.MapOptions?.Extent and extent is not null.
+        var extentSrid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions.SpatialReference);
 
         var renderExtent = new SkiaMapRenderer.RenderExtent(
             extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax);
 
         // When mapOptions.scale is specified, adjust the extent to render at that
         // scale centered on the original extent (per ExportWebMap spec).
-        if (webMap.MapOptions?.Scale is > 0)
+        if (webMap.MapOptions.Scale is > 0)
         {
             renderExtent = CoordinateTransformer.AdjustExtentForScale(
                 renderExtent, webMap.MapOptions.Scale.Value, imageWidth, imageHeight, dpi, extentSrid);
@@ -215,9 +217,8 @@ internal static class PrintingToolsRequestHandlers
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.White);
 
-        foreach (var resolved in resolvedLayers)
+        foreach (var resolved in resolvedLayers.Where(resolved => resolved.GeometryType is not MetadataV2GeometryType.None))
         {
-            if (resolved.GeometryType is MetadataV2GeometryType.None) continue;
             var renderGeometryType = resolved.GeometryType;
 
             var styleLayers = resolved.StyleLayers;
@@ -287,9 +288,8 @@ internal static class PrintingToolsRequestHandlers
             }
             else
             {
-                foreach (var sl in styleLayers)
+                foreach (var sl in styleLayers.Where(sl => sl.Type is not (null or "background")))
                 {
-                    if (sl.Type is null or "background") continue;
                     var swatch = SkiaMapRenderer.RenderLegendSwatch(sl, renderGeometryType);
                     entries.Add(new LegendSwatchEntry
                     {
@@ -349,10 +349,8 @@ internal static class PrintingToolsRequestHandlers
     {
         var operationalLayers = webMap.OperationalLayers ?? [];
 
-        foreach (var opLayer in operationalLayers)
+        foreach (var opLayer in operationalLayers.Where(opLayer => opLayer.Visibility != false))
         {
-            if (opLayer.Visibility == false) continue;
-
             ResolveLayerFromUrl(opLayer);
             if (opLayer.ResolvedServiceId is null) continue;
 
@@ -604,7 +602,9 @@ internal static class PrintingToolsRequestHandlers
         var renderExtent = new SkiaMapRenderer.RenderExtent(
             extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax);
         var imageWidth = (int)(template.MapFrame.Width * dpi / 72f);
-        var srid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions?.SpatialReference);
+        // webMap.MapOptions is provably non-null here: extent above came from
+        // webMap.MapOptions?.Extent and extent is not null.
+        var srid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions.SpatialReference);
 
         return CoordinateTransformer.CalculateScaleDenominator(renderExtent, imageWidth, dpi, srid);
     }
@@ -644,7 +644,9 @@ internal static class PrintingToolsRequestHandlers
         // Apply the same check to the map-level spatial reference which is used as
         // fallback when the extent has no SR (see ResolveExtentSrid).  Without this
         // guard a WKT-only map-level SR silently defaults to EPSG:4326.
-        var mapSr = webMap.MapOptions?.SpatialReference;
+        // webMap.MapOptions is provably non-null here: extent above came from
+        // webMap.MapOptions?.Extent and extent is not null.
+        var mapSr = webMap.MapOptions.SpatialReference;
         if (mapSr is not null && mapSr.Wkid is null && mapSr.LatestWkid is null && !string.IsNullOrWhiteSpace(mapSr.Wkt))
             return "Map-level spatial reference with only WKT is not supported for print requests. Provide wkid or latestWkid.";
 

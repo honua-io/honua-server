@@ -314,12 +314,9 @@ internal sealed class WorkflowSchedulerBackgroundService(
             present.Add(definition.WorkflowId);
         }
 
-        foreach (var cachedId in _compiled.Keys)
+        foreach (var cachedId in _compiled.Keys.Where(cachedId => !present.Contains(cachedId)))
         {
-            if (!present.Contains(cachedId))
-            {
-                _compiled.TryRemove(cachedId, out _);
-            }
+            _compiled.TryRemove(cachedId, out _);
         }
     }
 
@@ -366,6 +363,11 @@ internal sealed class WorkflowSchedulerBackgroundService(
         }
         catch (Exception)
         {
+            // Not logged here: this is a static helper with no logger access. The caller
+            // (TickAsync) detects the resulting Cron/TimeZone == null and logs it exactly
+            // once per definition via OrchestrationLog.SchedulerDefinitionInvalid, tracked
+            // by CachedCron.InvalidLogged so a persistently-invalid cron expression doesn't
+            // spam the log on every tick.
             return new CachedCron(
                 definition.Trigger?.CronExpression ?? string.Empty,
                 definition.Trigger?.TimeZone ?? TimeZoneInfo.Utc.Id,

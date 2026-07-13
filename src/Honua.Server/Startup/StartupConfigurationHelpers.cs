@@ -41,6 +41,9 @@ internal static class StartupConfigurationHelpers
             options.ForwardLimit = configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
 
             var knownProxies = configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
+            // Not a simple .Where(): the filter condition depends on IPAddress.TryParse's
+            // `out` value, which the body also needs, so a LINQ predicate can't cleanly
+            // carry that state without re-parsing per candidate.
             foreach (var proxy in knownProxies)
             {
                 if (IPAddress.TryParse(proxy, out var ip))

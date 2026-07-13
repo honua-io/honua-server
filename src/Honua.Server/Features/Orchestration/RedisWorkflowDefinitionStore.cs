@@ -299,12 +299,10 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
                 pendingPayload.ToString(),
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.RoundtripKind,
-                out var pendingParsed))
+                out var pendingParsed) &&
+            (cursor is null || pendingParsed > cursor.Value))
         {
-            if (cursor is null || pendingParsed > cursor.Value)
-            {
-                cursor = pendingParsed;
-            }
+            cursor = pendingParsed;
         }
 
         return cursor;
