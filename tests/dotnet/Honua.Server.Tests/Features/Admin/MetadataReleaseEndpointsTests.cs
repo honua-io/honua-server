@@ -1048,18 +1048,16 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
-            foreach (var environment in environments)
+            foreach (var environment in environments.Where(_snapshots.ContainsKey))
             {
-                if (_snapshots.TryGetValue(environment, out var snapshot))
+                var snapshot = _snapshots[environment];
+                yield return new MetadataV2EnvironmentRevision
                 {
-                    yield return new MetadataV2EnvironmentRevision
-                    {
-                        Environment = snapshot.Graph.Environment,
-                        Revision = snapshot.Revision,
-                        ETag = snapshot.Etag,
-                        ActivatedAt = snapshot.LoadedAt,
-                    };
-                }
+                    Environment = snapshot.Graph.Environment,
+                    Revision = snapshot.Revision,
+                    ETag = snapshot.Etag,
+                    ActivatedAt = snapshot.LoadedAt,
+                };
             }
         }
     }

@@ -210,12 +210,10 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
 
     private static JsonElement GetPropertyCaseInsensitive(JsonElement element, string propertyName)
     {
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in element.EnumerateObject()
+            .Where(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value;
-            }
+            return property.Value;
         }
 
         throw new KeyNotFoundException($"Property '{propertyName}' was not found.");

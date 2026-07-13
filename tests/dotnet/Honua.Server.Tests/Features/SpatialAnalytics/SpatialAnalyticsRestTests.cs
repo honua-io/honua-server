@@ -105,9 +105,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
 
         // Hull-per-cluster mode: each row has a clusterId and featureCount,
         // and the geometry (when present) is the convex hull of the cluster.
-        foreach (var feature in features.EnumerateArray())
+        foreach (var properties in features.EnumerateArray().Select(feature => feature.GetProperty("properties")))
         {
-            var properties = feature.GetProperty("properties");
             properties.TryGetProperty("clusterId", out _).Should().BeTrue();
             properties.TryGetProperty("featureCount", out var count).Should().BeTrue();
             count.GetInt64().Should().BeGreaterThan(0);
@@ -352,9 +351,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         var features = root.GetProperty("features");
         features.GetArrayLength().Should().BeGreaterThan(0);
 
-        foreach (var feature in features.EnumerateArray())
+        foreach (var props in features.EnumerateArray().Select(feature => feature.GetProperty("properties")))
         {
-            var props = feature.GetProperty("properties");
             props.TryGetProperty("matchCount", out var matchCount).Should().BeTrue();
             matchCount.GetInt64().Should().BeGreaterOrEqualTo(0);
         }
@@ -413,16 +411,9 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         features.GetArrayLength().Should().BeGreaterThan(0);
 
         // At least one target row should carry a non-empty name array.
-        var anyWithNames = false;
-        foreach (var feature in features.EnumerateArray())
-        {
-            if (feature.GetProperty("properties").TryGetProperty("name", out var names) &&
-                names.ValueKind == JsonValueKind.Array && names.GetArrayLength() > 0)
-            {
-                anyWithNames = true;
-                break;
-            }
-        }
+        var anyWithNames = features.EnumerateArray().Any(feature =>
+            feature.GetProperty("properties").TryGetProperty("name", out var names) &&
+            names.ValueKind == JsonValueKind.Array && names.GetArrayLength() > 0);
         anyWithNames.Should().BeTrue("spatial join within 100km should find at least one matching join row");
     }
 
@@ -833,9 +824,8 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         var features = root.GetProperty("features");
         features.GetArrayLength().Should().BeGreaterThan(0);
 
-        foreach (var feature in features.EnumerateArray())
+        foreach (var props in features.EnumerateArray().Select(feature => feature.GetProperty("properties")))
         {
-            var props = feature.GetProperty("properties");
             props.TryGetProperty("cellId", out _).Should().BeTrue();
             props.TryGetProperty("featureCount", out var count).Should().BeTrue();
             count.GetInt64().Should().BeGreaterThan(0);

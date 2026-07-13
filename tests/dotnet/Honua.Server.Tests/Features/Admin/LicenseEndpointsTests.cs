@@ -76,6 +76,8 @@ public class LicenseEndpointsTests : IAsyncLifetime
     public async Task GetLicenseStatus_WithSignedStartupLicense_ReturnsLicenseIdentityAndEntitlements()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Second segment is a fixed relative literal filename, so it can never be
+        // rooted and silently discard tempDirectory.FullName.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
@@ -144,6 +146,8 @@ public class LicenseEndpointsTests : IAsyncLifetime
     public async Task GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Second segment is a fixed relative literal filename, so it can never be
+        // rooted and silently discard tempDirectory.FullName.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,

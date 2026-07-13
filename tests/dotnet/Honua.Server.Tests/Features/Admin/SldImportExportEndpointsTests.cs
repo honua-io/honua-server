@@ -348,6 +348,8 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     private static string LoadFixture(string fileName)
     {
+        // Internal test helper: fileName is always a relative literal fixture
+        // filename supplied by callers in this file, never rooted.
         var path = Path.Combine(AppContext.BaseDirectory, "TestData", "Sld", fileName);
         return File.ReadAllText(path);
     }
