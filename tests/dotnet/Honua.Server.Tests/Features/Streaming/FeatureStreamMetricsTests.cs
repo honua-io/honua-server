@@ -135,13 +135,27 @@ public sealed class FeatureStreamMetricsTests
         using var session = manager.CreateSession("WebSocket", null);
 
         manager.DisconnectSession(session.SessionId).Should().BeTrue();
-        listener.RecordObservableInstruments();
 
         closed.Should().Contain(m =>
             m.Value == 1 &&
             m.Tags.Any(t => t.Key == "transport" && (string?)t.Value == "WebSocket") &&
             m.Tags.Any(t => t.Key == "reason" && (string?)t.Value == "AdminDisconnect"));
-        active.Should().Contain(0);
+
+        // The active-session gauge is process-global (FeatureStreamMetrics is a
+        // static class), so parallel tests that hold their own sessions can be
+        // observed at the instant of a single poll. Poll with a deadline until the
+        // refresh from this manager's disconnect (count 0) is observed, instead of
+        // asserting one instantaneous snapshot.
+        var deadline = TimeSpan.FromSeconds(10);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        listener.RecordObservableInstruments();
+        while (!active.Contains(0) && watch.Elapsed < deadline)
+        {
+            Thread.Sleep(25);
+            listener.RecordObservableInstruments();
+        }
+
+        active.Should().Contain(0, "DisconnectSession must refresh the active-session gauge to this manager's count");
     }
 
     private static List<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> CaptureLongMeasurements(
