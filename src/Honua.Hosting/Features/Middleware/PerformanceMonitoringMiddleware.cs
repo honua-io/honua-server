@@ -44,7 +44,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
         var endpoint = GetNormalizedEndpoint(context);
-        using IOperationScope? operationScope = null;
+        IOperationScope? operationScope = null;
         var requestErrored = false;
 
         using var systemMetricsScope = _systemMetricsCollector.TrackRequest();
@@ -122,6 +122,8 @@ internal sealed partial class PerformanceMonitoringMiddleware
                     stopwatch.Elapsed.TotalMilliseconds,
                     _options.SlowRequestThreshold.TotalMilliseconds);
             }
+
+            operationScope?.Dispose();
         }
     }
 
