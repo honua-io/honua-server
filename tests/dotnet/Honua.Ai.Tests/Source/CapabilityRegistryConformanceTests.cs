@@ -299,6 +299,9 @@ public sealed class CapabilityRegistryConformanceTests
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),
+            new Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool(
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.DescribeLayerTool>.Instance),
+            new ListJobsTool(jobService, NullLogger<ListJobsTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.QueryFeaturesTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.RenderMapTool(

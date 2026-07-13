@@ -17,6 +17,23 @@ internal sealed class McpListLayersArgument
 {
     [JsonPropertyName("filter")]
     public string? Filter { get; set; }
+
+    /// <summary>
+    /// Maximum number of layers to return on this page. Mirrors
+    /// <c>honua_resolve_entity</c>'s <c>limit</c>; clamped to the tool's supported
+    /// range. When omitted a default page size is used.
+    /// </summary>
+    [JsonPropertyName("limit")]
+    public int? Limit { get; set; }
+
+    /// <summary>
+    /// Number of matching layers to skip before returning results (pagination).
+    /// Pair with <see cref="Limit"/>: when a response reports
+    /// <c>hasMore=true</c>, re-issue the same call with <c>offset</c> set to the
+    /// returned <c>nextOffset</c> until <c>hasMore</c> is false.
+    /// </summary>
+    [JsonPropertyName("offset")]
+    public int? Offset { get; set; }
 }
 
 /// <summary>
@@ -27,6 +44,29 @@ internal sealed class McpListLayersOutput
 {
     [JsonPropertyName("layerCount")]
     public int LayerCount { get; set; }
+
+    /// <summary>
+    /// Total number of layers matching the filter across all pages (before
+    /// <c>limit</c>/<c>offset</c> paging is applied).
+    /// </summary>
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; set; }
+
+    /// <summary>Offset applied to this page (the <c>offset</c> argument, defaulting to 0).</summary>
+    [JsonPropertyName("offset")]
+    public int Offset { get; set; }
+
+    /// <summary>True when more matching layers remain beyond this page.</summary>
+    [JsonPropertyName("hasMore")]
+    public bool HasMore { get; set; }
+
+    /// <summary>
+    /// The <c>offset</c> to send on the next call to fetch the following page
+    /// (<c>offset + layerCount</c>). Omitted (null) when the last page has been
+    /// returned.
+    /// </summary>
+    [JsonPropertyName("nextOffset")]
+    public int? NextOffset { get; set; }
 
     [JsonPropertyName("layers")]
     public IReadOnlyList<McpLayerSummary> Layers { get; set; } = [];
@@ -84,6 +124,97 @@ internal sealed class McpExtent
 
     [JsonPropertyName("maxY")]
     public double MaxY { get; set; }
+}
+
+// -----------------------------------------------------------------------
+// honua_describe_layer
+// -----------------------------------------------------------------------
+
+/// <summary>
+/// Arguments for <c>honua_describe_layer</c>: the published
+/// <see cref="ServiceId"/>+<see cref="LayerId"/> whose field schema, row count,
+/// and spatial reference to describe.
+/// </summary>
+internal sealed class McpDescribeLayerArgument
+{
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; set; }
+
+    [JsonPropertyName("layerId")]
+    public int? LayerId { get; set; }
+
+    /// <summary>
+    /// When <see langword="false"/>, the (potentially expensive) row-count probe
+    /// is skipped and <c>rowCount</c> is omitted. Defaults to
+    /// <see langword="true"/>.
+    /// </summary>
+    [JsonPropertyName("includeRowCount")]
+    public bool? IncludeRowCount { get; set; }
+}
+
+/// <summary>
+/// Output for <c>honua_describe_layer</c>: a single layer's field schema (name,
+/// type, nullability, alias), feature/row count, geometry type, spatial
+/// reference, and extent — the metadata an agent needs to author a
+/// <c>honua_query_features</c> <c>where</c>/<c>outFields</c> request.
+/// </summary>
+internal sealed class McpDescribeLayerOutput
+{
+    [JsonPropertyName("serviceId")]
+    public string ServiceId { get; set; } = string.Empty;
+
+    [JsonPropertyName("serviceName")]
+    public string ServiceName { get; set; } = string.Empty;
+
+    [JsonPropertyName("layerId")]
+    public int LayerId { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = string.Empty;
+
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; set; } = string.Empty;
+
+    [JsonPropertyName("srid")]
+    public int? Srid { get; set; }
+
+    [JsonPropertyName("extent")]
+    public McpExtent? Extent { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>Number of features/rows in the layer; omitted when the probe was skipped or unavailable.</summary>
+    [JsonPropertyName("rowCount")]
+    public long? RowCount { get; set; }
+
+    [JsonPropertyName("fieldCount")]
+    public int FieldCount { get; set; }
+
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<McpLayerField> Fields { get; set; } = [];
+}
+
+/// <summary>
+/// One field in a layer's schema, projected from the canonical Metadata v2
+/// <c>schemaFields</c> entry.
+/// </summary>
+internal sealed class McpLayerField
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = string.Empty;
+
+    [JsonPropertyName("alias")]
+    public string? Alias { get; set; }
+
+    [JsonPropertyName("nullable")]
+    public bool Nullable { get; set; }
 }
 
 // -----------------------------------------------------------------------
