@@ -26,7 +26,7 @@ internal static class CollectionsEndpoints
 
     public static IEndpointRouteBuilder MapCollectionsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var collections = endpoints.MapGet("/ogc/tiles/collections", HandleGetCollections)
+        endpoints.MapGet("/ogc/tiles/collections", HandleGetCollections)
             .WithDisplayName("OGC API Tiles Collections")
             .WithName("OgcTilesCollections")
             .WithSummary("Get OGC API Tiles collections")
@@ -36,7 +36,7 @@ internal static class CollectionsEndpoints
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var collection = endpoints.MapGet("/ogc/tiles/collections/{collectionId}", HandleGetCollection)
+        endpoints.MapGet("/ogc/tiles/collections/{collectionId}", HandleGetCollection)
             .WithDisplayName("OGC API Tiles Collection")
             .WithName("OgcTilesCollection")
             .WithSummary("Get OGC API Tiles collection metadata")
