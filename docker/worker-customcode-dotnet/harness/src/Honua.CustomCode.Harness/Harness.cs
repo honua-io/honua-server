@@ -95,6 +95,9 @@ public sealed class Harness
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: the injected client factory is arbitrary (tests
+            // supply fakes, production wires a real HTTP client) and any construction
+            // failure must degrade to a harness-error exit rather than crash the process.
             log.Warn($"failed to construct scoped client: {ex.Message}");
             return ExitHarnessError;
         }
@@ -130,26 +133,31 @@ public sealed class Harness
             return ExitHarnessError;
         }
 
+        // Scope the scoped-client disposal to the tool run itself: the credential-bearing
+        // client must be released as soon as the tool finishes, not linger through the
+        // artifact-upload step below.
         GpResult result;
-        try
+        using (var disposableClient = client as IDisposable)
         {
-            result = await tool.ExecuteAsync(context, cancellationToken).ConfigureAwait(false)
-                     ?? GpResult.Succeeded();
-        }
-        catch (OperationCanceledException)
-        {
-            log.Warn("job cancelled");
-            return ExitCancelled;
-        }
-        catch (Exception ex)
-        {
-            log.Warn("tool raised an unhandled exception:");
-            log.Warn(ex.ToString());
-            return ExitToolFailed;
-        }
-        finally
-        {
-            (client as IDisposable)?.Dispose();
+            try
+            {
+                result = await tool.ExecuteAsync(context, cancellationToken).ConfigureAwait(false)
+                         ?? GpResult.Succeeded();
+            }
+            catch (OperationCanceledException)
+            {
+                log.Warn("job cancelled");
+                return ExitCancelled;
+            }
+            catch (Exception ex)
+            {
+                // Intentional catch-all: this boundary runs arbitrary user tool code, so any
+                // exception type must be caught, logged in full, and mapped to the harness's
+                // "tool failed" exit code rather than crash the harness process.
+                log.Warn("tool raised an unhandled exception:");
+                log.Warn(ex.ToString());
+                return ExitToolFailed;
+            }
         }
 
         if (!result.Ok)
@@ -176,6 +184,9 @@ public sealed class Harness
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: the uploader is injectable (S3 in production, a fake
+            // in tests) and any upload failure must degrade to a harness-error exit rather
+            // than crash the process after the tool has already succeeded.
             log.Warn($"artifact upload failed: {ex.Message}");
             return ExitHarnessError;
         }

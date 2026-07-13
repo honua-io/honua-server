@@ -54,6 +54,9 @@ public sealed class BufferTool : IGeoprocessingTool
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: WKT parsing can throw a variety of NTS/format
+            // exceptions and this tool boundary reports every failure as a GpResult
+            // rather than crashing the harness process.
             return Task.FromResult(GpResult.Failed($"failed to parse WKT: {ex.Message}"));
         }
 
