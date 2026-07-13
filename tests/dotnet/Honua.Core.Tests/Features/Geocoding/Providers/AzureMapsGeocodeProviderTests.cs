@@ -86,6 +86,9 @@ public sealed class AzureMapsGeocodeProviderTests
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
+        // Response ownership transfers to HttpClient's pipeline via the return
+        // value; the calling HttpClient/HttpResponseMessage consumer disposes it,
+        // so there is no leak despite the local not being wrapped in `using`.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var payload = request.RequestUri?.AbsoluteUri switch

@@ -289,6 +289,8 @@ public sealed class ArcGisRestClientSecurityTests
 
         public int RequestCount => _requestCount;
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _requestCount);
@@ -315,6 +317,8 @@ public sealed class ArcGisRestClientSecurityTests
 
         public string? LastAuthorizationHeader { get; private set; }
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _requestCount);
@@ -340,6 +344,8 @@ public sealed class ArcGisRestClientSecurityTests
                 throw new HttpRequestException($"Transient ArcGIS failure for {request.RequestUri}");
             }
 
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
@@ -369,6 +375,8 @@ public sealed class ArcGisRestClientSecurityTests
         {
             if (Interlocked.Increment(ref _requestCount) == 1)
             {
+                // Response ownership transfers to the caller via the return value
+                // (HttpClient's pipeline disposes it); nothing leaks here.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(_firstResponse, Encoding.UTF8, "application/json")

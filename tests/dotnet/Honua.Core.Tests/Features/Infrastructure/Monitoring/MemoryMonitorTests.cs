@@ -49,13 +49,12 @@ public class MemoryMonitorTests
     [Fact]
     public void ForceGarbageCollectionAndMeasure_ShouldReturnValidData()
     {
-        // Arrange - Create some objects to be collected
-        var objects = new List<byte[]>();
+        // Arrange - Create some garbage that becomes eligible for collection as
+        // soon as each allocation falls out of scope (nothing needs to retain them).
         for (int i = 0; i < 1000; i++)
         {
-            objects.Add(new byte[1024]);
+            _ = new byte[1024];
         }
-        objects.Clear(); // Make objects eligible for collection
 
         // Act
         var memoryUsage = MemoryMonitor.ForceGarbageCollectionAndMeasure();

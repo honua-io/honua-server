@@ -168,7 +168,7 @@ public sealed class RasterCatalogQueryTests
 
         page.AggregateExtent.Should().NotBeNull();
         page.AggregateExtent!.Value.XMin.Should().Be(-10);
-        page.AggregateExtent.Value.XMax.Should().Be(10);
+        page.AggregateExtent!.Value.XMax.Should().Be(10);
     }
 
     [UnitTest]

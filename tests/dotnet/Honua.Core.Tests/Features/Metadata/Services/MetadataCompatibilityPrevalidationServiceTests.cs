@@ -191,18 +191,15 @@ public sealed class MetadataCompatibilityPrevalidationServiceTests
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
-            foreach (var environment in environments)
+            foreach (var snapshot in environments.Select(_snapshots.GetValueOrDefault).OfType<MetadataV2GraphSnapshot>())
             {
-                if (_snapshots.TryGetValue(environment, out var snapshot))
+                yield return new MetadataV2EnvironmentRevision
                 {
-                    yield return new MetadataV2EnvironmentRevision
-                    {
-                        Environment = snapshot.Graph.Environment,
-                        Revision = snapshot.Revision,
-                        ETag = snapshot.Etag,
-                        ActivatedAt = snapshot.LoadedAt,
-                    };
-                }
+                    Environment = snapshot.Graph.Environment,
+                    Revision = snapshot.Revision,
+                    ETag = snapshot.Etag,
+                    ActivatedAt = snapshot.LoadedAt,
+                };
             }
         }
     }

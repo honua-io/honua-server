@@ -77,6 +77,7 @@ public class FilterExpressionPropertyTests
         }
         catch
         {
+            // If construction fails, that's also a valid outcome for some inputs.
             return true;
         }
     }

@@ -258,6 +258,8 @@ public sealed class MigrationRequestCountingHandlerTests
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 
+            // Response ownership transfers to the caller via the return value
+            // (HttpClient's pipeline disposes it); nothing leaks here.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)

@@ -26,7 +26,7 @@ public class ZarrSubsetReaderTests
             cols: 8,
             chunkRows: 4,
             chunkCols: 4,
-            sample: (r, c) => r * 100 + c);
+            sample: (r, c) => (float)r * 100 + c);
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/temp");
 
@@ -48,7 +48,7 @@ public class ZarrSubsetReaderTests
             {
                 var globalRow = r + 2;
                 var globalCol = c + 2;
-                var expected = (float)(globalRow * 100 + globalCol);
+                var expected = (float)globalRow * 100 + globalCol;
                 var actual = BitConverter.ToSingle(subset.Data, (r * 4 + c) * sizeof(float));
                 actual.Should().Be(expected, $"cell ({r},{c}) should reflect global ({globalRow},{globalCol})");
             }
@@ -103,7 +103,7 @@ public class ZarrSubsetReaderTests
             cols: 8,
             chunkRows: 4,
             chunkCols: 4,
-            sample: (r, c) => r * 100 + c,
+            sample: (r, c) => (float)r * 100 + c,
             gzip: false);
         var reader = new InMemoryZarrRangeReader(objects);
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/v3temp");
@@ -125,7 +125,7 @@ public class ZarrSubsetReaderTests
             {
                 var globalRow = r + 2;
                 var globalCol = c + 2;
-                var expected = (float)(globalRow * 100 + globalCol);
+                var expected = (float)globalRow * 100 + globalCol;
                 var actual = BitConverter.ToSingle(subset.Data, (r * 4 + c) * sizeof(float));
                 actual.Should().Be(expected, $"v3 cell ({r},{c}) should reflect global ({globalRow},{globalCol})");
             }
@@ -302,7 +302,7 @@ public class ZarrSubsetReaderTests
             cols: 4,
             chunkRows: 4,
             chunkCols: 4,
-            sample: (r, c) => (float)(r * 4 + c));
+            sample: (r, c) => (float)r * 4 + c);
         var trackingReader = new TrackingZarrRangeReader(new InMemoryZarrRangeReader(objects));
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(
             new InMemoryZarrRangeReader(objects), "bucket", "datasets/ceiling");
@@ -339,7 +339,7 @@ public class ZarrSubsetReaderTests
             cols: 2,
             chunkRows: 2,
             chunkCols: 2,
-            sample: (r, c) => (float)(r * 2 + c + 1)); // values: 1, 2, 3, 4
+            sample: (r, c) => (float)r * 2 + c + 1); // values: 1, 2, 3, 4
 
         // Bloat the single chunk object to 1 MB (far beyond the 16-byte declared size).
         // An attacker-controlled store could do this to exploit the old int.MaxValue/4 ceiling.
@@ -373,7 +373,7 @@ public class ZarrSubsetReaderTests
         {
             for (var c = 0; c < 2; c++)
             {
-                var expected = (float)(r * 2 + c + 1);
+                var expected = (float)r * 2 + c + 1;
                 var actual = BitConverter.ToSingle(subset.Data, (r * 2 + c) * sizeof(float));
                 actual.Should().Be(expected, $"cell ({r},{c}) value must be correct after bounded read");
             }

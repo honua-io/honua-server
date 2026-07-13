@@ -335,6 +335,9 @@ public sealed class PointCloudTilesetBuilderTests
         CollectLeafGeometricErrors(json.RootElement.GetProperty("root"), leafErrors);
 
         leafErrors.Should().NotBeEmpty();
+        // Exact equality is intentional: leaf geometricError is a literal sentinel
+        // (0.0) written by the partitioner, not a computed/accumulated value, so
+        // there is no rounding error to tolerate.
         leafErrors.Should().OnlyContain(error => error == 0.0);
     }
 

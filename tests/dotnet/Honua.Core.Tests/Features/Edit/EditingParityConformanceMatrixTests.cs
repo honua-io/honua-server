@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AttributeRules;
@@ -42,12 +43,9 @@ public sealed class EditingParityConformanceMatrixTests
     public static TheoryData<string> SupportedCapabilities()
     {
         var data = new TheoryData<string>();
-        foreach (var row in BuildMatrix())
+        foreach (var row in BuildMatrix().Where(r => r.Status == ParityStatus.Supported))
         {
-            if (row.Status == ParityStatus.Supported)
-            {
-                data.Add(row.Capability);
-            }
+            data.Add(row.Capability);
         }
 
         return data;

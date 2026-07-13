@@ -252,6 +252,8 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
             _includeSchema = includeSchema;
         }
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUris.Add(request.RequestUri!);
@@ -311,6 +313,8 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         private static Task<HttpResponseMessage> Json(string body, string mediaType)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
