@@ -6,7 +6,6 @@
  */
 
 import '../shared/ol-node-setup.js';
-import WFS from 'ol/format/WFS.js';
 import { wfsUrl } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
 

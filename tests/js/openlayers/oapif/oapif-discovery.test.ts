@@ -5,8 +5,7 @@
  * metadata, and queryables.
  */
 
-import GeoJSON from 'ol/format/GeoJSON.js';
-import { config, ogcFeaturesUrl, discoverCollectionId } from '../shared/config.js';
+import { ogcFeaturesUrl, discoverCollectionId } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
 
 const evidence = new EvidenceCollector('ogc-features');

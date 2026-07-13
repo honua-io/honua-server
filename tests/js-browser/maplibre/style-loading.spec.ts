@@ -59,7 +59,7 @@ test.describe('Style Loading', () => {
 
   test('[CERT-RNDR-01] MapLibre map initializes from style URL and reaches idle', async ({ page }) => {
     const styleUrl = `${BASE_URL}/api/styles/${POINT_LAYER_ID}.json`;
-    const map = await createMap(page, {
+    await createMap(page, {
       styleUrl,
       center: POINT_CENTER,
       zoom: 14,
