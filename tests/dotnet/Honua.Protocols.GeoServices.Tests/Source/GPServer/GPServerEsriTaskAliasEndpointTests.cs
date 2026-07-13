@@ -494,6 +494,12 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task EnsurePlanExecutionTierAuthorizedAsync(
+            AnalysisPlan plan,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
             => throw new NotSupportedException();
 
@@ -570,6 +576,12 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
             OperatorOperation operation,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task EnsurePlanExecutionTierAuthorizedAsync(
+            AnalysisPlan plan,
+            ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 

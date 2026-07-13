@@ -27,6 +27,21 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Evaluates the additional execution-tier authorization a plan requires (currently the
+    /// mutating-process tier) against <paramref name="principal"/>, throwing
+    /// <see cref="GeoprocessingAuthorizationException"/> when a mutating step is present and
+    /// the principal lacks <see cref="OperatorOperation.ExecuteMutatingProcess"/>. This is the
+    /// same tier gate <see cref="SubmitJobAsync"/> applies, exposed so the workflow
+    /// orchestration engine can evaluate the REQUESTING principal at run creation before step
+    /// jobs are dispatched under the admin-bypassing orchestrator identity (#2798). Baseline
+    /// <see cref="OperatorOperation.Execute"/> is assumed pre-checked by the caller.
+    /// </summary>
+    Task EnsurePlanExecutionTierAuthorizedAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates a plan for executability and returns the validation result.
     /// Callers must pre-authorize via <see cref="EnsureCallerAuthorizedAsync"/> to
     /// guarantee auth-before-validation ordering at the adapter boundary.

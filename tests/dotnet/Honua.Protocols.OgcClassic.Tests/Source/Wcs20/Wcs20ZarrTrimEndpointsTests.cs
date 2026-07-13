@@ -19,24 +19,34 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
+/// <summary>
+/// Covers the WCS 2.0 GetCoverage Zarr slice spatial-trim semantics (#2796): an
+/// over-extent trim clamps to the intersection with the coverage extent instead of
+/// 404ing, matching the plain IRasterStore path. Uses a sub-global coverage extent so
+/// the over-extent trim stays within valid geographic coordinates.
+/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
-public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
+public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime
 {
-    private const long RasterId = 901;
+    private const long RasterId = 902;
+    private const double ExtentMinX = 0;
+    private const double ExtentMinY = 0;
+    private const double ExtentMaxX = 10;
+    private const double ExtentMaxY = 10;
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private WebAppFixture _fixture = null!;
 
     public async Task InitializeAsync()
     {
-        const string root = "stores/wcs-vertical";
-        var rangeReader = new WcsFixtureRangeReader(BuildVerticalStore(root, levels: 4, rows: 4, columns: 4));
+        const string root = "stores/wcs-trim";
+        var rangeReader = new TrimFixtureRangeReader(BuildVerticalStore(root, levels: 4, rows: 4, columns: 4));
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", root);
         var registration = new ZarrRegistration
         {
-            Id = 2696,
+            Id = 2796,
             LayerId = WebAppFixture.TestLayerId,
-            Name = "wcs-vertical",
+            Name = "wcs-trim",
             Provider = CloudStorageProvider.AwsS3,
             Bucket = "bucket",
             RootPath = root,
@@ -46,8 +56,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         var zarrStore = Substitute.For<IZarrStore>();
         zarrStore.ListByLayerAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
             .Returns([registration]);
-        var sliceReader = new UnavailableSelectionReader(
-            new ZarrRasterSliceReader(zarrStore, new ZarrSubsetReader(), [rangeReader]));
+        var sliceReader = new ZarrRasterSliceReader(zarrStore, new ZarrSubsetReader(), [rangeReader]);
 
         ConfigureRasterStore();
         _fixture = new WebAppFixture()
@@ -68,120 +77,39 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_NumericImageServerRoute_ReturnsRegisteredZarrSlicePng()
+    public async Task Wcs_GetCoverage_OverExtentZarrTrim_ClampsToCoverageAndReturnsPng()
     {
-        var response = await _fixture.Client.GetAsync(BuildRequest(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS"));
+        // The trim reaches past the coverage extent on every side; previously the reader
+        // required full containment and 404ed, now it clamps to the intersection.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
+            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
+            "&FORMAT=image/png&SUBSET=Long(-5,15)&SUBSET=Lat(-5,15)" +
+            "&SUBSET=elevation(333.3333)&SCALESIZE=x(4),y(3)");
 
         await AssertPngAsync(response);
-        await _rasterStore.DidNotReceiveWithAnyArgs()
-            .ExportImageAsync(default, default, default, default);
     }
 
     [IntegrationTest]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
-    public async Task Wcs_GetCoverage_ServiceRoute_ReturnsRegisteredZarrSlicePng()
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_AdvertisedExtentZarrTrim_RoundTripsToPng()
     {
-        var response = await _fixture.Client.GetAsync(BuildRequest(
-            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs"));
+        // A client echoing the DescribeCoverage-advertised extent must round-trip.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
+            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
+            "&FORMAT=image/png" +
+            $"&SUBSET=Long({Fmt(ExtentMinX)},{Fmt(ExtentMaxX)})" +
+            $"&SUBSET=Lat({Fmt(ExtentMinY)},{Fmt(ExtentMaxY)})" +
+            "&SUBSET=elevation(333.3333)&SCALESIZE=x(4),y(3)");
 
         await AssertPngAsync(response);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_OutOfRangeZarrCoordinate_ReturnsInvalidSubsetting()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
-            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
-            "&FORMAT=image/png&SUBSET=elevation(2000)");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
-        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
-        content.Should().Contain("locator=\"SUBSET\"");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_ZarrSliceWithTiff_ReturnsOperationNotSupported()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
-            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
-            "&FORMAT=image/tiff&SUBSET=elevation(333.3333)");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
-        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
-        content.Should().Contain("locator=\"FORMAT\"");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_UnavailableZarrReader_ReturnsOperationNotSupported()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
-            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
-            "&FORMAT=image/png&SUBSET=elevation(666)");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
-        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
-        content.Should().Contain("locator=\"SUBSET\"");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_ZarrSliceWithRangeSubset_ReturnsOperationNotSupported()
-    {
-        // Documented divergence (#2796): the Zarr slice path renders a single-band
-        // grayscale PNG and does not compose RANGESUBSET-selected bands, so it rejects
-        // the selection explicitly rather than silently returning the primary render.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
-            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
-            "&FORMAT=image/png&SUBSET=elevation(333.3333)&RANGESUBSET=band1");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
-        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
-        content.Should().Contain("locator=\"RANGESUBSET\"");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
-    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCoverage_OversizeZarrSlice_ReturnsInvalidParameterValue()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
-            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
-            "&FORMAT=image/png&SUBSET=elevation(333.3333)&SCALESIZE=x(4097),y(1)");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
-        content.Should().Contain("locator=\"SCALESIZE\"");
-    }
-
-    private static string BuildRequest(string path)
-        => path + "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
-            "&FORMAT=image/png&SUBSET=Long(-180,180)&SUBSET=Lat(-90,90)" +
-            "&SUBSET=elevation(333.3333)&SCALESIZE=x(4),y(3)";
+    private static string Fmt(double value)
+        => value.ToString(CultureInfo.InvariantCulture);
 
     private static async Task AssertPngAsync(HttpResponseMessage response)
     {
@@ -197,7 +125,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         {
             Id = RasterId,
             LayerId = WebAppFixture.TestLayerId,
-            Name = "wcs-zarr-raster",
+            Name = "wcs-trim-raster",
             Width = 4,
             Height = 4,
             BandCount = 1,
@@ -205,10 +133,10 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             PixelType = "32BF",
             Extent = new RasterExtent
             {
-                XMin = -180,
-                YMin = -90,
-                XMax = 180,
-                YMax = 90,
+                XMin = ExtentMinX,
+                YMin = ExtentMinY,
+                XMax = ExtentMaxX,
+                YMax = ExtentMaxY,
                 Srid = 4326,
             },
             AcquisitionDate = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture),
@@ -228,12 +156,19 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         int rows,
         int columns)
     {
+        var extent = string.Format(
+            CultureInfo.InvariantCulture,
+            "[{0},{1},{2},{3}]",
+            ExtentMinX,
+            ExtentMinY,
+            ExtentMaxX,
+            ExtentMaxY);
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
         {
             [root + "/.zgroup"] = Encoding.UTF8.GetBytes("{\"zarr_format\":2}"),
             [root + "/.zattrs"] = Encoding.UTF8.GetBytes(
                 "{\"variables\":[\"temperature\"],\"primary_variable\":\"temperature\"," +
-                "\"crs_wkid\":4326,\"extent\":[-180,-90,180,90]," +
+                "\"crs_wkid\":4326,\"extent\":" + extent + "," +
                 "\"x_dimension\":\"x\",\"y_dimension\":\"y\"," +
                 "\"axes\":[{\"name\":\"elevation\",\"unit\":\"m\",\"start\":0,\"end\":1000}]}"),
             [root + "/temperature/.zarray"] = Encoding.UTF8.GetBytes(
@@ -259,7 +194,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         return objects;
     }
 
-    private sealed class WcsFixtureRangeReader(Dictionary<string, byte[]> objects) : ICloudRangeReader
+    private sealed class TrimFixtureRangeReader(Dictionary<string, byte[]> objects) : ICloudRangeReader
     {
         public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
@@ -297,21 +232,5 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
 
         private byte[] Get(string key)
             => objects.TryGetValue(key, out var data) ? data : throw new FileNotFoundException(key);
-    }
-
-    private sealed class UnavailableSelectionReader(IZarrRasterSliceReader inner) : IZarrRasterSliceReader
-    {
-        public Task<ZarrRasterSliceReadResult> ReadAsync(
-            int layerId,
-            ZarrRasterSliceReadRequest request,
-            CancellationToken cancellationToken = default)
-            => request.Selections.Any(static selection => selection.Coordinate == 666)
-                ? Task.FromResult(new ZarrRasterSliceReadResult(
-                    ZarrRasterSliceReadStatus.ReaderUnavailable,
-                    null,
-                    "temperature",
-                    request.Selections.Count,
-                    "No configured range reader is available for the registered multidimensional coverage."))
-                : inner.ReadAsync(layerId, request, cancellationToken);
     }
 }

@@ -432,13 +432,33 @@ internal sealed class Wcs20Handler
                 Wcs20Utilities.Parameters.Interpolation);
         }
 
+        // RANGESUBSET (band selection) is parsed by the shared coverage-query resolver
+        // into query.Bands, but the Zarr slice path renders a single-band grayscale PNG
+        // from one range field. Rather than silently ignore the selection and return the
+        // primary-variable render with 200, reject it explicitly. Full multi-band Zarr
+        // composition is an explicit non-goal (#2796).
+        if (query.Bands is { Length: > 0 })
+        {
+            return Wcs20ErrorResults.CreateNotImplemented(
+                Wcs20Utilities.ExceptionCodes.OperationNotSupported,
+                "Coordinate-selected Zarr coverage slices do not support RANGESUBSET band selection; the coverage is served as a single-band grayscale render.",
+                Wcs20Utilities.Parameters.RangeSubset);
+        }
+
         if (outputWidth > MaxWcsOutputDimension || outputHeight > MaxWcsOutputDimension ||
             (long)outputWidth * outputHeight > 16L * 1024L * 1024L)
         {
+            // The offending parameter is the scaling request only when scaling actually
+            // widened the output; otherwise the coverage's native grid exceeds the limit
+            // and the client must down-scale it, so point at COVERAGEID rather than a
+            // SCALESIZE the request never carried.
+            var scalingRequested = query.OutputWidth.HasValue || query.OutputHeight.HasValue;
             return Wcs20ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                $"Requested Zarr slice output exceeds the {MaxWcsOutputDimension}-pixel per-axis limit.",
-                Wcs20Utilities.Parameters.ScaleSize);
+                scalingRequested
+                    ? $"Requested Zarr slice output exceeds the {MaxWcsOutputDimension}-pixel per-axis limit."
+                    : $"The coverage native grid exceeds the {MaxWcsOutputDimension}-pixel per-axis limit; supply SCALESIZE or SCALEFACTOR to down-scale it.",
+                scalingRequested ? Wcs20Utilities.Parameters.ScaleSize : Wcs20Utilities.Parameters.CoverageId);
         }
 
         telemetry.WithTag("honua.slice.selection_count", selections.Count);
