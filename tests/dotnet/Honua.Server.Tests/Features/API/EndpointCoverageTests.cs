@@ -100,7 +100,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     public async Task FeatureServer_QueryPost_WithComplexFilter_ShouldReturnFilteredFeatures()
     {
         // Arrange
-        var queryPayload = new FormUrlEncodedContent(new[]
+        using var queryPayload = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("where", "category = 'test'"),
             new KeyValuePair<string, string>("f", "json"),
@@ -148,7 +148,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         };
 
         var editPayload = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(editPayload, Encoding.UTF8, "application/json");
+        using var content = new StringContent(editPayload, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/rest/services/test/FeatureServer/1/applyEdits", content);
@@ -253,7 +253,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         };
 
         var batchPayload = JsonSerializer.Serialize(batchRequest);
-        var content = new StringContent(batchPayload, Encoding.UTF8, "application/json");
+        using var content = new StringContent(batchPayload, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/odata/$batch", content);
@@ -496,7 +496,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
             }
             """;
 
-        var multipartContent = new MultipartFormDataContent();
+        using var multipartContent = new MultipartFormDataContent();
         multipartContent.Add(new StringContent(geoJsonContent), "file", "test.geojson");
         multipartContent.Add(new StringContent("coverage_import_table"), "TableName");
 

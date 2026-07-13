@@ -603,6 +603,7 @@ public sealed class FormSubmissionServiceTests
         var bytes = byteLength is int length
             ? new byte[length]
             : Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        // Ownership transfers to the returned FormFile, which the caller uses/disposes as needed.
         var stream = new MemoryStream(bytes);
         var file = new FormFile(stream, 0, stream.Length, partName, fileName)
         {

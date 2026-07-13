@@ -176,9 +176,8 @@ public sealed class CompatCompileBindingAndAccessPolicyTests
             })
             .ToArray();
         sharedBindings.Should().HaveCount(2);
-        foreach (var binding in sharedBindings)
+        foreach (var options in sharedBindings.Select(binding => binding.GetProperty("options")))
         {
-            var options = binding.GetProperty("options");
             options.GetProperty("layerDiscriminatorColumn").GetString().Should().Be("layer_id");
             options.GetProperty("geometryColumn").GetString().Should().Be("geometry");
             options.GetProperty("attributesColumn").GetString().Should().Be("attributes");

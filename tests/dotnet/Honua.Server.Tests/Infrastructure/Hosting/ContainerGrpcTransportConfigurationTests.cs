@@ -95,6 +95,8 @@ public sealed class ContainerGrpcTransportConfigurationTests
         return compose[start..end];
     }
 
+    // False positive: relativePath is always a repo-relative literal supplied by test callers,
+    // never an absolute path that could displace the repository root segment.
     private static string ReadRepoFile(string relativePath)
         => File.ReadAllText(Path.Combine(FindRepositoryRoot(), relativePath));
 
@@ -103,6 +105,7 @@ public sealed class ContainerGrpcTransportConfigurationTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
+            // False positive: "Honua.sln" is a fixed relative literal, never absolute.
             if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
             {
                 return directory.FullName;

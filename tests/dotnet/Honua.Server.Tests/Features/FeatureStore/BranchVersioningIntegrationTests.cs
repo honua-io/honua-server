@@ -217,7 +217,7 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         var resolved = await versionManager.ResolveAsync("sde.Lifecycle", CancellationToken.None);
         resolved.Should().NotBeNull();
         resolved!.Value.VersionId.Should().Be(created.VersionId);
-        resolved.Value.IsDefault.Should().BeFalse();
+        resolved!.Value.IsDefault.Should().BeFalse();
 
         (await versionManager.DeleteAsync(created.VersionId, CancellationToken.None)).Should().BeTrue();
         (await versionManager.ResolveAsync("sde.Lifecycle", CancellationToken.None)).Should().BeNull();

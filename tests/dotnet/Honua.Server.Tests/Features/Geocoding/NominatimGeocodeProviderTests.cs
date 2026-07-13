@@ -135,6 +135,7 @@ public sealed class NominatimGeocodeProviderTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             SendCount++;
+            // Ownership transfers to the HttpClient pipeline, which disposes the response.
             var response = ResponseFactory?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")

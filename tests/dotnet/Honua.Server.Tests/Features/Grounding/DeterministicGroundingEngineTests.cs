@@ -272,7 +272,7 @@ public sealed class DeterministicGroundingEngineTests
         var forward = _engine.ScoreLayers(request, layersForward);
         var reversed = _engine.ScoreLayers(request, layersReversed);
 
-        forward.Select(c => c.Score).Should().OnlyContain(s => s == forward[0].Score);
+        forward.Select(c => c.Score).Should().OnlyContain(s => Math.Abs(s - forward[0].Score) < 1e-9);
         forward.Select(c => c.Id).Should().Equal(reversed.Select(c => c.Id));
     }
 

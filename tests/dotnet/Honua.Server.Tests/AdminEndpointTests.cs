@@ -96,8 +96,8 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _fixture.Client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/connections/test/tables"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/connections/test/tables");
+            var response = await _fixture.Client.SendAsync(request);
 
             response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
         }
@@ -344,8 +344,8 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _fixture.Client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/config"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/config");
+            var response = await _fixture.Client.SendAsync(request);
 
             response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
         }
@@ -364,8 +364,8 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _fixture.Client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/openapi.json"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/openapi.json");
+            var response = await _fixture.Client.SendAsync(request);
 
             response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
             (response.Headers.TryGetValues("Allow", out var allowedValues) ||

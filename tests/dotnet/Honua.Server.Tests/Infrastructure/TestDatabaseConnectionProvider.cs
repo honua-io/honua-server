@@ -76,12 +76,9 @@ internal sealed class TestDatabaseConnectionProvider : IAdoNetDatabaseConnection
 
     private static void ValidateSchemaName(string schemaName)
     {
-        foreach (var ch in schemaName)
+        if (schemaName.Any(ch => !char.IsLetterOrDigit(ch) && ch != '_'))
         {
-            if (!char.IsLetterOrDigit(ch) && ch != '_')
-            {
-                throw new ArgumentException($"Invalid schema name '{schemaName}'.", nameof(schemaName));
-            }
+            throw new ArgumentException($"Invalid schema name '{schemaName}'.", nameof(schemaName));
         }
     }
 }

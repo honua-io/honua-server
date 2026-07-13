@@ -349,7 +349,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with valid API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", adminPassword);
         var response = await client.SendAsync(request);
 
@@ -371,7 +371,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with invalid API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", "wrong-password");
         var response = await client.SendAsync(request);
 
@@ -396,7 +396,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with empty API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", "");
         var response = await client.SendAsync(request);
 
@@ -441,7 +441,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with any API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", "any-key");
         var response = await client.SendAsync(request);
 
@@ -467,7 +467,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         var response = await client.SendAsync(request);
@@ -494,7 +494,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         var response = await client.SendAsync(request);
@@ -524,7 +524,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
@@ -551,7 +551,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         });
         using var client = factory.CreateClient();
 
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
@@ -576,7 +576,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Use invalid Basic password but valid X-API-Key header
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", adminPassword);
         var basicEncoded = Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:wrong-password"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basicEncoded);
@@ -602,7 +602,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"admin:{adminPassword}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
         var response = await client.SendAsync(request);
@@ -707,7 +707,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Use wrong case for API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", "testpassword"); // lowercase
         var response = await client.SendAsync(request);
 
@@ -729,7 +729,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         // Act - Use complex password with special characters
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", complexPassword);
         var response = await client.SendAsync(request);
 

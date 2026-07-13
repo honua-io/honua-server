@@ -101,17 +101,7 @@ public sealed class HonuaCacheMetricsTests : IDisposable
     }
 
     private static string? GetTag(MeasurementSample sample, string name)
-    {
-        foreach (var tag in sample.Tags)
-        {
-            if (tag.Key == name)
-            {
-                return tag.Value as string;
-            }
-        }
-
-        return null;
-    }
+        => sample.Tags.FirstOrDefault(tag => tag.Key == name).Value as string;
 
     private sealed record MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
 

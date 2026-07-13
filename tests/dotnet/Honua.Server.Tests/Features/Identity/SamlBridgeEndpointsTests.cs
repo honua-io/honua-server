@@ -107,9 +107,8 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         using var client = _fixture.CreateClient(
             c => c.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
 
-        var response = await client.PostAsync(
-            "/saml/slo",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest }));
+        using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        var response = await client.PostAsync("/saml/slo", sloContent);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -136,9 +135,8 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
     {
         var samlRequest = SamlTestAssertions.CreateUnsignedLogoutRequest("attacker@example.com");
 
-        var response = await _client.PostAsync(
-            "/saml/slo",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest }));
+        using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        var response = await _client.PostAsync("/saml/slo", sloContent);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -147,9 +145,8 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
     [Endpoint("POST /saml/slo")]
     public async Task Slo_MissingSamlRequest_ReturnsBadRequest()
     {
-        var response = await _client.PostAsync(
-            "/saml/slo",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" }));
+        using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" });
+        var response = await _client.PostAsync("/saml/slo", sloContent);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -212,16 +209,15 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
     [Endpoint("POST /saml/acs")]
     public async Task Acs_MissingSamlResponse_ReturnsBadRequest()
     {
-        var response = await _client.PostAsync(
-            "/saml/acs",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" }));
+        using var acsContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" });
+        var response = await _client.PostAsync("/saml/acs", acsContent);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private async Task<HttpResponseMessage> PostAcsAsync(string base64SamlResponse)
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["SAMLResponse"] = base64SamlResponse,
         });

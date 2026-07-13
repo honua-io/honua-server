@@ -324,7 +324,7 @@ public class TestQualityValidationTests : IAsyncLifetime
     public void TestQualityMetrics_AllCriteria_AchievesPerfectScore()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var testRoot = Path.Combine(repositoryRoot, "tests");
+        var testRoot = Path.Combine(repositoryRoot, "tests"); // "tests" is a fixed relative literal, never absolute
         var allTestFiles = Directory.GetFiles(testRoot, "*.cs", SearchOption.AllDirectories);
 
         var unitTestCount = CountTokenOccurrences(allTestFiles, "[UnitTest]");
@@ -343,6 +343,7 @@ public class TestQualityValidationTests : IAsyncLifetime
         var qualityChecklist = new Dictionary<string, (bool Met, string Detail)>
         {
             ["100% API Surface Coverage"] = (
+                // All segments after testRoot are fixed relative literals, never absolute.
                 File.Exists(Path.Combine(testRoot, "dotnet", "Honua.Architecture.Tests", "ApiSurfaceCoverageTests.cs")),
                 "Architecture coverage gate is present."),
             ["Comprehensive Unit Tests"] = (
@@ -356,6 +357,7 @@ public class TestQualityValidationTests : IAsyncLifetime
                 $"Found {errorPathCoverageCount} error-path indicators."),
             ["Security Testing"] = (
                 securityScenarioUsageCount >= 3 &&
+                // Segments after testRoot are fixed relative literals, never absolute.
                 Directory.Exists(Path.Combine(testRoot, "dotnet", "Honua.Server.Tests", "Features", "Security")),
                 $"Found {securityScenarioUsageCount} shared security scenario usages."),
             ["Performance Benchmarking"] = (
@@ -363,14 +365,17 @@ public class TestQualityValidationTests : IAsyncLifetime
                 $"Found {performanceTestCount} performance-tagged tests."),
             ["Contract Testing"] = (
                 contractScenarioUsageCount >= 4 &&
+                // Segments after testRoot are fixed relative literals, never absolute.
                 File.Exists(Path.Combine(testRoot, "dotnet", "Honua.TestKit", "Contract", "ContractTestScenarios.cs")),
                 $"Found {contractScenarioUsageCount} contract scenario usages."),
             ["Fuzzing Coverage"] = (
                 fuzzScenarioUsageCount >= 2 &&
+                // Segments after testRoot are fixed relative literals, never absolute.
                 Directory.Exists(Path.Combine(testRoot, "dotnet", "Honua.TestKit", "Fuzzing")),
                 $"Found {fuzzScenarioUsageCount} shared fuzz scenario usages."),
             ["Infrastructure Quality"] = (
                 isolatedSchemaUsageCount >= 1 &&
+                // Segments after testRoot are fixed relative literals, never absolute.
                 Directory.Exists(Path.Combine(testRoot, "dotnet", "Honua.TestKit", "Infrastructure")),
                 $"Found {isolatedSchemaUsageCount} isolated-schema infrastructure usages."),
         };
@@ -400,6 +405,7 @@ public class TestQualityValidationTests : IAsyncLifetime
 
         while (directory is not null)
         {
+            // "Honua.sln" is a fixed relative literal, never absolute.
             if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
             {
                 return directory.FullName;
@@ -425,9 +431,8 @@ public class TestQualityValidationTests : IAsyncLifetime
     private static int CountAnyTokenOccurrences(IEnumerable<string> files, IReadOnlyCollection<string> tokens)
     {
         var count = 0;
-        foreach (var file in files)
+        foreach (var content in files.Select(File.ReadAllText))
         {
-            var content = File.ReadAllText(file);
             foreach (var token in tokens)
             {
                 count += CountOccurrences(content, token);

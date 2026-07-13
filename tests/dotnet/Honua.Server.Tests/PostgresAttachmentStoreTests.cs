@@ -39,6 +39,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(PostgresAttachmentStoreTests));
+        // Guid.NewGuid().ToString() is never rooted, so GetTempPath() is never dropped.
         _tempStoragePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_tempStoragePath);
 
@@ -136,6 +137,11 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
 
         // Assert
         Assert.NotNull(retrieved);
+        if (retrieved is null)
+        {
+            throw new InvalidOperationException("GetAsync should have returned an attachment.");
+        }
+
         Assert.Equal(created.Id, retrieved.Value.Id);
         Assert.Equal(created.Filename, retrieved.Value.Filename);
         Assert.Equal(created.ContentType, retrieved.Value.ContentType);
@@ -267,6 +273,11 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
 
         // Assert
         Assert.NotNull(result);
+        if (result is null)
+        {
+            throw new InvalidOperationException("DownloadAsync should have returned attachment content.");
+        }
+
         Assert.Equal(attachment.Id, result.Value.Attachment.Id);
         Assert.Equal(attachment.Filename, result.Value.Attachment.Filename);
 

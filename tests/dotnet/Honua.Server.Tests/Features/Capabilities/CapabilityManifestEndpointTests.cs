@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
@@ -274,9 +275,9 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             offlineSync.GetProperty("reasonCode").GetString().Should().Be("license-required");
             offlineSync.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.FieldOpsOfflineSyncKey);
 
-            foreach (var capabilityId in new[] { "ai.spec-apply", "ai.grounding", "ai.workflow-generation" })
+            foreach (var capability in new[] { "ai.spec-apply", "ai.grounding", "ai.workflow-generation" }
+                .Select(capabilityId => GetCapability(root, capabilityId)))
             {
-                var capability = GetCapability(root, capabilityId);
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("license-required");
                 capability.GetProperty("minimumEdition").GetString().Should().Be("Pro");

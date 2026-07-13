@@ -60,7 +60,8 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/cloud-demo/reset")]
     public async Task Reset_WithoutToken_ReturnsUnauthorized()
     {
-        using var response = await _client.PostAsync("/api/v1/cloud-demo/reset", new ByteArrayContent([]));
+        using var content = new ByteArrayContent([]);
+        using var response = await _client.PostAsync("/api/v1/cloud-demo/reset", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         var body = await response.Content.ReadAsStringAsync();
