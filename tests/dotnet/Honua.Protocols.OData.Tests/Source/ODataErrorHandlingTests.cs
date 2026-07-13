@@ -447,8 +447,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "BadRequest");
@@ -684,8 +684,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -716,8 +716,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -748,8 +748,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -780,8 +780,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -812,8 +812,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

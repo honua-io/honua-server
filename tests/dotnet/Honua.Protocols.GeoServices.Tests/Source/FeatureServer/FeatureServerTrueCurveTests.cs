@@ -104,10 +104,10 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
         }
         """;
 
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.LineLayerId}/applyEdits",
-            content);
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
