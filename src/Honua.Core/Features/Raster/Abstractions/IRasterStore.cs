@@ -183,6 +183,49 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Generates a pre-tiled raster tile aligned to an explicit tile matrix set (gridset) window
+    /// rather than the implicit Web Mercator <c>z/x/y</c> grid. The tile bounds and output SRID are
+    /// supplied in <paramref name="window"/> (computed by the caller from the one canonical gridset
+    /// definition), and the source raster is reprojected into that window. This is the
+    /// gridset-aware counterpart to
+    /// <see cref="GetImageTileAsync(int, long, int, int, int, RasterFormat, CancellationToken)"/>
+    /// used by the WorldCRS84Quad and operator-defined gridset tile paths so no gridset geodesy is
+    /// duplicated in the protocol adapters.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the raster.</param>
+    /// <param name="rasterId">Raster identifier to tile.</param>
+    /// <param name="window">The gridset tile window (bounds + SRID + output pixel dimensions).</param>
+    /// <param name="format">Output format for the tile.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tile data in the requested format, or <see langword="null"/> when the tile is empty.</returns>
+    Task<RasterResult?> GetImageTileAsync(
+        int layerId,
+        long rasterId,
+        RasterTileWindow window,
+        RasterFormat format = RasterFormat.PNG,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates a mosaicked tile aligned to an explicit tile matrix set (gridset) window. The
+    /// gridset-aware counterpart to
+    /// <see cref="GetMosaicImageTileAsync(int, long[], RasterMergeStrategy, int, int, int, RasterFormat, CancellationToken)"/>.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the rasters.</param>
+    /// <param name="rasterIds">Raster identifiers participating in the mosaic.</param>
+    /// <param name="mergeStrategy">The mosaic merge strategy.</param>
+    /// <param name="window">The gridset tile window (bounds + SRID + output pixel dimensions).</param>
+    /// <param name="format">Output format for the tile.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tile data in the requested format, or <see langword="null"/> when the tile is empty.</returns>
+    Task<RasterResult?> GetMosaicImageTileAsync(
+        int layerId,
+        long[] rasterIds,
+        RasterMergeStrategy mergeStrategy,
+        RasterTileWindow window,
+        RasterFormat format = RasterFormat.PNG,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets statistics for raster bands. Implementations must serve persisted values
     /// (written at import time, or computed once and persisted on first read) rather than
     /// recomputing per request: full-pixel scans take tens of seconds on real datasets (#1639).

@@ -210,6 +210,83 @@ public sealed class McpLocationToolTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_geocode_address")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_GeocodeAddress_InvalidArguments_ReturnsSchemaValidToolError()
+    {
+        // #2578 error-shape contract: an invalid geocode call must surface a
+        // structured tool error (isError=true) whose envelope still validates
+        // against the advertised outputSchema (the oneOf error branch), not a
+        // bare protocol error.
+        var services = BuildServices(
+            ActiveLicense(GeocodeTool.EntitlementKey),
+            geocodeCoordinator: Substitute.For<IGeocodeCoordinatorService>());
+        var surface = new McpOperatorSurface(
+            [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
+            [],
+            NullLogger<McpOperatorSurface>.Instance);
+
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("geo-invalid-1", GeocodeTool.ToolName, """
+                {"address":"   "}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("error");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_geocode_address")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_GeocodeAddress_ProviderFailure_ReturnsSchemaValidToolError()
+    {
+        // #2578 round-trip contract: when no provider produces a result the tool
+        // surfaces a structured, retryable tool error whose envelope validates
+        // against the advertised outputSchema.
+        var coordinator = Substitute.For<IGeocodeCoordinatorService>();
+        coordinator.ForwardGeocodeAsync(
+                Arg.Any<ForwardGeocodeRequest>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
+                "no provider produced a result.",
+                "mock"));
+
+        var services = BuildServices(
+            ActiveLicense(GeocodeTool.EntitlementKey),
+            geocodeCoordinator: coordinator);
+        var surface = new McpOperatorSurface(
+            [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
+            [],
+            NullLogger<McpOperatorSurface>.Instance);
+
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("geo-fail-1", GeocodeTool.ToolName, """
+                {"address":"1600 Amphitheatre Parkway"}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("error");
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ExecutionFailed");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
+    }
+
     private static ServiceProvider BuildServices(
         ILicenseEntitlementService license,
         IGeocodeCoordinatorService? geocodeCoordinator = null,

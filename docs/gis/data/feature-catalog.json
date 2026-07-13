@@ -6026,6 +6026,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WhenSuccessful_IncludesContentHeaders",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WithStringCollectionId_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WithValidParameters_ReturnsMap",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetCollectionMap_DuplicateStorageLayerBindings_ReturnsPng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_EmptyCollectionId_ReturnsBadRequestOrNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_ErrorResponse_DoesNotExposeInternalDetails",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_FloatCollectionId_ReturnsNotFound",
@@ -6417,7 +6418,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_ServiceRoute_ReturnsAccessibleRasterCoverage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_UnknownNamedCoverage_ReturnsNoSuchCoverageException"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_UnknownNamedCoverage_ReturnsNoSuchCoverageException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ServiceRoute_ReturnsRegisteredZarrSlicePng"
       ],
       "proof_ledger_surface": "wcs-2.0.1",
       "maturity": "implemented"
@@ -7324,7 +7326,12 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithScaleSize_SetsOutputDimensions",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithSubsetFormatAndOutputCrs_ReturnsRasterBytes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnknownRangeSubsetField_ReturnsException",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedInterpolation_ReturnsException"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedInterpolation_ReturnsException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_NumericImageServerRoute_ReturnsRegisteredZarrSlicePng",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OutOfRangeZarrCoordinate_ReturnsInvalidSubsetting",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OversizeZarrSlice_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_UnavailableZarrReader_ReturnsOperationNotSupported",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithTiff_ReturnsOperationNotSupported"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -7343,7 +7350,15 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetFeatureInfo_WithOutOfRangePixel_ReturnsException",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_JpegFormat_RoutesJpegToTileHandler",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_TiffFormat_RoutesTiffToTileHandler",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_WithUnsupportedFormat_ReturnsXmlException",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetCapabilities_DefaultConfig_AdvertisesOnlyWebMercatorQuad",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetCapabilities_WithWorldCrs84QuadEnabled_AdvertisesMatrixSet",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetFeatureInfo_WorldCrs84QuadEnabled_ReturnsPixelValueInCrs84",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_UnknownMatrixSet_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadColumnOutOfBounds_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadEnabled_RendersThroughSharedGridsetPipeline",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadNotConfigured_ReturnsInvalidParameterValue",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -18542,6 +18557,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_ChangesMutableFields",
+        "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_LegacyTopologyMapping_RecordsReplacementActiveGeneration",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_Missing_Returns404",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Update_UnsafeVertexTable_Returns400"
       ],

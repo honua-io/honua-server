@@ -267,6 +267,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         else
         {
             EnsurePlanCatalogValid(plan);
+
+            if (ContainsMutatingProcess(plan))
+            {
+                await _authorizer.EnsureAuthorizedAsync(
+                    principal,
+                    OperatorResourceType.Process,
+                    OperatorOperation.ExecuteMutatingProcess,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         EnsureApproved(principal, plan);
@@ -1087,6 +1096,24 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var first = violations[0];
         throw new GeoprocessingValidationException(
             $"Plan failed catalog validation: {first.Code} — {first.Message}");
+    }
+
+    private bool ContainsMutatingProcess(AnalysisPlan plan)
+    {
+        foreach (var step in plan.Steps)
+        {
+            if (step.Kind != AnalysisPlanStepKind.Geoprocess || string.IsNullOrWhiteSpace(step.ProcessId))
+            {
+                continue;
+            }
+
+            if (_processCatalog.GetProcess(step.ProcessId) is { ExecutionTier: ProcessExecutionTier.Mutating })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private IExecutionJobStore RequireJobStore()

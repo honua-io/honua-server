@@ -339,6 +339,27 @@ public sealed class OperatorAuthorizationEvaluatorTests
     }
 
     [UnitTest]
+    public async Task Evaluate_BaselineProcessExecuteGrant_DoesNotMatchMutatingExecution()
+    {
+        _roleStore.AddGrant("analyst", "process", "*", "execute");
+        var principal = CreatePrincipal("user-1", "analyst");
+
+        var baselineDecision = await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute
+        });
+        var mutatingDecision = await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.ExecuteMutatingProcess
+        });
+
+        baselineDecision.IsAllowed.Should().BeTrue();
+        mutatingDecision.IsAllowed.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task Evaluate_StandardRoleClaim_AdminBypassed()
     {
         var principal = CreatePrincipalWithStandardRoleClaim("user-1", "admin");

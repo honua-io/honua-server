@@ -1088,6 +1088,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "Copy Features",
             Description = "Copies features (optionally filtered) from a source layer into a new target layer. Non-destructive — the source layer is not modified.",
             Category = "data-management",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("sourceLayerId", "Source Layer", "Source layer identifier.", ProcessParameterValueType.LayerId, required: true),
@@ -1117,6 +1118,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "Delete Features",
             Description = "Deletes features matching a filter from a source layer. Destructive — requires approval. At least one of 'where' or 'objectIds' must be supplied to prevent unbounded deletion.",
             Category = "data-management",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
@@ -1131,6 +1133,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "Calculate Field",
             Description = "Sets a field value on matching features using a constant or SQL expression. Destructive — requires approval. Expressions are gated by the FeatureServer.Edits expression allow-list at execution time.",
             Category = "data-management",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
@@ -1158,6 +1161,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "Import Dataset",
             Description = "Imports a staged geospatial dataset end-to-end as one durable job: stages the source, imports it (the streaming importer enforces the per-feature geometry size guard / chunking), flattens the generic imported table into a typed layer (rebuilding the MVT materialization), optionally tiles a raster layer with overviews, refreshes the layer and service extents, and records a provenance artifact. Resumes by re-running from the staged source under overwrite idempotency.",
             Category = "import",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("connection", "Connection", "Registered secure connection id (GUID) or name identifying the target Honua catalog database.", ProcessParameterValueType.Text, required: true),
@@ -1539,6 +1543,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "GeoJSON File Sink",
             Description = "Writes the input FeatureCollection to a GeoJSON FeatureCollection file below the configured geoprocessing output root, emitting a result descriptor with written/rejected counts. Managed NetTopologySuite writer — no native dependency.",
             Category = "sink",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
@@ -1552,6 +1557,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "Quarantine Sink",
             Description = "Dead-letter sink: writes every input feature to a companion GeoJSON artifact tagged with the run batch id and a rejection reason, never throwing on a malformed row. The sink half of the row-level-error contract.",
             Category = "sink",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
@@ -1567,6 +1573,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "External PostGIS Sink",
             Description = "Loads the input FeatureCollection into a customer-owned PostGIS database identified by a registered secure connection. Managed Npgsql + WKB — no GDAL. Every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback.",
             Category = "sink",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
@@ -1587,6 +1594,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Title = "Honua Catalog Layer Sink",
             Description = "Loads the input FeatureCollection into a named layer in the Honua catalog database via the catalog data source. Supports append/replace/upsert load modes; every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback. Requires a configured catalog database — fails closed in lean, database-free deployments. Managed Npgsql + WKB — no GDAL.",
             Category = "sink",
+            ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
                 Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),

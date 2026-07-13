@@ -99,7 +99,7 @@ class TestImageServer:
         assert isinstance(data["histograms"], list)
 
     @pytest.mark.integration
-    def test_compute_class_statistics_valid_request_returns_not_implemented(
+    def test_compute_class_statistics_missing_training_geometry_returns_validation_error(
         self, http_client: httpx.Client, test_layer_id: int
     ):
         response = http_client.get(
@@ -112,8 +112,7 @@ class TestImageServer:
             },
         )
 
-        # PA-070/PA-117 (#2418): the not-implemented signal is now HTTP 200 +
-        # an {"error"} envelope rather than a bare 501 status. The envelope maps
-        # 501 to body code 500 (GeoServicesErrorCodes.FromHttpStatusCode has no
-        # 501 entry), so accept both.
-        assert_geoservices_error(response, body_codes={501, 500})
+        # #2662: computeClassStatistics is implemented; a class without a training
+        # geometry is rejected at validation. PA-070/PA-117 (#2418): the error is
+        # HTTP 200 + an {"error"} envelope with the code in the body.
+        assert_geoservices_error(response, body_codes={400})
