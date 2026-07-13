@@ -28,6 +28,9 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
 
     public bool IsLeader { get; private set; }
 
+    /// <inheritdoc />
+    public bool LastAcquireFaulted { get; private set; }
+
     public string InstanceId { get; }
 
     public async Task<bool> TryAcquireAsync(CancellationToken cancellationToken = default)
@@ -37,6 +40,7 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
         {
             if (IsLeader && _lockConnection is { State: System.Data.ConnectionState.Open })
             {
+                LastAcquireFaulted = false;
                 return true;
             }
 
@@ -45,6 +49,10 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
             command.Parameters.AddWithValue("lock_key", NpgsqlDbType.Bigint, LockKey);
 
             var acquired = (bool?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false;
+
+            // A determinate result (acquired or cleanly lost the race) clears the fault flag.
+            LastAcquireFaulted = false;
+
             if (!acquired)
             {
                 await connection.DisposeAsync().ConfigureAwait(false);
@@ -57,6 +65,9 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
         }
         catch (Exception ex)
         {
+            // The attempt itself errored (e.g. pool exhaustion / outage); we cannot tell whether a
+            // leader exists. Flag the fault so the evaluation loop can surface a no-leader stall.
+            LastAcquireFaulted = true;
             PostgresAdvisoryLockLeaderElectionLog.AdvisoryLockAcquireFailed(_logger, ex);
             return false;
         }
