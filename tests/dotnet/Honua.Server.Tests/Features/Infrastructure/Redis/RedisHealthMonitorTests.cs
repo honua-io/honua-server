@@ -160,7 +160,7 @@ public sealed class RedisHealthMonitorTests
         mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(mockDatabase.Object);
 
         var logger = new InMemoryLogger<RedisHealthMonitor>();
-        var monitor = new RedisHealthMonitor(mockRedis.Object, logger);
+        using var monitor = new RedisHealthMonitor(mockRedis.Object, logger);
 
         var unhandled = 0;
         UnhandledExceptionEventHandler handler = (_, _) => Interlocked.Increment(ref unhandled);
@@ -174,7 +174,6 @@ public sealed class RedisHealthMonitorTests
         finally
         {
             AppDomain.CurrentDomain.UnhandledException -= handler;
-            monitor.Dispose();
         }
 
         unhandled.Should().Be(0, "async void timer callback must swallow inner exceptions");
