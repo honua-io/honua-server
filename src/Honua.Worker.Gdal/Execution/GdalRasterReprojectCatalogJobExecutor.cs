@@ -108,14 +108,12 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
 
         var resamplingFlag = "bilinear";
         if (GdalJobInputReader.TryGetInput(parameters, "resampling", out var resamplingRaw)
-            && !string.IsNullOrWhiteSpace(resamplingRaw))
+            && !string.IsNullOrWhiteSpace(resamplingRaw)
+            && !ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
         {
-            if (!ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
-            {
-                return JobExecutionResult.Failed(
-                    $"Invalid reproject inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
-                    "(nearestneighbor, bilinear, cubic, lanczos).");
-            }
+            return JobExecutionResult.Failed(
+                $"Invalid reproject inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
+                "(nearestneighbor, bilinear, cubic, lanczos).");
         }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))

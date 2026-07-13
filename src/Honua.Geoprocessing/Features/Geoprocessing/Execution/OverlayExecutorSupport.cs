@@ -44,15 +44,11 @@ internal static class OverlayExecutorSupport
     /// </summary>
     public static NtsGeometry? UnionGeometry(FeatureCollection features)
     {
-        var geometries = new List<NtsGeometry>(features.Count);
-        foreach (var feature in features)
-        {
-            var geometry = feature.Geometry;
-            if (geometry is not null && !geometry.IsEmpty)
-            {
-                geometries.Add(geometry);
-            }
-        }
+        var geometries = features
+            .Select(feature => feature.Geometry)
+            .Where(geometry => geometry is not null && !geometry.IsEmpty)
+            .Select(geometry => geometry!)
+            .ToList();
 
         return geometries.Count switch
         {
@@ -66,16 +62,9 @@ internal static class OverlayExecutorSupport
     {
         // CascadedPolygonUnion only handles (multi)polygons; for mixed/linear/point
         // inputs fall back to the generic UnaryUnionOp which preserves dimension.
-        var allPolygonal = true;
-        foreach (var geometry in geometries)
-        {
-            if (geometry.OgcGeometryType is not (NetTopologySuite.Geometries.OgcGeometryType.Polygon
-                or NetTopologySuite.Geometries.OgcGeometryType.MultiPolygon))
-            {
-                allPolygonal = false;
-                break;
-            }
-        }
+        var allPolygonal = geometries.All(geometry => geometry.OgcGeometryType is
+            NetTopologySuite.Geometries.OgcGeometryType.Polygon
+            or NetTopologySuite.Geometries.OgcGeometryType.MultiPolygon);
 
         if (allPolygonal)
         {

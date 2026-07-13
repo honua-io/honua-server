@@ -201,11 +201,13 @@ internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
         // CoordinateTransformer; this preserves geometry type, ordering, and
         // ring structure without allocating per-vertex geometries.
         var editor = new GeometryEditor(source.Factory);
-        var transformed = editor.Edit(source, new CoordinateOperation(fromSrid, toSrid));
+        var transformed = editor.Edit(source, new SridCoordinateOperation(fromSrid, toSrid));
         return transformed;
     }
 
-    private sealed class CoordinateOperation(int fromSrid, int toSrid) : GeometryEditor.CoordinateOperation
+    // Named distinctly from the NTS base type (GeometryEditor.CoordinateOperation) it
+    // overrides so the two are never ambiguous at a glance.
+    private sealed class SridCoordinateOperation(int fromSrid, int toSrid) : GeometryEditor.CoordinateOperation
     {
         public override Coordinate[] Edit(Coordinate[] coordinates, Geometry geometry)
         {

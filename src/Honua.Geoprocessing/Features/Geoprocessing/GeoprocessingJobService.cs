@@ -176,12 +176,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         violations.AddRange(submitViolations);
         warnings.AddRange(submitWarnings);
 
-        foreach (var v in catalogViolations)
+        foreach (var v in catalogViolations.Where(v => v.Code == "UNKNOWN_PROCESS"))
         {
-            if (v.Code == "UNKNOWN_PROCESS")
-            {
-                GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
-            }
+            GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
         }
 
         var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _processCatalog);
@@ -521,14 +518,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             },
             cancellationToken).ConfigureAwait(false);
 
-        var items = new List<ExecutionJobRecord>(page.Items.Count);
-        foreach (var job in page.Items)
-        {
-            if (MatchesRequiredParameters(job, filter.RequiredParameters) && IsJobReadable(job, principal))
-            {
-                items.Add(job);
-            }
-        }
+        var items = page.Items
+            .Where(job => MatchesRequiredParameters(job, filter.RequiredParameters) && IsJobReadable(job, principal))
+            .ToList();
 
         GeoprocessingServiceLog.JobsListed(_logger, items.Count);
         return new GeoprocessingJobListPage
@@ -1110,12 +1102,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
-        foreach (var v in violations)
+        foreach (var v in violations.Where(v => v.Code == "UNKNOWN_PROCESS"))
         {
-            if (v.Code == "UNKNOWN_PROCESS")
-            {
-                GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
-            }
+            GeoprocessingServiceLog.UnknownProcessReferenced(_logger, v.FieldPath ?? "", v.Message);
         }
 
         var first = violations[0];

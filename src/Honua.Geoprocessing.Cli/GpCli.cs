@@ -239,6 +239,9 @@ public static class GpCli
         Console.WriteLine($"status  : {result.Status}");
         Console.WriteLine($"elapsed : {result.Elapsed.TotalMilliseconds:F1} ms");
 
+        // Not rewritten as .Where(...): the filter also extracts "gdal.command" via
+        // TryGetValue, so a LINQ form would need an awkward Select/Where split for no
+        // real readability gain.
         foreach (var log in result.Logs)
         {
             if (log.Metadata is not null
@@ -997,18 +1000,12 @@ public static class GpCli
             return null;
         }
 
-        foreach (var parameter in definition.Parameters)
-        {
-            if (parameter.Required
+        return definition.Parameters
+            .FirstOrDefault(parameter => parameter.Required
                 && parameter.ValueType is ProcessParameterValueType.Wkb
                     or ProcessParameterValueType.WkbArray
                     or ProcessParameterValueType.Text)
-            {
-                return parameter.Name;
-            }
-        }
-
-        return null;
+            ?.Name;
     }
 
     private static byte[] DecodeArtifact(string artifact)

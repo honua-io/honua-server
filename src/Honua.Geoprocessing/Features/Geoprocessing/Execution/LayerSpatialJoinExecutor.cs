@@ -109,12 +109,9 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         }
 
         var accumulators = new Dictionary<string, StatisticsSupport.FieldAccumulator>(StringComparer.Ordinal);
-        foreach (var spec in stats)
+        foreach (var spec in stats.Where(spec => spec.Kind != StatisticsSupport.StatKind.Count && !accumulators.ContainsKey(spec.Field)))
         {
-            if (spec.Kind != StatisticsSupport.StatKind.Count && !accumulators.ContainsKey(spec.Field))
-            {
-                accumulators[spec.Field] = new StatisticsSupport.FieldAccumulator();
-            }
+            accumulators[spec.Field] = new StatisticsSupport.FieldAccumulator();
         }
 
         long matchCount = 0;
@@ -134,6 +131,8 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
                     carried[field].Add(ReadValue(candidate, field));
                 }
 
+                // Not a .Where(...) candidate: TryReadNumeric's out value is consumed in
+                // the body, so filtering separately would mean parsing each value twice.
                 foreach (var accumulator in accumulators)
                 {
                     if (StatisticsSupport.TryReadNumeric(candidate, accumulator.Key, out var value))
@@ -232,16 +231,14 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         };
 
         var distance = 0d;
-        if (predicate == SpatialPredicate.Dwithin)
-        {
-            if (!inputs.TryGet("distance", out var distanceRaw)
+        if (predicate == SpatialPredicate.Dwithin
+            && (!inputs.TryGet("distance", out var distanceRaw)
                 || !double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out distance)
                 || !double.IsFinite(distance)
-                || distance <= 0)
-            {
-                throw new TransformInputException(
-                    "predicate 'dwithin' requires a finite positive 'distance' threshold");
-            }
+                || distance <= 0))
+        {
+            throw new TransformInputException(
+                "predicate 'dwithin' requires a finite positive 'distance' threshold");
         }
 
         return (predicate, distance);

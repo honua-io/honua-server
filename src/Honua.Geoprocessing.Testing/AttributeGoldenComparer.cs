@@ -36,12 +36,9 @@ internal static class AttributeGoldenComparer
             CompareValue($"{path}.{name}", actual.GetOptionalValue(name), golden!.GetOptionalValue(name), tolerance, differences);
         }
 
-        foreach (var name in actualNames)
+        foreach (var name in actualNames.Where(name => golden is null || !golden.Exists(name)))
         {
-            if (golden is null || !golden.Exists(name))
-            {
-                differences.Add($"{path}.{name}: unexpected in actual (actual={Stringify(actual?.GetOptionalValue(name))})");
-            }
+            differences.Add($"{path}.{name}: unexpected in actual (actual={Stringify(actual?.GetOptionalValue(name))})");
         }
     }
 

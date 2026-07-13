@@ -69,6 +69,9 @@ internal sealed class WorkspaceCleanupService : BackgroundService
             }
             catch (Exception ex)
             {
+                // Intentionally broad: this is the BackgroundService's run loop — a single
+                // sweep failure must not stop future sweeps, so it is logged and the loop
+                // continues on the next interval.
                 WorkspaceCleanupLog.SweepFailed(_logger, ex);
             }
         }

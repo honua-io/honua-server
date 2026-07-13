@@ -48,6 +48,8 @@ internal sealed class StatisticsCalculateExecutor(
         foreach (var feature in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Not a .Where(...) candidate: TryReadNumeric's out value feeds two running
+            // aggregates in the body, so filtering separately would mean parsing twice.
             foreach (var field in fields)
             {
                 if (StatisticsSupport.TryReadNumeric(feature, field, out var value))

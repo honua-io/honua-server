@@ -117,6 +117,8 @@ internal static class GdalUntrustedInputGuard
 
     private static bool ContainsIndirectionXmlMarker(ReadOnlySpan<byte> decoded, out string marker)
     {
+        // Not a .Where(...)/.FirstOrDefault(...) candidate: decoded is a ReadOnlySpan<byte>
+        // (a ref struct), which cannot be captured in a LINQ lambda closure.
         foreach (var candidate in IndirectionXmlMarkers)
         {
             if (IndexOfAsciiIgnoreCase(decoded, candidate) >= 0)
@@ -132,6 +134,8 @@ internal static class GdalUntrustedInputGuard
 
     private static bool ContainsVsiReference(ReadOnlySpan<byte> decoded, out string matched)
     {
+        // Not a .Where(...)/.FirstOrDefault(...) candidate: decoded is a ReadOnlySpan<byte>
+        // (a ref struct), which cannot be captured in a LINQ lambda closure.
         foreach (var prefix in DangerousVsiPrefixes)
         {
             if (IndexOfAsciiIgnoreCase(decoded, prefix) >= 0)

@@ -35,6 +35,9 @@ internal static class GdalZoneAdmission
             return false;
         }
 
+        // Not a .Select(...).Sum(...) candidate: the running total must short-circuit as
+        // soon as MaxZoneVertices is exceeded (the DoS admission guard this type exists
+        // for, #2766) rather than first materializing every geometry's vertex count.
         long totalVertices = 0;
         foreach (var feature in zones)
         {

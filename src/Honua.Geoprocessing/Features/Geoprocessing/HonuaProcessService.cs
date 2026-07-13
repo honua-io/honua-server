@@ -245,13 +245,15 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
 
     private static string? ResolveIdempotencyKey(Proto.ExecutionContext? executionContext)
     {
-        if (executionContext?.Metadata.TryGetValue("idempotency_key", out var snakeCaseKey) == true
+        if (executionContext is not null
+            && executionContext.Metadata.TryGetValue("idempotency_key", out var snakeCaseKey)
             && !string.IsNullOrWhiteSpace(snakeCaseKey))
         {
             return snakeCaseKey;
         }
 
-        if (executionContext?.Metadata.TryGetValue("idempotencyKey", out var camelCaseKey) == true
+        if (executionContext is not null
+            && executionContext.Metadata.TryGetValue("idempotencyKey", out var camelCaseKey)
             && !string.IsNullOrWhiteSpace(camelCaseKey))
         {
             return camelCaseKey;
