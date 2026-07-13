@@ -19,6 +19,7 @@ internal static partial class ExecutionJobSubmissionHelper
         IUniversalProgressStore? progressStore = null,
         TimeSpan? progressRetention = null,
         string? failureMessage = null,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jobStore);
@@ -56,9 +57,14 @@ internal static partial class ExecutionJobSubmissionHelper
                     .ConfigureAwait(false);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort rollback; job TTL or manual intervention will repair.
+            // Best-effort rollback; job TTL or manual intervention will repair. Still log so
+            // the failure is diagnosable instead of silently swallowed.
+            if (logger != null)
+            {
+                Log.RollbackFailed(logger, operationId, ex);
+            }
         }
     }
 
@@ -198,6 +204,9 @@ internal static partial class ExecutionJobSubmissionHelper
         }
         catch (Exception ex)
         {
+            // Deliberately broad: progress bridging is a best-effort projection and must
+            // not fail the submission/reconciliation flow that already persisted the
+            // durable job record.
             if (logger != null)
             {
                 Log.ExecutionJobProgressBridgeFailed(logger, job.OperationId, ex);
@@ -313,16 +322,9 @@ internal static partial class ExecutionJobSubmissionHelper
             return false;
         }
 
-        foreach (var pair in submission.ResolvedParameters)
-        {
-            if (!current.Spec.Parameters.TryGetValue(pair.Key, out var existing)
-                || !string.Equals(existing, pair.Value, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return submission.ResolvedParameters.Any(pair =>
+            !current.Spec.Parameters.TryGetValue(pair.Key, out var existing)
+                || !string.Equals(existing, pair.Value, StringComparison.Ordinal));
     }
 
     internal static partial class Log
@@ -335,5 +337,8 @@ internal static partial class ExecutionJobSubmissionHelper
 
         [LoggerMessage(9042, LogLevel.Warning, "Exhausted provenance-merge retries for execution job {OperationId}; resolved parameters may not be pinned on the authoritative record")]
         public static partial void PostStartProvenanceMergeExhausted(ILogger logger, string operationId);
+
+        [LoggerMessage(9043, LogLevel.Warning, "Best-effort rollback of execution job {OperationId} failed; job TTL or manual intervention will repair")]
+        public static partial void RollbackFailed(ILogger logger, string operationId, Exception exception);
     }
 }

@@ -55,6 +55,8 @@ internal sealed partial class JobReconciliationService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: a single failed sweep must not crash this background
+                // service; log and retry on the next sweep interval.
                 Log.ReconciliationSweepFailed(logger, ex);
             }
 
@@ -98,12 +100,9 @@ internal sealed partial class JobReconciliationService(
                 continue;
             }
 
-            if (ShouldExpireHeartbeat(job, now))
+            if (ShouldExpireHeartbeat(job, now) && await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
             {
-                if (await HandleHeartbeatExpiryAsync(job, now, cancellationToken).ConfigureAwait(false))
-                {
-                    reconciled++;
-                }
+                reconciled++;
             }
         }
 
@@ -272,6 +271,10 @@ internal sealed partial class JobReconciliationService(
 
             cancellationTokens.Revoke(preFail.OperationId, snapshot.ClaimedBy!);
 
+            // Both catches below are deliberately broad: the durable job record already
+            // transitioned to Failed above, so a queue/log-store failure here is
+            // best-effort cleanup that must not fail the sweep — the stale-claim
+            // reconciler and log TTL cover the recovery path.
             try
             {
                 await jobQueue.RemoveAsync(preFail.OperationId, cancellationToken).ConfigureAwait(false);
@@ -346,6 +349,8 @@ internal sealed partial class JobReconciliationService(
         // store transition, before the queue write.
         cancellationTokens.Revoke(current.OperationId, snapshot.ClaimedBy!);
 
+        // Both catches below are deliberately broad — see HandleHeartbeatExpiryAsync
+        // above for the same best-effort cleanup rationale.
         try
         {
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
@@ -381,6 +386,9 @@ internal sealed partial class JobReconciliationService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: one misbehaving terminal callback must not stop the
+                // remaining callbacks from running, and the job's own terminal transition
+                // already persisted before this notification fan-out.
                 Log.TerminalCallbackFailed(logger, job.OperationId, ex);
             }
         }
@@ -415,6 +423,8 @@ internal sealed partial class JobReconciliationService(
 
         cancellationTokens.Revoke(job.OperationId, claimedBy);
 
+        // Both catches below are deliberately broad — see HandleHeartbeatExpiryAsync
+        // above for the same best-effort cleanup rationale.
         try
         {
             await jobQueue.RemoveAsync(job.OperationId, cancellationToken).ConfigureAwait(false);

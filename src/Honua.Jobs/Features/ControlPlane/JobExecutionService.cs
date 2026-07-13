@@ -84,15 +84,8 @@ internal sealed partial class JobExecutionService(
             return candidates[0];
         }
 
-        foreach (var candidate in candidates)
-        {
-            if (RuntimeProfiles.CanClaim(candidate.AcceptedRuntimeProfiles, runtimeProfile))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
+        return candidates.FirstOrDefault(candidate =>
+            RuntimeProfiles.CanClaim(candidate.AcceptedRuntimeProfiles, runtimeProfile));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -108,6 +101,8 @@ internal sealed partial class JobExecutionService(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                // Expected: host shutdown cancelled the infinite delay for this
+                // executor-less worker. Nothing to clean up — fall through to stop logging.
             }
 
             Log.WorkerStopped(logger, workerId);
@@ -152,6 +147,10 @@ internal sealed partial class JobExecutionService(
                     }
                     catch (Exception ex)
                     {
+                        // Deliberately broad: this is best-effort shutdown cleanup for a
+                        // single claimed job; a failure here must not prevent the worker
+                        // from breaking out of the claim loop, and the stale-claim
+                        // reconciler recovers the job if this cleanup fails.
                         Log.PreExecShutdownCleanupFailed(logger, claimedId, ex);
                     }
 
@@ -162,6 +161,8 @@ internal sealed partial class JobExecutionService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: one failed claim attempt (store/queue outage) must
+                // not crash the worker's claim loop; log and retry after the poll delay.
                 Log.ClaimLoopError(logger, ex);
             }
 
@@ -293,6 +294,9 @@ internal sealed partial class JobExecutionService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: the heartbeat pump is a background side effect of
+                // execution; a fault here must not prevent finalization from proceeding
+                // based on the executor's own outcome.
                 Log.HeartbeatPumpFaulted(logger, operationId, ex);
             }
         }
@@ -380,6 +384,9 @@ internal sealed partial class JobExecutionService(
         }
         catch (Exception ex)
         {
+            // Deliberately broad: any unhandled executor exception must be caught here so
+            // one job's failure routes through the retry/abandon policy instead of
+            // crashing the worker's claim loop.
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             Log.JobExecutionFailed(logger, operationId, ex);
@@ -435,6 +442,10 @@ internal sealed partial class JobExecutionService(
 
         cancellationTokens.Remove(operationId, workerId);
 
+        // Both catches below are deliberately broad: the durable job record already
+        // transitioned to its terminal state above, so a queue/log-store failure here
+        // is best-effort cleanup that must not fail finalization — the stale-claim
+        // reconciler and log TTL cover the recovery path.
         try
         {
             await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
@@ -500,6 +511,8 @@ internal sealed partial class JobExecutionService(
 
         cancellationTokens.Remove(operationId, workerId);
 
+        // Both catches below are deliberately broad — see FinalizeJobAsync above for the
+        // same best-effort cleanup rationale.
         try
         {
             await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
@@ -565,6 +578,8 @@ internal sealed partial class JobExecutionService(
 
             cancellationTokens.Remove(current.OperationId, workerId);
 
+            // Both catches below are deliberately broad — see FinalizeJobAsync above for the
+            // same best-effort cleanup rationale.
             try
             {
                 await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
@@ -717,6 +732,8 @@ internal sealed partial class JobExecutionService(
 
             cancellationTokens.Remove(latestBeforeFail.OperationId, workerId);
 
+            // Both catches below are deliberately broad — see FinalizeJobAsync above for the
+            // same best-effort cleanup rationale.
             try
             {
                 await jobQueue.RemoveAsync(latestBeforeFail.OperationId, cancellationToken).ConfigureAwait(false);
@@ -752,6 +769,9 @@ internal sealed partial class JobExecutionService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: one misbehaving terminal callback must not stop the
+                // remaining callbacks from running, and the job's own terminal transition
+                // already persisted before this notification fan-out.
                 Log.TerminalCallbackFailed(logger, job.OperationId, ex);
             }
         }
@@ -1031,6 +1051,8 @@ internal sealed partial class JobExecutionContext(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: a single failed heartbeat write must not stop the
+                // pump loop; log and retry on the next interval.
                 Log.HeartbeatWriteFailed(logger, operationId, ex);
             }
         }

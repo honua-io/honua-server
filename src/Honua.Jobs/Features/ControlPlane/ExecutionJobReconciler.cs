@@ -190,6 +190,8 @@ internal sealed partial class ExecutionJobReconciler(
             }
             catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
             {
+                // Expected: cancelling reconciliationCancellation above deliberately unblocks
+                // the lease-renewal loop's Task.Delay/RenewLeaseAsync calls. Nothing to log.
             }
 
             await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
@@ -383,6 +385,8 @@ internal sealed partial class ExecutionJobReconciler(
         }
         catch (Exception ex)
         {
+            // Deliberately broad: a progress-store failure here must not fail the retry
+            // reset itself — the job record still needs to be requeued for another attempt.
             Log.ExecutionJobProgressBridgeFailed(logger, job.OperationId, ex);
         }
 
@@ -417,6 +421,9 @@ internal sealed partial class ExecutionJobReconciler(
         }
         catch (Exception ex)
         {
+            // Deliberately broad: bridging progress is a best-effort side effect of
+            // reconciliation and must not fail the reconcile cycle that already persisted
+            // the durable job-status transition.
             Log.ExecutionJobProgressBridgeFailed(logger, updated.OperationId, ex);
         }
     }
@@ -609,6 +616,8 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
                     }
                     catch (Exception ex)
                     {
+                        // Deliberately broad: one job's reconciliation failure must not stop
+                        // the sweep from reconciling the remaining active jobs in this batch.
                         ExecutionJobReconciler.Log.ExecutionJobReconcileFailed(logger, job.OperationId, ex);
                     }
                 }
@@ -619,6 +628,8 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: a failure while listing/dispatching active jobs must not
+                // crash this background service; log and retry on the next poll interval.
                 ExecutionJobReconciler.Log.ExecutionJobPollLoopFailed(logger, ex);
             }
 

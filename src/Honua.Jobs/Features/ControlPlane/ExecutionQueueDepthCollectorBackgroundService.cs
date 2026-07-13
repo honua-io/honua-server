@@ -38,6 +38,8 @@ internal sealed partial class ExecutionQueueDepthCollectorBackgroundService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: a single failed sweep (store outage, telemetry error)
+                // must not crash this background service; log and retry next interval.
                 Log.CollectorSweepFailed(logger, ex);
             }
 

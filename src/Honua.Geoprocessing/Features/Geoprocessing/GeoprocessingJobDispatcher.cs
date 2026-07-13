@@ -266,7 +266,7 @@ internal sealed class GeoprocessingJobDispatcher
                     _progressStore,
                     ProgressRetention,
                     mismatchMessage,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 var failed = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
                 return failed ?? job;
