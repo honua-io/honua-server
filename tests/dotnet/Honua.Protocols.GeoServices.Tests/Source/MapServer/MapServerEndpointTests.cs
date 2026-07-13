@@ -319,7 +319,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_Post_ReturnsImageJson()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("bbox", "-180,-90,180,90"),
             new KeyValuePair<string, string>("size", "256,256"),
@@ -367,15 +367,16 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         estimate.ExceededTransferLimit.Should().BeFalse();
 
         // POST form-encoded equivalent must produce the same estimate.
+        using var postPayload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("levels", "0"),
+            new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+            new KeyValuePair<string, string>("maxTiles", "1"),
+        ]);
         var postResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize",
-            new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("levels", "0"),
-                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                new KeyValuePair<string, string>("maxTiles", "1"),
-            ]));
+            postPayload);
 
         var postContent = await postResponse.Content.ReadAsStringAsync();
         postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
@@ -433,15 +434,16 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         export.Results!.OutServiceUrl.Should().NotBeNull();
 
         // POST form-encoded equivalent must also succeed and write an archive.
+        using var postPayload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("levels", "0"),
+            new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+            new KeyValuePair<string, string>("maxTiles", "1"),
+        ]);
         var postResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles",
-            new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("levels", "0"),
-                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                new KeyValuePair<string, string>("maxTiles", "1"),
-            ]));
+            postPayload);
         var postContent = await postResponse.Content.ReadAsStringAsync();
         postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
         var postExport = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.ExportTilesResponse);
@@ -1044,7 +1046,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
     public async Task MapServer_Identify_Post_ReturnsResults()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("geometry", "-122.5,37.5"),
             new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
@@ -1164,7 +1166,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var oversizedTag = new string('a', 2500);
         var geometry = $"{{\"x\":-122.5,\"y\":37.5,\"tag\":\"{oversizedTag}\"}}";
 
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("geometry", geometry),
             new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
@@ -1263,7 +1265,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_Post_ReturnsLegendLayers()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json")
         ]);
@@ -1299,13 +1301,14 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
 
         // POST form-encoded equivalent must return the same legend layers.
+        using var postPayload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("size", "16"),
+        ]);
         var postResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryLegends",
-            new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("size", "16"),
-            ]));
+            postPayload);
         var postContent = await postResponse.Content.ReadAsStringAsync();
         postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
         var postLegend = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.LegendResponse);
@@ -1383,7 +1386,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Post_ReturnsFeatures()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json")
@@ -1424,7 +1427,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/query")]
     public async Task MapServer_ServiceQuery_PostWithLayerId_ReturnsFeatures()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("layerId", WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new KeyValuePair<string, string>("where", "1=1"),
@@ -1449,7 +1452,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Post_HonorsQueryStringParameters()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json")
@@ -1485,7 +1488,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Post_WithUnsupportedBodyParameter_ReturnsBadRequest()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json"),
@@ -1512,9 +1515,10 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
-            new StringContent(payload, Encoding.UTF8, "text/plain"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
@@ -1566,9 +1570,10 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Post_WithInvalidJson_ReturnsBadRequest()
     {
+        using var requestContent = new StringContent("{\"where\":\"1=1\"", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
-            new StringContent("{\"where\":\"1=1\"", Encoding.UTF8, "application/json"));
+            requestContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1617,7 +1622,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/find")]
     public async Task MapServer_Find_Post_ReturnsResponse()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("searchText", "test"),
             new KeyValuePair<string, string>("layers", WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -1761,9 +1766,10 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/queryDomains")]
     public async Task MapServer_QueryDomains_Post_ReturnsDomainsArray()
     {
+        using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains",
-            new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+            payload);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1853,15 +1859,16 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/generateRenderer")]
     public async Task MapServer_ServiceGenerateRenderer_PostWithLayerId_ReturnsClassBreaksRenderer()
     {
+        using var payload = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("layerId", WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture)),
+            new KeyValuePair<string, string>(
+                "classificationDef",
+                """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""")
+        ]);
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer",
-            new FormUrlEncodedContent([
-                new KeyValuePair<string, string>("f", "json"),
-                new KeyValuePair<string, string>("layerId", WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture)),
-                new KeyValuePair<string, string>(
-                    "classificationDef",
-                    """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""")
-            ]));
+            payload);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1930,9 +1937,10 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer")]
     public async Task MapServer_GenerateRenderer_PostWithoutClassificationDef_ReturnsSimpleRenderer()
     {
+        using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/generateRenderer",
-            new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+            payload);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1966,13 +1974,14 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords")]
     public async Task MapServer_QueryRelatedRecords_Post_ReturnsRelatedRecordGroups()
     {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("objectIds", "1"),
+            new KeyValuePair<string, string>("relationshipId", "1")
+        ]);
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryRelatedRecords",
-            new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("objectIds", "1"),
-                new KeyValuePair<string, string>("relationshipId", "1")
-            ]));
+            payload);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2020,13 +2029,14 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments")]
     public async Task MapServer_QueryAttachments_Post_ReturnsAttachmentGroups()
     {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("objectIds", "1"),
+            new KeyValuePair<string, string>("f", "json")
+        ]);
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryAttachments",
-            new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("objectIds", "1"),
-                new KeyValuePair<string, string>("f", "json")
-            ]));
+            payload);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -2048,10 +2058,13 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(400);
     }
 
-    private Task<HttpResponseMessage> PostTextPlainJsonAsync(string operationPath)
-        => _fixture.Client.PostAsync(
+    private async Task<HttpResponseMessage> PostTextPlainJsonAsync(string operationPath)
+    {
+        using var content = new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain");
+        return await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer{operationPath}",
-            new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain"));
+            content);
+    }
 
     private async Task<string> SeedGenerateKmlGeometryServiceAsync()
     {

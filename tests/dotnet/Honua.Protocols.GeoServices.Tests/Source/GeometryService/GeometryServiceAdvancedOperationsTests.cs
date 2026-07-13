@@ -46,9 +46,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -84,9 +85,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/union",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -128,9 +130,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/clip",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -163,9 +166,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var clipResponse = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/clip",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         clipResponse.Be200Ok();
         var clipContent = await clipResponse.Content.ReadAsStringAsync();
@@ -207,9 +211,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/clip",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -243,9 +248,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -287,9 +293,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -319,9 +326,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -346,9 +354,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -376,9 +385,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -409,9 +419,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -448,9 +459,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -475,9 +487,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -505,9 +518,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -571,9 +585,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -606,9 +621,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -633,9 +649,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -676,9 +693,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/union",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -703,9 +721,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/union",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -727,9 +746,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/union",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -774,9 +794,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -804,9 +825,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -831,9 +853,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -854,9 +877,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -875,9 +899,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -897,9 +922,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/lengths",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
 
@@ -935,9 +961,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/intersect",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -970,9 +997,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/difference",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -1005,9 +1033,10 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
         }
         """;
 
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/densify",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
     }

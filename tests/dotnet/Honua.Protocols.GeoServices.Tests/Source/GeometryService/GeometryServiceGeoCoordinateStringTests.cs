@@ -39,7 +39,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "MGRS"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
@@ -64,7 +64,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "USNG"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
@@ -108,7 +108,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "MGRS"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
@@ -131,7 +131,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "GARS"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
@@ -144,7 +144,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
     public async Task ToGeoCoordinateString_MissingCoordinates_Returns400()
     {
         var body = """{"sr": 4326, "conversionType": "MGRS"}""";
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
@@ -163,7 +163,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "MGRS"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", content);
 
@@ -209,8 +209,9 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "MGRS"
         }
         """;
+        using var toContent = new StringContent(toBody, Encoding.UTF8, "application/json");
         var toResponse = await _fixture.Client.PostAsync(
-            "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", new StringContent(toBody, Encoding.UTF8, "application/json"));
+            "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", toContent);
         toResponse.Be200Ok();
         var encoded = (await DeserializeToAsync(toResponse))!.Strings![0];
 
@@ -221,8 +222,9 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "conversionType": "MGRS"
         }
         """;
+        using var fromContent = new StringContent(fromBody, Encoding.UTF8, "application/json");
         var fromResponse = await _fixture.Client.PostAsync(
-            "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", new StringContent(fromBody, Encoding.UTF8, "application/json"));
+            "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", fromContent);
         fromResponse.Be200Ok();
         var decoded = (await DeserializeFromAsync(fromResponse))!.Coordinates![0];
 
@@ -236,7 +238,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
     public async Task FromGeoCoordinateString_MissingStrings_Returns400()
     {
         var body = """{"sr": 4326, "conversionType": "MGRS"}""";
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", content);
 

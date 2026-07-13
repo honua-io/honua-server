@@ -93,8 +93,8 @@ public sealed class TileExportReplayPlanTests
 
         foreach (var plan in invalid)
         {
-            var act = () => TileExportExecutionSpecBuilder.Build(plan);
-            act.Should().Throw<ArgumentException>().WithMessage("*zoom levels*");
+            FluentActions.Invoking(() => TileExportExecutionSpecBuilder.Build(plan))
+                .Should().Throw<ArgumentException>().WithMessage("*zoom levels*");
         }
     }
 
