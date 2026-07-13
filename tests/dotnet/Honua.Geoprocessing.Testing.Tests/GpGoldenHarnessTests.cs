@@ -21,7 +21,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     private readonly string _scratch =
-        Path.Combine(Path.GetTempPath(), "honua-gp-golden-tests-" + Guid.NewGuid().ToString("N"));
+        Path.Join(Path.GetTempPath(), "honua-gp-golden-tests-" + Guid.NewGuid().ToString("N"));
 
     public GpGoldenHarnessTests() => Directory.CreateDirectory(_scratch);
 
@@ -103,7 +103,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     [UnitTest]
     public async Task UpdateMode_RegeneratesGolden_ThenAsserts()
     {
-        var goldenPath = Path.Combine(_scratch, "regen.geojson");
+        var goldenPath = Path.Join(_scratch, "regen.geojson");
         File.WriteAllText(goldenPath, "{\"type\":\"Feature\",\"geometry\":null,\"properties\":{}}"); // stale
 
         var fixture = BufferFixture("regen", distance: "10", goldenPath, GoldenTolerance.Default);
@@ -125,7 +125,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     public async Task ScalarStructuralGolden_NumericWithinTolerance_Passes()
     {
         // A scalar/JSON artifact: numbers diverge by < tolerance → still a match.
-        var goldenPath = Path.Combine(_scratch, "area.json");
+        var goldenPath = Path.Join(_scratch, "area.json");
         File.WriteAllText(goldenPath, "{\"area\":100.0000000,\"unit\":\"m2\"}");
 
         var executor = StubArtifactExecutor.Json("metric.area", "{\"area\":100.0000004,\"unit\":\"m2\"}");
@@ -141,7 +141,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     [UnitTest]
     public async Task ScalarStructuralGolden_NumericOutsideTolerance_FailsWithLocatedDiff()
     {
-        var goldenPath = Path.Combine(_scratch, "area-bad.json");
+        var goldenPath = Path.Join(_scratch, "area-bad.json");
         File.WriteAllText(goldenPath, "{\"area\":100.0,\"unit\":\"m2\"}");
 
         var executor = StubArtifactExecutor.Json("metric.area", "{\"area\":142.5,\"unit\":\"m2\"}");
@@ -160,7 +160,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     [UnitTest]
     public async Task ScalarStructuralGolden_CsvText_DiffsByLine()
     {
-        var goldenPath = Path.Combine(_scratch, "convert.csv");
+        var goldenPath = Path.Join(_scratch, "convert.csv");
         File.WriteAllText(goldenPath, "name\na\nb\n");
 
         var executor = StubArtifactExecutor.Csv("convert.csv", "name\na\nZZZ\n");
@@ -177,7 +177,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     [UnitTest]
     public async Task RunFailure_IsClassified_NotAComparison()
     {
-        var goldenPath = Path.Combine(_scratch, "never.json");
+        var goldenPath = Path.Join(_scratch, "never.json");
         var executor = StubArtifactExecutor.Failing("broken.op", "boom: bad inputs");
         var fixture = new GoldenFixture(
             "broken", "broken.op",
@@ -193,7 +193,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
     [UnitTest]
     public async Task MissingGolden_IsClassified()
     {
-        var goldenPath = Path.Combine(_scratch, "absent.geojson");
+        var goldenPath = Path.Join(_scratch, "absent.geojson");
         var fixture = BufferFixture("absent", distance: "10", goldenPath, GoldenTolerance.Default);
 
         var result = await new GpProcessTestRunner(BufferExecutors()).RunAsync(fixture);
@@ -206,7 +206,7 @@ public sealed class GpGoldenHarnessTests : IDisposable
 
     private async Task<string> GenerateBufferGoldenAsync(string id, string distance)
     {
-        var goldenPath = Path.Combine(_scratch, id + ".geojson");
+        var goldenPath = Path.Join(_scratch, id + ".geojson");
         var fixture = BufferFixture(id, distance, goldenPath, GoldenTolerance.Default);
         var generated = await new GpProcessTestRunner(BufferExecutors())
             .RunAsync(fixture, GoldenUpdateMode.Update);
