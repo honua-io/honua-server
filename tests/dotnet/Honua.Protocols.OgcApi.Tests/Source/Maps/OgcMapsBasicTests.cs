@@ -79,12 +79,9 @@ public class OgcMapsBasicTests : IAsyncLifetime
                 hreflang.ValueKind.Should().Be(JsonValueKind.String);
             }
 
-            foreach (var name in new[] { "rel", "type", "title" })
+            foreach (var name in new[] { "rel", "type", "title" }.Where(name => link.TryGetProperty(name, out _)))
             {
-                if (link.TryGetProperty(name, out var value))
-                {
-                    value.ValueKind.Should().NotBe(JsonValueKind.Null);
-                }
+                link.GetProperty(name).ValueKind.Should().NotBe(JsonValueKind.Null);
             }
         }
     }

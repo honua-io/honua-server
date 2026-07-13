@@ -137,7 +137,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         var clip = _exportQueries.Single().ClipRegion;
         clip.Should().NotBeNull();
         clip!.Value.Srid.Should().Be(4326);
-        var geometry = new WKBReader().Read(clip.Value.Geometry);
+        var geometry = new WKBReader().Read(clip!.Value.Geometry);
         geometry.GeometryType.Should().Be("MultiPolygon");
         geometry.NumGeometries.Should().Be(2);
     }
@@ -159,7 +159,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         resolutionQuery.ClipRegion!.Value.Srid.Should().Be(3857);
         resolutionQuery.PixelSize.Should().NotBeNull();
         resolutionQuery.PixelSize!.Value.Width.Should().BeApproximately(0.003125, 0.000000001);
-        resolutionQuery.PixelSize.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
+        resolutionQuery.PixelSize!.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
 
         _exportQueries.Clear();
         response = await _fixture.Client.GetAsync(
@@ -173,7 +173,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         scaleFactorQuery.ClipRegion!.Value.Srid.Should().Be(3857);
         scaleFactorQuery.PixelSize.Should().NotBeNull();
         scaleFactorQuery.PixelSize!.Value.Width.Should().BeApproximately(0.003125, 0.000000001);
-        scaleFactorQuery.PixelSize.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
+        scaleFactorQuery.PixelSize!.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
     }
 
     [IntegrationTest]

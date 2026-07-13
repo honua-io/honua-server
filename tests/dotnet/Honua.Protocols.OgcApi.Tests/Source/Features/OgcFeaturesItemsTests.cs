@@ -176,6 +176,9 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
 
         // If features exist, they should match the filter criteria
+        // Not rewritten as .Where(...): the nested TryGetProperty pattern extracts
+        // two optional values (properties, then name) and a Where/Select chain would
+        // have to repeat the same lookups, reading less clearly than the nested if.
         foreach (var feature in features)
         {
             if (feature.TryGetProperty("properties", out var properties) &&
@@ -274,9 +277,8 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
         features.Should().NotBeEmpty();
 
-        foreach (var feature in features)
+        foreach (var properties in features.Select(feature => feature.GetProperty("properties")))
         {
-            var properties = feature.GetProperty("properties");
             properties.GetProperty("category").GetString().Should().Be("test");
         }
     }

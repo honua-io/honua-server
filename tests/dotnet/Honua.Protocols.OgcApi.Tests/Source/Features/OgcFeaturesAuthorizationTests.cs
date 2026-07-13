@@ -82,9 +82,10 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
         };
 
         var content = JsonSerializer.Serialize(batch, OgcJsonContext.Default.BatchRequest);
+        using var requestContent = new StringContent(content, Encoding.UTF8, MediaTypes.Json);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items/batch",
-            new StringContent(content, Encoding.UTF8, MediaTypes.Json));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

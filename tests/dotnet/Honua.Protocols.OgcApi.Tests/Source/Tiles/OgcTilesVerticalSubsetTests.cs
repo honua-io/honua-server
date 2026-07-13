@@ -30,8 +30,8 @@ public sealed class OgcTilesVerticalSubsetTests
         error.Should().BeNull();
         selection.Should().NotBeNull();
         selection!.Value.Min.Should().Be(100);
-        selection.Value.Max.Should().Be(100);
-        selection.Value.IsInstant.Should().BeTrue();
+        selection!.Value.Max.Should().Be(100);
+        selection!.Value.IsInstant.Should().BeTrue();
     }
 
     [UnitTest]
@@ -45,8 +45,8 @@ public sealed class OgcTilesVerticalSubsetTests
         error.Should().BeNull();
         selection.Should().NotBeNull();
         selection!.Value.Min.Should().Be(100);
-        selection.Value.Max.Should().Be(300);
-        selection.Value.IsInstant.Should().BeFalse();
+        selection!.Value.Max.Should().Be(300);
+        selection!.Value.IsInstant.Should().BeFalse();
     }
 
     [UnitTest]
