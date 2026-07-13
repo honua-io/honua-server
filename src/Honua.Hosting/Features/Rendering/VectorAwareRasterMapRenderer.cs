@@ -295,10 +295,9 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     {
         if (request.ResolvedLayers is { } resolved)
         {
-            foreach (var entry in resolved)
+            foreach (var entry in resolved.Where(entry => entry.LayerId == layerId))
             {
-                if (entry.LayerId == layerId &&
-                    snapshot.Index.ResourcesById.TryGetValue(entry.ResourceId, out var byId))
+                if (snapshot.Index.ResourcesById.TryGetValue(entry.ResourceId, out var byId))
                 {
                     return byId;
                 }

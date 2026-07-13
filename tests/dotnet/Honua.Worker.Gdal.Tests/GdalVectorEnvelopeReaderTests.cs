@@ -100,4 +100,21 @@ public sealed class GdalVectorEnvelopeReaderTests
         env.MaxX.Should().Be(2);
         env.MaxY.Should().Be(3);
     }
+
+    [UnitTest]
+    public void TryReadEnvelope_AttributeNamedCoordinatesOrBbox_DoesNotWidenEnvelope()
+    {
+        // Codex review P2 (#2826): feature attributes named "coordinates"/"bbox" live under
+        // "properties" and must not contribute to the envelope — only geometry members count.
+        const string json =
+            "{\"type\":\"Feature\","
+            + "\"properties\":{\"coordinates\":[[-1000000,-1000000],[1000000,1000000]],\"bbox\":[-9e6,-9e6,9e6,9e6]},"
+            + "\"geometry\":{\"type\":\"Point\",\"coordinates\":[2,3]}}";
+
+        TryRead(json, out var env).Should().BeTrue();
+        env.MinX.Should().Be(2);
+        env.MinY.Should().Be(3);
+        env.MaxX.Should().Be(2);
+        env.MaxY.Should().Be(3);
+    }
 }

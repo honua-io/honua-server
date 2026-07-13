@@ -87,15 +87,10 @@ public sealed class RasterRenderingUnavailableException : Exception
     {
         for (var current = exception; current is not null; current = current.InnerException)
         {
-            if (current is AggregateException aggregate)
+            if (current is AggregateException aggregate &&
+                aggregate.InnerExceptions.Any(IsNativeLoadFailure))
             {
-                foreach (var inner in aggregate.InnerExceptions)
-                {
-                    if (IsNativeLoadFailure(inner))
-                    {
-                        return true;
-                    }
-                }
+                return true;
             }
 
             // A missing/incompatible native library surfaces as one of these when the

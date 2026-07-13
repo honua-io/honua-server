@@ -38,7 +38,10 @@ internal static class GdalVectorEnvelopeReader
     /// admitted and bounded only by the input/timeout backstop — when the payload holds
     /// no readable positions or is not parseable as JSON (GDAL then adjudicates the same
     /// bytes). Only the first two ordinates of each position (X, Y) are considered;
-    /// elevation and any non-finite ordinate are ignored.
+    /// elevation and any non-finite ordinate are ignored. Feature attribute payloads are
+    /// excluded: a <c>properties</c> member's entire subtree is skipped, so ordinary
+    /// attributes named <c>coordinates</c> or <c>bbox</c> never contribute to the envelope
+    /// (GeoJSON geometry members can never legally live under <c>properties</c>).
     /// </summary>
     public static bool TryReadEnvelope(ReadOnlySpan<byte> geojson, out Envelope envelope)
     {
@@ -58,7 +61,14 @@ internal static class GdalVectorEnvelopeReader
                     continue;
                 }
 
-                if (reader.ValueTextEquals("coordinates"))
+                if (reader.ValueTextEquals("properties"))
+                {
+                    // Skip the feature-attribute subtree wholesale so attribute keys that
+                    // happen to be named "coordinates"/"bbox" cannot pollute the envelope.
+                    reader.Read();
+                    reader.Skip();
+                }
+                else if (reader.ValueTextEquals("coordinates"))
                 {
                     found |= ScanCoordinates(ref reader, ref minX, ref minY, ref maxX, ref maxY);
                 }

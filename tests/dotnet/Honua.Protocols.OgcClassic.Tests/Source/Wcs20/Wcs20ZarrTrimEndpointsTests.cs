@@ -186,7 +186,7 @@ public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime
                 for (var column = 0; column < columns; column++)
                 {
                     var offset = ((level * rows + row) * columns + column) * sizeof(float);
-                    Buffer.BlockCopy(BitConverter.GetBytes((float)(level * 1000 + row * 10 + column)), 0, values, offset, sizeof(float));
+                    Buffer.BlockCopy(BitConverter.GetBytes(level * 1000f + row * 10f + column), 0, values, offset, sizeof(float));
                 }
             }
         }

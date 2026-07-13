@@ -87,7 +87,7 @@ internal static class GdalOutputGridGuard
         // output size is pixels × 8. Compare via division to avoid an Int64 overflow on
         // the multiply when the pixel caps are configured very high.
         const long BytesPerFloat64Pixel = 8L;
-        if (pixels > options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
+        if (pixels > (double)options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
         {
             error = $"estimated output grid size {pixels.ToString(CultureInfo.InvariantCulture)} pixels × 8 bytes/pixel (single-band Float64) exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
             return false;
