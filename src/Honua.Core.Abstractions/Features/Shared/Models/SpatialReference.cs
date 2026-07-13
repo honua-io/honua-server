@@ -77,6 +77,15 @@ public readonly record struct SpatialReference
     /// Whether this is a geographic (lat/lon) coordinate system.
     /// Checks WKT first (most reliable), then falls back to EPSG code heuristics.
     /// </summary>
+    /// <remarks>
+    /// When this instance carries WKT the classification is authoritative. Without WKT it falls back
+    /// to the static <see cref="GeographicSridClassifier"/> allowlist (via
+    /// <see cref="IsGeographicByWkid(int)"/>). This is a <b>static fallback-tier</b> classifier
+    /// (#2794): <see cref="SpatialReference"/> is a value type and cannot inject the async,
+    /// registry-backed <see cref="IGeographicSridClassifier"/>. DI-reachable call sites that need to
+    /// classify a bare EPSG code with no WKT should prefer <see cref="IGeographicSridClassifier"/>,
+    /// which resolves arbitrary codes from the live registry.
+    /// </remarks>
     public readonly bool IsGeographic => TryClassifyWkt(out var isGeographic)
         ? isGeographic
         : IsGeographicByWkid(Wkid);

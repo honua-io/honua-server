@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 using MeasureSpace = Honua.Protocols.GeoServices.ImageServer.Services.ImageServerMensurationMath.MeasureSpace;
+using IGeographicSridClassifier = Honua.Core.Features.Shared.Models.IGeographicSridClassifier;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -43,17 +44,39 @@ internal sealed class ImageServerMeasureHandler
     private readonly ILogger<ImageServerMeasureHandler> _logger;
     private readonly IElevationService? _elevationService;
     private readonly ICoordinateTransformService? _transformService;
+    private readonly IGeographicSridClassifier? _geographicSridClassifier;
 
     public ImageServerMeasureHandler(
         IRasterStore rasterStore,
         ILogger<ImageServerMeasureHandler> logger,
         IElevationService? elevationService = null,
-        ICoordinateTransformService? transformService = null)
+        ICoordinateTransformService? transformService = null,
+        IGeographicSridClassifier? geographicSridClassifier = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _elevationService = elevationService;
         _transformService = transformService;
+        _geographicSridClassifier = geographicSridClassifier;
+    }
+
+    /// <summary>
+    /// Resolves whether <paramref name="srid"/> measures as geographic (lon/lat degrees) for the
+    /// offline mensuration path, preferring the registry-backed
+    /// <see cref="IGeographicSridClassifier"/> (#2794) and falling back to the static
+    /// <see cref="ImageServerMensurationMath.IsGeographicSrid(int)"/> heuristic when no classifier
+    /// is injected (e.g. read-only providers without a CRS registry).
+    /// </summary>
+    private async ValueTask<bool> ResolveSridIsGeographicAsync(int srid, CancellationToken cancellationToken)
+    {
+        if (_geographicSridClassifier is not null)
+        {
+            return await _geographicSridClassifier
+                .IsGeographicForMeasurementAsync(srid, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return ImageServerMensurationMath.IsGeographicSrid(srid);
     }
 
     /// <summary>
@@ -120,7 +143,12 @@ internal sealed class ImageServerMeasureHandler
                     raster.Name, fromGeometry.Points[0], toGeometry!.Value.Points[0], linearUnit, angularUnit, cancellationToken).ConfigureAwait(false),
                 "esrimensurationareaandperimeter" => await BuildAreaResponseAsync(
                     raster.Name, fromGeometry, linearUnit, areaUnit, cancellationToken).ConfigureAwait(false),
-                "esrimensurationcentroid" => BuildPointResponse(raster.Name, CalculateCentroid(fromGeometry)),
+                "esrimensurationcentroid" => BuildPointResponse(
+                    raster.Name,
+                    CalculateCentroid(
+                        fromGeometry,
+                        fromGeometry.Srid is int centroidSrid
+                            && await ResolveSridIsGeographicAsync(centroidSrid, cancellationToken).ConfigureAwait(false))),
                 _ => null
             };
 
@@ -511,7 +539,7 @@ internal sealed class ImageServerMeasureHandler
                normalized.Contains("height", StringComparison.Ordinal);
     }
 
-    private static MeasurePoint CalculateCentroid(MeasureGeometry geometry)
+    private static MeasurePoint CalculateCentroid(MeasureGeometry geometry, bool sridIsGeographic)
     {
         var points = geometry.Points;
         var ring = new (double X, double Y)[points.Length];
@@ -523,7 +551,9 @@ internal sealed class ImageServerMeasureHandler
         // Centroid is returned in the request's spatial reference, so it is computed directly
         // in the input coordinate space (the signed-area / shoelace centroid, not a vertex mean).
         // Geographic inputs unwrap longitudes so antimeridian-crossing rings do not skew the result.
-        var unwrapLongitudes = geometry.Srid is int srid && ImageServerMensurationMath.IsGeographicSrid(srid);
+        // The geographic determination is resolved by the caller through the registry-backed
+        // IGeographicSridClassifier (#2794), falling back to the static heuristic when unavailable.
+        var unwrapLongitudes = geometry.Srid is not null && sridIsGeographic;
         var (centroidX, centroidY) = ImageServerMensurationMath.SignedAreaCentroid(ring, unwrapLongitudes);
         return new MeasurePoint(centroidX, centroidY, null, geometry.Srid);
     }
@@ -571,7 +601,8 @@ internal sealed class ImageServerMeasureHandler
     {
         if (point.Srid is int srid)
         {
-            if (ImageServerMensurationMath.TryConvertToLonLat(point.X, point.Y, srid, out var lon, out var lat))
+            var sridIsGeographic = await ResolveSridIsGeographicAsync(srid, cancellationToken).ConfigureAwait(false);
+            if (ImageServerMensurationMath.TryConvertToLonLat(point.X, point.Y, srid, sridIsGeographic, out var lon, out var lat))
             {
                 return (lon, lat, MeasureSpace.Geodesic);
             }
@@ -603,13 +634,14 @@ internal sealed class ImageServerMeasureHandler
         var points = geometry.Points;
         if (geometry.Srid is int srid)
         {
+            var sridIsGeographic = await ResolveSridIsGeographicAsync(srid, cancellationToken).ConfigureAwait(false);
             if (points.Length > 0 &&
-                ImageServerMensurationMath.TryConvertToLonLat(points[0].X, points[0].Y, srid, out _, out _))
+                ImageServerMensurationMath.TryConvertToLonLat(points[0].X, points[0].Y, srid, sridIsGeographic, out _, out _))
             {
                 var coordinates = new (double X, double Y)[points.Length];
                 for (var i = 0; i < points.Length; i++)
                 {
-                    ImageServerMensurationMath.TryConvertToLonLat(points[i].X, points[i].Y, srid, out var lon, out var lat);
+                    ImageServerMensurationMath.TryConvertToLonLat(points[i].X, points[i].Y, srid, sridIsGeographic, out var lon, out var lat);
                     coordinates[i] = (lon, lat);
                 }
 
