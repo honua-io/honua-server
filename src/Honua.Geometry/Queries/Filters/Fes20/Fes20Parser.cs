@@ -102,12 +102,9 @@ public static class Fes20Parser
             throw new Fes20ParseException(ex.Message, ex);
         }
 
-        foreach (var child in element.Elements())
+        foreach (var child in element.Elements().Where(c => c.Name.NamespaceName == FesNamespace))
         {
-            if (child.Name.NamespaceName == FesNamespace)
-            {
-                ValidateExpressionDepth(child, depth + 1);
-            }
+            ValidateExpressionDepth(child, depth + 1);
         }
     }
 

@@ -531,15 +531,7 @@ public sealed class ODataFilterParser
 
                 return true;
             case GeometryCollection collection:
-                foreach (var component in collection.Geometries)
-                {
-                    if (!IsGeographyCompatible(component))
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
+                return collection.Geometries.All(IsGeographyCompatible);
             default:
                 return false;
         }
@@ -673,6 +665,10 @@ public sealed class ODataFilterParser
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: wkt is untrusted OData filter input, and WKT
+            // parsing/WKB writing can throw a variety of format/argument exceptions for
+            // malformed geometry. Wrap as a clean, reported ODataFilterParseException instead
+            // of leaking internals.
             throw new ODataFilterParseException($"Invalid geometry literal '{value}': {ex.Message}", position);
         }
     }
@@ -686,13 +682,7 @@ public sealed class ODataFilterParser
 
         if (geometry is MultiPolygon multiPolygon)
         {
-            foreach (var item in multiPolygon.Geometries)
-            {
-                if (item is Polygon poly && !IsLinearRingValid(poly.ExteriorRing))
-                {
-                    return false;
-                }
-            }
+            return multiPolygon.Geometries.All(item => item is not Polygon poly || IsLinearRingValid(poly.ExteriorRing));
         }
 
         return true;

@@ -17,21 +17,8 @@ public sealed record SpecParseResult(
     /// <summary>
     /// <c>true</c> when no diagnostic has <see cref="SpecDiagnosticSeverity.Error"/> severity.
     /// </summary>
-    public bool IsSuccess
-    {
-        get
-        {
-            foreach (var diagnostic in Diagnostics)
-            {
-                if (diagnostic.Severity == SpecDiagnosticSeverity.Error)
-                {
-                    return false;
-                }
-            }
-
-            return Document is not null;
-        }
-    }
+    public bool IsSuccess =>
+        Document is not null && !Diagnostics.Any(d => d.Severity == SpecDiagnosticSeverity.Error);
 }
 
 /// <summary>
@@ -43,19 +30,5 @@ public sealed record SpecValidationResult(IReadOnlyList<SpecDiagnostic> Diagnost
     /// <summary>
     /// <c>true</c> when no diagnostic has <see cref="SpecDiagnosticSeverity.Error"/> severity.
     /// </summary>
-    public bool IsValid
-    {
-        get
-        {
-            foreach (var diagnostic in Diagnostics)
-            {
-                if (diagnostic.Severity == SpecDiagnosticSeverity.Error)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-    }
+    public bool IsValid => !Diagnostics.Any(d => d.Severity == SpecDiagnosticSeverity.Error);
 }

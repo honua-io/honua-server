@@ -142,6 +142,9 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
 
     private async Task RunAsync(ApplyRunContext ctx, CancellationTokenSource cts)
     {
+        // Server-owned CTS: disposed via this using declaration when RunAsync's background
+        // task completes, instead of a manual cts.Dispose() in the finally block below.
+        using var ctsScope = cts;
         using var activity = SpecTelemetry.ActivitySource.StartActivity(SpecTelemetry.ApplyActivityName);
         activity?.SetTag("honua.spec.apply_token", ctx.ApplyToken);
         activity?.SetTag("honua.spec.plan_id", ctx.Plan.PlanId);
@@ -244,6 +247,10 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                 new KeyValuePair<string, object?>("outcome", SpecApplyEventKind.ApplyCancelled.ToString()));
             SpecTelemetry.SetSuccess(activity);
         }
+        // Broad catch is intentional: this is the top-level run loop for a background apply
+        // (node execution is a plugin surface), so any unhandled exception type must still
+        // produce a logged, reported terminal event rather than crashing the background task
+        // silently.
         catch (Exception ex)
         {
             SpecTelemetry.RecordException(activity, ex);
@@ -292,7 +299,6 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         {
             ctx.Writer.TryComplete();
             _tokens.Release(ctx.ApplyToken);
-            cts.Dispose();
         }
     }
 
@@ -387,24 +393,11 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         IReadOnlyDictionary<string, NodeRunState> nodeState)
     {
         var plannedNode = nodesById[nodeId];
-        foreach (var dep in plannedNode.DependsOn)
-        {
-            var state = nodeState[dep];
-            if (state is NodeRunState.Pending or NodeRunState.Running)
-            {
-                return false;
-            }
 
-            if (state is NodeRunState.Failed or NodeRunState.Skipped)
-            {
-                // Upstream failed/skipped — this node must be short-circuited
-                // as skipped in the same batch, so IsReady returns true so the
-                // batch can handle it explicitly. We only gate on running/pending.
-                return true;
-            }
-        }
-
-        return true;
+        // A node is ready once no dependency is still Pending/Running. Failed/Skipped
+        // dependencies also count as "ready" (returns true) so the batch can explicitly
+        // short-circuit this node as skipped rather than waiting on it forever.
+        return !plannedNode.DependsOn.Any(dep => nodeState[dep] is NodeRunState.Pending or NodeRunState.Running);
     }
 
     private async Task ProcessNodeAsync(
@@ -428,15 +421,12 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             return;
         }
 
-        foreach (var dep in plannedNode.DependsOn)
+        if (plannedNode.DependsOn.Any(dep => nodeState[dep] is NodeRunState.Failed or NodeRunState.Skipped))
         {
-            if (nodeState[dep] is NodeRunState.Failed or NodeRunState.Skipped)
-            {
-                nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
-                Interlocked.Increment(ref counters.SkippedRef);
-                await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.UpstreamFailed).ConfigureAwait(false);
-                return;
-            }
+            nodeState[plannedNode.NodeId] = NodeRunState.Skipped;
+            Interlocked.Increment(ref counters.SkippedRef);
+            await EmitSkippedAsync(ctx, sequenceRef, plannedNode.NodeId, SkipReason.UpstreamFailed).ConfigureAwait(false);
+            return;
         }
 
         // Reserved kinds (Dataset/Service/App) always hard-fail in S1. The
@@ -681,6 +671,9 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                 SpecTelemetry.RecordException(nodeActivity, specEx);
                 await EmitFailedAsync(ctx, sequenceRef, plannedNode.NodeId, specEx.ToWarning()).ConfigureAwait(false);
             }
+            // Broad catch is intentional: the compute executor is a plugin surface (arbitrary
+            // operator implementations), so any exception type must be turned into a clean,
+            // logged, per-node "failed" event instead of aborting the whole apply run.
             catch (Exception ex)
             {
                 nodeStopwatch.Stop();
@@ -718,15 +711,10 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         // The planner emits `mutable-source-no-pin` on a per-node basis; any
         // per-node Warning with that code means the artifact is derived from a
         // mutable source without a pin and must degrade via TTL.
-        foreach (var warning in plannedNode.Warnings)
-        {
-            if (string.Equals(warning.Code, SpecDiagnosticCodes.MutableSourceNoPin, StringComparison.Ordinal))
-            {
-                return payload with { Ttl = ttl };
-            }
-        }
+        var isMutableSourceNoPin = plannedNode.Warnings.Any(
+            warning => string.Equals(warning.Code, SpecDiagnosticCodes.MutableSourceNoPin, StringComparison.Ordinal));
 
-        return payload;
+        return isMutableSourceNoPin ? payload with { Ttl = ttl } : payload;
     }
 
     private static Dictionary<string, CachedArtifactRef> BuildInputs(
@@ -738,6 +726,9 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             return new Dictionary<string, CachedArtifactRef>(StringComparer.Ordinal);
         }
 
+        // Kept as an imperative loop (not Where/Select): TryGetValue does a single dictionary
+        // lookup per dependency, whereas a LINQ Where(cachedInputs.ContainsKey) + indexer would
+        // require two lookups per hit on this per-node hot path.
         var result = new Dictionary<string, CachedArtifactRef>(plannedNode.DependsOn.Count, StringComparer.Ordinal);
         foreach (var dep in plannedNode.DependsOn)
         {

@@ -345,18 +345,14 @@ internal sealed class StreamingGeoJsonReader
 
             lastConsumed = (int)reader.BytesConsumed;
 
-            if (reader.TokenType == JsonTokenType.PropertyName)
+            if (reader.TokenType == JsonTokenType.PropertyName && reader.GetString() == "features" && !inFeaturesArray)
             {
-                var propertyName = reader.GetString();
-                if (propertyName == "features" && !inFeaturesArray)
+                // Next token should be the start of the features array
+                if (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
                 {
-                    // Next token should be the start of the features array
-                    if (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
-                    {
-                        inFeaturesArray = true;
-                        featureDepth = reader.CurrentDepth;
-                        lastConsumed = (int)reader.BytesConsumed;
-                    }
+                    inFeaturesArray = true;
+                    featureDepth = reader.CurrentDepth;
+                    lastConsumed = (int)reader.BytesConsumed;
                 }
             }
             else if (inFeaturesArray)
@@ -503,9 +499,17 @@ internal sealed class StreamingGeoJsonReader
         }
 
         var geometry = ParseGeometry(geometryElement);
-        var validationError = geometry == null
-            ? "GeoJSON geometry coordinates are invalid or incomplete."
-            : ValidateParsedGeometry(geometry);
+        if (geometry is null)
+        {
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryInvalid,
+                "GeoJSON geometry coordinates are invalid or incomplete.",
+                featureIndex,
+                "geometry"));
+            return issues;
+        }
+
+        var validationError = ValidateParsedGeometry(geometry);
         if (validationError != null)
         {
             issues.Add(ImportValidationIssue.Create(
@@ -522,8 +526,7 @@ internal sealed class StreamingGeoJsonReader
         // ImportLimits.GeometryValidityMode. Only areal geometry can be topologically invalid, so
         // points/lines skip the expensive IsValid topology-graph build. Accept mode stores geometry
         // as-is, so nothing is flagged there.
-        if (geometry is not null
-            && _limits.GeometryValidityMode != Honua.Core.Configuration.ValidationMode.Accept
+        if (_limits.GeometryValidityMode != Honua.Core.Configuration.ValidationMode.Accept
             && geometry.OgcGeometryType is OgcGeometryType.Polygon
                 or OgcGeometryType.MultiPolygon
                 or OgcGeometryType.GeometryCollection
@@ -621,18 +624,21 @@ internal sealed class StreamingGeoJsonReader
             if (geometryType == "GeometryCollection" &&
                 geometryElement.TryGetProperty("geometries", out var geometriesElement))
             {
-                var geometries = new List<NtsGeometry>();
-                foreach (var geomElement in geometriesElement.EnumerateArray())
-                {
-                    var geom = ParseGeometry(geomElement);
-                    if (geom != null)
-                        geometries.Add(geom);
-                }
-                return _geometryFactory.CreateGeometryCollection(geometries.ToArray());
+                var geometries = geometriesElement.EnumerateArray()
+                    .Select(ParseGeometry)
+                    .Where(geom => geom != null)
+                    .Select(geom => geom!)
+                    .ToArray();
+                return _geometryFactory.CreateGeometryCollection(geometries);
             }
             return null;
         }
 
+        // Broad catch is intentional: coordsElement is untrusted GeoJSON input, and the various
+        // Parse* helpers can throw a mix of format/index/topology exceptions for malformed
+        // coordinate arrays. Returning null here surfaces as a clean, reported validation issue
+        // at the call site ("geometry coordinates are invalid or incomplete") rather than
+        // aborting the whole import stream.
         try
         {
             return geometryType switch
@@ -724,13 +730,10 @@ internal sealed class StreamingGeoJsonReader
 
     private MultiPoint ParseMultiPoint(JsonElement coords)
     {
-        var points = new List<Point>();
-        foreach (var pointCoords in coords.EnumerateArray())
-        {
-            var coord = ParseCoordinate(pointCoords);
-            points.Add(_geometryFactory.CreatePoint(coord));
-        }
-        return _geometryFactory.CreateMultiPoint(points.ToArray());
+        var points = coords.EnumerateArray()
+            .Select(pointCoords => _geometryFactory.CreatePoint(ParseCoordinate(pointCoords)))
+            .ToArray();
+        return _geometryFactory.CreateMultiPoint(points);
     }
 
     private LineString ParseLineString(JsonElement coords)
@@ -741,15 +744,12 @@ internal sealed class StreamingGeoJsonReader
 
     private MultiLineString ParseMultiLineString(JsonElement coords)
     {
-        var lineStrings = new List<LineString>();
-        foreach (var lineCoords in coords.EnumerateArray())
-        {
-            var coordinates = ParseCoordinateArray(lineCoords);
-            if (coordinates.Length < 2)
-                continue;
-            lineStrings.Add(_geometryFactory.CreateLineString(coordinates));
-        }
-        return _geometryFactory.CreateMultiLineString(lineStrings.ToArray());
+        var lineStrings = coords.EnumerateArray()
+            .Select(ParseCoordinateArray)
+            .Where(coordinates => coordinates.Length >= 2)
+            .Select(_geometryFactory.CreateLineString)
+            .ToArray();
+        return _geometryFactory.CreateMultiLineString(lineStrings);
     }
 
     private Polygon? ParsePolygon(JsonElement coords)
@@ -762,6 +762,9 @@ internal sealed class StreamingGeoJsonReader
         var holes = new List<LinearRing>();
         var ringIndex = 0;
 
+        // Not a simple map/select: this loop folds rings into shell/hole state and can
+        // short-circuit with an early return on a degenerate exterior ring, so an
+        // imperative loop is clearer than a LINQ chain here.
         foreach (var ringCoords in coords.EnumerateArray())
         {
             var coordinates = ParseCoordinateArray(ringCoords);
@@ -793,14 +796,12 @@ internal sealed class StreamingGeoJsonReader
 
     private MultiPolygon ParseMultiPolygon(JsonElement coords)
     {
-        var polygons = new List<Polygon>();
-        foreach (var polyCoords in coords.EnumerateArray())
-        {
-            var polygon = ParsePolygon(polyCoords);
-            if (polygon != null)
-                polygons.Add(polygon);
-        }
-        return _geometryFactory.CreateMultiPolygon(polygons.ToArray());
+        var polygons = coords.EnumerateArray()
+            .Select(ParsePolygon)
+            .Where(polygon => polygon != null)
+            .Select(polygon => polygon!)
+            .ToArray();
+        return _geometryFactory.CreateMultiPolygon(polygons);
     }
 
     private static Coordinate ParseCoordinate(JsonElement coords)
@@ -910,7 +911,10 @@ internal sealed class StreamingGeoJsonReader
         }
         catch
         {
-            // Ignore parsing errors for CRS detection
+            // Broad catch is intentional: this is a best-effort scan of a raw header byte window
+            // for an optional, deprecated GeoJSON-2008 "crs" hint. Any failure here (e.g. encoding
+            // errors on a malformed header) should fall back to the layer's configured/default CRS
+            // rather than aborting the whole import stream.
         }
 
         return null;

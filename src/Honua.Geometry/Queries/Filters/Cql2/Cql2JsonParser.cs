@@ -571,12 +571,9 @@ public sealed class Cql2JsonParser
             throw new ArgumentException($"Invalid interval bound: {text}");
         }
 
-        if (element.ValueKind == JsonValueKind.Object)
+        if (element.ValueKind == JsonValueKind.Object && TryParseTemporalLiteral(element, out var temporalLiteral))
         {
-            if (TryParseTemporalLiteral(element, out var temporalLiteral))
-            {
-                return temporalLiteral;
-            }
+            return temporalLiteral;
         }
 
         throw new ArgumentException("Invalid interval bound value");
@@ -616,6 +613,9 @@ public sealed class Cql2JsonParser
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: geoJson is untrusted CQL2-JSON filter input, and geometry
+            // parsing/WKB writing can throw a variety of format/argument exceptions for malformed
+            // geometry. Wrap as a clean, reported ArgumentException instead of leaking internals.
             throw new ArgumentException($"Invalid geometry literal in CQL2-JSON: {ex.Message}", ex);
         }
     }
