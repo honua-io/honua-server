@@ -360,12 +360,21 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                 var generation = await NextGenerationAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
                 var payloadJson = request.Operation == FieldCollectionChangeOperation.Delete ? null : request.FeaturePayloadJson;
 
+                // Every Applied outcome produced by ResolveInsert/ResolveUpdate/ResolveDelete
+                // (via ResolveOutcome) always assigns Version; it is only null for non-Applied
+                // outcomes. Capture once as a non-nullable local so both calls below share the
+                // same provably-non-null value instead of repeated nullable dereferences.
+                if (result.Version is not { } appliedVersion)
+                {
+                    throw new InvalidOperationException("Applied field-collection push result must have a Version.");
+                }
+
                 await UpsertFeatureAsync(
                     connection,
                     transaction,
                     request.FeatureId,
                     request.LayerId,
-                    result.Version!.Value,
+                    appliedVersion,
                     payloadJson,
                     isDeleted: request.Operation == FieldCollectionChangeOperation.Delete,
                     cancellationToken).ConfigureAwait(false);
@@ -377,7 +386,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
                     request.FeatureId,
                     request.LayerId,
                     request.Operation,
-                    result.Version.Value,
+                    appliedVersion,
                     payloadJson,
                     request.Timestamp ?? DateTimeOffset.UtcNow,
                     cancellationToken).ConfigureAwait(false);
