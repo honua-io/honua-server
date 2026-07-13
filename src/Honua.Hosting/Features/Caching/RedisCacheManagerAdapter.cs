@@ -33,6 +33,8 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
             var value = JsonSerializer.Deserialize(bytes, ResolveTypeInfo<T>());
             return value is T typed ? typed : default;
         }
+        // Intentional: a Redis/deserialization failure on read is treated as a
+        // cache miss — logged and swallowed rather than failing the caller.
         catch (Exception ex)
         {
             RedisCacheManagerAdapterLog.GetFailed(_logger, key, ex);
@@ -68,6 +70,8 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
             await _distributedCache.RemoveAsync(key, cancellationToken);
             return true;
         }
+        // Intentional: a Redis failure on removal is best-effort — logged and
+        // reported as "not removed" rather than failing the caller.
         catch (Exception ex)
         {
             RedisCacheManagerAdapterLog.RemoveFailed(_logger, key, ex);
@@ -89,6 +93,8 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
             var bytes = await _distributedCache.GetAsync(key, cancellationToken);
             return bytes != null;
         }
+        // Intentional: a Redis failure on existence check is treated as "does
+        // not exist" — logged and swallowed rather than failing the caller.
         catch (Exception ex)
         {
             RedisCacheManagerAdapterLog.ExistsCheckFailed(_logger, key, ex);

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
@@ -280,15 +281,7 @@ internal static class FeatureChangeWebhookUrlValidation
             return true;
         }
 
-        foreach (var address in addresses)
-        {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return addresses.Any(IsPrivateOrReservedAddress);
     }
 
     private static bool IsLocalhostHostName(string host)

@@ -126,17 +126,11 @@ internal sealed class InMemoryOAuthScopeCatalogue : IOAuthScopeCatalogue
         // A request that omits scope is granted the client's full allowed-scope set
         // (RFC 6749 §3.3: the authorization server MAY use a default scope). An empty
         // allowed-scope set therefore grants nothing — never an implicit escalation.
-        IEnumerable<string> candidates;
-        if (string.IsNullOrWhiteSpace(requestedScope))
-        {
-            candidates = allowed;
-        }
-        else
-        {
-            candidates = requestedScope
+        IEnumerable<string> candidates = string.IsNullOrWhiteSpace(requestedScope)
+            ? allowed
+            : requestedScope
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Where(allowed.Contains);
-        }
 
         var grantedScopes = new List<string>();
         var grantedPermissions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

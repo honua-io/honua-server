@@ -79,24 +79,21 @@ internal static class GeoJsonFeatureBaseBuilder
         // so map field name -> whether it is a date-only field and coerce on write.
         var dateOnlyFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var dateTimeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.SchemaFields.Where(field => !IsGeometryField(field)))
         {
-            if (!IsGeometryField(field))
+            declaredAttributeFields.Add(field.Name);
+            if (!field.Hidden)
             {
-                declaredAttributeFields.Add(field.Name);
-                if (!field.Hidden)
-                {
-                    visibleAttributeFields.Add(field.Name);
-                }
+                visibleAttributeFields.Add(field.Name);
+            }
 
-                if (field.Type == MetadataV2FieldType.Date)
-                {
-                    dateOnlyFields.Add(field.Name);
-                }
-                else if (field.Type == MetadataV2FieldType.DateTime)
-                {
-                    dateTimeFields.Add(field.Name);
-                }
+            if (field.Type == MetadataV2FieldType.Date)
+            {
+                dateOnlyFields.Add(field.Name);
+            }
+            else if (field.Type == MetadataV2FieldType.DateTime)
+            {
+                dateTimeFields.Add(field.Name);
             }
         }
 

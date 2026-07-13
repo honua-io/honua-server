@@ -181,12 +181,9 @@ internal sealed class InMemoryPortalGroupStore(TimeProvider? timeProvider = null
         var members = new List<string>(record.Members);
         if (add)
         {
-            foreach (var user in requested)
+            foreach (var user in requested.Where(user => !members.Contains(user, StringComparer.OrdinalIgnoreCase)))
             {
-                if (!members.Contains(user, StringComparer.OrdinalIgnoreCase))
-                {
-                    members.Add(user);
-                }
+                members.Add(user);
             }
         }
         else

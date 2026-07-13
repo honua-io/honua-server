@@ -81,25 +81,21 @@ internal sealed class BypassOutputCacheOnSceneAccessTokenPolicy : IOutputCachePo
 
         if (context.Request.Query.TryGetValue(TokenQueryParameter, out var queryValues))
         {
-            foreach (var value in queryValues)
+            var value = queryValues.FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            if (value is not null)
             {
-                if (!string.IsNullOrEmpty(value))
-                {
-                    transport = SceneAccessTokenTransport.Query;
-                    return value;
-                }
+                transport = SceneAccessTokenTransport.Query;
+                return value;
             }
         }
 
         if (context.Request.Headers.TryGetValue(TokenHeader, out var headerValues))
         {
-            foreach (var value in headerValues)
+            var value = headerValues.FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            if (value is not null)
             {
-                if (!string.IsNullOrEmpty(value))
-                {
-                    transport = SceneAccessTokenTransport.Header;
-                    return value;
-                }
+                transport = SceneAccessTokenTransport.Header;
+                return value;
             }
         }
 

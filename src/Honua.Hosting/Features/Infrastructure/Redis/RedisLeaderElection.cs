@@ -69,20 +69,10 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
                 "leader-election",
                 async (database, ct) =>
                 {
-                    bool result;
-
-                    if (_isLeader)
-                    {
-                        // Try to extend existing lease
-                        result = await database.LockExtendAsync(_leadershipKey, _nodeId, _leaseDuration).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        // Try to acquire new lease
-                        result = await database.LockTakeAsync(_leadershipKey, _nodeId, _leaseDuration).ConfigureAwait(false);
-                    }
-
-                    return result;
+                    // Extend the existing lease when we already hold it; otherwise try to acquire one.
+                    return _isLeader
+                        ? await database.LockExtendAsync(_leadershipKey, _nodeId, _leaseDuration).ConfigureAwait(false)
+                        : await database.LockTakeAsync(_leadershipKey, _nodeId, _leaseDuration).ConfigureAwait(false);
                 },
                 fallbackOperation: ct => Task.FromResult(ShouldAllowLocalLeadership()),
                 cancellationToken).ConfigureAwait(false);
@@ -92,6 +82,8 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         }
         catch (Exception ex)
         {
+            // Intentional: leadership acquisition must never throw to the caller;
+            // treat any failure as "not leader" and log it.
             Log.LeadershipAcquisitionFailed(Logger, _nodeId, ex);
             UpdateLeadershipStatus(false);
             return false;
@@ -117,6 +109,8 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         }
         catch (Exception ex)
         {
+            // Intentional: release is best-effort; the lease will still expire on its own,
+            // so log and fall through to clearing local leadership state.
             Log.LeadershipReleaseFailed(Logger, _nodeId, ex);
         }
         finally
@@ -294,6 +288,8 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         }
         catch (Exception ex)
         {
+            // Intentional: this runs on a fire-and-forget Task.Run during Dispose(),
+            // so any failure must be logged here rather than escape unobserved.
             Log.DisposeCleanupFailed(Logger, _nodeId, ex);
         }
     }

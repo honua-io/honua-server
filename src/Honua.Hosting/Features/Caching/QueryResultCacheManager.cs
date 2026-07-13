@@ -490,6 +490,8 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
 
             CacheLog.ResultCached(_logger, cacheKey, estimatedSize, context.CorrelationId);
         }
+        // Intentional: caching is best-effort — a failure to store the result
+        // must not fail the query that produced it, so it is logged and swallowed.
         catch (Exception ex)
         {
             CacheLog.CachingFailed(_logger, cacheKey, ex, context.CorrelationId);

@@ -44,7 +44,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
         var endpoint = GetNormalizedEndpoint(context);
-        IOperationScope? operationScope = null;
+        using IOperationScope? operationScope = null;
         var requestErrored = false;
 
         using var systemMetricsScope = _systemMetricsCollector.TrackRequest();
@@ -110,11 +110,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
                           context.Response.StatusCode == StatusCodes.Status408RequestTimeout;
             _systemMetricsCollector.RecordRequest(stopwatch.Elapsed, isError);
 
-            if (operationScope is not null)
-            {
-                operationScope.WithTag("status_code", context.Response.StatusCode.ToString(CultureInfo.InvariantCulture));
-                operationScope.Dispose();
-            }
+            operationScope?.WithTag("status_code", context.Response.StatusCode.ToString(CultureInfo.InvariantCulture));
 
             // Log slow requests
             if (stopwatch.Elapsed > _options.SlowRequestThreshold)

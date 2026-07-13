@@ -185,19 +185,13 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    byte[]? data;
-                    if (_redis != null)
-                    {
-                        data = await _redisGetPolicy.ExecuteAsync(
+                    byte[]? data = _redis != null
+                        ? await _redisGetPolicy.ExecuteAsync(
                             _ => GetRedisEntryAsync(prefixedKey),
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        data = await _redisGetPolicy.ExecuteAsync(
+                            cancellationToken).ConfigureAwait(false)
+                        : await _redisGetPolicy.ExecuteAsync(
                             ct => _distributedCache.GetAsync(prefixedKey, ct),
                             cancellationToken).ConfigureAwait(false);
-                    }
 
                     if (data != null)
                     {
@@ -218,6 +212,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     operationScope.WithTag("result", "miss").WithTag("source", "redis");
                     return null;
                 }
+                // Intentional: Redis failures degrade gracefully to the in-memory fallback
+                // cache below (HandleRedisFailure logs and flips _isUsingFallback); this
+                // pattern repeats across the Redis-backed methods in this file.
                 catch (Exception ex)
                 {
                     HandleRedisFailure(ex);
@@ -601,19 +598,13 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    byte[]? data;
-                    if (_redis != null)
-                    {
-                        data = await _redisGetPolicy.ExecuteAsync(
+                    byte[]? data = _redis != null
+                        ? await _redisGetPolicy.ExecuteAsync(
                             _ => GetRedisEntryAsync(prefixedKey),
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        data = await _redisGetPolicy.ExecuteAsync(
+                            cancellationToken).ConfigureAwait(false)
+                        : await _redisGetPolicy.ExecuteAsync(
                             ct => _distributedCache.GetAsync(prefixedKey, ct),
                             cancellationToken).ConfigureAwait(false);
-                    }
 
                     if (data != null && TryDeserialize(data, prefixedKey, out T? value))
                     {
@@ -721,8 +712,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
             return _options.EnableFallback;
         }
     }
@@ -742,14 +734,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         var targetSize = Math.Max(1, (int)(_options.FallbackMaxEntries * 0.75)); // Target 75% capacity
 
         // First pass: Remove expired entries (most efficient)
-        var expiredKeys = new List<string>();
-        foreach (var kvp in _fallbackCache)
-        {
-            if (kvp.Value.ExpiresAt <= now)
-            {
-                expiredKeys.Add(kvp.Key);
-            }
-        }
+        var expiredKeys = _fallbackCache
+            .Where(kvp => kvp.Value.ExpiresAt <= now)
+            .Select(kvp => kvp.Key)
+            .ToList();
 
         foreach (var key in expiredKeys)
         {
@@ -824,8 +812,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             RedisCacheServiceLog.RedisConnectionRestored(_logger);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            // Debug level: this runs on every retry interval while Redis is down, so a
+            // higher level would be noisy; HandleRedisFailure already logged the initial
+            // transition into fallback mode at Warning.
+            RedisCacheServiceLog.RedisRestoreAttemptFailed(_logger, ex);
             Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
             return false;
         }
@@ -835,12 +827,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         // Bounded FIFO queue: when full, drop the oldest entry to make room.
         // The dropped entry may remain stale in Redis until its TTL expires.
-        if (Interlocked.Increment(ref _pendingInvalidationKeyCount) > MaxPendingInvalidationKeys)
+        if (Interlocked.Increment(ref _pendingInvalidationKeyCount) > MaxPendingInvalidationKeys &&
+            _pendingInvalidationKeys.TryDequeue(out _))
         {
-            if (_pendingInvalidationKeys.TryDequeue(out _))
-            {
-                Interlocked.Decrement(ref _pendingInvalidationKeyCount);
-            }
+            Interlocked.Decrement(ref _pendingInvalidationKeyCount);
         }
 
         _pendingInvalidationKeys.Enqueue(prefixedKey);
@@ -1025,18 +1015,15 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     private void PruneKeyLocks()
     {
-        foreach (var kvp in _keyLocks)
+        // Only remove if idle (CurrentCount == 1) and TryRemove atomically matches
+        // the exact key-value pair. If another thread obtained this semaphore via
+        // GetOrAdd between our check and removal, TryRemove will not remove it
+        // because GetOrAdd returns the existing instance (same reference).
+        // However, after removal a new thread could create a different semaphore.
+        // This is acceptable: pruning is best-effort cleanup, not a correctness gate.
+        foreach (var kvp in _keyLocks.Where(kvp => kvp.Value.CurrentCount == 1))
         {
-            // Only remove if idle (CurrentCount == 1) and TryRemove atomically matches
-            // the exact key-value pair. If another thread obtained this semaphore via
-            // GetOrAdd between our check and removal, TryRemove will not remove it
-            // because GetOrAdd returns the existing instance (same reference).
-            // However, after removal a new thread could create a different semaphore.
-            // This is acceptable: pruning is best-effort cleanup, not a correctness gate.
-            if (kvp.Value.CurrentCount == 1)
-            {
-                _keyLocks.TryRemove(kvp);
-            }
+            _keyLocks.TryRemove(kvp);
         }
     }
 
@@ -1275,9 +1262,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
                 return resolved;
             }
-            catch
+            catch (Exception ex)
             {
                 // TTL lookup failed — disable near-expiry detection for this entry.
+                RedisCacheServiceLog.TtlLookupFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
                 return TimeSpan.MaxValue;
             }
         }
@@ -1458,9 +1446,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
                 await _database.ScriptEvaluateAsync(script, new RedisKey[] { _lockKey }, new RedisValue[] { _lockValue }).ConfigureAwait(false);
             }
-            catch
+            // Narrowed from a bare catch: this nested lock type has no logger, so rather
+            // than silently swallowing all exceptions we only ignore genuine Redis
+            // failures here (best-effort release; the lock will expire anyway).
+            // Non-Redis exceptions (e.g. programming errors) still propagate.
+            catch (RedisException)
             {
-                // Ignore failures during lock release - the lock will expire anyway
             }
         }
     }
@@ -1505,5 +1496,14 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1010, LogLevel.Information, "Replayed {Count} queued cache invalidation(s) after Redis reconnect")]
         public static partial void InvalidationReplayCompleted(ILogger logger, int count);
+
+        [LoggerMessage(1011, LogLevel.Debug, "Redis restore attempt failed; remaining in fallback mode")]
+        public static partial void RedisRestoreAttemptFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(1012, LogLevel.Warning, "Redis health check failed")]
+        public static partial void RedisHealthCheckFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(1013, LogLevel.Debug, "Failed to resolve remaining TTL for cache key {KeyFamily} {KeyHash} from Redis")]
+        public static partial void TtlLookupFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
     }
 }

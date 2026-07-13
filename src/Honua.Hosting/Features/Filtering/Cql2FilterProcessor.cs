@@ -176,15 +176,13 @@ internal sealed class Cql2FilterProcessor(
 
         foreach (var candidate in TemporalFieldDefaults.TemporalFallbackFieldNames)
         {
-            foreach (var field in resource.SchemaFields)
+            foreach (var field in resource.SchemaFields.Where(field =>
+                string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase) &&
+                field.Type is MetadataV2FieldType.Date
+                    or MetadataV2FieldType.DateTime
+                    or MetadataV2FieldType.Time))
             {
-                if (string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase) &&
-                    field.Type is MetadataV2FieldType.Date
-                        or MetadataV2FieldType.DateTime
-                        or MetadataV2FieldType.Time)
-                {
-                    return field.Name;
-                }
+                return field.Name;
             }
         }
 
@@ -603,6 +601,9 @@ internal sealed class Cql2FilterProcessor(
         }
         catch (Exception)
         {
+            // Intentional: axis-swap is a best-effort CRS remapping step; a malformed or
+            // unsupported WKB literal must fall back to the original geometry unmodified
+            // rather than fail filter translation. This is a static helper with no logger.
             return geometry;
         }
     }

@@ -335,25 +335,16 @@ internal static class AccessPolicyHelpers
     private static List<string> EnumeratePrincipalRoles(ClaimsPrincipal principal, RbacOptions options)
     {
         var roles = new List<string>();
-
-        foreach (var claim in principal.FindAll(ClaimTypes.Role))
-        {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-            {
-                roles.Add(claim.Value);
-            }
-        }
+        roles.AddRange(principal.FindAll(ClaimTypes.Role)
+            .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
+            .Select(claim => claim.Value));
 
         var roleClaimType = options.EffectiveRoleClaimType;
         if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var claim in principal.FindAll(roleClaimType))
-            {
-                if (!string.IsNullOrWhiteSpace(claim.Value))
-                {
-                    roles.Add(claim.Value);
-                }
-            }
+            roles.AddRange(principal.FindAll(roleClaimType)
+                .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
+                .Select(claim => claim.Value));
         }
 
         return roles;

@@ -38,6 +38,8 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
 
             return result;
         }
+        // Intentional: a cache read failure is treated as a miss — logged and
+        // swallowed rather than failing the caller.
         catch (Exception ex)
         {
             SimpleQueryResultCacheLog.GetFailed(_logger, cacheKey, ex);
@@ -78,6 +80,8 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
             var invalidated = await _cacheManager.InvalidateAsync(cacheKey);
             return invalidated > 0;
         }
+        // Intentional: a cache removal failure is best-effort — logged and
+        // reported as "not removed" rather than failing the caller.
         catch (Exception ex)
         {
             SimpleQueryResultCacheLog.RemoveFailed(_logger, cacheKey, ex);
@@ -91,6 +95,8 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         {
             return await _cacheManager.InvalidateAsync(pattern);
         }
+        // Intentional: a bulk invalidation failure is best-effort — logged and
+        // reported as "nothing invalidated" rather than failing the caller.
         catch (Exception ex)
         {
             SimpleQueryResultCacheLog.InvalidateFailed(_logger, pattern, ex);

@@ -138,7 +138,8 @@ internal sealed class ProgressTrackingStream : Stream
         }
         catch (Exception)
         {
-            // Ignore progress reporting errors
+            // Intentional: this stream has no injected logger, and a faulting IProgress
+            // callback must never abort the underlying stream copy/upload it is observing.
         }
     }
 
@@ -158,7 +159,8 @@ internal sealed class ProgressTrackingStream : Stream
                 }
                 catch (Exception)
                 {
-                    // Ignore final progress reporting errors
+                    // Intentional: best-effort final progress notification during disposal;
+                    // this stream has no injected logger and disposal must not throw.
                 }
             }
 
@@ -186,7 +188,8 @@ internal sealed class ProgressTrackingStream : Stream
                 }
                 catch (Exception)
                 {
-                    // Ignore final progress reporting errors
+                    // Intentional: best-effort final progress notification during disposal;
+                    // this stream has no injected logger and disposal must not throw.
                 }
             }
 

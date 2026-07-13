@@ -25,13 +25,9 @@ internal sealed class ResponseDisposingStream : DelegatingStream
 
         _disposed = true;
 
-        try
+        using (_response)
         {
             base.Dispose(disposing);
-        }
-        finally
-        {
-            _response.Dispose();
         }
     }
 

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
@@ -407,12 +408,9 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         }
 
         var expirationCutoff = nowTicks - DeliveryCompletedTtl.Ticks;
-        foreach (var entry in _completedDeliveries)
+        foreach (var entry in _completedDeliveries.Where(entry => entry.Value <= expirationCutoff))
         {
-            if (entry.Value <= expirationCutoff)
-            {
-                _completedDeliveries.TryRemove(entry);
-            }
+            _completedDeliveries.TryRemove(entry);
         }
     }
 

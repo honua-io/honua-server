@@ -74,6 +74,8 @@ internal sealed class RedisHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
+            // Intentional: this is the health-check boundary itself; any failure must be
+            // reported as Unhealthy rather than escape and crash the health-check middleware.
             RedisHealthCheckLog.HealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy("Redis health check failed", ex);
         }
@@ -125,6 +127,9 @@ internal sealed class RedisHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
+            // Intentional: diagnostics enumeration must not fail the whole health check;
+            // surface the failure both in the returned data and the log.
+            RedisHealthCheckLog.ServiceCheckFailed(_logger, ex);
             data["service_check_error"] = ex.Message;
         }
     }

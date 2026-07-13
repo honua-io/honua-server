@@ -67,7 +67,7 @@ internal static class AtomicTokenReplayProtection
                     .StringSetAsync(cacheKey, "1", expiry, when: When.NotExists)
                     .ConfigureAwait(false);
             }
-            catch (Exception)
+            catch (RedisException)
             {
                 // Redis unavailable: fail-closed - treat as replay to prevent replay via
                 // a degraded non-atomic path.

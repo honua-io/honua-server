@@ -167,10 +167,10 @@ internal static class ResponseCacheUtilities
         var parts = new List<string>(query.Count);
         foreach (var entry in query.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
         {
-            foreach (var value in entry.Value.OrderBy(v => v, StringComparer.Ordinal))
+            parts.AddRange(entry.Value.OrderBy(v => v, StringComparer.Ordinal).Select(value =>
             {
                 var valueText = value ?? string.Empty;
-                parts.Add(string.Concat(
+                return string.Concat(
                     "k",
                     entry.Key.Length.ToString(CultureInfo.InvariantCulture),
                     ":",
@@ -178,8 +178,8 @@ internal static class ResponseCacheUtilities
                     "v",
                     valueText.Length.ToString(CultureInfo.InvariantCulture),
                     ":",
-                    valueText));
-            }
+                    valueText);
+            }));
         }
 
         return string.Join('&', parts);
@@ -225,17 +225,14 @@ internal static class ResponseCacheUtilities
         var buffer = new char[trimmed.Length];
         var length = 0;
 
+        // Manual buffer fill (not LINQ Select) to avoid per-character allocations
+        // in this hot key-normalization path.
         foreach (var ch in trimmed)
         {
             var normalized = char.ToLowerInvariant(ch);
-            if (char.IsLetterOrDigit(normalized) || normalized is '-' or '_' or '.')
-            {
-                buffer[length++] = normalized;
-            }
-            else
-            {
-                buffer[length++] = '_';
-            }
+            buffer[length++] = char.IsLetterOrDigit(normalized) || normalized is '-' or '_' or '.'
+                ? normalized
+                : '_';
         }
 
         return new string(buffer, 0, length);

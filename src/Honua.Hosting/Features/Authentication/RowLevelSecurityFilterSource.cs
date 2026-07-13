@@ -88,6 +88,9 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
 
         // Combine every applicable policy's predicate with AND so the request is
         // constrained by the intersection of all matching row-visibility rules.
+        // Kept as an explicit loop (not Select/Aggregate) because it folds into a
+        // running accumulator across iterations, which does not reduce to a plain
+        // filter+project.
         SqlFragment? combined = null;
         foreach (var policy in policies)
         {
@@ -160,8 +163,8 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         }
         catch (Exception ex)
         {
-            // Metadata resolution is best-effort for service scoping; "*"-service
-            // policies still apply via the wildcard lookup. Never fail the query.
+            // Intentional: metadata resolution is best-effort for service scoping;
+            // "*"-service policies still apply via the wildcard lookup. Never fail the query.
             RlsLog.ServiceResolutionFailed(_logger, resource.Metadata.Name, ex);
             return Array.Empty<string>();
         }
@@ -263,23 +266,17 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     {
         var roles = new List<string>();
 
-        foreach (var claim in principal.FindAll(ClaimTypes.Role))
+        foreach (var claim in principal.FindAll(ClaimTypes.Role).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
         {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-            {
-                roles.Add(claim.Value);
-            }
+            roles.Add(claim.Value);
         }
 
         var roleClaimType = options.EffectiveRoleClaimType;
         if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var claim in principal.FindAll(roleClaimType))
+            foreach (var claim in principal.FindAll(roleClaimType).Where(claim => !string.IsNullOrWhiteSpace(claim.Value)))
             {
-                if (!string.IsNullOrWhiteSpace(claim.Value))
-                {
-                    roles.Add(claim.Value);
-                }
+                roles.Add(claim.Value);
             }
         }
 
