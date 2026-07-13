@@ -288,15 +288,5 @@ public sealed class RealAwsCertificationFixture : IAsyncLifetime
     }
 
     private static string? FirstNonEmpty(params string?[] candidates)
-    {
-        foreach (var candidate in candidates)
-        {
-            if (!string.IsNullOrWhiteSpace(candidate))
-            {
-                return candidate.Trim();
-            }
-        }
-
-        return null;
-    }
+        => candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate))?.Trim();
 }
