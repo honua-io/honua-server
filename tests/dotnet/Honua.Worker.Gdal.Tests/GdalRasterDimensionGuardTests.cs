@@ -300,4 +300,53 @@ public sealed class GdalRasterDimensionGuardTests
         };
         GdalRasterDimensionGuard.TryAdmit(Jp2CodestreamMagic(), options, out var error).Should().BeTrue(error);
     }
+
+    // --- GeoTIFF ModelPixelScale read (resample -tr extent, #2793) -------------
+
+    [UnitTest]
+    public void ReadGeoTiffPixelScale_ReadsModelPixelScale_FromClassicTiff()
+    {
+        var tiff = TiffHeaderBuilder.ClassicWithPixelScale(width: 1024, height: 512, scaleX: 30.0, scaleY: 20.0);
+
+        GdalRasterDimensionGuard.ReadGeoTiffPixelScale(tiff, out var scaleX, out var scaleY);
+
+        scaleX.Should().Be(30.0);
+        scaleY.Should().Be(20.0);
+    }
+
+    [UnitTest]
+    public void ReadGeoTiffPixelScale_BigEndianModelPixelScale_IsRead()
+    {
+        var tiff = TiffHeaderBuilder.ClassicWithPixelScale(
+            width: 100, height: 100, scaleX: 0.5, scaleY: 0.25, littleEndian: false);
+
+        GdalRasterDimensionGuard.ReadGeoTiffPixelScale(tiff, out var scaleX, out var scaleY);
+
+        scaleX.Should().Be(0.5);
+        scaleY.Should().Be(0.25);
+    }
+
+    [UnitTest]
+    public void ReadGeoTiffPixelScale_NoGeoreferencing_DefaultsToIdentity()
+    {
+        // A TIFF without a ModelPixelScale tag has no georeferencing; the extent bound
+        // then measures the extent in pixels (identity 1.0), matching gdalwarp -tr.
+        var tiff = TiffHeaderBuilder.Classic(width: 1024, height: 512);
+
+        GdalRasterDimensionGuard.ReadGeoTiffPixelScale(tiff, out var scaleX, out var scaleY);
+
+        scaleX.Should().Be(1.0);
+        scaleY.Should().Be(1.0);
+    }
+
+    [UnitTest]
+    public void ReadGeoTiffPixelScale_NonTiffPayload_DefaultsToIdentity()
+    {
+        var png = TiffHeaderBuilder.Png(width: 800, height: 600);
+
+        GdalRasterDimensionGuard.ReadGeoTiffPixelScale(png, out var scaleX, out var scaleY);
+
+        scaleX.Should().Be(1.0);
+        scaleY.Should().Be(1.0);
+    }
 }

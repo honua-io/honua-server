@@ -172,6 +172,75 @@ public sealed class GdalRasterizeExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Rasterize_TinyCellSizeOverWideEnvelope_FailsBeforeReachingTheCli()
+    {
+        // A 10×10-unit vector envelope rasterized at a 0.0001-unit cell derives a
+        // 100 000 px output grid per axis — past the width cap. The cellSize → -tr output
+        // must be refused before gdal_rasterize allocates the grid (#2793).
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdal_rasterize must not run for an over-cap -tr output grid"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterizeJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096),
+            NullLogger<GdalRasterizeJobExecutor>.Instance);
+        try
+        {
+            var geojson =
+                "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{},"
+                + "\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[0,0],[10,0],[10,10],[0,10],[0,0]]]}}]}";
+            var job = GdalJobFactory.Job(
+                GdalRasterizeJobExecutor.HandledProcessId,
+                ("source", Base64(geojson)),
+                ("burnValue", "1"),
+                ("cellSize", "0.0001"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("exceeds configured");
+            runner.Invocations.Should().BeEmpty("the over-cap -tr output grid must be refused before gdal_rasterize runs");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Rasterize_CellSizeYieldingBoundedGrid_RunsRasterize()
+    {
+        // Same 10×10-unit envelope at a 0.01-unit cell derives a 1000×1000 grid — within
+        // caps — so the legitimate rasterize proceeds to gdal_rasterize.
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("rasterized"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterizeJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096),
+            NullLogger<GdalRasterizeJobExecutor>.Instance);
+        try
+        {
+            var geojson =
+                "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{},"
+                + "\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[0,0],[10,0],[10,10],[0,10],[0,0]]]}}]}";
+            var job = GdalJobFactory.Job(
+                GdalRasterizeJobExecutor.HandledProcessId,
+                ("source", Base64(geojson)),
+                ("burnValue", "1"),
+                ("cellSize", "0.01"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Single().Arguments.Should().ContainInOrder("-tr", "0.01", "0.01");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     private static GdalRasterizeJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

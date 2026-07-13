@@ -129,6 +129,27 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
             }
 
+            // Bound the caller-controlled OUTPUT resolution (-tr) before gdalwarp derives
+            // the output grid from the input extent ÷ target cell size (#2793). The input
+            // ground extent = declared pixel dimensions × ModelPixelScale (identity 1.0
+            // when the raster carries no georeferencing, matching gdalwarp's own -tr
+            // interpretation). When the header is not one we can read dimensions from, the
+            // input dimension caps plus the timeout/artifact ceilings remain the backstop.
+            if (GdalRasterDimensionGuard.TryReadRasterDimensions(sourceBytes, out var inputDims))
+            {
+                GdalRasterDimensionGuard.ReadGeoTiffPixelScale(sourceBytes, out var scaleX, out var scaleY);
+                if (!GdalOutputGridGuard.TryAdmitResolution(
+                        inputDims.Width * scaleX,
+                        inputDims.Height * scaleY,
+                        cellSizeX,
+                        cellSizeY,
+                        opts,
+                        out var resolutionError))
+                {
+                    return JobExecutionResult.Failed($"Invalid resample inputs: {resolutionError}");
+                }
+            }
+
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();

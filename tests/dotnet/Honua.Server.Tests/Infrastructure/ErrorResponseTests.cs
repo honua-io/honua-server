@@ -97,6 +97,7 @@ public class ErrorResponseTests
     [InlineData(498, 498)]
     [InlineData(499, 499)]
     [InlineData(500, 500)]
+    [InlineData(501, 501)] // #2795: 501 passes through so not-implemented ops stay distinct from a 500 server fault
     [InlineData(502, 502)]
     [InlineData(503, 503)]
     [InlineData(999, 500)] // Unknown codes default to 500

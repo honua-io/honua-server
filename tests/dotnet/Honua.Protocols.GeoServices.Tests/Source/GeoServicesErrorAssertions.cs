@@ -36,11 +36,12 @@ public static class GeoServicesErrorAssertions
     /// <param name="result">The error result returned by the handler under test.</param>
     /// <param name="expectedCodes">
     /// One or more acceptable GeoServices error codes (HTTP status values such as
-    /// <c>404</c> or <c>400</c>) carried in the JSON body. Note that
-    /// <c>GeoServicesErrorCodes.FromHttpStatusCode</c> has no <c>501</c> branch, so
-    /// <c>501 Not Implemented</c> collapses to the <c>500</c> default; statuses with
-    /// explicit branches (<c>400</c>/<c>401</c>/<c>403</c>/<c>404</c>/<c>499</c>/<c>503</c>…)
-    /// map to themselves.
+    /// <c>404</c> or <c>400</c>) carried in the JSON body. Since honua-server#2795,
+    /// <c>GeoServicesErrorCodes.FromHttpStatusCode</c> passes <c>501 Not Implemented</c>
+    /// through as body code <c>501</c> (not-implemented operations stay distinguishable
+    /// from a <c>500</c> server fault); statuses with explicit branches
+    /// (<c>400</c>/<c>401</c>/<c>403</c>/<c>404</c>/<c>499</c>/<c>501</c>/<c>503</c>…) map to
+    /// themselves. HTTP <c>401</c> is the sole remap (→ <c>499</c> TokenRequired).
     /// </param>
     public static async Task AssertGeoServicesErrorAsync(HttpContext context, IResult result, params int[] expectedCodes)
     {
