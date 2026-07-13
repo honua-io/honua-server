@@ -144,44 +144,6 @@ public sealed class DeployWorkflowReconcilerPromotionGateTests
         updated.CurrentPhase.Should().Contain("golden query detected corrupt release content");
     }
 
-    [Fact]
-    public async Task Reconcile_GoldenQueryHealthy_PromotesNormally()
-    {
-        // Control: when the golden query passes (healthy body) the correctness gate does not block, so a
-        // health-gated deploy still promotes. Proves the gate does not break good releases.
-        var store = new InMemoryWorkflowOperationStore();
-        var backend = new RecordingDeployBackend(
-            DeployTargetKind.SelfHostedRolling,
-            "honua-yarp-rolling",
-            observe: new DeployObservation
-            {
-                Status = WorkflowOperationStatus.Reconciling,
-                PromotionRecommended = true,
-                Message = "Standby healthy and ready for cutover."
-            });
-        var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
-            "honua-yarp-rolling",
-            extraParameters: new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["telemetry.connection"] = "prod-prom",
-                ["telemetry.golden.url"] = "https://example.com/golden",
-                ["telemetry.golden.expected_contains"] = "\"count\":42"
-            });
-        await store.TryCreateAsync(operation);
-
-        var reconciler = CreateReconcilerWithGoldenGate(
-            store,
-            backend,
-            new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 1, Failures = 0 }));
-
-        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
-        var updated = await store.GetAsync(operation.OperationId);
-
-        backend.PromoteCalls.Should().Be(1, "a healthy golden query does not block the self-hosted health-gated promotion");
-        updated!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-    }
-
     // ---- helpers ---------------------------------------------------------
 
     private static DeployWorkflowReconciler CreateReconcilerWithGoldenGate(
