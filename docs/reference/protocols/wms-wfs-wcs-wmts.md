@@ -66,6 +66,13 @@ Temporal subsetting selects the coverage only when its acquisition instant falls
 
 `SUBSET` axis labels resolve in three tiers: the spatial axes (`x`/`E`/`Long`/`Lon` and `y`/`N`/`Lat`) trim the grid; `phenomenonTime` slices against the coverage acquisition time; and any further named axis is treated as an additional dimension subset. When the layer has a readable registered multidimensional (Zarr) store, a single coordinate selection on a declared additional axis is served through the shared bounded slice reader as a native-CRS, nearest-neighbor grayscale PNG. Out-of-range coordinates return `InvalidSubsetting`; an undeclared axis returns `InvalidAxisLabel`; and malformed values return `InvalidSubsetting`. Multi-coordinate trims, TIFF/JPEG output, reprojection, and advanced interpolation are rejected explicitly rather than falling back to the dimension-collapsed primary raster.
 
+Two intentional divergences apply to the Zarr slice path (they are covered by dedicated adapter tests):
+
+- **Spatial trims are clamped, not required to be contained.** An over-extent spatial trim is clamped to the intersection with the coverage extent before the read — matching the plain `IRasterStore` GetCoverage path (and CITE) — so a client that echoes the DescribeCoverage-advertised extent round-trips even when float rounding places it a hair outside the Zarr metadata extent. Only an empty intersection yields `InvalidSubsetting`, mirroring temporal subsetting.
+- **`RANGESUBSET` band selection is rejected, not applied.** The slice path renders a single-band grayscale PNG from one range field, so a `RANGESUBSET` selection returns `OperationNotSupported` (locator `RANGESUBSET`) rather than silently returning the primary-variable render. Full multi-band Zarr composition is a non-goal.
+
+When the coverage's native grid exceeds the per-axis pixel limit and no scaling operator is supplied, the oversize `InvalidParameterValue` reports locator `COVERAGEID` (the coverage must be down-scaled); when a scaling operator produced the oversize, it reports `SCALESIZE`.
+
 ```bash
 curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)"
 ```
