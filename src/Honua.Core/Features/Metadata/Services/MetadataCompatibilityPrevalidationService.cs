@@ -145,7 +145,15 @@ public sealed class MetadataCompatibilityPrevalidationService(
             return new PackageResolution(request.ReleasePackage, null);
         }
 
-        var persisted = await packageStore.GetAsync(request.ReleasePackageId!.Value, cancellationToken).ConfigureAwait(false);
+        // hasInline is false here, and hasId != hasInline was already enforced
+        // above, so ReleasePackageId is guaranteed present; the pattern below
+        // makes that explicit instead of null-forgiving the property repeatedly.
+        if (request.ReleasePackageId is not { } releasePackageId)
+        {
+            throw new ArgumentException("ReleasePackageId must not be empty.", nameof(request));
+        }
+
+        var persisted = await packageStore.GetAsync(releasePackageId, cancellationToken).ConfigureAwait(false);
         if (persisted is not null)
         {
             return new PackageResolution(persisted, null);
@@ -153,7 +161,7 @@ public sealed class MetadataCompatibilityPrevalidationService(
 
         MetadataCompatibilityPrevalidationLog.StateUnavailable(
             logger,
-            request.ReleasePackageId.Value,
+            releasePackageId,
             "unknown",
             targetEnvironment,
             "package");
@@ -161,7 +169,7 @@ public sealed class MetadataCompatibilityPrevalidationService(
             null,
             targetEnvironment,
             _timeProvider.GetUtcNow(),
-            request.ReleasePackageId.Value.ToString("D"),
+            releasePackageId.ToString("D"),
             "persisted release package",
             "not found",
             "The requested metadata release package was not found.",
