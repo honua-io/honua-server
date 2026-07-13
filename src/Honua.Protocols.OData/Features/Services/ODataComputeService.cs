@@ -223,10 +223,10 @@ internal static partial class ODataComputeService
                 case ODataComputeOperator.Multiply:
                     result = left * right;
                     break;
-                case ODataComputeOperator.Divide when !NumericTolerance.IsEffectivelyZero(right):
+                case ODataComputeOperator.Divide when right != 0:
                     result = left / right;
                     break;
-                case ODataComputeOperator.Modulo when !NumericTolerance.IsEffectivelyZero(right):
+                case ODataComputeOperator.Modulo when right != 0:
                     result = left % right;
                     break;
                 default:
@@ -287,7 +287,16 @@ internal static partial class ODataComputeService
                 return true;
             case decimal dec:
                 numericValue = (double)dec;
-                return (decimal)numericValue == dec;
+                try
+                {
+                    // A double that round-trips outside decimal's representable range is just
+                    // another way the conversion lost precision, not an exceptional condition.
+                    return (decimal)numericValue == dec;
+                }
+                catch (OverflowException)
+                {
+                    return false;
+                }
             case string text when double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
                 numericValue = parsed;
                 return true;
