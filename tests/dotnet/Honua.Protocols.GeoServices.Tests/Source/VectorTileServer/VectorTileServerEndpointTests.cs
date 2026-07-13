@@ -221,6 +221,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
 
             var tiles = source.Value.GetProperty("tiles");
             tiles.GetArrayLength().Should().BeGreaterThan(0);
+            // Not a simple map: each iteration runs multiple assertions and sets
+            // sawVectorTileTemplate, so a LINQ .Select() projection would obscure intent.
             foreach (var tile in tiles.EnumerateArray())
             {
                 var template = tile.GetString();

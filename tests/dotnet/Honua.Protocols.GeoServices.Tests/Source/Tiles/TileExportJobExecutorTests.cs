@@ -95,9 +95,8 @@ public sealed class TileExportJobExecutorTests
 
         foreach (var plan in invalidPlans)
         {
-            var act = () => TileExportExecutionSpecBuilder.Build(plan);
-
-            act.Should().Throw<ArgumentException>();
+            FluentActions.Invoking(() => TileExportExecutionSpecBuilder.Build(plan))
+                .Should().Throw<ArgumentException>();
         }
     }
 
