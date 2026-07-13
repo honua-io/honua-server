@@ -16,6 +16,20 @@ namespace Honua.Core.Features.Orchestration.Abstractions;
 public interface IWorkflowJobExecutor
 {
     /// <summary>
+    /// Evaluates the execution-tier authorization required to run <paramref name="plan"/>
+    /// against <paramref name="principal"/>, throwing when the principal lacks the grant a
+    /// mutating (or otherwise elevated) step requires. Workflow run creation calls this
+    /// against the REQUESTING principal <em>before</em> any step job is submitted under the
+    /// synthesized orchestrator identity, so an <c>Execute</c>-only operator cannot schedule
+    /// a workflow whose compiled steps import, mutate, or sink under an admin-bypassing
+    /// system principal that never faces the mutating-process tier (#2798).
+    /// </summary>
+    Task EnsurePlanExecutionAuthorizedAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Submits a plan for asynchronous execution.
     /// </summary>
     Task<ExecutionJobRecord> SubmitJobAsync(

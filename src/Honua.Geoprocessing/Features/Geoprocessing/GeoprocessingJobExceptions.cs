@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
+
 namespace Honua.Geoprocessing;
 
 /// <summary>
@@ -13,6 +15,19 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     /// </summary>
     public bool RequiresAuthentication { get; }
 
+    /// <summary>
+    /// The resource type the denied check evaluated, when known. Lets protocol adapters
+    /// emit a security-log entry naming the real resource rather than a hard-coded default.
+    /// </summary>
+    public OperatorResourceType? ResourceType { get; }
+
+    /// <summary>
+    /// The operation the denied check evaluated, when known. Carried so a mutating-process
+    /// (or custom-code) denial is logged as that operation instead of an indistinguishable
+    /// baseline <see cref="OperatorOperation.Execute"/> denial (#2798).
+    /// </summary>
+    public OperatorOperation? Operation { get; }
+
     public GeoprocessingAuthorizationException(bool requiresAuthentication)
         : base(requiresAuthentication
             ? "Authentication is required for this operation."
@@ -24,14 +39,23 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     /// <summary>
     /// Creates an authorization failure with a caller-supplied message (e.g. one
     /// naming the specific permission the caller lacks) so structured error
-    /// contracts can surface an actionable denial.
+    /// contracts can surface an actionable denial, and records the resource/operation
+    /// the check evaluated so adapters log the real denied operation.
     /// </summary>
     /// <param name="requiresAuthentication">Whether the caller needs authentication (vs. insufficient permissions).</param>
     /// <param name="message">The denial message surfaced to the caller.</param>
-    public GeoprocessingAuthorizationException(bool requiresAuthentication, string message)
+    /// <param name="resourceType">The resource type the denied check evaluated, when known.</param>
+    /// <param name="operation">The operation the denied check evaluated, when known.</param>
+    public GeoprocessingAuthorizationException(
+        bool requiresAuthentication,
+        string message,
+        OperatorResourceType? resourceType = null,
+        OperatorOperation? operation = null)
         : base(message)
     {
         RequiresAuthentication = requiresAuthentication;
+        ResourceType = resourceType;
+        Operation = operation;
     }
 }
 

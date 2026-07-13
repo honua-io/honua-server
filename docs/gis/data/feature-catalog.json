@@ -15253,7 +15253,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnsupportedArtifactKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_WithoutRespondAsync_DefaultsToAsync",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenCreateFails_DoesNotReturnCreated",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenQueuePersistenceFails_RollsBackCreatedJobUsingFreshVersionToken"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenQueuePersistenceFails_RollsBackCreatedJobUsingFreshVersionToken",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_AnalyticPlanWithExecuteOnlyGrant_IsNotForbidden",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented"
