@@ -64,7 +64,7 @@ public sealed class MigrationArtifactSchemaStabilityTests
     private static string ResolveSnapshotPath(string fileName)
     {
         var baseDir = AppContext.BaseDirectory;
-        return Path.Combine(
+        return Path.Join(
             baseDir,
             "Features",
             "Import",
@@ -88,7 +88,7 @@ public sealed class MigrationArtifactSchemaStabilityTests
                 "Unable to locate the Honua.Core.Tests project directory from the test runtime.");
         }
 
-        return Path.Combine(
+        return Path.Join(
             current.FullName,
             "Features",
             "Import",

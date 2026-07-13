@@ -274,6 +274,9 @@ public class SecretProvider : ISecretProvider, IDisposable
         }
         catch (Exception ex)
         {
+            // Intentionally broad: any resolution failure (missing key, provider
+            // outage, malformed reference) is normalized into a single domain
+            // exception type for callers to handle consistently.
             throw new SecretNotFoundException(secretKey, ex.Message, ex);
         }
     }

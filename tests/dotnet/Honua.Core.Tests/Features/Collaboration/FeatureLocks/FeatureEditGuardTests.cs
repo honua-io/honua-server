@@ -213,7 +213,7 @@ public sealed class FeatureEditGuardTests
 
     private sealed class MutableTimeProvider : TimeProvider
     {
-        private DateTimeOffset _utcNow;
+        private readonly DateTimeOffset _utcNow;
 
         public MutableTimeProvider(DateTimeOffset utcNow) => _utcNow = utcNow;
 

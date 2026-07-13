@@ -21,7 +21,7 @@ public sealed class FileMetadataV2GraphProviderTests
     [Operation(Operations.Metadata)]
     public async Task LoadsAndCachesGraphSnapshot()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"v2-graph-{Guid.NewGuid():N}.json");
+        var path = Path.Join(Path.GetTempPath(), $"v2-graph-{Guid.NewGuid():N}.json");
         await WriteGraphAsync(path, SampleGraph());
         try
         {
@@ -46,7 +46,7 @@ public sealed class FileMetadataV2GraphProviderTests
     [Operation(Operations.Metadata)]
     public async Task GetByRevision_ReturnsCurrentWhenRevisionMatches()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"v2-graph-{Guid.NewGuid():N}.json");
+        var path = Path.Join(Path.GetTempPath(), $"v2-graph-{Guid.NewGuid():N}.json");
         await WriteGraphAsync(path, SampleGraph());
         try
         {
@@ -68,7 +68,7 @@ public sealed class FileMetadataV2GraphProviderTests
     [Operation(Operations.Metadata)]
     public async Task InvalidGraph_ThrowsOnLoad()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"v2-graph-bad-{Guid.NewGuid():N}.json");
+        var path = Path.Join(Path.GetTempPath(), $"v2-graph-bad-{Guid.NewGuid():N}.json");
         var invalid = SampleGraph() with
         {
             Publications =
@@ -99,7 +99,7 @@ public sealed class FileMetadataV2GraphProviderTests
     [Operation(Operations.Metadata)]
     public async Task MissingFile_ThrowsFileNotFound()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"v2-graph-nope-{Guid.NewGuid():N}.json");
+        var path = Path.Join(Path.GetTempPath(), $"v2-graph-nope-{Guid.NewGuid():N}.json");
         using var provider = new FileMetadataV2GraphProvider(path, NullLogger<FileMetadataV2GraphProvider>.Instance);
 
         Func<Task> act = async () => await provider.GetCurrentAsync();

@@ -106,6 +106,8 @@ public sealed class WktFormatReaderTests
 
         await foreach (var _ in WktFormatReader.ReadStreamingAsync(stream, diagnostics, CancellationToken.None))
         {
+            // Intentionally empty: draining the stream is the point of the test —
+            // `diagnostics` is populated as a side effect and asserted below.
         }
 
         diagnostics.UnparseableRecords.Should().Be(0);

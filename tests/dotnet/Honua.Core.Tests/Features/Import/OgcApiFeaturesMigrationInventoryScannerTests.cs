@@ -433,6 +433,8 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
     {
         public List<Uri> RequestUris { get; } = [];
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             request.RequestUri.Should().NotBeNull();
