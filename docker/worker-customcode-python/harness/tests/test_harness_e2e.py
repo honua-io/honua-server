@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 
-from honua_customcode_harness import harness
 from honua_customcode_harness.harness import (
     EXIT_HARNESS_ERROR,
     EXIT_OK,
@@ -80,7 +79,7 @@ def test_e2e_success_uploads_artifact(tmp_path) -> None:
         source_root=tmp_path / "src",
         workdir=tmp_path / "out",
         client_factory=lambda b, t: FakeClient(),
-        uploader_factory=lambda prefix: FakeUploader(prefix),
+        uploader_factory=FakeUploader,
         clone_fn=_make_clone_fn(tool),
         restore_fn=lambda root, manifest: None,
     )
@@ -110,7 +109,7 @@ def test_e2e_strips_credentials_before_user_code(tmp_path, monkeypatch) -> None:
         source_root=tmp_path / "src",
         workdir=tmp_path / "out",
         client_factory=lambda b, t: FakeClient(),
-        uploader_factory=lambda prefix: FakeUploader(prefix),
+        uploader_factory=FakeUploader,
         clone_fn=_make_clone_fn(tool),
         restore_fn=lambda root, manifest: None,
     )
@@ -131,7 +130,7 @@ def test_e2e_tool_failure_maps_to_exit_1(tmp_path) -> None:
         source_root=tmp_path / "src",
         workdir=tmp_path / "out",
         client_factory=lambda b, t: FakeClient(),
-        uploader_factory=lambda prefix: FakeUploader(prefix),
+        uploader_factory=FakeUploader,
         clone_fn=_make_clone_fn(tool),
         restore_fn=lambda root, manifest: None,
     )
@@ -148,7 +147,7 @@ def test_e2e_tool_exception_maps_to_exit_1(tmp_path) -> None:
         source_root=tmp_path / "src",
         workdir=tmp_path / "out",
         client_factory=lambda b, t: FakeClient(),
-        uploader_factory=lambda prefix: FakeUploader(prefix),
+        uploader_factory=FakeUploader,
         clone_fn=_make_clone_fn(tool),
         restore_fn=lambda root, manifest: None,
     )
@@ -163,7 +162,7 @@ def test_e2e_bad_git_ref_is_harness_error(tmp_path) -> None:
         source_root=tmp_path / "src",
         workdir=tmp_path / "out",
         client_factory=lambda b, t: FakeClient(),
-        uploader_factory=lambda prefix: FakeUploader(prefix),
+        uploader_factory=FakeUploader,
         clone_fn=_make_clone_fn("def execute(c): pass"),
         restore_fn=lambda root, manifest: None,
     )
@@ -182,7 +181,7 @@ def test_e2e_closes_client(tmp_path) -> None:
         source_root=tmp_path / "src",
         workdir=tmp_path / "out",
         client_factory=lambda b, t: client,
-        uploader_factory=lambda prefix: FakeUploader(prefix),
+        uploader_factory=FakeUploader,
         clone_fn=_make_clone_fn(tool),
         restore_fn=lambda root, manifest: None,
     )
