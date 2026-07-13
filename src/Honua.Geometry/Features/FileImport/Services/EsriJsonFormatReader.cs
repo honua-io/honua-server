@@ -55,12 +55,9 @@ internal static class EsriJsonFormatReader
             if (element.TryGetProperty("attributes", out var attributesElement) &&
                 attributesElement.ValueKind == JsonValueKind.Object)
             {
-                foreach (var attribute in attributesElement.EnumerateObject())
+                foreach (var attribute in attributesElement.EnumerateObject().Where(a => !attributes.Exists(a.Name)))
                 {
-                    if (!attributes.Exists(attribute.Name))
-                    {
-                        attributes.Add(attribute.Name, GetAttributeValue(attribute.Value));
-                    }
+                    attributes.Add(attribute.Name, GetAttributeValue(attribute.Value));
                 }
             }
 
@@ -173,6 +170,8 @@ internal static class EsriJsonFormatReader
             }
         }
 
+        // Not a simple map/select: this loop folds rings into shell/hole state across iterations
+        // (via FlushShell), so an imperative loop is clearer than a LINQ chain here.
         foreach (var ringElement in rings.EnumerateArray())
         {
             var coordinates = ReadCoordinates(ringElement);
@@ -206,20 +205,12 @@ internal static class EsriJsonFormatReader
         };
     }
 
-    private static LineString[] ReadPartsAsLineStrings(JsonElement parts, GeometryFactory factory)
-    {
-        var lines = new List<LineString>();
-        foreach (var part in parts.EnumerateArray())
-        {
-            var coordinates = ReadCoordinates(part);
-            if (coordinates.Length >= 2)
-            {
-                lines.Add(factory.CreateLineString(coordinates));
-            }
-        }
-
-        return lines.ToArray();
-    }
+    private static LineString[] ReadPartsAsLineStrings(JsonElement parts, GeometryFactory factory) =>
+        parts.EnumerateArray()
+            .Select(ReadCoordinates)
+            .Where(coordinates => coordinates.Length >= 2)
+            .Select(factory.CreateLineString)
+            .ToArray();
 
     private static Coordinate[] ReadCoordinates(JsonElement coordinateArray)
     {

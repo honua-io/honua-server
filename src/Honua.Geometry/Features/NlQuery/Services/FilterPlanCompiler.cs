@@ -215,12 +215,11 @@ public static class FilterPlanCompiler
             throw new FilterPlanCompilationException("Property name cannot be empty.");
         }
 
-        foreach (var field in resource.SchemaFields)
+        var field = resource.SchemaFields.FirstOrDefault(
+            f => string.Equals(f.Name, propertyName, StringComparison.OrdinalIgnoreCase));
+        if (field != null)
         {
-            if (string.Equals(field.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return field;
-            }
+            return field;
         }
 
         throw new FilterPlanCompilationException(
@@ -296,6 +295,9 @@ public static class FilterPlanCompiler
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: geoJson is untrusted NL-query input, and GeoJsonReader/WKB
+            // writing can throw a variety of format/argument exceptions for malformed geometry. Wrap
+            // it as a clean, reported FilterPlanCompilationException instead of leaking internals.
             throw new FilterPlanCompilationException($"Invalid GeoJSON geometry: {ex.Message}");
         }
     }

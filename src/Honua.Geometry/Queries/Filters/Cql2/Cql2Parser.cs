@@ -744,6 +744,10 @@ public sealed class Cql2Parser
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: wktText is untrusted CQL2 filter input, and WKT
+            // parsing/WKB writing can throw a variety of format/argument exceptions for
+            // malformed geometry. Wrap as a clean, reported ArgumentException instead of
+            // leaking internals.
             throw new ArgumentException($"Invalid geometry literal: {wktText}", ex);
         }
     }

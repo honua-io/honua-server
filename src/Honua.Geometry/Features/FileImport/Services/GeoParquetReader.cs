@@ -248,16 +248,9 @@ internal static class GeoParquetReader
         // Verify primary geometry column exists in the Parquet schema as a DataField.
         // Fail fast here instead of deferring to ReadStreamingAsync, which would read
         // attribute columns before discovering the mismatch.
-        var hasPrimaryColumn = false;
-        foreach (var field in schema.Fields)
-        {
-            if (field is DataField df &&
-                string.Equals(df.Name, geoMeta.PrimaryColumn, StringComparison.OrdinalIgnoreCase))
-            {
-                hasPrimaryColumn = true;
-                break;
-            }
-        }
+        var hasPrimaryColumn = schema.Fields.Any(field =>
+            field is DataField df &&
+            string.Equals(df.Name, geoMeta.PrimaryColumn, StringComparison.OrdinalIgnoreCase));
 
         if (!hasPrimaryColumn)
         {

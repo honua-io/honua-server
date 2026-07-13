@@ -156,17 +156,17 @@ internal sealed class ReferenceResolver
 
     private static TypeRef InferStructuralType(SourceBinding source)
     {
-        foreach (var field in source.Properties.Fields)
+        var typeField = source.Properties.Fields.FirstOrDefault(
+            field => field.Key == "type" && field.Value is LiteralNode { Kind: SpecTypeKind.String });
+
+        if (typeField?.Value is LiteralNode literal)
         {
-            if (field.Key == "type" && field.Value is LiteralNode literal && literal.Kind == SpecTypeKind.String)
+            return literal.String switch
             {
-                return literal.String switch
-                {
-                    "raster" or "cog" => TypeRef.Intrinsic(SpecTypeKind.Raster),
-                    "layer" or "service" or "stac" or "parquet" => TypeRef.Intrinsic(SpecTypeKind.Dataset),
-                    _ => TypeRef.Intrinsic(SpecTypeKind.Dataset)
-                };
-            }
+                "raster" or "cog" => TypeRef.Intrinsic(SpecTypeKind.Raster),
+                "layer" or "service" or "stac" or "parquet" => TypeRef.Intrinsic(SpecTypeKind.Dataset),
+                _ => TypeRef.Intrinsic(SpecTypeKind.Dataset)
+            };
         }
 
         return TypeRef.Intrinsic(SpecTypeKind.Dataset);

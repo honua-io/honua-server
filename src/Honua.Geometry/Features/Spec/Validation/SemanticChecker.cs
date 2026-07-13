@@ -49,36 +49,30 @@ internal sealed class SemanticChecker
                 continue;
             }
 
-            string? declaredCrs = null;
-            foreach (var field in step.Parameters.Fields)
-            {
-                if (field.Key == "crs" &&
-                    field.Value is LiteralNode literal &&
-                    literal.Kind == SpecTypeKind.String)
-                {
-                    declaredCrs = literal.String;
-                }
-            }
+            // Last matching "crs" field wins, mirroring how duplicate object keys are
+            // resolved elsewhere in the canonical form.
+            var declaredCrs = step.Parameters.Fields
+                .Where(field => field.Key == "crs" && field.Value is LiteralNode { Kind: SpecTypeKind.String })
+                .Select(field => ((LiteralNode)field.Value).String)
+                .LastOrDefault();
 
-            foreach (var field in step.Parameters.Fields)
+            foreach (var field in step.Parameters.Fields.Where(
+                field => field.Value is LiteralNode { Kind: SpecTypeKind.Distance or SpecTypeKind.Area }))
             {
-                if (field.Value is LiteralNode unitLiteral &&
-                    unitLiteral.Kind is SpecTypeKind.Distance or SpecTypeKind.Area)
+                var unitLiteral = (LiteralNode)field.Value;
+                if (declaredCrs is null)
                 {
-                    if (declaredCrs is null)
-                    {
-                        _diagnostics.Add(SpecDiagnostic.Warning(
-                            SpecDiagnosticCode.CrsUnitMismatch,
-                            $"Operator '{signature.Name}' uses a {unitLiteral.Kind.ToString().ToLowerInvariant()} parameter '{field.Key}' but no crs was declared; results assume meters on a projected CRS.",
-                            field.Value.Span));
-                    }
-                    else if (_geographicCrs.Contains(declaredCrs))
-                    {
-                        _diagnostics.Add(SpecDiagnostic.Error(
-                            SpecDiagnosticCode.CrsUnitMismatch,
-                            $"Operator '{signature.Name}' parameter '{field.Key}' is a {unitLiteral.Kind.ToString().ToLowerInvariant()} literal but crs '{declaredCrs}' is geographic; reproject to a projected CRS or drop the unit.",
-                            field.Value.Span));
-                    }
+                    _diagnostics.Add(SpecDiagnostic.Warning(
+                        SpecDiagnosticCode.CrsUnitMismatch,
+                        $"Operator '{signature.Name}' uses a {unitLiteral.Kind.ToString().ToLowerInvariant()} parameter '{field.Key}' but no crs was declared; results assume meters on a projected CRS.",
+                        field.Value.Span));
+                }
+                else if (_geographicCrs.Contains(declaredCrs))
+                {
+                    _diagnostics.Add(SpecDiagnostic.Error(
+                        SpecDiagnosticCode.CrsUnitMismatch,
+                        $"Operator '{signature.Name}' parameter '{field.Key}' is a {unitLiteral.Kind.ToString().ToLowerInvariant()} literal but crs '{declaredCrs}' is geographic; reproject to a projected CRS or drop the unit.",
+                        field.Value.Span));
                 }
             }
         }

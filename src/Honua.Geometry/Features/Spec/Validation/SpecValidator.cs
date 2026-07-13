@@ -64,16 +64,6 @@ public sealed class SpecValidator : ISpecValidator
         return new SpecValidationResult(diagnostics);
     }
 
-    private static bool HasError(IReadOnlyList<SpecDiagnostic> diagnostics)
-    {
-        foreach (var d in diagnostics)
-        {
-            if (d.Severity == SpecDiagnosticSeverity.Error)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static bool HasError(IReadOnlyList<SpecDiagnostic> diagnostics) =>
+        diagnostics.Any(d => d.Severity == SpecDiagnosticSeverity.Error);
 }

@@ -151,16 +151,7 @@ public sealed record TypeRef(
 
             foreach (var name in other.ElementTypes)
             {
-                var found = false;
-                foreach (var candidate in ElementTypes)
-                {
-                    if (string.Equals(name, candidate, StringComparison.OrdinalIgnoreCase))
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-
+                var found = ElementTypes.Any(candidate => string.Equals(name, candidate, StringComparison.OrdinalIgnoreCase));
                 if (!found)
                 {
                     return false;

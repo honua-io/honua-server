@@ -159,7 +159,17 @@ public static class RingOrientationNormalizer
         }
 
         var isCcw = Orientation.IsCCW(ring.CoordinateSequence);
-        return isCcw == wantCcw ? ring : (LinearRing)ring.Reverse();
+        if (isCcw == wantCcw)
+        {
+            return ring;
+        }
+
+        // LinearRing.Reverse() is [Obsolete("Call Geometry.Reverse()")] — it just forwards to
+        // base.Reverse(), which still virtually dispatches to LinearRing's own ReverseInternal()
+        // override. Calling through the Geometry-typed reference produces identical output while
+        // binding to the non-obsolete overload.
+        Geometry baseGeometry = ring;
+        return (LinearRing)baseGeometry.Reverse();
     }
 
     private static LinearRing[] CopyInteriorRings(Polygon polygon)
