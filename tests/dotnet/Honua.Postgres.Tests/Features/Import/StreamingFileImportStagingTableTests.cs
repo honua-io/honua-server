@@ -125,6 +125,20 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
         """;
 
+    // One valid point plus the invalid bowtie polygon, for proving that a Strict+skip gate
+    // excludes only the invalid feature (and excludes it entirely, not as a null-geometry row).
+    private const string MixedValidityGeoJson = """
+        {
+          "type": "FeatureCollection",
+          "features": [
+            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [1, 2] }, "properties": { "name": "valid" } },
+            { "type": "Feature",
+              "geometry": { "type": "Polygon", "coordinates": [[[0,0],[2,2],[2,0],[0,2],[0,0]]] },
+              "properties": { "name": "bowtie" } }
+          ]
+        }
+        """;
+
     [IntegrationTest]
     public async Task ImportFileAsync_WithoutOverwrite_CreatesStagingTableAndSucceeds()
     {
@@ -264,6 +278,65 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task ImportFileAsync_WithSelfIntersectingPolygon_StrictModeSkip_ExcludesFeatureEntirely()
+    {
+        // With GeometryValidityMode=Strict and SkipInvalidGeometry=true the invalid feature must be
+        // excluded from the insert entirely — not degraded to a null-geometry row that still imports
+        // its properties (a null WKB is a legal null-geometry row, so the gate needs a distinct skip
+        // signal). The valid sibling feature still imports and the loss is surfaced as a warning.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var strictSkipLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict,
+                SkipInvalidGeometry = true,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                strictSkipLimits);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(MixedValidityGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "bowtie_strict_skip.geojson",
+                TableName = "strict_skip_demo",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(1, "only the valid feature may import");
+            result.RepairedGeometryCount.Should().Be(0);
+            result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
+
+            // The invalid feature must not exist at all — previously it imported as a
+            // null-geometry row carrying its properties.
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE geometry IS NULL)::int FROM \"{schema}\".imported_strict_skip_demo;";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(1, "the skipped feature must not become a row");
+            reader.GetInt32(1).Should().Be(0, "no null-geometry row may be created for the skipped feature");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ImportFileAsync_WithSelfIntersectingPolygon_AcceptMode_StoresGeometryAsIs()
     {
         // With GeometryValidityMode=Accept the validity gate is bypassed: the invalid geometry is
@@ -311,6 +384,69 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
         finally
         {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_GeoPackageWithLocalSrsId_ResolvesEpsgAndTransformsGeometry()
+    {
+        // A spec-legal GeoPackage may number srs_id locally (srs_id=1 mapping to EPSG:27700 via
+        // gpkg_spatial_ref_sys) and real writers stamp that local id into every geometry blob
+        // header. The import must georeference rows with the resolved EPSG code — never the local
+        // id — end to end: CRS detection resolves 27700, the reader stamps it over the blob header
+        // SRID, and the insert transforms 27700 -> 4326 (#2743).
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            // A point near Charing Cross, London, in British National Grid (EPSG:27700) metres.
+            GeoPackageTestFiles.Create(
+                filePath,
+                srsId: 1,
+                organization: "EPSG",
+                organizationCoordsysId: 27700,
+                blobSrid: 1,
+                x: 530000,
+                y: 180000);
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using var stream = File.OpenRead(filePath);
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "local_srs.gpkg",
+                TableName = "local_srs_demo",
+                TargetSchema = schema,
+                // No explicit SourceSrid: detection must resolve the local srs_id to 27700.
+                TargetSrid = 4326,
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(1);
+            result.DetectedSrid.Should().Be(27700);
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"SELECT ST_X(geometry), ST_Y(geometry) FROM \"{schema}\".imported_local_srs_demo;";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetDouble(0).Should().BeApproximately(-0.129, 0.05, "easting 530000 must transform as BNG metres, not the local srs_id");
+            reader.GetDouble(1).Should().BeApproximately(51.503, 0.05, "northing 180000 must transform as BNG metres, not the local srs_id");
+        }
+        finally
+        {
+            await GeoPackageTestFiles.DeleteAsync(filePath);
             await fixture.DropSchemaAsync(schema);
         }
     }

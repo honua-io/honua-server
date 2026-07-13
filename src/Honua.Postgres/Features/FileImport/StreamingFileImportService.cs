@@ -84,6 +84,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         CompositeFormat.Parse("{0} row(s) had an address that could not be geocoded; each row was imported without geometry.");
     private static readonly CompositeFormat _repairedGeometryWarningFormat =
         CompositeFormat.Parse("{0} feature(s) had invalid geometry that was automatically repaired (ST_MakeValid-equivalent) before import.");
+    private static readonly CompositeFormat _skippedInvalidGeometryWarningFormat =
+        CompositeFormat.Parse("{0} feature(s) were skipped because their geometry was invalid or exceeded geometry size limits (SkipInvalidGeometry is enabled).");
     private static readonly Regex _wktSridRegex = new(
         @"SRID\s*=\s*(\d+)\s*;",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);

@@ -156,9 +156,15 @@ internal sealed partial class StreamingFileImportService
             {
                 var blob = reader.GetFieldValue<byte[]>(geometryOrdinal);
                 geometry = geoReader.Read(blob);
-                if (geometry != null && layer.Srid.HasValue && geometry.SRID <= 0)
+                if (geometry != null)
                 {
-                    geometry.SRID = layer.Srid.Value;
+                    // The blob header carries the file-local srs_id, which the spec does not
+                    // require to be an EPSG code (a file may declare srs_id=1 mapping to
+                    // EPSG:27700 in gpkg_spatial_ref_sys). Always stamp the resolved layer SRID
+                    // over the header value so downstream per-feature SRID consumers never see
+                    // the local numbering; when resolution failed (non-EPSG authority, reserved
+                    // 0/-1) clear it so the caller's explicit source SRID applies instead (#2743).
+                    geometry.SRID = layer.Srid ?? 0;
                 }
             }
 

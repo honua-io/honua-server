@@ -170,7 +170,7 @@ internal sealed partial class StreamingFileImportService
                     JobId = jobId,
                     Status = ImportStatus.Processing,
                     FeaturesProcessed = totalImported,
-                    FailedFeatures = totalFailed,
+                    FailedFeatures = totalFailed + repairTally.SkippedInvalid,
                     RepairedFeatures = repairTally.Repaired,
                     BatchesCommitted = batchesCommitted,
                     TableName = request.TableName,
@@ -271,6 +271,14 @@ internal sealed partial class StreamingFileImportService
         if (repairTally.Repaired > 0)
         {
             completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));
+        }
+
+        // Features the geometry gate excluded entirely (SkipInvalidGeometry): count them as
+        // not-imported rows and surface the loss so a skip is never silent.
+        if (repairTally.SkippedInvalid > 0)
+        {
+            totalFailed += repairTally.SkippedInvalid;
+            completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
         }
 
         string[] completionWarnings = [.. completionWarningsBuilder];

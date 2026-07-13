@@ -85,22 +85,20 @@ public sealed class GPServerOutputReprojectionTests
         outcome.CapabilityMessage.Should().Contain("input spatial reference is unknown");
     }
 
+    // Hand-written geometry JSON: NTS's GeoJsonWriter enforces RFC 7946 winding on write, so
+    // serializing a clockwise NTS polygon through it would silently pre-normalize the payload
+    // and make the winding tests vacuous. The raw JSON keeps the wrong (clockwise) orientation.
+    private const string ClockwisePolygonJson =
+        """{"type":"Polygon","coordinates":[[[0.0,0.0],[0.0,1.0],[1.0,1.0],[1.0,0.0],[0.0,0.0]]]}""";
+
     [UnitTest]
     public void NormalizeGeoJsonWinding_ClockwiseExterior_RewritesToRightHandRule()
     {
-        // Ring listed clockwise (up, right, down, left) — the wrong exterior orientation.
-        var cw = new GeometryFactory().CreatePolygon(
-        [
-            new Coordinate(0, 0),
-            new Coordinate(0, 1),
-            new Coordinate(1, 1),
-            new Coordinate(1, 0),
-            new Coordinate(0, 0),
-        ]);
-        var feature = BuildFeatureDataUri(cw);
+        var feature = BuildFeatureDataUri(ClockwisePolygonJson);
 
         var normalized = GPServerOutputReprojection.NormalizeGeoJsonWinding(feature);
 
+        normalized.Should().NotBe(feature, "a clockwise exterior ring must be rewound");
         var polygon = (Polygon)DecodeFeatureGeometry(normalized!);
         NetTopologySuite.Algorithm.Orientation.IsCCW(polygon.ExteriorRing.CoordinateSequence).Should().BeTrue();
 
@@ -115,15 +113,9 @@ public sealed class GPServerOutputReprojectionTests
     public void NormalizeGeoJsonWinding_AlreadyRightHandRule_ReturnsInputUnchanged()
     {
         // Ring listed counter-clockwise — already the right-hand rule, so the bytes are untouched.
-        var ccw = new GeometryFactory().CreatePolygon(
-        [
-            new Coordinate(0, 0),
-            new Coordinate(1, 0),
-            new Coordinate(1, 1),
-            new Coordinate(0, 1),
-            new Coordinate(0, 0),
-        ]);
-        var feature = BuildFeatureDataUri(ccw);
+        const string ccwJson =
+            """{"type":"Polygon","coordinates":[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.0,0.0]]]}""";
+        var feature = BuildFeatureDataUri(ccwJson);
 
         GPServerOutputReprojection.NormalizeGeoJsonWinding(feature).Should().Be(feature);
     }
@@ -136,9 +128,48 @@ public sealed class GPServerOutputReprojectionTests
         GPServerOutputReprojection.NormalizeGeoJsonWinding(httpUri).Should().Be(httpUri);
     }
 
-    private static string BuildFeatureDataUri(Geometry geometry)
+    [UnitTest]
+    public void NormalizeGeoJsonWinding_FeatureCollectionWithClockwiseExterior_RewritesToRightHandRule()
     {
-        var geometryJson = new GeoJsonWriter().Write(geometry);
+        // Layer/overlay tools emit FeatureCollection data URIs (FeatureCollectionArtifact), not a
+        // single Feature; each features[*].geometry must be normalized on the non-reprojected path.
+        var collection = BuildFeatureCollectionDataUri(
+            ClockwisePolygonJson,
+            """{"type":"Point","coordinates":[5.0,5.0]}""");
+
+        var normalized = GPServerOutputReprojection.NormalizeGeoJsonWinding(collection);
+
+        normalized.Should().NotBe(collection);
+        using var doc = DecodeDataUri(normalized!);
+        var features = doc.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(2);
+
+        var polygon = (Polygon)new GeoJsonReader().Read<Geometry>(
+            features[0].GetProperty("geometry").GetRawText());
+        NetTopologySuite.Algorithm.Orientation.IsCCW(polygon.ExteriorRing.CoordinateSequence).Should().BeTrue();
+
+        // The non-polygon sibling feature and all non-geometry members must survive the rewrite.
+        features[1].GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+        features[0].GetProperty("properties").GetProperty("index").GetInt32().Should().Be(0);
+        features[1].GetProperty("properties").GetProperty("index").GetInt32().Should().Be(1);
+        doc.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+    }
+
+    [UnitTest]
+    public void NormalizeGeoJsonWinding_FeatureCollectionAlreadyRightHandRule_ReturnsInputUnchanged()
+    {
+        var collection = BuildFeatureCollectionDataUri(
+            """{"type":"Polygon","coordinates":[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.0,0.0]]]}""",
+            """{"type":"Point","coordinates":[5.0,5.0]}""");
+
+        GPServerOutputReprojection.NormalizeGeoJsonWinding(collection).Should().Be(collection);
+    }
+
+    private static string BuildFeatureDataUri(Geometry geometry) =>
+        BuildFeatureDataUri(new GeoJsonWriter().Write(geometry));
+
+    private static string BuildFeatureDataUri(string geometryJson)
+    {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -158,6 +189,45 @@ public sealed class GPServerOutputReprojectionTests
         }
 
         return GeoJsonDataUriPrefix + Convert.ToBase64String(buffer.ToArray());
+    }
+
+    private static string BuildFeatureCollectionDataUri(params string[] geometryJsons)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            writer.WritePropertyName("features");
+            writer.WriteStartArray();
+            for (var i = 0; i < geometryJsons.Length; i++)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", "Feature");
+                writer.WritePropertyName("geometry");
+                using (var doc = JsonDocument.Parse(geometryJsons[i]))
+                {
+                    doc.RootElement.WriteTo(writer);
+                }
+
+                writer.WritePropertyName("properties");
+                writer.WriteStartObject();
+                writer.WriteNumber("index", i);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return GeoJsonDataUriPrefix + Convert.ToBase64String(buffer.ToArray());
+    }
+
+    private static JsonDocument DecodeDataUri(string dataUri)
+    {
+        var base64 = dataUri[GeoJsonDataUriPrefix.Length..];
+        return JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)));
     }
 
     private static Geometry DecodeFeatureGeometry(string dataUri)
