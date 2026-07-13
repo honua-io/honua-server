@@ -265,13 +265,18 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         return IsLikelyGeographicSrid(context.Wkid);
     }
 
-    // Fallback used only when the translation context does not carry an explicit
-    // IsGeographic flag. Restricted to the well-known, unambiguously geographic codes;
-    // the prior range-rule (4000-4999) swept in EPSG:4978 (geocentric) and projected
-    // variants such as EPSG:4087/4088, mis-routing DWithin to the geography path.
-    // Mirrors PostgresGeometryOperationService.IsLikelyGeographicSrid.
+    // Fallback used only when the translation context does not carry an explicit IsGeographic
+    // flag (the primary path derives it from spatial_ref_sys). This gates ::geography-cast /
+    // geodesic routing (ST_DWithin/ST_Distance over geography, geodesic Intersects), so it uses
+    // the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
+    // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
+    // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
+    // it drops 4619 (SWEREF99) and adds 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary
+    // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
+    // fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
-        => srid is 4326 or 4269 or 4267 or 4258 or 4619 or 4283;
+        => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
     private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {

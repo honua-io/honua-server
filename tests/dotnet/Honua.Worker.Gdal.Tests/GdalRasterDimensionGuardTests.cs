@@ -211,4 +211,93 @@ public sealed class GdalRasterDimensionGuardTests
         var normal = TiffHeaderBuilder.Classic(width: 512, height: 512, bands: 3, bits: 8);
         GdalRasterDimensionGuard.TryAdmit(normal, Options(), out _).Should().BeTrue();
     }
+
+    // --- positive raster-format allowlist (#2784) ------------------------------
+
+    private static byte[] Jp2CodestreamMagic() => [0xFF, 0x4F, 0xFF, 0x51, 0x00, 0x2F, 0x00, 0x00];
+
+    private static byte[] Jp2BoxMagic() =>
+        [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A];
+
+    private static byte[] GifMagic() => "GIF89a"u8.ToArray();
+
+    private static byte[] BmpMagic() => [0x42, 0x4D, 0x36, 0x00, 0x00, 0x00];
+
+    private static byte[] NitfMagic() => "NITF02.10"u8.ToArray();
+
+    private static byte[] HfaMagic() => "EHFA_HEADER_TAG"u8.ToArray();
+
+    [UnitTest]
+    public void ClassifyContainer_BombVectorMagicBytes_ReturnsMatchingFormat()
+    {
+        GdalRasterDimensionGuard.ClassifyContainer(Jp2CodestreamMagic())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Jpeg2000);
+        GdalRasterDimensionGuard.ClassifyContainer(Jp2BoxMagic())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Jpeg2000);
+        GdalRasterDimensionGuard.ClassifyContainer(GifMagic())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Gif);
+        GdalRasterDimensionGuard.ClassifyContainer(BmpMagic())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Bmp);
+        GdalRasterDimensionGuard.ClassifyContainer(NitfMagic())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Nitf);
+        GdalRasterDimensionGuard.ClassifyContainer(HfaMagic())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Hfa);
+    }
+
+    [UnitTest]
+    public void ClassifyContainer_GuardedAndUnknownMagicBytes_ReturnsMatchingFormat()
+    {
+        GdalRasterDimensionGuard.ClassifyContainer(TiffHeaderBuilder.Classic(16, 16, 1, 8))
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Tiff);
+        GdalRasterDimensionGuard.ClassifyContainer(TiffHeaderBuilder.Png(16, 16))
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Png);
+        GdalRasterDimensionGuard.ClassifyContainer(TiffHeaderBuilder.Jpeg(16, 16, 3))
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Jpeg);
+        // A GeoJSON FeatureCollection is not a raster container → Unknown → admitted.
+        GdalRasterDimensionGuard.ClassifyContainer("{\"type\":\"FeatureCollection\"}"u8.ToArray())
+            .Should().Be(GdalRasterDimensionGuard.RasterContainerFormat.Unknown);
+    }
+
+    [UnitTest]
+    public void TryAdmit_RefusesNonAllowlistedRasterFormat_Jpeg2000()
+    {
+        // The strongest live vector: a JP2 whose SIZ could declare dimensions to 2^32,
+        // which the dimension guard cannot parse. It must be refused before spawn.
+        GdalRasterDimensionGuard.TryAdmit(Jp2CodestreamMagic(), Options(), out var error).Should().BeFalse();
+        error.Should().Contain("JPEG2000").And.Contain("allowlist");
+    }
+
+    [UnitTest]
+    public void TryAdmit_RefusesNonAllowlistedRasterFormats_GifBmpNitfHfa()
+    {
+        GdalRasterDimensionGuard.TryAdmit(GifMagic(), Options(), out var gif).Should().BeFalse();
+        gif.Should().Contain("GIF");
+        GdalRasterDimensionGuard.TryAdmit(BmpMagic(), Options(), out var bmp).Should().BeFalse();
+        bmp.Should().Contain("BMP");
+        GdalRasterDimensionGuard.TryAdmit(NitfMagic(), Options(), out var nitf).Should().BeFalse();
+        nitf.Should().Contain("NITF");
+        GdalRasterDimensionGuard.TryAdmit(HfaMagic(), Options(), out var hfa).Should().BeFalse();
+        hfa.Should().Contain("HFA");
+    }
+
+    [UnitTest]
+    public void TryAdmit_StillAdmitsAllowlistedFormats()
+    {
+        // Regression: the allowlist must not disturb the dimension-guarded formats.
+        GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Classic(512, 512, 3, 8), Options(), out _).Should().BeTrue();
+        GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Png(256, 256, colourType: 6), Options(), out _).Should().BeTrue();
+        GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Jpeg(800, 600, 3), Options(), out _).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryAdmit_ExtendedAllowlist_AdmitsFormat_ExplicitOptIn()
+    {
+        // Operators can extend the allowlist (accepting the documented OOM risk); once
+        // JPEG2000 is allowed, the guard admits its magic (bounding then falls to GDAL).
+        var options = new GdalWorkerOptions
+        {
+            AllowedRasterInputFormats = { "JPEG2000" },
+        };
+        GdalRasterDimensionGuard.TryAdmit(Jp2CodestreamMagic(), options, out var error).Should().BeTrue(error);
+    }
 }

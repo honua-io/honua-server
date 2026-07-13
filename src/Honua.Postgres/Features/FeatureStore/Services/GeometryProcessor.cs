@@ -56,7 +56,14 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         // always selected alongside this expression (see FeatureQueryBuilder select clauses).
         var gmlIdExpression =
             $"'geom.' || {DatabaseSchema.LayerIdColumn}::text || '.' || {DatabaseSchema.ObjectIdColumn}::text";
-        return $"ST_AsGML(3, {baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)}, NULL, {gmlIdExpression})";
+
+        // GML 3.2 surface patches follow the ISO 19107 right-hand rule (exterior ring CCW, holes
+        // CW). Stored data is frequently CW-exterior (Esri applyEdits, shapefile imports), so
+        // enforce the orientation to match the GeoJSON path; ST_ForcePolygonCCW is a no-op for
+        // non-polygonal geometry. The geometric surface orientation is preserved through the GML
+        // axis-flip option: option 16 relabels axes into srsName (lat/lon) order without reversing
+        // the ring, so the CCW-exterior winding still holds (matches GeoServer) (#2745).
+        return $"ST_AsGML(3, ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)}, NULL, {gmlIdExpression})";
     }
 
     public string GetGeometryGeoJsonExpression(CoreGeometryStorageType storageType, FeatureQuery query)
@@ -87,7 +94,10 @@ internal sealed class GeometryProcessor : IGeometryProcessor
             baseGeometry = DatumTransformSql.BuildTransformExpression(baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation);
         }
 
-        return $"ST_AsKML({baseGeometry}, {FeatureQueryEncoding.GeometryTextPrecision})";
+        // KML polygons use right-hand-rule winding (exterior CCW, holes CW); normalize CW-exterior
+        // stored data to match the GeoJSON/GML paths. ST_ForcePolygonCCW passes non-polygonal
+        // geometry through unchanged (#2745).
+        return $"ST_AsKML(ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision})";
     }
 
     public string GetGeometryWriteExpression(CoreGeometryStorageType storageType, string parameterName, int? layerSrid)

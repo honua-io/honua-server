@@ -46,10 +46,10 @@ public class ImageServerSamplesHandlerTests
 
         var context = CreateImageServerContext();
         var result = await handler.GetSamplesAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
 
-        // No servable Zarr store for the layer: honest 501 rather than sampling the collapsed raster.
-        context.Response.StatusCode.Should().Be(StatusCodes.Status501NotImplemented);
+        // No servable Zarr store for the layer: honest NotImplemented (501) rather than sampling the
+        // collapsed raster. GeoServices maps 501 to body error.code 500 (FromHttpStatusCode default).
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default);
     }
 
@@ -66,9 +66,7 @@ public class ImageServerSamplesHandlerTests
 
         var context = CreateImageServerContext();
         var result = await handler.GetSamplesAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]
@@ -200,9 +198,7 @@ public class ImageServerSamplesHandlerTests
 
         var context = CreateImageServerContext();
         var result = await handler.GetSamplesAsync(context, 1, values, CancellationToken.None);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
     }
 
     private ImageServerSamplesHandler CreateHandler(IZarrStore zarrStore)

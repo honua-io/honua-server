@@ -139,6 +139,39 @@ public sealed class GdalRasterizeExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Rasterize_OverCapOutputSize_FailsBeforeReachingTheCli()
+    {
+        // A tiny vector input requesting an enormous output grid must be refused before
+        // gdal_rasterize allocates the width×height raster (#2782).
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdal_rasterize must not run for an over-cap output grid"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterizeJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096, maxRasterPixels: 4096L * 4096L),
+            NullLogger<GdalRasterizeJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterizeJobExecutor.HandledProcessId,
+                ("source", Base64("{\"type\":\"FeatureCollection\",\"features\":[]}")),
+                ("burnValue", "1"),
+                ("width", "1000000"),
+                ("height", "1000000"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("exceeds configured");
+            runner.Invocations.Should().BeEmpty("the over-cap output grid must be refused before gdal_rasterize runs");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     private static GdalRasterizeJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

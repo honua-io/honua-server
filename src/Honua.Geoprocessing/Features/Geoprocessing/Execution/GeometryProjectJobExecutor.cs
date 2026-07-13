@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Rendering;
 using Microsoft.Extensions.Options;
@@ -27,9 +28,6 @@ namespace Honua.Geoprocessing.Execution;
 internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.project";
-
-    private static readonly HashSet<int> WebMercatorAliases =
-        new() { 3857, 900913, 102100, 102113, 3785 };
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<GeometryProjectJobExecutor> _logger;
@@ -118,7 +116,7 @@ internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
         try
         {
             projected = inputs.FromSrid == inputs.ToSrid
-                || (WebMercatorAliases.Contains(inputs.FromSrid) && WebMercatorAliases.Contains(inputs.ToSrid))
+                || (SpatialReferenceExtensions.IsWebMercatorSrid(inputs.FromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(inputs.ToSrid))
                     ? source.Copy()
                     : ReprojectInMemory(source, inputs.FromSrid, inputs.ToSrid);
         }
@@ -179,17 +177,17 @@ internal sealed partial class GeometryProjectJobExecutor : IProcessExecutor
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (fromSrid == 4326 && WebMercatorAliases.Contains(toSrid))
+        if (fromSrid == 4326 && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && toSrid == 4326)
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && toSrid == 4326)
         {
             return true;
         }

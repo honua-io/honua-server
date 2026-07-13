@@ -141,7 +141,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
            IsWebMercatorSrid(query.OutputSrid.Value);
 
     private static bool IsWebMercatorSrid(int srid)
-        => srid is 3857 or 900913 or 102100 or 102113 or 3785;
+        => Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(srid);
 
     // Raster point queries are point-only call sites, so inline the same 4326->3857
     // math Honua uses in-process and avoid per-row PostGIS ST_Transform overhead.

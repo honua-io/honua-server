@@ -317,6 +317,58 @@ public class PostgresSqlFilterTranslatorTests
     }
 
     [Fact]
+    public void Translate_SpatialDistance_ContextNotGeographicButGeodesicSafeSrid_UsesGeographyFallback()
+    {
+        // Fallback path (#2732): when the resource carries no explicit IsGeographic flag, the
+        // translator routes ::geography casts for SRIDs on the narrow geodesic-safe bucket. ETRS89
+        // (4258) is geodesic-safe, so DWithin transforms to WGS84 and evaluates on the ellipsoid.
+        var resource = CreateResource(new MetadataV2SpatialReference
+        {
+            Srid = 4258,
+            Crs = "EPSG:4258",
+            IsGeographic = false,
+        });
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4258, "POINT(1 2)");
+        var distance = new Literal(100, LiteralType.Number);
+        var spatial = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            geometry,
+            distance);
+
+        var result = _translator.Translate(spatial, resource);
+
+        result.Sql.Should().Be("ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2)");
+    }
+
+    [Fact]
+    public void Translate_SpatialDistance_ContextNotGeographicSweref99_KeepsPlanarFallback()
+    {
+        // #2732 fallback delta: the narrow geodesic-safe bucket drops SWEREF99 (4619) that the old
+        // 6-code Postgres fallback carried. Without an explicit IsGeographic flag, 4619 now stays on
+        // the planar path; the primary spatial_ref_sys-derived flag still classifies it correctly.
+        var resource = CreateResource(new MetadataV2SpatialReference
+        {
+            Srid = 4619,
+            Crs = "EPSG:4619",
+            IsGeographic = false,
+        });
+        var wkb = new byte[] { 1, 2, 3, 4 };
+        var geometry = new GeometryLiteral(wkb, 4619, "POINT(1 2)");
+        var distance = new Literal(100, LiteralType.Number);
+        var spatial = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            geometry,
+            distance);
+
+        var result = _translator.Translate(spatial, resource);
+
+        result.Sql.Should().Be("ST_DWithin(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1), @p2)");
+    }
+
+    [Fact]
     public void Translate_PlanarIntersects_OnGeographicLayer_KeepsPlanarSemantics()
     {
         // CQL2/FES predicates never carry the Geodesic flag: the CITE-validated
