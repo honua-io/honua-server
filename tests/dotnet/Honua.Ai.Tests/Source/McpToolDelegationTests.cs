@@ -75,6 +75,7 @@ public sealed class McpToolDelegationTests
             .Returns(new DryRunResult
             {
                 EstimatedDurationSeconds = 42,
+                DurationEstimateAvailable = true,
                 EstimatedArtifacts = [ArtifactKind.FeatureLayer],
                 SideEffects = ["writes workspace scratch"]
             });
@@ -89,6 +90,7 @@ public sealed class McpToolDelegationTests
         result.IsError.Should().BeFalse();
         var structured = result.StructuredContent!.Value;
         structured.GetProperty("estimatedDurationSeconds").GetDouble().Should().Be(42);
+        structured.GetProperty("estimateAvailable").GetBoolean().Should().BeTrue();
         var artifacts = structured.GetProperty("estimatedArtifacts");
         artifacts.GetArrayLength().Should().Be(1);
         artifacts[0].GetString().Should().Be(nameof(ArtifactKind.FeatureLayer));
@@ -99,6 +101,35 @@ public sealed class McpToolDelegationTests
             OperatorResourceType.Process,
             OperatorOperation.Read,
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_dry_run_plan")]
+    public async Task DryRunPlan_NoEstimateAvailable_EmitsNullDurationNotFabricatedZero()
+    {
+        // The default DryRunResult reports no duration estimate; the tool must emit null and
+        // estimateAvailable=false rather than a fabricated 0 (#2806).
+        _jobService.DryRunPlan(Arg.Any<AnalysisPlan>(), Arg.Any<ClaimsPrincipal>())
+            .Returns(new DryRunResult
+            {
+                EstimatedDurationSeconds = 0,
+                DurationEstimateAvailable = false,
+                EstimatedArtifacts = [ArtifactKind.FeatureLayer],
+                SideEffects = []
+            });
+
+        var tool = new DryRunPlanTool(_jobService, NullLogger<DryRunPlanTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpPlanArgument { Plan = McpTestFactory.CreateValidPlanInput() },
+            McpJsonContext.Default.McpPlanArgument);
+
+        var result = await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("estimatedDurationSeconds").ValueKind.Should().Be(JsonValueKind.Null);
+        structured.GetProperty("estimateAvailable").GetBoolean().Should().BeFalse();
     }
 
     [UnitTest]

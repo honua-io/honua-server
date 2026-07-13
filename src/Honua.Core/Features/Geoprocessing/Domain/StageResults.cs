@@ -35,9 +35,18 @@ public sealed record PlanValidationResult
 public sealed record DryRunResult
 {
     /// <summary>
-    /// Estimated wall-clock duration in seconds.
+    /// Estimated wall-clock duration in seconds. Only meaningful when
+    /// <see cref="DurationEstimateAvailable"/> is <c>true</c>; otherwise it is an unknown
+    /// sentinel (0) and callers must not present it as a real estimate.
     /// </summary>
     public double EstimatedDurationSeconds { get; init; }
+
+    /// <summary>
+    /// Whether <see cref="EstimatedDurationSeconds"/> is a real estimate. Defaults to
+    /// <c>false</c> because no per-process cost model is wired yet, so adapters report
+    /// "no estimate available" instead of a fabricated 0 (#2806).
+    /// </summary>
+    public bool DurationEstimateAvailable { get; init; }
 
     /// <summary>
     /// Artifact types the plan is expected to produce.

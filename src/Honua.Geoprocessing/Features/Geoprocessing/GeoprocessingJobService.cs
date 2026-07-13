@@ -53,6 +53,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
 
+    // Process ids the registered in-process managed executors can dispatch. Null when the
+    // executor set was not supplied (direct unit-test construction), which disables the
+    // sync-only dispatchability rule in ValidatePlan and preserves legacy behavior.
+    private readonly HashSet<string>? _managedExecutorProcessIds;
+
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
     /// delegating sub-services. The sub-services are registered in DI alongside this type.
@@ -68,7 +73,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
-        IOptions<LimitsOptions>? limitsOptions = null)
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IEnumerable<IProcessExecutor>? processExecutors = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -81,6 +87,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _jobStore = jobStore;
+        // Snapshot the dispatchable process ids of the registered managed executors so
+        // ValidatePlan can flag sync-only catalog processes with the SAME id set the
+        // GeoprocessingDispatchJobExecutor routes at execution time (#2806). Native-profile
+        // processes have no in-process executor but are served by the out-of-process worker,
+        // so IsProcessDispatchable falls back to the catalog runtime profile for those.
+        _managedExecutorProcessIds = processExecutors is null
+            ? null
+            : processExecutors
+                .SelectMany(executor => executor.ProcessIds)
+                .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -107,7 +123,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
-        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
+        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
+        IEnumerable<IProcessExecutor>? processExecutors = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -122,7 +139,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions)
+            limitsOptions,
+            processExecutors)
     {
     }
 
@@ -168,6 +186,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         violations.AddRange(catalogViolations);
         warnings.AddRange(catalogWarnings);
 
+        // Surface the direct single-step execution reality as structured warnings so validate
+        // no longer silently implies a hand-authored multi-step or sync-only plan runs as
+        // written on the direct path: >1 process step, a process step not at position 0,
+        // sync-only (non-dispatchable) process ids, and ignored non-Geoprocess step kinds
+        // (#2806). These plans stay isExecutable=true (a multi-step DAG runs on the workflow
+        // engine; a protocol-only process runs on its synchronous surface), so this only adds
+        // warnings. Uses the same dispatchable id set the runtime dispatcher routes.
+        warnings.AddRange(PlanExecutabilityAnalyzer.AnalyzeDirectExecution(
+            plan,
+            _managedExecutorProcessIds is null ? null : IsProcessDispatchable));
+
         foreach (var v in catalogViolations)
         {
             if (v.Code == "UNKNOWN_PROCESS")
@@ -211,9 +240,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var result = new DryRunResult
         {
+            // No per-process cost model is wired yet, so a duration would be fabricated.
+            // Report "no estimate available" (DurationEstimateAvailable=false) rather than a
+            // misleading 0 (#2806); 0 remains the sentinel the gRPC long projection already
+            // treats as unknown. When a cost model lands, set the flag and populate the value.
             EstimatedDurationSeconds = 0,
+            DurationEstimateAvailable = false,
             EstimatedArtifacts = plan.Outputs,
-            SideEffects = []
+            SideEffects = BuildDryRunSideEffects(plan)
         };
 
         GeoprocessingServiceLog.DryRunCompleted(_logger, plan.PlanId, result.EstimatedDurationSeconds);
@@ -1096,6 +1130,60 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var first = violations[0];
         throw new GeoprocessingValidationException(
             $"Plan failed catalog validation: {first.Code} — {first.Message}");
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="processId"/> can actually be dispatched as a
+    /// job: a managed process handled by a registered in-process executor, or a native-profile
+    /// catalog process served by the out-of-process worker. Unknown ids return <c>true</c> so
+    /// the dedicated <c>UNKNOWN_PROCESS</c> catalog violation owns them rather than being
+    /// double-reported as non-dispatchable.
+    /// </summary>
+    private bool IsProcessDispatchable(string processId)
+    {
+        var definition = _processCatalog.GetProcess(processId);
+        if (definition is null)
+        {
+            return true;
+        }
+
+        if (_managedExecutorProcessIds is not null && _managedExecutorProcessIds.Contains(processId))
+        {
+            return true;
+        }
+
+        // A native-profile process has no in-process managed executor but is claimed and run by
+        // the out-of-process GDAL worker, so it is genuinely dispatchable (aligns with the
+        // raster/surface direct-execution set). A managed-profile process with no registered
+        // executor is a synchronous-only catalog entry that would fail at dispatch.
+        return !string.Equals(
+            RuntimeProfiles.Normalize(definition.RuntimeProfile),
+            RuntimeProfiles.Managed,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Builds the observable side-effect descriptions for a dry-run. Processes on the
+    /// <see cref="ProcessExecutionTier.Mutating"/> tier write caller-selected durable state, so
+    /// they are surfaced; analytic processes produce only a job artifact and add no entry.
+    /// </summary>
+    private List<string> BuildDryRunSideEffects(AnalysisPlan plan)
+    {
+        var effects = new List<string>();
+        foreach (var step in plan.Steps)
+        {
+            if (step.Kind != AnalysisPlanStepKind.Geoprocess || string.IsNullOrWhiteSpace(step.ProcessId))
+            {
+                continue;
+            }
+
+            if (_processCatalog.GetProcess(step.ProcessId) is { ExecutionTier: ProcessExecutionTier.Mutating })
+            {
+                effects.Add($"Process '{step.ProcessId}' writes durable state (mutating tier).");
+            }
+        }
+
+        return effects;
     }
 
     private bool ContainsMutatingProcess(AnalysisPlan plan)

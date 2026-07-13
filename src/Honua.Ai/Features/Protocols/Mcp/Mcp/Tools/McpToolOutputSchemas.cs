@@ -224,9 +224,16 @@ internal static class McpToolOutputSchemas
         $$"""
         {
           "type": "object",
-          "required": ["estimatedDurationSeconds", "estimatedArtifacts", "sideEffects"],
+          "required": ["estimatedDurationSeconds", "estimateAvailable", "estimatedArtifacts", "sideEffects"],
           "properties": {
-            "estimatedDurationSeconds": { "type": "number" },
+            "estimatedDurationSeconds": {
+              "type": ["number", "null"],
+              "description": "Estimated wall-clock seconds, or null when no estimate is available (estimateAvailable=false)."
+            },
+            "estimateAvailable": {
+              "type": "boolean",
+              "description": "Whether estimatedDurationSeconds is a real estimate rather than 'no estimate available'."
+            },
             "estimatedArtifacts": {
               "type": "array",
               "items": { "type": "string", "enum": {{ArtifactKindEnum}} }
