@@ -751,9 +751,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         }
         var first = ring[0];
         var last = ring[ring.Count - 1];
-        if (first.Longitude == last.Longitude
-            && first.Latitude == last.Latitude
-            && (first.Height ?? 0.0) == (last.Height ?? 0.0))
+        if (SceneVertexCoordinates.IsRingClosingDuplicate(first, last))
         {
             return ring.Count - 1;
         }

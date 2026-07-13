@@ -349,10 +349,8 @@ public static class GeometryTileBuilder
         // convex rings and deterministic for non-convex inputs (rendering may
         // be visually imperfect — documented limitation).
         var ringCount = ring.Count;
-        // If the ring is closed (first == last), drop the duplicate.
-        if (ring[0].Longitude == ring[ringCount - 1].Longitude
-            && ring[0].Latitude == ring[ringCount - 1].Latitude
-            && (ring[0].Height ?? 0.0) == (ring[ringCount - 1].Height ?? 0.0))
+        // If the ring is closed (first == last, within tolerance), drop the duplicate.
+        if (SceneVertexCoordinates.IsRingClosingDuplicate(ring[0], ring[ringCount - 1]))
         {
             ringCount--;
         }
