@@ -57,9 +57,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var response = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -87,9 +86,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var response = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -115,9 +113,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var response = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -148,9 +145,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -164,7 +160,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var updateJson = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
         {
             Content = new StringContent(updateJson, Encoding.UTF8, "application/json")
         };
@@ -194,9 +190,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
         using var createDocument = JsonDocument.Parse(createContent);
@@ -214,7 +209,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var updateJson = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
         {
             Content = new StringContent(updateJson, Encoding.UTF8, "application/json")
         };
@@ -247,9 +242,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
         using var createDocument = JsonDocument.Parse(createContent);
@@ -259,7 +253,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         const string updateJson = """
             {"Geometry":null,"Attributes":{"name":"Lost Geometry"}}
             """;
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},{objectId})")
         {
             Content = new StringContent(updateJson, Encoding.UTF8, "application/json")
         };
@@ -288,9 +282,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -300,7 +293,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         const string replaceJson = """
             {"Attributes":{"name":"Replaced"}}
             """;
-        var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Features({TestLayerId},{objectId})")
+        using var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Features({TestLayerId},{objectId})")
         {
             Content = new StringContent(replaceJson, Encoding.UTF8, "application/json")
         };
@@ -325,7 +318,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         const string replaceJson = """
             {"Attributes":{"name":"Nested PUT Updated"}}
             """;
-        var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Layers({TestLayerId})/Features({objectId})")
+        using var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Layers({TestLayerId})/Features({objectId})")
         {
             Content = new StringContent(replaceJson, Encoding.UTF8, "application/json")
         };
@@ -348,7 +341,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         const string replaceJson = """
             {"Attributes":{"name":"Named PUT Updated"}}
             """;
-        var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Features(LayerId={TestLayerId},ObjectId={objectId})")
+        using var message = new HttpRequestMessage(HttpMethod.Put, $"/odata/Features(LayerId={TestLayerId},ObjectId={objectId})")
         {
             Content = new StringContent(replaceJson, Encoding.UTF8, "application/json")
         };
@@ -382,9 +375,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
         using var createDocument = JsonDocument.Parse(createContent);
@@ -416,9 +408,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(initialRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
         using var createDocument = JsonDocument.Parse(createContent);
@@ -486,9 +477,10 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
             };
 
             var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await sridFixture.Client.PostAsync(
                 $"/odata/Layers({SpatialReferenceTestLayerCatalog.PointLayerId})/Features",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                content);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -521,9 +513,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/Layers(99999)/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/Layers(99999)/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -542,7 +533,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var updateJson = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},999999)")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), $"/odata/Features({TestLayerId},999999)")
         {
             Content = new StringContent(updateJson, Encoding.UTF8, "application/json")
         };
@@ -572,9 +563,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(createRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var createResponse = await _fixture.Client.PostAsync(
-            $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+        using var createContentBody = new StringContent(createJson, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync($"/odata/Layers({TestLayerId})/Features", createContentBody);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
         using var createDocument = JsonDocument.Parse(createContent);
@@ -605,9 +595,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         };
 
         var batchJson = JsonSerializer.Serialize(batchRequest);
-        var batchResponse = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(batchJson, Encoding.UTF8, "application/json"));
+        using var batchContentBody = new StringContent(batchJson, Encoding.UTF8, "application/json");
+        var batchResponse = await _fixture.Client.PostAsync("/odata/$batch", batchContentBody);
 
         batchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 

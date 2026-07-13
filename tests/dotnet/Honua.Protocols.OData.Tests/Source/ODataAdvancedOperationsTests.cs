@@ -28,7 +28,7 @@ public class ODataAdvancedOperationsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /odata/$batch")]
     public async Task Batch_WithEmptyRequests_ReturnsClientErrorOrUnauthorized()
     {
-        var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 

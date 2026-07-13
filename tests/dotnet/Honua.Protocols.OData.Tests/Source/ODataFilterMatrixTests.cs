@@ -75,9 +75,8 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().HaveCount(5); // Sacramento, Salt Lake City, Denver, Phoenix, Boise
-        foreach (var feature in features)
+        foreach (var attrs in features.Select(ParseAttributes))
         {
-            var attrs = ParseAttributes(feature);
             attrs.GetProperty("is_capital").GetBoolean().Should().BeTrue();
         }
     }
@@ -94,9 +93,8 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().HaveCount(10); // 15 total - 5 capitals
-        foreach (var feature in features)
+        foreach (var attrs in features.Select(ParseAttributes))
         {
-            var attrs = ParseAttributes(feature);
             attrs.GetProperty("is_capital").GetBoolean().Should().BeFalse();
         }
     }
@@ -163,10 +161,12 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
         // OData v4.01 'ne' is two-valued: null is "not equal to any value but itself",
         // so the null-state feature (Virtual City) MUST be included, unlike SQL '<>' 3VL.
         features.Should().HaveCount(10); // 15 - 5 California cities (null state included)
-        foreach (var feature in features)
+        foreach (var attrs in features.Select(ParseAttributes))
         {
-            var attrs = ParseAttributes(feature);
             var state = attrs.TryGetProperty("state", out var s) ? s.GetString() : null;
+            // Intentionally asserted on a possibly-null value: FluentAssertions'
+            // Should()/NotBe() are null-safe, and the null-state feature (Virtual
+            // City) is exactly the case this test is verifying is included above.
             state.Should().NotBe("California");
         }
     }
@@ -201,9 +201,8 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().HaveCount(4); // LA, San Diego, San Jose, Phoenix
-        foreach (var feature in features)
+        foreach (var attrs in features.Select(ParseAttributes))
         {
-            var attrs = ParseAttributes(feature);
             attrs.GetProperty("population").GetInt64().Should().BeGreaterThan(1000000);
         }
     }
@@ -236,9 +235,8 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
         var features = await ParseFeaturesAsync(response);
         // Salt Lake City (200591), Boise (235684), Virtual City (0)
         features.Should().HaveCount(3);
-        foreach (var feature in features)
+        foreach (var attrs in features.Select(ParseAttributes))
         {
-            var attrs = ParseAttributes(feature);
             attrs.GetProperty("population").GetInt64().Should().BeLessThan(300000);
         }
     }

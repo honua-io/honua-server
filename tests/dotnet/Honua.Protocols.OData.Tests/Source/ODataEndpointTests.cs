@@ -71,7 +71,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata with Accept metadata preference")]
     public async Task ServiceDocument_WithAcceptMetadataPreference_UsesRequestedMetadataLevel()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=none"));
 
         var response = await _fixture.Client.SendAsync(request);
@@ -91,7 +91,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata with unsupported Accept metadata level")]
     public async Task ServiceDocument_WithAcceptMetadataFull_RejectsUnsupportedMetadataLevel()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
 
         var response = await _fixture.Client.SendAsync(request);
@@ -104,7 +104,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;q=1"));
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/xml;q=0"));
 
@@ -118,7 +118,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_WithXmlRejectedAndWildcardAllowed_ReturnsNotAcceptable()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
         request.Headers.TryAddWithoutValidation("Accept", "application/xml;q=0, */*;q=1");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -131,7 +131,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/$metadata")]
     public async Task Metadata_WithUnsupportedAcceptAndWildcardFallback_ReturnsXml()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/$metadata");
         request.Headers.TryAddWithoutValidation("Accept", "application/json, */*;q=0.1");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -476,7 +476,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId}) with metadata=none")]
     public async Task Features_WithAcceptMetadataNone_OmitsContextAnnotation()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=none"));
 
         var response = await _fixture.Client.SendAsync(request);
@@ -495,7 +495,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId}) with metadata=full")]
     public async Task Features_WithAcceptMetadataFull_RejectsUnsupportedMetadataLevel()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
 
         var response = await _fixture.Client.SendAsync(request);
@@ -509,7 +509,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     public async Task Features_WithFormatMetadataMinimalAndAcceptMetadataFull_UsesFormatPrecedence()
     {
         var format = Uri.EscapeDataString("application/json;odata.metadata=minimal");
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1&$format={format}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1&$format={format}");
         request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse("application/json;odata.metadata=full"));
 
         var response = await _fixture.Client.SendAsync(request);
@@ -525,7 +525,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId}) with Accept quality metadata preferences")]
     public async Task Features_WithAcceptQualityMetadataPreferences_PrefersHighestQualityValue()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=none;q=0.1");
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=minimal;q=1.0");
 
@@ -545,7 +545,7 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId}) with unsupported preferred Accept and supported fallback")]
     public async Task Features_WithAcceptMetadataFullAndSupportedFallback_UsesSupportedFallback()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=1");
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=full;q=1.0");
         request.Headers.Accept.ParseAdd("application/json;odata.metadata=minimal;q=0.5");
 
