@@ -407,17 +407,12 @@ internal static class SeedRunner
         }
 
         await using var command = connection.CreateCommand();
-        if (columns.Count == 0)
-        {
-            command.CommandText = $"INSERT INTO {tableName} DEFAULT VALUES;";
-        }
-        else
-        {
-            command.CommandText = $"""
+        command.CommandText = columns.Count == 0
+            ? $"INSERT INTO {tableName} DEFAULT VALUES;"
+            : $"""
                 INSERT INTO {tableName} ({string.Join(", ", columns)})
                 VALUES ({string.Join(", ", values)});
                 """;
-        }
 
         foreach (var parameter in parameters)
         {
@@ -464,23 +459,17 @@ internal static class SeedRunner
     {
         if (seed.Sql is not null)
         {
-            foreach (var statement in seed.Sql)
+            foreach (var statement in seed.Sql.Where(s => !string.IsNullOrWhiteSpace(s)))
             {
-                if (!string.IsNullOrWhiteSpace(statement))
-                {
-                    yield return statement;
-                }
+                yield return statement;
             }
         }
 
         if (profile?.Sql is not null)
         {
-            foreach (var statement in profile.Sql)
+            foreach (var statement in profile.Sql.Where(s => !string.IsNullOrWhiteSpace(s)))
             {
-                if (!string.IsNullOrWhiteSpace(statement))
-                {
-                    yield return statement;
-                }
+                yield return statement;
             }
         }
     }

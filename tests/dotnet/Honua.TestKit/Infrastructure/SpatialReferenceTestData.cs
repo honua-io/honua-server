@@ -158,18 +158,5 @@ public static class SpatialReferenceTestData
     }
 
     private static string ResolveSeedPath()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        if (directory == null)
-        {
-            throw new FileNotFoundException("Unable to locate repository root for seed data.");
-        }
-
-        return Path.Combine(directory.FullName, "tests", "seed", "spatial-reference.yaml");
-    }
+        => RepositoryPaths.Resolve("tests", "seed", "spatial-reference.yaml");
 }

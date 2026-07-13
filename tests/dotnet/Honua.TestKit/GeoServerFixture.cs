@@ -16,6 +16,11 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class GeoServerFixture : IAsyncLifetime
 {
+    // These static fields back an intentional process-wide, ref-counted shared container:
+    // every GeoServerFixture instance (one per xUnit collection) mutates the same statics
+    // under _sharedLock so only the first InitializeAsync starts the container and only the
+    // last DisposeAsync tears it down. Writing static state from instance lifecycle
+    // methods is the design, not a bug.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static IContainer? _sharedContainer;
     private static string? _sharedBaseUrl;

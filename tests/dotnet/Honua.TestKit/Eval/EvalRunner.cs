@@ -54,7 +54,6 @@ public sealed class EvalRunner
 
         var overallStopwatch = Stopwatch.StartNew();
         var stages = new List<EvalStageOutcome>(capacity: 12);
-        EvalProtocolParityOutcome parity = new();
 
         using var channel = CreateGrpcChannel();
         var client = new Proto.ProcessService.ProcessServiceClient(channel);
@@ -80,7 +79,7 @@ public sealed class EvalRunner
         stages.Add(dryRunOutcome.Stage);
 
         var parityStopwatch = Stopwatch.StartNew();
-        parity = await RunProtocolParityAsync(scenario, validateOutcome.Response, cancellationToken).ConfigureAwait(false);
+        var parity = await RunProtocolParityAsync(scenario, validateOutcome.Response, cancellationToken).ConfigureAwait(false);
         parityStopwatch.Stop();
         stages.Add(BuildProtocolParityStageOutcome(parity, parityStopwatch.ElapsedMilliseconds));
 

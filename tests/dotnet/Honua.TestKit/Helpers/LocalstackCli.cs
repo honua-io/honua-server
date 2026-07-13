@@ -228,15 +228,11 @@ public static class LocalstackCli
         }
 
         var commandName = OperatingSystem.IsWindows() ? $"{command}.exe" : command;
-        foreach (var entry in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var candidate = Path.Combine(entry.Trim(), commandName);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
 
-        return null;
+        // Each candidate combines a PATH entry (directory) with the fixed command
+        // filename, so this combine can't drop the directory.
+        return path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(entry => Path.Combine(entry.Trim(), commandName))
+            .FirstOrDefault(File.Exists);
     }
 }

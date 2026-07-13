@@ -15,6 +15,11 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class MapServerFixture : IAsyncLifetime
 {
+    // These static fields back an intentional process-wide, ref-counted shared container:
+    // every MapServerFixture instance (one per xUnit collection) mutates the same statics
+    // under _sharedLock so only the first InitializeAsync starts the containers and only the
+    // last DisposeAsync tears them down. Writing static state from instance lifecycle
+    // methods is the design, not a bug.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static INetwork? _sharedNetwork;
     private static IContainer? _sharedMapServerContainer;
@@ -168,6 +173,9 @@ public sealed class MapServerFixture : IAsyncLifetime
         _sharedInitialized = false;
     }
 
+    // All Path.Combine calls below join a generated staging directory with fixed
+    // literal segments (a GUID-suffixed folder name or file names), so none can drop
+    // an earlier argument.
     private static MapServerStagingDirectory CreateStagingDirectory()
     {
         var rootDirectory = Path.Combine(Path.GetTempPath(), $"honua-mapserver-{Guid.NewGuid():N}");

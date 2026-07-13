@@ -35,7 +35,6 @@ public static class ContractTestScenarios
             var content = await response.Content.ReadAsStringAsync();
 
             // Validate against schema
-            var jsonDocument = JsonDocument.Parse(content);
             var token = JToken.Parse(content);
             var isValid = token.IsValid(schema);
 
@@ -49,6 +48,8 @@ public static class ContractTestScenarios
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: any failure (schema load, HTTP, parse) becomes a
+            // failed ContractValidation entry instead of crashing the harness.
             results.Add(new ContractValidation
             {
                 TestName = $"OGC Schema Validation: {endpoint}",
@@ -84,6 +85,8 @@ public static class ContractTestScenarios
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: reports the failure as a validation result rather
+            // than crashing the harness.
             results.Add(new ContractValidation
             {
                 TestName = "GeoJSON Schema Validation",
@@ -122,6 +125,8 @@ public static class ContractTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: one endpoint's failure becomes a failed
+                // validation entry for that endpoint without aborting the remaining checks.
                 results.Add(new ContractValidation
                 {
                     TestName = $"Backwards Compatibility: {endpoint}",
@@ -184,6 +189,8 @@ public static class ContractTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: one contract's failure becomes a failed
+                // validation entry for that contract without aborting the remaining checks.
                 results.Add(new ContractValidation
                 {
                     TestName = $"Consumer Contract: {contract.ConsumerName}",
@@ -231,12 +238,9 @@ public static class ContractTestScenarios
                 // Validate required headers
                 if (expectation.RequiredHeaders != null)
                 {
-                    foreach (var requiredHeader in expectation.RequiredHeaders)
+                    foreach (var requiredHeader in expectation.RequiredHeaders.Where(h => !HasHeader(response, h)))
                     {
-                        if (!HasHeader(response, requiredHeader))
-                        {
-                            errors.Add($"Missing required header: {requiredHeader}");
-                        }
+                        errors.Add($"Missing required header: {requiredHeader}");
                     }
                 }
 
@@ -260,6 +264,8 @@ public static class ContractTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: one endpoint's failure becomes a failed
+                // validation entry for that endpoint without aborting the remaining checks.
                 results.Add(new ContractValidation
                 {
                     TestName = $"HTTP Semantics: {endpoint}",
@@ -350,12 +356,10 @@ public static class ContractTestScenarios
                     errors.Add($"Invalid type: {type}");
                 }
 
-                if (type == "FeatureCollection")
+                if (type == "FeatureCollection" &&
+                    (!root.TryGetProperty("features", out var features) || !features.ValueKind.Equals(JsonValueKind.Array)))
                 {
-                    if (!root.TryGetProperty("features", out var features) || !features.ValueKind.Equals(JsonValueKind.Array))
-                    {
-                        errors.Add("FeatureCollection must have 'features' array");
-                    }
+                    errors.Add("FeatureCollection must have 'features' array");
                 }
             }
 
@@ -378,22 +382,17 @@ public static class ContractTestScenarios
 
     private static void ValidateCoordinateOrder(JsonElement element, List<string> errors)
     {
-        if (element.ValueKind == JsonValueKind.Object)
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("coordinates", out var coords) && coords.ValueKind == JsonValueKind.Array)
         {
-            if (element.TryGetProperty("coordinates", out var coords) && coords.ValueKind == JsonValueKind.Array)
+            foreach (var coord in coords.EnumerateArray().Where(c => c.ValueKind == JsonValueKind.Array && c.GetArrayLength() >= 2))
             {
-                foreach (var coord in coords.EnumerateArray())
-                {
-                    if (coord.ValueKind == JsonValueKind.Array && coord.GetArrayLength() >= 2)
-                    {
-                        var lon = coord[0].GetDouble();
-                        var lat = coord[1].GetDouble();
+                var lon = coord[0].GetDouble();
+                var lat = coord[1].GetDouble();
 
-                        if (Math.Abs(lon) > 180 || Math.Abs(lat) > 90)
-                        {
-                            errors.Add($"Invalid coordinates: [{lon}, {lat}] - longitude must be [-180, 180], latitude [-90, 90]");
-                        }
-                    }
+                if (Math.Abs(lon) > 180 || Math.Abs(lat) > 90)
+                {
+                    errors.Add($"Invalid coordinates: [{lon}, {lat}] - longitude must be [-180, 180], latitude [-90, 90]");
                 }
             }
         }
@@ -428,6 +427,8 @@ public static class ContractTestScenarios
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: any parse/compare failure becomes a validation
+            // error message rather than crashing the harness.
             errors.Add($"Compatibility validation failed: {ex.Message}");
         }
 

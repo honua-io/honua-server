@@ -7,6 +7,9 @@ internal static class ReferenceServerTestData
 {
     internal const string TsunamiEvacuationZonesZipFileName = "Extreme_Tsunami_Evacuation_Zones.zip";
 
+    // All Path.Combine calls below join a directory (AppContext.BaseDirectory or a
+    // discovered repo root) with fixed literal segments, so none can drop an earlier
+    // argument by unexpectedly resolving as rooted.
     internal static string ResolveTsunamiEvacuationZonesZipPath()
     {
         var outputDirectoryCandidate = Path.Combine(
