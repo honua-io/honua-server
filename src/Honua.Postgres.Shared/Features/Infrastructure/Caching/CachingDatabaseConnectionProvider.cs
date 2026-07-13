@@ -44,6 +44,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     private readonly ISchemaContext? _schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
     private readonly QueryConcurrencyGate? _concurrencyGate;
+    private readonly ConnectionPoolMetrics? _connectionPoolMetrics;
     private int _acquiredSlots;
 
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
@@ -60,13 +61,24 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         ILogger<CachingDatabaseConnectionProvider> logger,
         ISchemaContext? schemaContext = null,
         IActiveDbConnectionTracker? activeDbConnectionTracker = null,
-        QueryConcurrencyGate? concurrencyGate = null)
+        QueryConcurrencyGate? concurrencyGate = null,
+        ConnectionPoolMetrics? connectionPoolMetrics = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaContext = schemaContext;
         _activeDbConnectionTracker = activeDbConnectionTracker;
         _concurrencyGate = concurrencyGate;
+        _connectionPoolMetrics = connectionPoolMetrics;
+
+        // Publish the admission ceiling as the pool size so ConnectionPoolMetrics can report a real
+        // utilization ratio to the database health check (previously UpdatePoolSize had no caller, so
+        // utilization was always "unavailable"). The gate's MaxLimit is clamped to the configured Npgsql
+        // pool maximum, so it is the effective bound on concurrent connections.
+        if (_connectionPoolMetrics is not null && _concurrencyGate is not null)
+        {
+            _connectionPoolMetrics.UpdatePoolSize(_concurrencyGate.MaxLimit);
+        }
     }
 
     /// <summary>
@@ -80,6 +92,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         {
             if (!await _concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false))
             {
+                _connectionPoolMetrics?.RecordConnectionTimeout();
                 ConnectionAcquisitionTimedOut(_logger, null);
                 throw new ServiceUnavailableException(
                     "Connection acquisition timed out — server is under heavy load.",
@@ -105,8 +118,15 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
                 ? connection
                 : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
         }
-        catch
+        catch (Exception ex)
         {
+            // A genuine connection-open failure is telemetry for the database health check; a cooperative
+            // cancellation is not a pool failure, so it is excluded.
+            if (ex is not OperationCanceledException)
+            {
+                _connectionPoolMetrics?.RecordConnectionAcquisitionFailure(ex.GetType().Name);
+            }
+
             if (connection is not null)
             {
                 await connection.DisposeAsync().ConfigureAwait(false);

@@ -625,9 +625,24 @@ internal sealed class OpsFindingsService : IOpsFindingsService
 
         foreach (var point in latestPerProtocol)
         {
-            var latencyBreach = point.P95Ms >= options.ServingLatencyP95ThresholdMs;
+            // Min-sample guard (#2809): a protocol with too few in-window requests has statistically
+            // meaningless percentiles (at n=1, p95 == that single request), so a lone slow or failed request
+            // would flap a finding. Require a configurable minimum sample count before evaluating.
+            if (point.RequestCount < options.ServingLatencyMinSampleCount)
+            {
+                continue;
+            }
+
+            var p95Breach = point.P95Ms >= options.ServingLatencyP95ThresholdMs;
+            var p99Breach = point.P99Ms >= options.ServingLatencyP99ThresholdMs;
             var errorRateBreach = point.ErrorRate >= options.ServingErrorRateThreshold;
-            if (!latencyBreach && !errorRateBreach)
+            // Error-budget burn rate (#2805): the windowed error rate relative to the SLO error budget. A
+            // fast burn (multiple above the threshold) catches an error spike sharper than the raw-rate check.
+            var burnRate = options.ServingErrorRateThreshold > 0
+                ? point.ErrorRate / options.ServingErrorRateThreshold
+                : 0d;
+            var burnRateBreach = burnRate >= options.ServingErrorBudgetBurnRateThreshold;
+            if (!p95Breach && !p99Breach && !errorRateBreach && !burnRateBreach)
             {
                 continue;
             }
@@ -640,7 +655,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 Rule = RuleServingLatencySlo,
                 Severity = OpsFindingSeverity.Warning,
                 Title = $"{point.Protocol} serving-latency/error-rate SLO breach",
-                Explanation = $"Protocol '{point.Protocol}' p95 latency is {point.P95Ms:F0}ms (threshold {options.ServingLatencyP95ThresholdMs:F0}ms) and/or error rate is {point.ErrorRate:P2} (threshold {options.ServingErrorRateThreshold:P2}) over the last {options.ServingLatencyLookbackMinutes:F0} minute(s) of persisted history. No automatic action is offered: a generic protocol-level latency/error-rate breach has no single safe remediation.",
+                Explanation = $"Protocol '{point.Protocol}' p95 latency is {point.P95Ms:F0}ms (threshold {options.ServingLatencyP95ThresholdMs:F0}ms), p99 latency is {point.P99Ms:F0}ms (threshold {options.ServingLatencyP99ThresholdMs:F0}ms), and/or error rate is {point.ErrorRate:P2} (threshold {options.ServingErrorRateThreshold:P2}, burn rate {burnRate:F1}x vs. threshold {options.ServingErrorBudgetBurnRateThreshold:F1}x) over the last {options.ServingLatencyLookbackMinutes:F0} minute(s) of persisted history ({point.RequestCount} in-window request(s)). No automatic action is offered: a generic protocol-level latency/error-rate breach has no single safe remediation.",
                 DetectedAt = now,
                 Subject = subject,
                 EvidenceRefs = ["GET /api/v1/admin/observability/ops-health/history", $"protocol:{point.Protocol}"],

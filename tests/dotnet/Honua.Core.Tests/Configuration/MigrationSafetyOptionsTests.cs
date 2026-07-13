@@ -9,18 +9,18 @@ namespace Honua.Core.Tests.Configuration;
 
 /// <summary>
 /// Unit tests for <see cref="MigrationSafetyOptions"/> defaults — the safe single-node upgrade policy
-/// (#2565) must preserve today's behavior out of the box.
+/// (#2565) gated closed by default (#2812) so a schema-narrowing migration is never applied unattended.
 /// </summary>
 public sealed class MigrationSafetyOptionsTests
 {
     [UnitTest]
-    public void Defaults_PreserveTodaysBehavior()
+    public void Defaults_GateContractMigrationsClosed()
     {
         var options = new MigrationSafetyOptions();
 
         options.Enforce.Should().BeTrue("unannotated contract migrations stay fail-closed by default");
-        options.ContractApplyPolicy.Should().Be(ContractApplyPolicy.Auto,
-            "annotated contract migrations apply automatically by default (no gate)");
+        options.ContractApplyPolicy.Should().Be(ContractApplyPolicy.Gate,
+            "annotated contract migrations on an existing database require explicit approval by default (#2812)");
         options.BackupCommand.Should().BeNull("the pre-migration backup hook is opt-in");
     }
 }

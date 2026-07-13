@@ -109,6 +109,25 @@ public sealed class AlertEvaluationOptions
     /// </summary>
     [Required]
     public string LeaderElectionMode { get; init; } = "postgres-advisory-lock";
+
+    /// <summary>
+    /// Age at or above which the evaluation-loop health check treats the current leader's
+    /// heartbeat (its most recent productive pass) as stale and reports the leader hung.
+    /// The evaluator loops at least once per <see cref="IdleDelay"/> while it holds
+    /// leadership, so a heartbeat older than this threshold means the leader is wedged inside
+    /// a pass rather than idle. Only meaningful on the node that currently holds leadership.
+    /// </summary>
+    public TimeSpan HeartbeatStalenessThreshold { get; init; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Duration for which every leadership-acquisition attempt must have been *failing*
+    /// (the coordinator errored rather than cleanly observing another holder) before the
+    /// evaluation health check fires the "no-leader" fault. This is the fleet-wide stall
+    /// signal: when no node can acquire the advisory lock (e.g. connection-pool exhaustion),
+    /// evaluation halts everywhere with no leader, so each node reports it after the threshold.
+    /// A healthy follower (a clean "someone else leads" result) never trips this.
+    /// </summary>
+    public TimeSpan NoLeaderThreshold { get; init; } = TimeSpan.FromMinutes(2);
 }
 
 /// <summary>
@@ -186,6 +205,17 @@ public sealed class AlertDispatchOptions
     /// (and always after a non-empty claim batch) rather than on every idle poll.
     /// </summary>
     public TimeSpan BacklogRefreshInterval { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Age at or above which the dispatch-backlog health check treats the dispatcher's
+    /// most recent poll heartbeat (<c>LastPollAt</c>) as stale and reports the dispatcher
+    /// hung. The dispatcher records a heartbeat every pass (at least once per
+    /// <see cref="IdleDelay"/>), so a heartbeat older than this threshold means the loop is
+    /// wedged inside a pass while still reporting "running" — the failure mode a plain
+    /// running-flag check misses. Must comfortably exceed <see cref="IdleDelay"/> and
+    /// <see cref="BacklogRefreshInterval"/> so a merely-idle dispatcher is never flagged.
+    /// </summary>
+    public TimeSpan HeartbeatStalenessThreshold { get; init; } = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Retention window for delivered (status = delivered) dispatch rows. A periodic

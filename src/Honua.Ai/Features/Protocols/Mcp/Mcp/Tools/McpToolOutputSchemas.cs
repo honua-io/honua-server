@@ -224,9 +224,13 @@ internal static class McpToolOutputSchemas
         $$"""
         {
           "type": "object",
-          "required": ["estimatedDurationSeconds", "estimatedArtifacts", "sideEffects"],
+          "required": ["estimatedDurationSeconds", "durationEstimateAvailable", "estimatedArtifacts", "sideEffects"],
           "properties": {
             "estimatedDurationSeconds": { "type": "number" },
+            "durationEstimateAvailable": {
+              "type": "boolean",
+              "description": "When false (current default), estimatedDurationSeconds is a placeholder (the dry-run path does not model runtime cost), not a prediction — do not treat 0 as 'instant'."
+            },
             "estimatedArtifacts": {
               "type": "array",
               "items": { "type": "string", "enum": {{ArtifactKindEnum}} }
@@ -702,6 +706,11 @@ internal static class McpToolOutputSchemas
                 "type": { "type": "string", "const": "FeatureCollection" },
                 "features": { "type": "array", "items": { "type": "object" } }
               }
+            },
+            "warnings": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Non-fatal advisories, most importantly a likely bbox/CRS mismatch (e.g. projected ordinates under the geographic default bboxSrid=4326, or a bbox entirely outside the layer extent) that would silently return 0 features."
             },
             {{ToolErrorProperties}}
           }

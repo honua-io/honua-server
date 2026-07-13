@@ -54,6 +54,12 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         ALTER TABLE honua_ci_demo ADD COLUMN note TEXT;
         """;
 
+    private const string DropNoteAnnotatedScript =
+        """
+        -- honua:compatibility-review reason=note column removed in the contract phase after v3 rollout
+        ALTER TABLE honua_ci_demo DROP COLUMN note;
+        """;
+
     private readonly LocalSubstratePostgresFixture _postgres;
 
     public LocalSubstrateMigrationGateTests(LocalSubstratePostgresFixture postgres)
@@ -208,25 +214,88 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         var assemblyName = $"honua_synthetic_upgradeapprove_{Guid.NewGuid():N}";
         await ApplyExpandBaselineAsync(connectionString, assemblyName);
 
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        // The approval nonce is bound to the exact pending contract script name (DbUp journals by name,
+        // which SyntheticMigrationsCompiler emits verbatim), so the operator supplies the digest printed
+        // in the block message.
+        var nonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "002_drop_legacy_annotated.sql" });
         var runner = CreateRunner(
             new MigrationSafetyOptions
             {
                 Enforce = true,
                 ContractApplyPolicy = ContractApplyPolicy.Gate,
             },
-            approveContract: true);
-        var upgrade = SyntheticMigrationsCompiler.Compile(
-            assemblyName,
-            ("001_expand.sql", ExpandScript),
-            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+            approvalToken: nonce);
 
         var result = await runner.RunMigrationsAsync(connectionString, upgrade);
 
         result.Successful.Should().BeTrue(
-            $"HONUA_APPROVE_CONTRACT_MIGRATIONS=true approves the gated contract migration. Error: {result.ErrorMessage}");
+            $"the one-shot approval nonce approves the gated contract migration. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().ContainSingle(name => name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
         (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
             .Should().BeFalse("the approved contract migration dropped the legacy column");
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_UpgradeUnderGate_StaleNonceDoesNotApproveLaterContract()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        // One-shot proof (#2812): a nonce minted for the FIRST contract migration must not approve a
+        // LATER, different contract migration — the "HONUA_APPROVE_CONTRACT_MIGRATIONS is never cleared"
+        // failure mode. We reuse the exact token that approved script 002 and show it is inert for 004.
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_oneshot_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        // First upgrade: drop legacy_name (contract 002) and add a note column (expand 003). The pending
+        // annotated-contract set is just {002}, so the approval nonce is bound to that single script.
+        var staleNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "002_drop_legacy_annotated.sql" });
+        var firstUpgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript),
+            ("003_add_note_expand.sql", SecondExpandScript));
+        var firstResult = await CreateRunner(
+                new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Gate },
+                approvalToken: staleNonce)
+            .RunMigrationsAsync(connectionString, firstUpgrade);
+        firstResult.Successful.Should().BeTrue($"the first contract migration applies under its own nonce. Error: {firstResult.ErrorMessage}");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "note")).Should().BeTrue("the note column was added by the expand");
+
+        // A NEW, different contract migration (004 drops the note column) is now pending. The operator has
+        // left the stale 002 nonce in the environment; it must NOT approve 004.
+        var secondUpgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript),
+            ("003_add_note_expand.sql", SecondExpandScript),
+            ("004_drop_note_annotated.sql", DropNoteAnnotatedScript));
+        var blocked = await CreateRunner(
+                new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Gate },
+                approvalToken: staleNonce)
+            .RunMigrationsAsync(connectionString, secondUpgrade);
+
+        blocked.Successful.Should().BeFalse("a nonce bound to script 002 must not approve the later script 004");
+        blocked.ErrorMessage.Should().NotBeNull();
+        blocked.ErrorMessage!.Should().Contain("004_drop_note_annotated.sql", "the block names the new offending script");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "note"))
+            .Should().BeTrue("the stale nonce must not have applied the later contract migration");
+
+        // The freshly-minted nonce for 004 approves it — the gate is not permanently stuck.
+        var freshNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(new[] { "004_drop_note_annotated.sql" });
+        var approved = await CreateRunner(
+                new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Gate },
+                approvalToken: freshNonce)
+            .RunMigrationsAsync(connectionString, secondUpgrade);
+
+        approved.Successful.Should().BeTrue($"the nonce bound to 004 approves it. Error: {approved.ErrorMessage}");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "note"))
+            .Should().BeFalse("the freshly-approved contract migration dropped the note column");
     }
 
     [SkippableFact]
@@ -356,16 +425,16 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
     private static PostgresDatabaseMigrationRunner CreateRunner(
         MigrationSafetyOptions options,
-        bool approveContract = false,
+        string? approvalToken = null,
         IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
     {
         IConfiguration? configuration = null;
-        if (approveContract)
+        if (approvalToken != null)
         {
             configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    [MigrationSafetyOptions.ApproveContractMigrationsKey] = "true",
+                    [MigrationSafetyOptions.ApproveContractMigrationsKey] = approvalToken,
                 })
                 .Build();
         }

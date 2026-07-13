@@ -138,6 +138,7 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
                 P95Ms = protocol.P95Ms,
                 P99Ms = protocol.P99Ms,
                 MaxMs = protocol.MaxMs,
+                Distribution = protocol.Distribution,
             });
         }
 

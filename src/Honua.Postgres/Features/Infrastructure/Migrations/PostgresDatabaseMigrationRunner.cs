@@ -28,7 +28,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
-    private readonly bool _contractMigrationsApproved;
+    private readonly string? _contractApprovalToken;
 
     public PostgresDatabaseMigrationRunner(
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
@@ -39,12 +39,13 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         _backupHookRecorder = backupHookRecorder;
 
         // The contract-apply approval is an explicit top-level operator signal
-        // (HONUA_APPROVE_CONTRACT_MIGRATIONS=true), read via the IConfiguration indexer (Abstractions
+        // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer (Abstractions
         // only, no Binder dependency). It intentionally lives outside the bound options record so an
-        // operator can grant one-shot approval for a single upgrade without editing config files.
-        _contractMigrationsApproved =
-            bool.TryParse(configuration?[MigrationSafetyOptions.ApproveContractMigrationsKey], out var approved)
-            && approved;
+        // operator can grant one-shot approval for a single upgrade without editing config files. The raw
+        // token is validated against the pending-script nonce at apply time (#2812), so a stale value can
+        // never approve a later, unrelated contract migration.
+        var rawApproval = configuration?[MigrationSafetyOptions.ApproveContractMigrationsKey];
+        _contractApprovalToken = string.IsNullOrWhiteSpace(rawApproval) ? null : rawApproval.Trim();
     }
 
     public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
@@ -113,15 +114,17 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     }
 
     /// <summary>
-    /// Journal-scoped contract-apply gate (#2565). When
+    /// Journal-scoped contract-apply gate (#2565, hardened for #2812). When
     /// <see cref="MigrationSafetyOptions.ContractApplyPolicy"/> is
-    /// <see cref="ContractApplyPolicy.Gate"/> and the migration journal is <em>non-empty</em> (an
-    /// existing database, not a fresh install), pending annotated contract-phase scripts require the
-    /// operator's explicit <c>HONUA_APPROVE_CONTRACT_MIGRATIONS=true</c> approval. Returns
-    /// <see langword="null"/> under Auto policy, on a fresh install, when approved, or when nothing
-    /// pending is an annotated contract change. The resulting rejection is an
-    /// <see cref="InvalidOperationException"/> — a non-transient, terminal failure — so degraded-start
-    /// recovery (#1632) gives up rather than retrying a policy block with backoff.
+    /// <see cref="ContractApplyPolicy.Gate"/> (the default) and the migration journal is <em>non-empty</em>
+    /// (an existing database, not a fresh install), pending annotated contract-phase scripts require the
+    /// operator's explicit <c>HONUA_APPROVE_CONTRACT_MIGRATIONS=&lt;nonce&gt;</c> approval, where the nonce is
+    /// bound to the exact pending scripts. Returns <see langword="null"/> under Auto policy, on a fresh
+    /// install, when the supplied token matches the pending-script nonce, or when nothing pending is an
+    /// annotated contract change. The token is one-shot by construction: once the approved scripts are
+    /// applied they leave the pending set, so a stale value cannot approve a later contract migration. The
+    /// resulting rejection is an <see cref="InvalidOperationException"/> — a non-transient, terminal
+    /// failure — so degraded-start recovery (#1632) gives up rather than retrying a policy block with backoff.
     /// </summary>
     private InvalidOperationException? TryBuildContractGateRejection(
         IReadOnlyList<MigrationScriptClassification> classifications,
@@ -139,11 +142,6 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return null;
         }
 
-        if (_contractMigrationsApproved)
-        {
-            return null;
-        }
-
         var pendingAnnotated = classifications
             .Where(c => c.Classification == MigrationSafetyClassification.ContractAnnotated)
             .Select(c => c.ScriptName)
@@ -154,14 +152,25 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return null;
         }
 
+        // One-shot nonce (#2812): the approval token must match the digest of THIS pending contract-script
+        // set. A blanket/stale value (e.g. a left-behind "true") never matches, so approving one upgrade
+        // does not silently approve the next one.
+        var expectedNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(pendingAnnotated);
+        if (_contractApprovalToken != null &&
+            string.Equals(_contractApprovalToken, expectedNonce, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         return new InvalidOperationException(
             "Migration safety gate blocked pending contract-phase migration(s) on an existing database: " +
             $"{string.Join(", ", pendingAnnotated)}. These reviewed (annotated) contract migrations narrow " +
-            "or drop schema and must not ride along an unattended upgrade (Database:MigrationSafety:" +
-            "ContractApplyPolicy=Gate). Review them first via 'GET /api/v1/admin/deploy/preflight' and " +
-            $"'GET /api/v1/admin/observability/migrations', then set '{MigrationSafetyOptions.ApproveContractMigrationsKey}" +
-            "=true' to apply them (or run migrations out-of-band with HONUA_SKIP_MIGRATIONS=true, which owns " +
-            "its own safety).");
+            "or drop schema and must not ride along an unattended upgrade while older nodes are still " +
+            "serving (Database:MigrationSafety:ContractApplyPolicy=Gate). Review them first via " +
+            "'GET /api/v1/admin/deploy/preflight' and 'GET /api/v1/admin/observability/migrations', then set " +
+            $"'{MigrationSafetyOptions.ApproveContractMigrationsKey}={expectedNonce}' to apply them (a one-shot " +
+            "token bound to these exact scripts that will not approve any later contract migration), or run " +
+            "migrations out-of-band with HONUA_SKIP_MIGRATIONS=true, which owns its own safety.");
     }
 
     /// <summary>

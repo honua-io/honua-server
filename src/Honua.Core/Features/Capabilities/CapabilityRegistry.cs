@@ -102,6 +102,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_geocode_addresses", "geocode_addresses", "execution"),
             ("honua_solve_route", "solve_route", "execution"),
             ("honua_cancel_job", "cancel_job", "lifecycle"),
+            ("honua_list_jobs", "list_jobs", "lifecycle"),
             ("honua_propose_operation", "propose_operation", "lifecycle"),
             ("honua_ingest_dataset", "ingest_dataset", "lifecycle"),
             ("honua_publish_service", "publish_service", "lifecycle"),
@@ -115,6 +116,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_supported_operation_kinds", "supported_operation_kinds", "results"),
             ("honua_propose_rollback", "propose_rollback", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
+            ("honua_describe_layer", "describe_layer", "results"),
             ("honua_query_features", "query_features", "results"),
             // No honua_edit_features: Honua does not expose an AI/MCP feature-mutation
             // tool per ADR-0028 (AI operational data editing is not supported;

@@ -94,6 +94,16 @@ internal sealed class McpPlanAnalysisOutput
     public string? Reason { get; set; }
 
     /// <summary>
+    /// Actionable next-step hint so a caller is never dead-ended. Populated in fixture
+    /// (demo) mode to point at hand-authoring a plan from the process catalog
+    /// (<c>honua://catalog/processes</c>) and validating it with <c>honua_validate_plan</c>,
+    /// since a fixture plan is a capability demo rather than a compilation of the caller's
+    /// intent (#2815). Absent when a live planner compiled the intent.
+    /// </summary>
+    [JsonPropertyName("nextSteps")]
+    public string? NextSteps { get; set; }
+
+    /// <summary>
     /// App-package preview emitted by app-builder workflow families (e.g.
     /// operations-dashboard). Carries the widget composition, data bindings,
     /// and manifest preview the SDK needs to render the draft before apply.

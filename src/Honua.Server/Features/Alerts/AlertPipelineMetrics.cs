@@ -77,6 +77,7 @@ internal static class AlertPipelineMetrics
 
     private static long _backlogPending;
     private static long _backlogDeadLettered;
+    private static long _evaluationLeaderAcquisitionFailing;
 
     static AlertPipelineMetrics()
     {
@@ -91,6 +92,12 @@ internal static class AlertPipelineMetrics
             () => Interlocked.Read(ref _backlogDeadLettered),
             unit: "dispatches",
             description: "Alert dispatch rows currently in the dead-letter state.");
+
+        HonuaTelemetry.Meter.CreateObservableGauge(
+            "honua.alerts.evaluation_no_leader",
+            () => Interlocked.Read(ref _evaluationLeaderAcquisitionFailing),
+            unit: "{state}",
+            description: "1 when the evaluator's leadership-acquisition attempts are faulting (no node can acquire the evaluation lease); else 0.");
     }
 
     /// <summary>Records one emitted alert event for the given trigger type.</summary>
@@ -157,6 +164,13 @@ internal static class AlertPipelineMetrics
         Interlocked.Exchange(ref _backlogPending, pending);
         Interlocked.Exchange(ref _backlogDeadLettered, deadLettered);
     }
+
+    /// <summary>
+    /// Publishes the evaluator's no-leader state to the <c>honua.alerts.evaluation_no_leader</c>
+    /// gauge: <c>true</c> when leadership acquisition is currently faulting fleet-wide.
+    /// </summary>
+    public static void RecordEvaluationLeaderAcquisitionFailing(bool failing)
+        => Interlocked.Exchange(ref _evaluationLeaderAcquisitionFailing, failing ? 1 : 0);
 
     /// <summary>Returns a stopwatch timestamp for measuring delivery latency.</summary>
     public static long StartTimestamp() => Stopwatch.GetTimestamp();
