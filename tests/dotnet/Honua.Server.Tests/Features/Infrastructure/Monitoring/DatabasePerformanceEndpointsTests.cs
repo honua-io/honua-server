@@ -5,6 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
@@ -46,26 +47,29 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /monitoring/health/comprehensive")]
     [Endpoint("GET /monitoring/metrics/connection-pool")]
     [Endpoint("GET /monitoring/metrics/database-resilience")]
-    public async Task ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown()
+    public async Task PoolTelemetry_IsSourcedFromLiveAdmissionGate()
     {
+        // Regression guard for honua-server#2805: pool utilization + acquisition-timeout telemetry
+        // must come from the live admission gate (IDatabaseAdmissionPressureSource), not the former
+        // decorative counters that no production code ever wrote. On the Postgres-backed fixture the
+        // gate is registered, so utilization is *available* (not "unavailable"/"Unknown") and the
+        // windowed timeout count is a real, honest signal.
         using (var scope = _fixture.Services.CreateScope())
         {
+            var pressureSource = scope.ServiceProvider.GetService<IDatabaseAdmissionPressureSource>();
+            pressureSource.Should().NotBeNull("the Postgres provider must expose the admission gate as the pressure source");
+
             var metricsCollector = scope.ServiceProvider.GetRequiredService<ProductionMetricsCollector>();
             var connectionPoolMetrics = scope.ServiceProvider.GetRequiredService<ConnectionPoolMetrics>();
-            connectionPoolMetrics.TryGetPoolUtilization(out _).Should().BeFalse();
-            var initialTimeouts = connectionPoolMetrics.GetTotalTimeouts();
 
-            connectionPoolMetrics.RecordConnectionTimeout();
+            // Utilization is now available (gate-backed) and honestly bounded to [0,1].
+            connectionPoolMetrics.TryGetPoolUtilization(out var utilization).Should().BeTrue();
+            utilization.Should().BeInRange(0d, 1d);
+            connectionPoolMetrics.GetTotalTimeouts().Should().BeGreaterThanOrEqualTo(0);
 
-            connectionPoolMetrics.RecordConnectionTimeout();
-
-            var expectedTimeouts = initialTimeouts + 2;
             var directHealthMetrics = metricsCollector.GetHealthMetrics();
-
-            directHealthMetrics.ConnectionAcquisitionTimeouts.Should().Be(expectedTimeouts);
-            directHealthMetrics.ConnectionAcquisitionFailures.Should().Be(0);
-            directHealthMetrics.HasDatabaseConnectionPoolUtilization.Should().BeFalse();
-            directHealthMetrics.DatabaseConnectionPoolUtilization.Should().Be(0);
+            directHealthMetrics.HasDatabaseConnectionPoolUtilization.Should().BeTrue();
+            directHealthMetrics.DatabaseConnectionPoolUtilization.Should().BeInRange(0d, 1d);
 
             using var adminClient = _fixture.CreateAdminClient();
 
@@ -75,13 +79,13 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             using (var document = JsonDocument.Parse(await connectionPoolResponse.Content.ReadAsStringAsync()))
             {
                 var root = document.RootElement;
-                root.GetProperty("totalTimeouts").GetInt64().Should().Be(expectedTimeouts);
-                root.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-                root.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-                root.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
-                root.GetProperty("utilization").GetDouble().Should().Be(0);
-                root.GetProperty("utilizationStatus").GetString().Should().Be("unavailable");
-                root.GetProperty("utilizationPercentage").GetString().Should().Be("unavailable");
+                root.GetProperty("totalTimeouts").GetInt64().Should().BeGreaterThanOrEqualTo(0);
+                root.GetProperty("hasUtilizationData").GetBoolean().Should().BeTrue();
+                root.GetProperty("utilizationStatus").GetString().Should().Be("available");
+                root.GetProperty("utilization").GetDouble().Should().BeInRange(0d, 1d);
+                root.GetProperty("healthStatus").GetString().Should().NotBe("Unknown");
+                // The query-admission block mirrors the same gate the pressure source reads.
+                root.GetProperty("queryAdmission").ValueKind.Should().Be(JsonValueKind.Object);
             }
 
             var resilienceResponse = await adminClient.GetAsync("/monitoring/metrics/database-resilience");
@@ -89,16 +93,14 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 
             using var resilienceDocument = JsonDocument.Parse(await resilienceResponse.Content.ReadAsStringAsync());
             var pool = resilienceDocument.RootElement.GetProperty("connectionPool");
-            pool.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-            pool.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
+            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeTrue();
+            pool.GetProperty("healthStatus").GetString().Should().NotBe("Unknown");
             resilienceDocument.RootElement
                 .GetProperty("alerts")
                 .EnumerateArray()
                 .Select(static alert => alert.GetString())
                 .Should()
-                .Contain("Warning: Database connection pool utilization telemetry is unavailable.");
-
+                .NotContain("Warning: Database connection pool utilization telemetry is unavailable.");
 
             var healthResponse = await adminClient.GetAsync("/monitoring/health/comprehensive");
             healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -109,9 +111,9 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             databaseEntry.GetProperty("status").GetString().Should().Be("Healthy");
 
             var data = databaseEntry.GetProperty("data");
-            data.GetProperty("connectionTimeouts").GetInt64().Should().Be(expectedTimeouts);
+            data.GetProperty("connectionTimeouts").GetInt64().Should().BeGreaterThanOrEqualTo(0);
             data.GetProperty("connectionFailures").GetInt64().Should().Be(0);
-            data.GetProperty("poolUtilization").GetDouble().Should().Be(0);
+            data.GetProperty("poolUtilization").GetDouble().Should().BeInRange(0d, 1d);
         }
     }
 

@@ -9,7 +9,7 @@ namespace Honua.Postgres.Features.Infrastructure;
 /// <summary>
 /// Singleton admission-control gate that limits concurrent database operations.
 /// </summary>
-internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissionGate
+internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissionGate, IDatabaseAdmissionPressureSource
 {
     // Lowest admission target a runtime tune request may set. Independent of the
     // adaptive floor (_minLimit) so an ops action can lower admission below the
@@ -17,8 +17,16 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     // reverts to the configured limits on restart.
     private const int TunableFloor = 1;
 
+    // Default rolling window over which connection-acquisition timeouts are counted for the
+    // admission-pressure signal (honua-server#2805). Windowed rather than lifetime-monotonic so
+    // a burst of timeouts relaxes back to zero once the window elapses instead of latching a
+    // Critical finding until the process restarts.
+    private static readonly TimeSpan DefaultTimeoutWindow = TimeSpan.FromSeconds(60);
+
     private readonly object _sync = new();
     private readonly Queue<QueuedWaiter> _waiters = new();
+    private readonly Queue<long> _recentTimeoutTimestamps = new();
+    private readonly long _timeoutWindowTicks;
     private readonly TimeProvider _timeProvider;
     private readonly long _timestampFrequency;
     private readonly TimeSpan _acquisitionTimeout;
@@ -36,11 +44,13 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     private int _lastAdjustmentDirection;
     private bool _disposed;
 
-    public QueryConcurrencyGate(ConnectionLimits limits, TimeProvider? timeProvider = null)
+    public QueryConcurrencyGate(ConnectionLimits limits, TimeProvider? timeProvider = null, TimeSpan? timeoutWindow = null)
     {
         ArgumentNullException.ThrowIfNull(limits);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _timestampFrequency = Math.Max(1, _timeProvider.TimestampFrequency);
+        var window = timeoutWindow is { } w && w > TimeSpan.Zero ? w : DefaultTimeoutWindow;
+        _timeoutWindowTicks = Math.Max(1, (long)(_timestampFrequency * window.TotalSeconds));
 
         var configuredPoolCeiling = limits.MaxConnectionPoolSize > 0
             ? limits.MaxConnectionPoolSize
@@ -100,6 +110,10 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         {
             if (waiter.Completion.TrySetCanceled(CancellationToken.None))
             {
+                // A genuine admission timeout: the caller waited the full acquisition
+                // timeout without getting a slot. This is the real pool-exhaustion signal
+                // the ops-findings db-pressure rule keys on (honua-server#2805).
+                RecordAcquisitionTimeout();
                 return false;
             }
 
@@ -220,6 +234,44 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
                 _queueWaitEwmaMs,
                 _adjustmentCount,
                 FormatAdjustmentDirection(_lastAdjustmentDirection));
+        }
+    }
+
+    /// <inheritdoc/>
+    public DatabaseAdmissionPressureReading GetPressureReading()
+    {
+        lock (_sync)
+        {
+            PruneTimeoutWindowLocked();
+            var utilization = _targetLimit > 0 ? (double)_inFlight / _targetLimit : 0d;
+            return new DatabaseAdmissionPressureReading(
+                HasUtilization: _targetLimit > 0,
+                Utilization: Math.Clamp(utilization, 0d, 1d),
+                InFlight: _inFlight,
+                CurrentLimit: _targetLimit,
+                QueuedWaiters: _waiters.Count,
+                AcquisitionTimeoutsInWindow: _recentTimeoutTimestamps.Count);
+        }
+    }
+
+    // Records a connection-acquisition timeout into the rolling window. Called from the
+    // WaitAsync timeout path (the real 503-on-heavy-load chokepoint) so the admission-pressure
+    // signal has a genuine production writer.
+    private void RecordAcquisitionTimeout()
+    {
+        lock (_sync)
+        {
+            _recentTimeoutTimestamps.Enqueue(_timeProvider.GetTimestamp());
+            PruneTimeoutWindowLocked();
+        }
+    }
+
+    private void PruneTimeoutWindowLocked()
+    {
+        var cutoff = _timeProvider.GetTimestamp() - _timeoutWindowTicks;
+        while (_recentTimeoutTimestamps.Count > 0 && _recentTimeoutTimestamps.Peek() < cutoff)
+        {
+            _recentTimeoutTimestamps.Dequeue();
         }
     }
 

@@ -30,8 +30,34 @@ internal readonly record struct DatabasePressureSnapshot(
     long ConnectionAcquisitionFailures);
 
 /// <summary>
-/// Default <see cref="IOpsDatabasePressureSignal"/> backed by the shared <see cref="ProductionMetricsCollector"/>
-/// singleton (the same source the ops-health snapshot's database view reads).
+/// Primary <see cref="IOpsDatabasePressureSignal"/> backed by the live
+/// <see cref="IDatabaseAdmissionPressureSource"/> — the admission gate that actually throttles
+/// connection acquisition on the hot path. This is the genuine sensor the
+/// <c>db-bounded-admission-pressure</c> rule keys on; prior to honua-server#2805 the rule read
+/// counters that no production code ever wrote, so it could never fire during a real
+/// pool-exhaustion incident.
+/// </summary>
+internal sealed class AdmissionGateDatabasePressureSignal(IDatabaseAdmissionPressureSource source)
+    : IOpsDatabasePressureSignal
+{
+    public DatabasePressureSnapshot GetSnapshot()
+    {
+        var reading = source.GetPressureReading();
+        return new DatabasePressureSnapshot(
+            reading.HasUtilization,
+            reading.Utilization,
+            reading.AcquisitionTimeoutsInWindow,
+            // Non-timeout acquisition failures are not separately instrumented in the
+            // admission-gate model; timeouts are the actionable pressure signal.
+            ConnectionAcquisitionFailures: 0);
+    }
+}
+
+/// <summary>
+/// Fallback <see cref="IOpsDatabasePressureSignal"/> backed by the shared
+/// <see cref="ProductionMetricsCollector"/> singleton, used only when no admission gate is
+/// registered (providers without a bounded admission gate). The collector's pool view is itself
+/// gate-backed, so this honestly reports utilization as unavailable rather than fabricating it.
 /// </summary>
 internal sealed class ProductionMetricsDatabasePressureSignal(ProductionMetricsCollector metricsCollector)
     : IOpsDatabasePressureSignal

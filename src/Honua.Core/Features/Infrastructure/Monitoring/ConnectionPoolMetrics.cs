@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
@@ -9,6 +10,15 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 /// Metrics for database connection pool monitoring.
 /// Provides insights into connection utilization and acquisition latency.
 /// </summary>
+/// <remarks>
+/// Utilization and connection-acquisition-timeout readings are sourced from the live
+/// <see cref="IDatabaseAdmissionPressureSource"/> (the admission gate that actually throttles
+/// connection acquisition) when one is registered — i.e. on the Postgres provider. Prior to
+/// honua-server#2805 these values came from counters that no production code ever wrote, so the
+/// health snapshot reported <c>utilization: null, timeouts: 0</c> even during a real
+/// pool-exhaustion incident. When no admission gate is active (non-Postgres providers) utilization
+/// is honestly reported as unavailable rather than fabricated.
+/// </remarks>
 public sealed class ConnectionPoolMetrics : IDisposable
 {
     private readonly Meter _meter;
@@ -16,22 +26,26 @@ public sealed class ConnectionPoolMetrics : IDisposable
     private readonly ObservableGauge<int> _activeConnections;
     private readonly ObservableGauge<int> _poolSize;
     private readonly ObservableGauge<double> _poolUtilization;
-    private readonly Counter<long> _connectionAcquisitionFailures;
-    private readonly Counter<long> _connectionTimeouts;
+    private readonly ObservableGauge<long> _connectionTimeouts;
 
     private readonly IActiveDbConnectionTracker _connectionTracker;
-    private volatile int _currentPoolSize;
-    private volatile bool _hasPoolSize;
-    private long _acquisitionFailures;
-    private long _timeouts;
+    private readonly IDatabaseAdmissionPressureSource? _pressureSource;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConnectionPoolMetrics"/> class.
     /// </summary>
     /// <param name="connectionTracker">Connection tracker for active connection monitoring.</param>
-    public ConnectionPoolMetrics(IActiveDbConnectionTracker connectionTracker)
+    /// <param name="pressureSource">
+    /// Live database admission-pressure source (the concurrency/admission gate). Optional: absent for
+    /// providers that do not run a bounded admission gate, in which case utilization is reported as
+    /// unavailable and the windowed timeout count is zero.
+    /// </param>
+    public ConnectionPoolMetrics(
+        IActiveDbConnectionTracker connectionTracker,
+        IDatabaseAdmissionPressureSource? pressureSource = null)
     {
         _connectionTracker = connectionTracker;
+        _pressureSource = pressureSource;
         _meter = new Meter("Honua.Database.ConnectionPool");
 
         _connectionAcquisitionLatency = _meter.CreateHistogram<double>(
@@ -46,21 +60,18 @@ public sealed class ConnectionPoolMetrics : IDisposable
 
         _poolSize = _meter.CreateObservableGauge<int>(
             "honua_db_pool_size",
-            () => _currentPoolSize,
-            description: "Total size of database connection pool");
+            () => _pressureSource?.GetPressureReading().CurrentLimit ?? 0,
+            description: "Current logical database admission target (concurrent-query limit)");
 
         _poolUtilization = _meter.CreateObservableGauge<double>(
             "honua_db_pool_utilization_ratio",
-            () => _currentPoolSize > 0 ? (double)_connectionTracker.GetActiveCount() / _currentPoolSize : 0,
+            () => TryGetPoolUtilization(out var utilization) ? utilization : 0,
             description: "Database connection pool utilization ratio (0.0-1.0)");
 
-        _connectionAcquisitionFailures = _meter.CreateCounter<long>(
-            "honua_db_connection_acquisition_failures_total",
-            description: "Total number of database connection acquisition failures");
-
-        _connectionTimeouts = _meter.CreateCounter<long>(
-            "honua_db_connection_timeouts_total",
-            description: "Total number of database connection timeouts");
+        _connectionTimeouts = _meter.CreateObservableGauge<long>(
+            "honua_db_connection_acquisition_timeouts_window",
+            () => GetTotalTimeouts(),
+            description: "Connection-acquisition timeouts observed within the admission gate's rolling window");
     }
 
     /// <summary>
@@ -71,35 +82,6 @@ public sealed class ConnectionPoolMetrics : IDisposable
     public void RecordConnectionAcquisitionLatency(TimeSpan latency, params KeyValuePair<string, object?>[] tags)
     {
         _connectionAcquisitionLatency.Record(latency.TotalMilliseconds, tags);
-    }
-
-    /// <summary>
-    /// Records a database connection acquisition failure.
-    /// </summary>
-    /// <param name="reason">The reason for the failure.</param>
-    public void RecordConnectionAcquisitionFailure(string reason)
-    {
-        _connectionAcquisitionFailures.Add(1, new KeyValuePair<string, object?>("reason", reason));
-        Interlocked.Increment(ref _acquisitionFailures);
-    }
-
-    /// <summary>
-    /// Records a database connection timeout.
-    /// </summary>
-    public void RecordConnectionTimeout()
-    {
-        _connectionTimeouts.Add(1);
-        Interlocked.Increment(ref _timeouts);
-    }
-
-    /// <summary>
-    /// Updates the pool size for utilization calculation.
-    /// </summary>
-    /// <param name="poolSize">The current pool size.</param>
-    public void UpdatePoolSize(int poolSize)
-    {
-        _currentPoolSize = Math.Max(0, poolSize);
-        _hasPoolSize = _currentPoolSize > 0;
     }
 
     /// <summary>
@@ -134,16 +116,20 @@ public sealed class ConnectionPoolMetrics : IDisposable
     }
 
     /// <summary>
-    /// Tries to get the current pool utilization ratio when the pool size is known.
+    /// Tries to get the current pool utilization ratio when an admission gate is active.
     /// </summary>
     /// <param name="utilization">The utilization ratio if available.</param>
     /// <returns>True when utilization is available, otherwise false.</returns>
     public bool TryGetPoolUtilization(out double utilization)
     {
-        if (_hasPoolSize && _currentPoolSize > 0)
+        if (_pressureSource is not null)
         {
-            utilization = (double)_connectionTracker.GetActiveCount() / _currentPoolSize;
-            return true;
+            var reading = _pressureSource.GetPressureReading();
+            if (reading.HasUtilization)
+            {
+                utilization = reading.Utilization;
+                return true;
+            }
         }
 
         utilization = 0;
@@ -151,21 +137,27 @@ public sealed class ConnectionPoolMetrics : IDisposable
     }
 
     /// <summary>
-    /// Gets the total number of connection acquisition failures.
+    /// Gets the number of connection-acquisition failures. The admission-gate model surfaces
+    /// acquisition timeouts (see <see cref="GetTotalTimeouts"/>) as the actionable pressure signal;
+    /// non-timeout acquisition failures are not separately instrumented, so this returns zero.
     /// </summary>
-    /// <returns>Total failures count.</returns>
+    /// <returns>Total failures count (always zero under the admission-gate model).</returns>
+#pragma warning disable CA1822 // Kept as an instance method for API stability across metrics consumers.
     public long GetTotalFailures()
+#pragma warning restore CA1822
     {
-        return Volatile.Read(ref _acquisitionFailures);
+        return 0;
     }
 
     /// <summary>
-    /// Gets the total number of connection timeouts.
+    /// Gets the number of connection-acquisition timeouts observed within the admission gate's
+    /// rolling window. This is a windowed signal, not a lifetime-monotonic total, so a burst of
+    /// timeouts relaxes back to zero once the window elapses instead of latching until restart.
     /// </summary>
-    /// <returns>Total timeouts count.</returns>
+    /// <returns>Windowed timeout count (zero when no admission gate is active).</returns>
     public long GetTotalTimeouts()
     {
-        return Volatile.Read(ref _timeouts);
+        return _pressureSource?.GetPressureReading().AcquisitionTimeoutsInWindow ?? 0;
     }
 
     /// <summary>
