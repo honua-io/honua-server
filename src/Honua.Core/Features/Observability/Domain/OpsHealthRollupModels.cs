@@ -46,6 +46,15 @@ public sealed record OpsHealthLatencyPoint
     /// <summary>Gets the maximum duration in milliseconds.</summary>
     public required double MaxMs { get; init; }
 
+    /// <summary>
+    /// Gets the mergeable latency distribution sketch for this point, when the replica captured one (#2809).
+    /// When present on every per-replica point, cross-replica merges recompute cluster percentiles from the
+    /// summed distribution instead of averaging pre-aggregated percentiles (which hides a sick replica).
+    /// <c>null</c> when unavailable (older rows, or a provider that does not persist the sketch), in which
+    /// case the merge falls back to the request-weighted-mean approximation.
+    /// </summary>
+    public LatencyDistribution? Distribution { get; init; }
+
     /// <summary>Gets the server-error rate over the window (0.0 to 1.0).</summary>
     public double ErrorRate => RequestCount > 0 ? (double)ErrorCount / RequestCount : 0d;
 }

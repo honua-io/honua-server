@@ -3,6 +3,7 @@
 
 using System.Diagnostics.Metrics;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -88,7 +89,10 @@ internal sealed class ProductionMetricsCollector : IDisposable
             CacheHitRatio = cacheHitRatio,
             TotalQueries = totalRequests,
             TotalErrors = totalServerErrors,
-            ErrorRate = CalculateErrorRate(totalRequests, totalServerErrors),
+            // Error rate is a WINDOWED signal (#2809): a lifetime ratio (cumulative errors over cumulative
+            // requests since process start) dilutes toward zero and never reflects a current spike. Source it
+            // from the rolling serving-latency window instead; the cumulative totals above remain as counters.
+            ErrorRate = CalculateWindowedErrorRate(),
             ActiveConnections = _connectionTracker.GetActiveCount(),
             ConnectionAcquisitionTimeouts = _connectionPoolMetrics.GetTotalTimeouts(),
             ConnectionAcquisitionFailures = _connectionPoolMetrics.GetTotalFailures(),
@@ -112,14 +116,23 @@ internal sealed class ProductionMetricsCollector : IDisposable
     }
 
     /// <summary>
-    /// Gets the current error rate.
+    /// Computes the server-error rate over the rolling serving-latency window (#2809), aggregated across all
+    /// observed protocols. Windowed so the signal reflects a current error spike rather than a lifetime ratio
+    /// that decays toward zero as cumulative traffic grows.
     /// </summary>
-    /// <param name="totalRequests">Total number of live HTTP requests observed.</param>
-    /// <param name="totalServerErrors">Total number of live HTTP server errors observed.</param>
-    /// <returns>Error rate (0.0-1.0).</returns>
-    private static double CalculateErrorRate(long totalRequests, long totalServerErrors)
+    /// <returns>Windowed error rate (0.0-1.0).</returns>
+    private static double CalculateWindowedErrorRate()
     {
-        return totalRequests > 0 ? (double)totalServerErrors / totalRequests : 0.0;
+        var serving = HonuaTelemetry.GetServingLatencySnapshot();
+        long windowRequests = 0;
+        long windowErrors = 0;
+        foreach (var protocol in serving.Protocols)
+        {
+            windowRequests += protocol.RequestCount;
+            windowErrors += protocol.ErrorCount;
+        }
+
+        return windowRequests > 0 ? (double)windowErrors / windowRequests : 0.0;
     }
 
     /// <summary>

@@ -21,13 +21,15 @@ internal interface IOpsDatabasePressureSignal
 /// <summary>A single database connection-pool pressure reading.</summary>
 /// <param name="HasConnectionPoolUtilization">Whether pool utilization telemetry is available.</param>
 /// <param name="ConnectionPoolUtilization">Connection-pool utilization ratio (0.0-1.0), when available.</param>
-/// <param name="ConnectionAcquisitionTimeouts">Total connection-acquisition timeout count.</param>
-/// <param name="ConnectionAcquisitionFailures">Total connection-acquisition failure count.</param>
+/// <param name="ConnectionAcquisitionTimeouts">Connection-acquisition timeout count over the pressure window.</param>
+/// <param name="ConnectionAcquisitionFailures">Connection-acquisition failure count.</param>
+/// <param name="QueuedWaiters">Number of callers currently queued waiting for an admission slot.</param>
 internal readonly record struct DatabasePressureSnapshot(
     bool HasConnectionPoolUtilization,
     double ConnectionPoolUtilization,
     long ConnectionAcquisitionTimeouts,
-    long ConnectionAcquisitionFailures);
+    long ConnectionAcquisitionFailures,
+    int QueuedWaiters = 0);
 
 /// <summary>
 /// Default <see cref="IOpsDatabasePressureSignal"/> backed by the shared <see cref="ProductionMetricsCollector"/>
@@ -44,6 +46,29 @@ internal sealed class ProductionMetricsDatabasePressureSignal(ProductionMetricsC
             metrics.DatabaseConnectionPoolUtilization,
             metrics.ConnectionAcquisitionTimeouts,
             metrics.ConnectionAcquisitionFailures);
+    }
+}
+
+/// <summary>
+/// <see cref="IOpsDatabasePressureSignal"/> sourced from the real database admission gate (#2805). The
+/// <c>db-bounded-admission-pressure</c> finding previously read <see cref="ProductionMetricsCollector"/>
+/// counters that had NO production writer (utilization was always "unavailable" and the timeout/failure
+/// totals were always zero), so it could never fire during a real exhaustion. The gate is the actual
+/// throttle in <c>CachingDatabaseConnectionProvider.OpenConnectionAsync</c>: it knows the live in-flight
+/// count, the current admission limit, the queued waiters, and a WINDOWED acquisition-timeout count.
+/// </summary>
+internal sealed class AdmissionGateDatabasePressureSignal(IRuntimeTunableAdmissionGate admissionGate)
+    : IOpsDatabasePressureSignal
+{
+    public DatabasePressureSnapshot GetSnapshot()
+    {
+        var pressure = admissionGate.GetPressure();
+        return new DatabasePressureSnapshot(
+            pressure.HasUtilization,
+            pressure.Utilization,
+            pressure.WindowedAcquisitionTimeouts,
+            0,
+            pressure.QueuedWaiters);
     }
 }
 

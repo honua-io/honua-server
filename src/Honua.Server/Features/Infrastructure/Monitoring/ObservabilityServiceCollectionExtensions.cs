@@ -31,7 +31,18 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddPerformanceMonitoring();
         services.TryAddSingleton<ConnectionPoolMetrics>();
         services.AddSingleton<ProductionMetricsCollector>();
-        services.AddSingleton<IOpsDatabasePressureSignal, ProductionMetricsDatabasePressureSignal>();
+
+        // Source the db-bounded-admission-pressure finding from the REAL admission gate when it is registered
+        // (Postgres provider) — it has live in-flight/limit/waiter state and a windowed acquisition-timeout
+        // count (#2805). Only when the gate is absent (non-Postgres providers) do we fall back to the
+        // ProductionMetricsCollector-backed signal, whose pool counters otherwise have no production writer.
+        services.AddSingleton<IOpsDatabasePressureSignal>(sp =>
+        {
+            var admissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>();
+            return admissionGate is not null
+                ? new AdmissionGateDatabasePressureSignal(admissionGate)
+                : new ProductionMetricsDatabasePressureSignal(sp.GetRequiredService<ProductionMetricsCollector>());
+        });
         services.Configure<RecentErrorBufferOptions>(
             configuration.GetSection(RecentErrorBufferOptions.SectionName));
         services.AddSingleton<RecentErrorBuffer>();
