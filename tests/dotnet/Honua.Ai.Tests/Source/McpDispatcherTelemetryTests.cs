@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
@@ -280,17 +281,7 @@ public sealed class McpDispatcherTelemetryTests
     }
 
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
-    {
-        foreach (var tag in tags)
-        {
-            if (tag.Key == name)
-            {
-                return tag.Value as string;
-            }
-        }
-
-        return null;
-    }
+        => tags.Where(tag => tag.Key == name).Select(tag => tag.Value as string).FirstOrDefault();
 
     private McpOperatorSurface BuildSurface()
     {

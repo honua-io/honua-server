@@ -425,6 +425,7 @@ public sealed class AnalysisGenerationServiceTests
             var index = Math.Min(_call, responses.Count - 1);
             _call++;
             var body = responses.Count == 0 ? "{}" : responses[index];
+            // Ownership transfers to the HttpClient pipeline, which disposes the response.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
