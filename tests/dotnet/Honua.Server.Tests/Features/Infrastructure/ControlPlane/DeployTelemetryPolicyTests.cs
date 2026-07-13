@@ -327,6 +327,38 @@ public sealed class DeployTelemetryPolicyTests
             }
         };
 
+    [Fact]
+    public void Parse_GoldenQueryWithContentAssertion_IsValid_AndCarriesGoldenSignal()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.golden.url"] = "https://example.com/golden",
+            ["telemetry.golden.expected_sha256"] = "ABCDEF",
+            ["telemetry.golden.expected_status"] = "200"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue();
+        policy.HasGoldenQuery.Should().BeTrue();
+        policy.GoldenQueryUrl.Should().Be("https://example.com/golden");
+        policy.GoldenQueryExpectedBodySha256.Should().Be("ABCDEF");
+    }
+
+    [Fact]
+    public void Parse_GoldenQueryWithoutContentAssertion_IsInvalid()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.golden.url"] = "https://example.com/golden"
+        }));
+
+        policy.Should().NotBeNull("a golden URL alone yields a policy so the misconfiguration is caught, not ignored");
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain("golden query URL was configured without");
+    }
+
     private static DeployOperationSpec CreateSpec(IReadOnlyDictionary<string, string> parameters)
         => new()
         {

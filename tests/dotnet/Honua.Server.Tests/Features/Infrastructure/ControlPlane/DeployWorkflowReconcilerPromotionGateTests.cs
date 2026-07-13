@@ -100,7 +100,122 @@ public sealed class DeployWorkflowReconcilerPromotionGateTests
         updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
     }
 
+    [Fact]
+    public async Task Reconcile_GoldenQueryDetectsCorruptBody_DoesNotAutoPromote_TriggersRollback()
+    {
+        // Healthy-but-corrupt auto-promote path (#2811, AC3): the backend is healthy and recommends
+        // promotion (the status/5xx/p95 gate would pass on a release that returns 200s), but the golden
+        // query detects a corrupt response body. The reconciler must NOT auto-promote the corrupt
+        // release; it blocks and drives a rollback instead.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(
+            DeployTargetKind.Kubernetes,
+            "honua-gitops-kubernetes",
+            observe: new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                PromotionRecommended = true,
+                Message = "Canary healthy and ready for cutover."
+            });
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            "honua-gitops-kubernetes",
+            extraParameters: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.golden.url"] = "https://example.com/golden",
+                ["telemetry.golden.expected_contains"] = "\"count\":42"
+            });
+        await store.TryCreateAsync(operation);
+
+        // The golden probe returns a failure: HTTP 200 with a body that fails the content assertion.
+        var reconciler = CreateReconcilerWithGoldenGate(
+            store,
+            backend,
+            new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 1, Failures = 1 }));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0, "a corrupt release must not auto-promote past the golden gate");
+        updated!.Status.Should().Be(
+            WorkflowOperationStatus.RollbackRequested,
+            "the golden gate detected corrupt content and drove a rollback instead of promoting");
+        updated.CurrentPhase.Should().Contain("golden query detected corrupt release content");
+    }
+
+    [Fact]
+    public async Task Reconcile_GoldenQueryHealthy_PromotesNormally()
+    {
+        // Control: when the golden query passes (healthy body) the correctness gate does not block, so a
+        // health-gated deploy still promotes. Proves the gate does not break good releases.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(
+            DeployTargetKind.SelfHostedRolling,
+            "honua-yarp-rolling",
+            observe: new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                PromotionRecommended = true,
+                Message = "Standby healthy and ready for cutover."
+            });
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            "honua-yarp-rolling",
+            extraParameters: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.golden.url"] = "https://example.com/golden",
+                ["telemetry.golden.expected_contains"] = "\"count\":42"
+            });
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconcilerWithGoldenGate(
+            store,
+            backend,
+            new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 1, Failures = 0 }));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(1, "a healthy golden query does not block the self-hosted health-gated promotion");
+        updated!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+    }
+
     // ---- helpers ---------------------------------------------------------
+
+    private static DeployWorkflowReconciler CreateReconcilerWithGoldenGate(
+        IWorkflowOperationStore store,
+        RecordingDeployBackend backend,
+        FakeHealthProbe probe)
+        => new(
+            store,
+            new SingleTargetRegistry(backend.TargetKind, backend.BackendName),
+            [backend],
+            new DeployTelemetrySignalEvaluator(
+                new OptionsMonitorStub(new ControlPlaneOptions
+                {
+                    TelemetryConnections =
+                    [
+                        new DeployTelemetryConnectionOptions
+                        {
+                            ConnectionId = "prod-prom",
+                            Provider = "prometheus",
+                            BaseUrl = "https://example.com",
+                            TimeoutSeconds = 2
+                        }
+                    ]
+                }),
+                [],
+                NullLogger<DeployTelemetrySignalEvaluator>.Instance,
+                probe),
+            NullLogger<DeployWorkflowReconciler>.Instance);
+
+    private sealed class FakeHealthProbe(DeployHealthProbeResult result) : IDeployHealthProbe
+    {
+        public Task<DeployHealthProbeResult> ProbeAsync(DeployHealthProbeRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(result);
+    }
 
     private static DeployWorkflowReconciler CreateReconciler(
         IWorkflowOperationStore store,

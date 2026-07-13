@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.ControlPlane;
@@ -24,6 +26,20 @@ internal sealed record DeployHealthProbeRequest
 
     /// <summary>Per-request timeout in seconds.</summary>
     public int TimeoutSeconds { get; init; } = 5;
+
+    /// <summary>
+    /// Optional substring the response body must contain. When set (with <see cref="ExpectedBodySha256"/>
+    /// or on its own), a response that returns <see cref="ExpectedStatusCode"/> but whose body does not
+    /// satisfy the assertion is counted as a failure — the "healthy but wrong" correctness gate (#2811).
+    /// </summary>
+    public string? ExpectedBodyContains { get; init; }
+
+    /// <summary>Optional hex-encoded SHA-256 the full response body must hash to.</summary>
+    public string? ExpectedBodySha256 { get; init; }
+
+    /// <summary>Indicates a response-body assertion is configured (a golden query rather than a liveness probe).</summary>
+    public bool HasBodyAssertion =>
+        !string.IsNullOrWhiteSpace(ExpectedBodyContains) || !string.IsNullOrWhiteSpace(ExpectedBodySha256);
 }
 
 /// <summary>
@@ -65,6 +81,10 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
     private const int MinimumSamples = 1;
     private const int MaximumSamples = 20;
 
+    // Bound the golden-query body read so a large/streaming response cannot exhaust memory. Golden
+    // payloads are small correctness fixtures; anything larger is treated as a mismatch on the read cap.
+    private const int MaximumBodyBytes = 4 * 1024 * 1024;
+
     public async Task<DeployHealthProbeResult> ProbeAsync(
         DeployHealthProbeRequest request,
         CancellationToken cancellationToken)
@@ -86,6 +106,10 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
 
         var samples = Math.Clamp(request.Samples <= 0 ? 1 : request.Samples, MinimumSamples, MaximumSamples);
         var timeoutSeconds = Math.Max(1, request.TimeoutSeconds);
+        var verifyBody = request.HasBodyAssertion;
+        var completionOption = verifyBody
+            ? HttpCompletionOption.ResponseContentRead
+            : HttpCompletionOption.ResponseHeadersRead;
         var client = httpClientFactory.CreateClient("control-plane-telemetry");
         var failures = 0;
 
@@ -98,11 +122,18 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
                 using var httpRequest = new HttpRequestMessage(HttpMethod.Get, validation.Uri);
                 using var response = await client
-                    .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
+                    .SendAsync(httpRequest, completionOption, timeoutCts.Token)
                     .ConfigureAwait(false);
 
                 if ((int)response.StatusCode != request.ExpectedStatusCode)
                 {
+                    failures++;
+                }
+                else if (verifyBody &&
+                    !await BodyMatchesAsync(response, request, timeoutCts.Token).ConfigureAwait(false))
+                {
+                    // A 200 with the WRONG body is exactly the "healthy but corrupt" release: count it
+                    // as a failure so the correctness gate blocks auto-promotion (#2811).
                     failures++;
                 }
             }
@@ -122,7 +153,52 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         {
             Attempts = samples,
             Failures = failures,
-            Detail = $"{failures} of {samples} synthetic health checks did not return {request.ExpectedStatusCode}."
+            Detail = verifyBody
+                ? $"{failures} of {samples} synthetic checks did not return {request.ExpectedStatusCode} with the expected body content."
+                : $"{failures} of {samples} synthetic health checks did not return {request.ExpectedStatusCode}."
         };
+    }
+
+    private static async Task<bool> BodyMatchesAsync(
+        HttpResponseMessage response,
+        DeployHealthProbeRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > MaximumBodyBytes)
+            {
+                // Oversized body: treat as a mismatch rather than buffering unboundedly.
+                return false;
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        var body = buffer.ToArray();
+
+        if (!string.IsNullOrWhiteSpace(request.ExpectedBodySha256))
+        {
+            var actual = Convert.ToHexString(SHA256.HashData(body));
+            if (!string.Equals(actual, request.ExpectedBodySha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ExpectedBodyContains))
+        {
+            var text = Encoding.UTF8.GetString(body);
+            if (!text.Contains(request.ExpectedBodyContains, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

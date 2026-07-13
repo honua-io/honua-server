@@ -662,7 +662,13 @@ internal sealed partial class DeployWorkflowService
                         : null,
                     ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
                     CurrentPhase = observation.Message ?? "Rollback requested",
-                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null,
+                    // A rollback that the backend cannot honour (Failed) or that requires an operator to
+                    // finish (ManualInterventionRequired, e.g. the built-in GitOps hand-off backend) must
+                    // surface an operator-facing error rather than silently parking (#2811).
+                    ErrorMessage = observation.Status is WorkflowOperationStatus.Failed
+                        or WorkflowOperationStatus.ManualInterventionRequired
+                        ? observation.Message
+                        : null,
                     Audit = operation.Audit with
                     {
                         RequestedBy = requestedBy ?? operation.Audit.RequestedBy,

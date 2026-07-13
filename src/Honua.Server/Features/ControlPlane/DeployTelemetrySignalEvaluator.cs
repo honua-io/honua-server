@@ -118,6 +118,19 @@ internal sealed class DeployTelemetrySignalEvaluator(
             }
         }
 
+        // Golden-query correctness gate (#2811): a body checksum/substring assertion promotes "healthy
+        // but wrong" (HTTP 200 with corrupt content) to a first-class rollback trigger. Like the health
+        // probe it short-circuits before the metrics read on a breach and, when it passes, falls through
+        // so the metrics gate must also pass before the deploy promotes.
+        if (policy.HasGoldenQuery)
+        {
+            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, cancellationToken).ConfigureAwait(false);
+            if (goldenDecision != null)
+            {
+                return goldenDecision;
+            }
+        }
+
         var connection = optionsMonitor.CurrentValue.TelemetryConnections
             .FirstOrDefault(candidate => string.Equals(candidate.ConnectionId, policy.ConnectionId, StringComparison.Ordinal));
 
@@ -181,50 +194,24 @@ internal sealed class DeployTelemetrySignalEvaluator(
         DeployTelemetryPolicy policy,
         CancellationToken cancellationToken)
     {
-        if (healthProbe == null)
+        var (result, earlyExit) = await RunSyntheticProbeAsync(
+                operation,
+                new DeployHealthProbeRequest
+                {
+                    Url = policy.HealthProbeUrl!,
+                    Samples = policy.HealthProbeSamples,
+                    ExpectedStatusCode = policy.HealthProbeExpectedStatusCode,
+                    TimeoutSeconds = policy.HealthProbeTimeoutSeconds
+                },
+                "synthetic health probe",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (earlyExit != null)
         {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because a synthetic health probe is configured but no health-probe service is available."
-            };
+            return earlyExit;
         }
 
-        DeployHealthProbeResult result;
-        try
-        {
-            result = await healthProbe
-                .ProbeAsync(
-                    new DeployHealthProbeRequest
-                    {
-                        Url = policy.HealthProbeUrl!,
-                        Samples = policy.HealthProbeSamples,
-                        ExpectedStatusCode = policy.HealthProbeExpectedStatusCode,
-                        TimeoutSeconds = policy.HealthProbeTimeoutSeconds
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because the synthetic health probe could not be executed."
-            };
-        }
-
-        if (!result.Validated)
-        {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry confirmation because the synthetic health probe is misconfigured: {result.Detail}"
-            };
-        }
-
-        if (result.Failures >= policy.HealthProbeFailureThreshold)
+        if (result!.Failures >= policy.HealthProbeFailureThreshold)
         {
             var breach = new DeployTelemetryDecision
             {
@@ -235,10 +222,105 @@ internal sealed class DeployTelemetrySignalEvaluator(
             return ApplyBreachDebounce(operation, breach);
         }
 
-        // Healthy probe: do not promote on the probe alone. The caller falls through to the metrics
-        // gate (whose own anti-flap debounce manages the breach streak), which must also pass before
-        // the deploy is promoted.
+        // Healthy probe: do not promote on the probe alone. The caller falls through to the golden
+        // query and metrics gate (whose own anti-flap debounce manages the breach streak), which must
+        // also pass before the deploy is promoted.
         return null;
+    }
+
+    /// <summary>
+    /// Runs the golden-query correctness probe and maps the outcome onto a deploy decision (#2811).
+    /// Returns <see langword="null"/> when the body assertion holds (so the caller falls through to the
+    /// metrics gate); a rollback recommendation (subject to the anti-flap debounce) when the response is
+    /// corrupt; or a bounded wait when the probe could not run so a misconfiguration never silently
+    /// promotes past an unverified correctness gate.
+    /// </summary>
+    private async Task<DeployTelemetryDecision?> EvaluateGoldenQueryAsync(
+        WorkflowOperationRecord operation,
+        DeployTelemetryPolicy policy,
+        CancellationToken cancellationToken)
+    {
+        var (result, earlyExit) = await RunSyntheticProbeAsync(
+                operation,
+                new DeployHealthProbeRequest
+                {
+                    Url = policy.GoldenQueryUrl!,
+                    Samples = policy.GoldenQuerySamples,
+                    ExpectedStatusCode = policy.GoldenQueryExpectedStatusCode,
+                    TimeoutSeconds = policy.GoldenQueryTimeoutSeconds,
+                    ExpectedBodyContains = policy.GoldenQueryExpectedBodyContains,
+                    ExpectedBodySha256 = policy.GoldenQueryExpectedBodySha256
+                },
+                "golden query",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (earlyExit != null)
+        {
+            return earlyExit;
+        }
+
+        // A single corrupt sample fails the correctness gate: a "healthy but wrong" release (HTTP 200
+        // with a body that does not match the golden checksum/substring) must not auto-promote.
+        if (result!.Failures > 0)
+        {
+            var breach = new DeployTelemetryDecision
+            {
+                RollbackRecommended = true,
+                Message = $"Automatic rollback requested because the golden query detected corrupt release content: {result.Failures} of {result.Attempts} checks did not return {policy.GoldenQueryExpectedStatusCode} with the expected body."
+            };
+
+            return ApplyBreachDebounce(operation, breach);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Shared runner for the provider-independent synthetic probes (health probe and golden query).
+    /// Returns the validated probe result on the success tuple slot, or a bounded-wait decision on the
+    /// early-exit slot when the probe cannot be evaluated (no probe service, transport failure, or a
+    /// misconfigured URL) so a misconfiguration never silently promotes past an unverified gate.
+    /// </summary>
+    private async Task<(DeployHealthProbeResult? Result, DeployTelemetryDecision? EarlyExit)> RunSyntheticProbeAsync(
+        WorkflowOperationRecord operation,
+        DeployHealthProbeRequest request,
+        string signalName,
+        CancellationToken cancellationToken)
+    {
+        if (healthProbe == null)
+        {
+            return (null, new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry confirmation because a {signalName} is configured but no synthetic-probe service is available."
+            });
+        }
+
+        DeployHealthProbeResult result;
+        try
+        {
+            result = await healthProbe.ProbeAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
+            return (null, new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry confirmation because the {signalName} could not be executed."
+            });
+        }
+
+        if (!result.Validated)
+        {
+            return (null, new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry confirmation because the {signalName} is misconfigured: {result.Detail}"
+            });
+        }
+
+        return (result, null);
     }
 
     /// <summary>

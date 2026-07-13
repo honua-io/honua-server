@@ -804,6 +804,115 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         decision.UpdatedDeployParameters!["telemetry.rollback.breach_streak"].Should().Be("1");
     }
 
+    // ---- golden-query correctness gate (#2811) ---------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_GoldenQueryCorruptBody_RecommendsRollback_WithoutQueryingMetrics()
+    {
+        // The healthy-but-corrupt release: the golden query returns HTTP 200 with a body that fails the
+        // content assertion. This must roll back exactly like an error-rate/latency breach and short-
+        // circuit before the metrics provider is read.
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 1, Failures = 1 });
+        var evaluator = CreateHealthProbeEvaluator(probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.golden.url"] = "https://example.com/golden",
+                ["telemetry.golden.expected_contains"] = "\"count\":42"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("golden query detected corrupt release content");
+        probe.Invocations.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_GoldenQueryHealthy_FallsThroughToMetricGate_AndPasses()
+    {
+        // A healthy golden query does not promote on its own: it falls through to the metric gate, which
+        // is also queried and must pass before the deploy settles.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 1, Failures = 0 });
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            healthProbe: probe,
+            responses: CreateSuccessfulResponses("25", "0.01", "150"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.golden.url"] = "https://example.com/golden",
+                ["telemetry.golden.expected_contains"] = "\"count\":42"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeFalse();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        probe.Invocations.Should().Be(1);
+        capturedQueries.Should().HaveCount(3, "a healthy golden query still defers to the metric gate");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_GoldenQueryConfigured_ButNoProbeService_Waits()
+    {
+        // A configured golden gate with no probe service available must not silently promote past an
+        // unverified correctness check — it holds (waits) instead.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: null);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.golden.url"] = "https://example.com/golden",
+                ["telemetry.golden.expected_contains"] = "\"count\":42"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        capturedQueries.Should().BeEmpty("an unverified golden gate must not read metrics and promote");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_GoldenQueryWithoutContentAssertion_IsInvalidPolicy_Waits()
+    {
+        // A golden URL with no checksum/substring assertion is a configuration error (it degenerates to
+        // a status-only probe). Inside the grace window the gate holds rather than promoting.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 1, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.golden.url"] = "https://example.com/golden"
+            },
+            createdAt: DateTimeOffset.UtcNow));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("golden query");
+        probe.Invocations.Should().Be(0, "an invalid policy must not run the golden probe");
+        capturedQueries.Should().BeEmpty();
+    }
+
     private static DeployTelemetrySignalEvaluator CreateHealthProbeEvaluator(FakeHealthProbe probe)
         => new(
             new TestControlPlaneOptionsMonitor(new ControlPlaneOptions

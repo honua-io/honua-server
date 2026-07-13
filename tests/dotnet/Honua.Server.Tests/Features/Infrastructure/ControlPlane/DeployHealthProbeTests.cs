@@ -73,6 +73,86 @@ public sealed class DeployHealthProbeTests
         sendCount.Should().Be(0, "a rejected URL must never hit the network");
     }
 
+    // ---- golden-query body assertions (#2811) ----------------------------
+
+    [Fact]
+    public async Task ProbeAsync_BodyContainsAssertionMatches_ReportsNoFailures()
+    {
+        var probe = new HttpDeployHealthProbe(
+            new StubHttpClientFactory(new HttpClient(new FixedBodyHandler(HttpStatusCode.OK, """{"golden":true,"count":42}"""))));
+
+        var result = await probe.ProbeAsync(
+            new DeployHealthProbeRequest
+            {
+                Url = "https://example.com/golden",
+                Samples = 2,
+                ExpectedBodyContains = "\"count\":42"
+            },
+            CancellationToken.None);
+
+        result.Validated.Should().BeTrue();
+        result.Failures.Should().Be(0, "a 200 whose body satisfies the substring assertion is healthy");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_Http200ButBodyDoesNotMatch_CountsAsFailure()
+    {
+        // The "healthy but corrupt" release: HTTP 200 with a corrupt payload. Status-only probes miss
+        // this; the body assertion catches it and counts every mismatch as a failure.
+        var probe = new HttpDeployHealthProbe(
+            new StubHttpClientFactory(new HttpClient(new FixedBodyHandler(HttpStatusCode.OK, """{"golden":true,"count":0}"""))));
+
+        var result = await probe.ProbeAsync(
+            new DeployHealthProbeRequest
+            {
+                Url = "https://example.com/golden",
+                Samples = 3,
+                ExpectedBodyContains = "\"count\":42"
+            },
+            CancellationToken.None);
+
+        result.Validated.Should().BeTrue();
+        result.Failures.Should().Be(3, "a 200 with the wrong body is a corrupt release, not a healthy one");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_Sha256AssertionMatches_ReportsNoFailures()
+    {
+        const string body = "golden-payload-v1";
+        var expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(body)));
+        var probe = new HttpDeployHealthProbe(
+            new StubHttpClientFactory(new HttpClient(new FixedBodyHandler(HttpStatusCode.OK, body))));
+
+        var result = await probe.ProbeAsync(
+            new DeployHealthProbeRequest
+            {
+                Url = "https://example.com/golden",
+                Samples = 1,
+                ExpectedBodySha256 = expected
+            },
+            CancellationToken.None);
+
+        result.Failures.Should().Be(0, "the body hashes to the expected checksum");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_Sha256AssertionMismatch_CountsAsFailure()
+    {
+        var probe = new HttpDeployHealthProbe(
+            new StubHttpClientFactory(new HttpClient(new FixedBodyHandler(HttpStatusCode.OK, "corrupt-payload"))));
+
+        var result = await probe.ProbeAsync(
+            new DeployHealthProbeRequest
+            {
+                Url = "https://example.com/golden",
+                Samples = 2,
+                ExpectedBodySha256 = "deadbeef"
+            },
+            CancellationToken.None);
+
+        result.Failures.Should().Be(2, "a body that does not hash to the expected checksum is a failure");
+    }
+
     private static StubHttpClientFactory StubFactory(HttpStatusCode status)
         => new(new HttpClient(new FixedStatusHandler(status)));
 
@@ -85,6 +165,15 @@ public sealed class DeployHealthProbeTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(status));
+    }
+
+    private sealed class FixedBodyHandler(HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+            });
     }
 
     private sealed class ThrowingHandler : HttpMessageHandler

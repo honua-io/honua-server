@@ -1009,13 +1009,43 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        Log.RollbackRequested(logger, operation.OperationId, operation.Deploy?.TargetId ?? operation.OperationId);
+        // Fail-closed rollback (#2811). The built-in GitOps backend hands desired state off to an
+        // EXTERNAL controller (Argo/Flux) to reconcile; it holds no write credentials to the
+        // desired-state repository and exposes no provider revert API, so it cannot execute an
+        // automated rollback itself. The previous implementation logged a line and returned
+        // RollbackRequested, which the reconciler read as "rollback in progress" before the next
+        // observe silently parked the operation as ManualInterventionRequired — an automated rollback
+        // that rolled nothing back. Surface a terminal, actionable ManualInterventionRequired instead
+        // so the reconciler escalates loudly (setting an operator-facing ErrorMessage) rather than
+        // laundering the failure through a false "requested" progress signal.
+        var spec = operation.Deploy;
+        var targetId = spec?.TargetId ?? operation.OperationId;
+
+        var actions = new List<string>();
+        if (string.IsNullOrWhiteSpace(spec?.CurrentRevision))
+        {
+            actions.Add("no previously-recorded known-good revision was captured for this target, so there is no pinned rollback target to restore");
+        }
+        else
+        {
+            actions.Add($"revert the desired-state manifest for target '{targetId}' to revision '{spec!.CurrentRevision}' and let the external GitOps controller reconcile");
+        }
+
+        if (spec?.RequiresOutOfBandMigrations == true)
+        {
+            actions.Add("this release applied out-of-band (forward-only) schema migrations, so reverting the image without first restoring the prior schema would strand the previous binary on a contracted schema — restore the schema snapshot before rolling the image back");
+        }
+
+        var message =
+            $"The built-in '{BackendName}' GitOps backend cannot perform an automated rollback because it hands off to an external GitOps controller and holds no revert credentials. Manual intervention required: {string.Join("; ", actions)}.";
+
+        Log.RollbackNotSupported(logger, operation.OperationId, targetId);
         return Task.FromResult(new DeployObservation
         {
-            Status = WorkflowOperationStatus.RollbackRequested,
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
             ProviderOperationId = operation.ProviderOperationId ?? $"{BackendName}:{operation.OperationId}",
-            ObservedRevision = operation.Deploy?.CurrentRevision,
-            Message = "Rollback requested through Honua GitOps reconciliation."
+            ObservedRevision = spec?.CurrentRevision,
+            Message = message
         });
     }
 
@@ -1024,7 +1054,7 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
         [LoggerMessage(9020, LogLevel.Information, "Submitted deploy workflow operation {OperationId} for target {TargetId}")]
         public static partial void OperationSubmitted(ILogger logger, string operationId, string targetId);
 
-        [LoggerMessage(9021, LogLevel.Warning, "Rollback requested for workflow operation {OperationId} targeting {TargetId}")]
-        public static partial void RollbackRequested(ILogger logger, string operationId, string targetId);
+        [LoggerMessage(9021, LogLevel.Error, "Automated rollback is not supported by the built-in GitOps backend for workflow operation {OperationId} targeting {TargetId}; manual intervention required")]
+        public static partial void RollbackNotSupported(ILogger logger, string operationId, string targetId);
     }
 }
