@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -270,15 +271,10 @@ internal static class OgcFeatureIdentifierResolver
             return resolved;
         }
 
-        var distinctIds = new List<string>(featureIds.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var featureId in featureIds)
-        {
-            if (!string.IsNullOrWhiteSpace(featureId) && seen.Add(featureId))
-            {
-                distinctIds.Add(featureId);
-            }
-        }
+        var distinctIds = featureIds
+            .Where(featureId => !string.IsNullOrWhiteSpace(featureId) && seen.Add(featureId))
+            .ToList();
 
         if (distinctIds.Count == 0)
         {
@@ -617,15 +613,5 @@ internal static class OgcFeatureIdentifierResolver
         };
 
     private static bool HasEmptyCommaSeparatedToken(string value)
-    {
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
 }

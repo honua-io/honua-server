@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -66,14 +67,7 @@ internal sealed class ZarrCoverageService
     public async Task<ZarrRegistration?> FindServableRegistrationAsync(int storageLayerId, CancellationToken cancellationToken)
     {
         var registrations = await _zarrStore.ListByLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-        foreach (var registration in registrations)
-        {
-            if (registration.Metadata is not null)
-            {
-                return registration;
-            }
-        }
-        return null;
+        return registrations.FirstOrDefault(registration => registration.Metadata is not null);
     }
 
     /// <summary>
@@ -192,14 +186,12 @@ internal sealed class ZarrCoverageService
         ArgumentNullException.ThrowIfNull(registration);
         var metadata = RequireMetadata(registration);
 
-        foreach (var parameter in context.Request.Query.Keys)
+        var unsupportedParameter = context.Request.Query.Keys.FirstOrDefault(parameter => !SupportedQueryParameters.Contains(parameter));
+        if (unsupportedParameter is not null)
         {
-            if (!SupportedQueryParameters.Contains(parameter))
-            {
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    $"Parameter '{parameter}' is not supported for Zarr-backed coverage collections. Use properties and subset=dim(low:high) grid-index subsetting.");
-            }
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Parameter '{unsupportedParameter}' is not supported for Zarr-backed coverage collections. Use properties and subset=dim(low:high) grid-index subsetting.");
         }
 
         if (!TryNegotiateFormat(context, f, out var formatError, out var notAcceptable))
@@ -293,12 +285,10 @@ internal sealed class ZarrCoverageService
     {
         if (metadata.PrimaryVariable is { } primary)
         {
-            foreach (var array in metadata.Arrays)
+            var match = metadata.Arrays.FirstOrDefault(array => string.Equals(array.Name, primary, StringComparison.Ordinal));
+            if (match is not null)
             {
-                if (string.Equals(array.Name, primary, StringComparison.Ordinal))
-                {
-                    return array;
-                }
+                return match;
             }
         }
         return metadata.Arrays[0];
@@ -452,13 +442,10 @@ internal sealed class ZarrCoverageService
             return false;
         }
 
-        foreach (var subset in subsets)
+        if (subsets.Any(subset => string.Equals(subset.Dimension, timeDimension, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(subset.Dimension, timeDimension, StringComparison.OrdinalIgnoreCase))
-            {
-                error = $"Specify the time dimension '{timeDimension}' with either datetime or subset, not both.";
-                return false;
-            }
+            error = $"Specify the time dimension '{timeDimension}' with either datetime or subset, not both.";
+            return false;
         }
 
         if (!OgcTemporalFilterParser.TryParseRange(datetime, out var reqStart, out var reqEnd, out var parseError))
@@ -553,16 +540,8 @@ internal sealed class ZarrCoverageService
         }
 
         var dimension = trimmed[..open].Trim();
-        foreach (var candidate in metadata.Axes)
-        {
-            if (string.Equals(candidate.Name, dimension, StringComparison.OrdinalIgnoreCase))
-            {
-                axis = candidate;
-                return true;
-            }
-        }
-
-        return false;
+        axis = metadata.Axes.FirstOrDefault(candidate => string.Equals(candidate.Name, dimension, StringComparison.OrdinalIgnoreCase));
+        return axis is not null;
     }
 
     /// <summary>

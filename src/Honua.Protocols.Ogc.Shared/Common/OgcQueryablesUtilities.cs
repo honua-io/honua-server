@@ -90,15 +90,9 @@ internal static class OgcQueryablesUtilities
         }
 
         var min = startExtent?.Start;
-        DateTimeOffset? max;
-        if (string.IsNullOrWhiteSpace(endName))
-        {
-            max = startExtent?.End;
-        }
-        else
-        {
-            max = endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
-        }
+        DateTimeOffset? max = string.IsNullOrWhiteSpace(endName)
+            ? startExtent?.End
+            : endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
 
         return new TemporalExtent
         {
