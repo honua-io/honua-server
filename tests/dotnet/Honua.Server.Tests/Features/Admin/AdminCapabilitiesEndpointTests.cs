@@ -54,12 +54,14 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
         metadataSchemas[0].GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
         metadataSchemas[0].TryGetProperty("deprecated", out _).Should().BeTrue();
 
-        // features advertises the manifest workflow switches.
+        // features advertises the manifest workflow switches. Only the read-only GitOps manifest
+        // export survived the #1035 cutover; the mutating apply/dry-run/prune endpoints were removed,
+        // so those flags must be false to match registered routes (#2807 capability honesty).
         var features = compatibility.GetProperty("features");
         features.GetProperty("metadataResources").GetBoolean().Should().BeTrue();
         features.GetProperty("manifestExport").GetBoolean().Should().BeTrue();
-        features.GetProperty("manifestApply").GetBoolean().Should().BeTrue();
-        features.GetProperty("manifestDryRun").GetBoolean().Should().BeTrue();
-        features.GetProperty("manifestPrune").GetBoolean().Should().BeTrue();
+        features.GetProperty("manifestApply").GetBoolean().Should().BeFalse();
+        features.GetProperty("manifestDryRun").GetBoolean().Should().BeFalse();
+        features.GetProperty("manifestPrune").GetBoolean().Should().BeFalse();
     }
 }

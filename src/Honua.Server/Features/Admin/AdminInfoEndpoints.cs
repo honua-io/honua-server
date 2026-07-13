@@ -85,13 +85,18 @@ internal static class AdminInfoEndpoints
                 [
                     new AdminMetadataSchema { Version = MetadataV2Constants.ApiVersion, Deprecated = false }
                 ],
+                // These flags MUST match registered routes (capability honesty, enforced by
+                // AdminCapabilitiesRouteHonestyTests). Only the read-only GitOps manifest export
+                // (GET .../release-packages/{packageId}/gitops-manifest) survived the #1035 cutover;
+                // the mutating manifest apply/dry-run/prune endpoints were removed, so advertising
+                // them as available would make handshaking SDKs 404.
                 Features = new AdminCompatibilityFeatures
                 {
                     MetadataResources = true,
                     ManifestExport = true,
-                    ManifestApply = true,
-                    ManifestDryRun = true,
-                    ManifestPrune = true
+                    ManifestApply = false,
+                    ManifestDryRun = false,
+                    ManifestPrune = false
                 },
                 AdminApiMajor = AdminApiMajor,
                 MetadataApiVersion = MetadataV2Constants.ApiVersion,
