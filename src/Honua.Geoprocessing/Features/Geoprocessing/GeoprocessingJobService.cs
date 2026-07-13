@@ -53,10 +53,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
 
-    // Process ids the registered in-process managed executors can dispatch. Null when the
-    // executor set was not supplied (direct unit-test construction), which disables the
-    // sync-only dispatchability rule in ValidatePlan and preserves legacy behavior.
-    private readonly HashSet<string>? _managedExecutorProcessIds;
+    // Process ids the registered in-process managed executors can dispatch, read from the
+    // dispatcher that owns executor routing. Null when the dispatcher was built without an
+    // executor set (direct unit-test construction), which disables the sync-only
+    // dispatchability rule in ValidatePlan and preserves legacy behavior.
+    private readonly IReadOnlySet<string>? _managedExecutorProcessIds;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -73,8 +74,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
-        IOptions<LimitsOptions>? limitsOptions = null,
-        IEnumerable<IProcessExecutor>? processExecutors = null)
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -87,16 +87,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _jobStore = jobStore;
-        // Snapshot the dispatchable process ids of the registered managed executors so
-        // ValidatePlan can flag sync-only catalog processes with the SAME id set the
-        // GeoprocessingDispatchJobExecutor routes at execution time (#2806). Native-profile
-        // processes have no in-process executor but are served by the out-of-process worker,
-        // so IsProcessDispatchable falls back to the catalog runtime profile for those.
-        _managedExecutorProcessIds = processExecutors is null
-            ? null
-            : processExecutors
-                .SelectMany(executor => executor.ProcessIds)
-                .ToHashSet(StringComparer.Ordinal);
+        // ValidatePlan flags sync-only catalog processes with the SAME id set the
+        // GeoprocessingDispatchJobExecutor routes at execution time (#2806). The dispatcher
+        // owns that routing truth, so the id set is read from it rather than injecting the
+        // executor collection twice. Native-profile processes have no in-process executor but
+        // are served by the out-of-process worker, so IsProcessDispatchable falls back to the
+        // catalog runtime profile for those.
+        _managedExecutorProcessIds = dispatcher.ManagedProcessIds;
     }
 
     /// <summary>
@@ -131,7 +128,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             processCatalog,
             new GeoprocessingJobAuthorizer(authEvaluator, approvalEvaluator, logger),
             new GeoprocessingJobDispatcher(
-                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator),
+                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, processExecutors),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
@@ -139,8 +136,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions,
-            processExecutors)
+            limitsOptions)
     {
     }
 

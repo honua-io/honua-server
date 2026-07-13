@@ -73,7 +73,8 @@ internal sealed class GeoprocessingJobDispatcher
         IJobQueue? jobQueue = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
-        IExecutionAdmissionEvaluator? admissionEvaluator = null)
+        IExecutionAdmissionEvaluator? admissionEvaluator = null,
+        IEnumerable<IProcessExecutor>? processExecutors = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -82,7 +83,21 @@ internal sealed class GeoprocessingJobDispatcher
         _workloadRegistry = workloadRegistry;
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
+        ManagedProcessIds = processExecutors is null
+            ? null
+            : processExecutors
+                .SelectMany(executor => executor.ProcessIds)
+                .ToHashSet(StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// Process ids of the registered managed <see cref="IProcessExecutor"/>s — the exact id set
+    /// this dispatcher routes at execution time. Owned here (rather than injected separately
+    /// into <see cref="GeoprocessingJobService"/>) so plan validation can flag sync-only catalog
+    /// processes against the same routing truth without the service taking a duplicate executor
+    /// dependency (#2806); <c>null</c> when no executor set was supplied (test construction).
+    /// </summary>
+    public IReadOnlySet<string>? ManagedProcessIds { get; }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 

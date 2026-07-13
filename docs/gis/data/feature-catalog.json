@@ -1097,7 +1097,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetCapabilities_WithoutAuth_Returns200WithCompatibilityContract",
-        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope"
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope",
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesRouteHonestyTests.AdvertisedManifestCapabilities_MatchRegisteredRoutes"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -5201,7 +5202,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.PoolTelemetry_IsSourcedFromLiveAdmissionGate",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProductionMonitoringEndpointSecurityTests.ComprehensiveHealth_RedactsSensitiveHealthCheckDataAndExceptions",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.UploadQueueMonitoringEndpointsTests.ComprehensiveHealth_WithZeroMaxQueue_ReturnsFiniteFileUploadUtilization"
       ],
@@ -5216,7 +5217,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.PoolTelemetry_IsSourcedFromLiveAdmissionGate",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ProductionHealthMetrics_ReflectLiveHttpRequestTelemetry"
       ],
       "proof_ledger_surface": "detailed-monitoring",
@@ -5243,7 +5244,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.PoolTelemetry_IsSourcedFromLiveAdmissionGate"
       ],
       "proof_ledger_surface": "detailed-monitoring",
       "maturity": "implemented"
@@ -5256,7 +5257,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.PoolTelemetry_IsSourcedFromLiveAdmissionGate"
       ],
       "proof_ledger_surface": "detailed-monitoring",
       "maturity": "implemented"
