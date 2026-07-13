@@ -53,7 +53,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(violationReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -67,7 +67,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
     public async Task CspViolationReport_WithEmptyBody_Returns204NoContent()
     {
         // Arrange
-        var content = new StringContent("", Encoding.UTF8, "application/json");
+        using var content = new StringContent("", Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -80,7 +80,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
     public async Task CspViolationReport_WithInvalidJson_Returns204NoContent()
     {
         // Arrange - Invalid JSON should not crash the endpoint
-        var content = new StringContent("{ invalid json }", Encoding.UTF8, "application/json");
+        using var content = new StringContent("{ invalid json }", Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -95,7 +95,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         // Arrange
         var malformedReport = new { random = "data", not = "csp-report" };
         var jsonContent = JsonSerializer.Serialize(malformedReport);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -124,7 +124,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(suspiciousReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -157,7 +157,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(completeReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -183,7 +183,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(violationReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Add forwarded header to simulate load balancer/proxy
         _client.DefaultRequestHeaders.Add("X-Forwarded-For", "192.168.1.100, 10.0.0.1");
@@ -217,7 +217,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(suspiciousReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -244,7 +244,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(violationReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act - No authentication headers
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -271,7 +271,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(largeReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -297,7 +297,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
 
         var jsonContent = JsonSerializer.Serialize(violationReport, _kebabCaseJsonOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/csp-report");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/csp-report");
 
         // Act
         var response = await _client.PostAsync("/csp-violation-report", content);
@@ -322,7 +322,7 @@ public class CspViolationReportEndpointTests : IClassFixture<TestWebApplicationF
         };
 
         var jsonContent = JsonSerializer.Serialize(oversizedReport, _kebabCaseJsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/csp-violation-report", content);
 

@@ -34,6 +34,7 @@ public sealed class ApiExplorerEndpointTests : IAsyncLifetime
         // Assert
         response.Be200Ok();
         var contentType = response.Content.Headers.ContentType?.MediaType;
+        contentType.Should().NotBeNull();
         contentType.Should().Be("text/html");
 
         var content = await response.Content.ReadAsStringAsync();

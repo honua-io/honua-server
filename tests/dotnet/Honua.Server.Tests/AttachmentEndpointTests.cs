@@ -101,9 +101,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
     public async Task QueryAttachments_WithPost_ReturnsAttachments()
     {
+        using var requestContent = new StringContent(string.Empty, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}",
-            new StringContent(string.Empty, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.BeSuccessful();
 
@@ -173,7 +174,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var byteContent = new ByteArrayContent(fileContent);
         byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
 
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent("test,keywords"), "keywords" },
@@ -216,7 +217,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var byteContent = new ByteArrayContent(fileContent);
         byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
 
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { byteContent, "attachment", "roundtrip.pdf" }
@@ -249,7 +250,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var byteContent = new ByteArrayContent(fileContent);
         byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
 
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent("test,canonical"), "keywords" },
             { byteContent, "attachment", "canonical.pdf" }
@@ -274,7 +275,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task AddAttachment_WithoutFile_Returns400()
     {
         // Arrange
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" }
         };
@@ -294,7 +295,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         // Arrange
         var fileContent = "Executable content"u8.ToArray();
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" }
         };
@@ -316,9 +317,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithUnsupportedContentType_Returns415()
     {
+        using var requestContent = new StringContent("objectId=1", Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
-            new StringContent("objectId=1", Encoding.UTF8, "text/plain"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
@@ -332,7 +334,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         // Arrange
         const long attachmentId = 1;
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent(attachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
@@ -364,7 +366,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var fileContent = new ByteArrayContent(updatedBytes);
         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
 
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent(attachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
@@ -393,7 +395,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task UpdateAttachment_WithCanonicalFeatureRoute_ReturnsSuccess()
     {
         const long attachmentId = 1;
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(attachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
             { new StringContent("canonical,keywords"), "keywords" }
@@ -419,7 +421,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         // Arrange
         const long nonExistentAttachmentId = 99999;
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent(nonExistentAttachmentId.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
@@ -439,9 +441,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
     public async Task UpdateAttachment_WithUnsupportedContentType_Returns415()
     {
+        using var requestContent = new StringContent("objectId=1&attachmentId=1", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
-            new StringContent("objectId=1&attachmentId=1", Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
@@ -454,7 +457,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task DeleteAttachments_WithValidIds_ReturnsSuccess()
     {
         // Arrange
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent("1,2"), "attachmentIds" }
@@ -482,7 +485,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithCanonicalFeatureRoute_ReturnsSuccess()
     {
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent("1"), "attachmentIds" }
         };
@@ -507,7 +510,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task DeleteAttachments_WithoutAttachmentIds_Returns400()
     {
         // Arrange
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" }
         };
@@ -525,7 +528,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithMalformedAttachmentIdsDelimiter_Returns400()
     {
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent("999,"), "attachmentIds" }
@@ -542,7 +545,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithInvalidAttachmentIdsToken_Returns400()
     {
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new StringContent("999,abc"), "attachmentIds" }
@@ -559,9 +562,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task DeleteAttachments_WithUnsupportedContentType_Returns415()
     {
+        using var requestContent = new StringContent("objectId=1&attachmentIds=1", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
-            new StringContent("objectId=1&attachmentIds=1", Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();
@@ -631,7 +635,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     {
         // Arrange - Create a 15MB file (larger than default 10MB limit)
         var largeContent = new byte[15 * 1024 * 1024];
-        var form = new MultipartFormDataContent
+        using var form = new MultipartFormDataContent
         {
             { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
             { new ByteArrayContent(largeContent), "attachment", "large.txt" }

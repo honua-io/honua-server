@@ -83,6 +83,8 @@ public sealed class RenderGoldenTests
 
     private static void AssertGoldenMatches(string relativeName, string actual)
     {
+        // relativeName is always "<literal from Cases()> + \".md\"/\".html\"" (never rooted),
+        // so GoldenDirectory() is never dropped.
         var goldenPath = Path.Combine(GoldenDirectory(), relativeName);
         if (Environment.GetEnvironmentVariable(UpdateEnvVar) == "1")
         {
@@ -101,6 +103,8 @@ public sealed class RenderGoldenTests
         var assemblyLocation = typeof(RenderGoldenTests).GetTypeInfo().Assembly.Location;
         var binDir = Path.GetDirectoryName(assemblyLocation)!;
         // bin/Debug/net10.0 -> repo-relative Features/Reporting/Goldens
+        // All later Path.Combine args below are fixed relative literals ("..", "Features", etc.),
+        // never rooted, so the earlier absolute segment is never dropped.
         var projectDir = Path.GetFullPath(Path.Combine(binDir, "..", "..", ".."));
         return Path.Combine(projectDir, "Features", "Reporting", "Goldens");
     }

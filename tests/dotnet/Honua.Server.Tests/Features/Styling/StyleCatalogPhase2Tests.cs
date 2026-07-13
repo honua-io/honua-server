@@ -102,9 +102,10 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
             MapLibreStyle = JsonSerializer.Deserialize<JsonElement>(BuildDefaultStyleJson())
         };
 
-        var response = await adminClient.PutAsync(
+        using var content = JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
+        using var response = await adminClient.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content);
         response.Be200Ok();
     }
 

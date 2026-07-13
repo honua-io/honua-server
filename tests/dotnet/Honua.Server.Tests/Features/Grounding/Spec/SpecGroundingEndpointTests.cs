@@ -196,39 +196,40 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
     [Endpoint("POST /v1/grounding/spec/mutate")]
     public async Task Mutate_CanonicalSpecWithOutOfRangeNumber_ReturnsProblemDetails()
     {
+        using var content = new StringContent(
+            """
+            {
+              "spec": {
+                "grammar": "v1.0",
+                "sources": [
+                  {
+                    "id": "zones",
+                    "type": "layer",
+                    "ref": "catalog:layer:4"
+                  }
+                ],
+                "compute": [
+                  {
+                    "id": "broken",
+                    "op": "buffer",
+                    "params": {
+                      "distance": {
+                        "kind": "distance",
+                        "unit": "m",
+                        "value": 1e400
+                      }
+                    }
+                  }
+                ]
+              },
+              "turn": "use zones"
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
         using var response = await _client.PostAsync(
             "/v1/grounding/spec/mutate",
-            new StringContent(
-                """
-                {
-                  "spec": {
-                    "grammar": "v1.0",
-                    "sources": [
-                      {
-                        "id": "zones",
-                        "type": "layer",
-                        "ref": "catalog:layer:4"
-                      }
-                    ],
-                    "compute": [
-                      {
-                        "id": "broken",
-                        "op": "buffer",
-                        "params": {
-                          "distance": {
-                            "kind": "distance",
-                            "unit": "m",
-                            "value": 1e400
-                          }
-                        }
-                      }
-                    ]
-                  },
-                  "turn": "use zones"
-                }
-                """,
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -354,38 +355,39 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
     [Endpoint("POST /v1/grounding/spec/summarize")]
     public async Task Summarize_CanonicalSpecWithOutOfRangeNumber_ReturnsProblemDetails()
     {
+        using var content = new StringContent(
+            """
+            {
+              "spec": {
+                "grammar": "v1.0",
+                "sources": [
+                  {
+                    "id": "zones",
+                    "type": "layer",
+                    "ref": "catalog:layer:4"
+                  }
+                ],
+                "compute": [
+                  {
+                    "id": "broken",
+                    "op": "buffer",
+                    "params": {
+                      "distance": {
+                        "kind": "distance",
+                        "unit": "m",
+                        "value": 1e400
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
         using var response = await _client.PostAsync(
             "/v1/grounding/spec/summarize",
-            new StringContent(
-                """
-                {
-                  "spec": {
-                    "grammar": "v1.0",
-                    "sources": [
-                      {
-                        "id": "zones",
-                        "type": "layer",
-                        "ref": "catalog:layer:4"
-                      }
-                    ],
-                    "compute": [
-                      {
-                        "id": "broken",
-                        "op": "buffer",
-                        "params": {
-                          "distance": {
-                            "kind": "distance",
-                            "unit": "m",
-                            "value": 1e400
-                          }
-                        }
-                      }
-                    ]
-                  }
-                }
-                """,
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");

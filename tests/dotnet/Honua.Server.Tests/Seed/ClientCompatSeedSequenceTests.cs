@@ -49,6 +49,8 @@ public sealed class ClientCompatSeedSequenceTests
 
         snapshots.Keys.Should().BeEquivalentTo(["default", "Development", "Test", "Production"]);
 
+        // Not a straightforward .Select(...): each iteration runs assertions as a side effect
+        // (AssertContainsBrowserCompatibilityMetadata), it does not produce a value to project.
         foreach (var snapshot in snapshots.Values)
         {
             using var document = JsonDocument.Parse(snapshot);
@@ -90,6 +92,8 @@ public sealed class ClientCompatSeedSequenceTests
 
         var snapshots = await ReadCurrentSnapshotsAsync(dataSource);
 
+        // Not a straightforward .Select(...): each iteration runs a long chain of FluentAssertions
+        // checks against the parsed snapshot as a side effect, it does not produce a mapped value.
         foreach (var snapshot in snapshots.Values)
         {
             using var document = JsonDocument.Parse(snapshot);

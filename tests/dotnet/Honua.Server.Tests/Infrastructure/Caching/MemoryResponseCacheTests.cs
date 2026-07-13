@@ -298,14 +298,9 @@ public class MemoryResponseCacheTests : IDisposable
 
         // Assert
         var keys = new[] { "k1", "k2", "k3", "k4" };
-        var presentCount = 0;
-        foreach (var key in keys)
-        {
-            if (await boundedCache.GetAsync<string>(key) is not null)
-            {
-                presentCount++;
-            }
-        }
+        var presentFlags = await Task.WhenAll(
+            keys.Select(async key => await boundedCache.GetAsync<string>(key) is not null));
+        var presentCount = presentFlags.Count(present => present);
 
         Assert.True(presentCount <= 3, "cache should not retain more entries than the configured max");
     }

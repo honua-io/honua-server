@@ -44,7 +44,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
         const string clientCorrelationId = "client-12345-abcde";
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", clientCorrelationId);
         var response = await _fixture.Client.SendAsync(request);
 
@@ -83,7 +83,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
         var invalidClientId = "invalid\u0008with\u000Ccontrol";
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", invalidClientId);
         var response = await _fixture.Client.SendAsync(request);
 
@@ -102,7 +102,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     public async Task CorrelationIdMiddleware_WithEmptyClientId_GeneratesNewId()
     {
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", "   "); // Empty/whitespace
         var response = await _fixture.Client.SendAsync(request);
 
@@ -124,7 +124,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
         var tooLongClientId = new string('x', 150);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", tooLongClientId);
         var response = await _fixture.Client.SendAsync(request);
 
@@ -199,7 +199,7 @@ public class CorrelationIdMiddlewareTests : IAsyncLifetime
     public async Task CorrelationIdMiddleware_ValidClientIds_AcceptsValidFormats(string clientCorrelationId)
     {
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/live");
         request.Headers.Add("X-Correlation-ID", clientCorrelationId);
         var response = await _fixture.Client.SendAsync(request);
 

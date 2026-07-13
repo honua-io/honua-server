@@ -177,8 +177,8 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             group.RelatedRecords!.Should().NotBeEmpty(
                 "the high object-id origin has a child referencing it");
             group.RelatedRecords.Should().Contain(r =>
-                r.Attributes.ContainsKey("objectid") &&
-                ReadAttributeAsInt64(r.Attributes["objectid"]) == childObjectId);
+                r.Attributes.TryGetValue("objectid", out var objectIdValue) &&
+                ReadAttributeAsInt64(objectIdValue) == childObjectId);
         }
         finally
         {

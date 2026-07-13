@@ -37,6 +37,7 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All three segments are fixed relative literals (none rooted), so nothing is dropped.
         _fixture.UseSeed(Path.Combine("tests", "seed", "server.yaml"));
         await _fixture.InitializeAsync();
 
@@ -238,12 +239,15 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
     private static string ResolveRepoFile(params string[] path)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        // "Honua.sln" is a fixed literal (never rooted), so directory.FullName is never dropped.
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
         directory.Should().NotBeNull("the test should run under the repository output tree");
+        // `path` is always caller-supplied relative literals (e.g. "tests", "seed", "*.yaml"),
+        // never rooted, so directory!.FullName is never dropped.
         return Path.Combine(new[] { directory!.FullName }.Concat(path).ToArray());
     }
 

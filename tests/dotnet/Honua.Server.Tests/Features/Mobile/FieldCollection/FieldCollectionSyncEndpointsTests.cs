@@ -265,12 +265,19 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         changes.GetArrayLength().Should().BeGreaterOrEqualTo(3);
 
         long previousGeneration = 0;
+        var pulledFeatureIds = new List<string>();
+        // Not a straightforward .Select(...): each iteration asserts strictly-increasing
+        // generation against the previous iteration's value, which is sequential state, not a map.
         foreach (var change in changes.EnumerateArray())
         {
             var generation = change.GetProperty("generation").GetInt64();
             generation.Should().BeGreaterThan(previousGeneration);
             previousGeneration = generation;
+            pulledFeatureIds.Add(change.GetProperty("featureId").GetString()!);
         }
+
+        // Every change pushed above must come back out on the pull.
+        pulledFeatureIds.Should().Contain(changeIds);
 
         json.RootElement.GetProperty("nextCursor").GetInt64().Should().BeGreaterThan(generationBefore);
     }
@@ -905,10 +912,10 @@ public sealed class FieldCollectionSyncLicenseGateTests : IAsyncLifetime
             },
         };
 
-        foreach (var createRequest in requests)
+        foreach (var request in requests.Select(createRequest => createRequest()))
         {
-            using var request = createRequest();
-            using var response = await _client.SendAsync(request);
+            using var disposableRequest = request;
+            using var response = await _client.SendAsync(disposableRequest);
 
             response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
             var body = await response.Content.ReadAsStringAsync();

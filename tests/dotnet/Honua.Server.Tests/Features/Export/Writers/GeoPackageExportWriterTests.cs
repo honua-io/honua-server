@@ -98,6 +98,7 @@ public sealed class GeoPackageExportWriterTests
         }
     }
 
+    // False positive: the second segment is a generated relative filename, never absolute.
     private static string CreateTempGeoPackagePath()
         => Path.Combine(Path.GetTempPath(), $"gpkg-export-{Guid.NewGuid():N}.gpkg");
 

@@ -42,7 +42,7 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
 
         if (_testStore is IStreamingFeatureStore streamingStore)
         {
-            await foreach (var feature in streamingStore.StreamFeaturesAsync(_testLayerId, query))
+            await foreach (var _ in streamingStore.StreamFeaturesAsync(_testLayerId, query))
             {
                 featureCount++;
 
@@ -134,7 +134,8 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
         traditionalStopwatch.Stop();
         var traditionalMemoryUsage = GC.GetTotalMemory(false) - traditionalInitialMemory;
 
-        // Force garbage collection to reset
+        // Force garbage collection to reset (intentional double-collect so the
+        // pre-measurement baseline is a stable full collection, not a partial gen-0/1 pass).
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
@@ -146,7 +147,7 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
 
         if (_testStore is IStreamingFeatureStore streamingStore)
         {
-            await foreach (var feature in streamingStore.StreamFeaturesAsync(_testLayerId, query))
+            await foreach (var _ in streamingStore.StreamFeaturesAsync(_testLayerId, query))
             {
                 streamingCount++;
                 if (streamingCount >= 5000)
@@ -204,7 +205,7 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
         {
             if (_testStore is IStreamingFeatureStore streamingStore)
             {
-                await foreach (var feature in streamingStore.StreamFeaturesAsync(_testLayerId, query, cts.Token))
+                await foreach (var _ in streamingStore.StreamFeaturesAsync(_testLayerId, query, cts.Token))
                 {
                     featuresProcessed++;
 
@@ -241,7 +242,7 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
             var feature = TestFeatureStore.CreateTestFeature(
                 id: i,
                 x: i % 100 * 0.01, // Spread across a 1x1 degree area
-                y: (i / 100) * 0.01,
+                y: (i / 100) * 0.01, // Intentional integer division: row index for a 100-column x 50-row grid, mirroring the column index above
                 attributes: new Dictionary<string, object?>
                 {
                     ["id"] = i,

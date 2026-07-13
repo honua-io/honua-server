@@ -85,7 +85,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync(
@@ -312,7 +312,7 @@ public sealed class AdvancedSpatialQueryTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync(

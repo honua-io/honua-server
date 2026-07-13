@@ -162,17 +162,7 @@ public sealed class KafkaFeatureChangeEventSinkTests
         IReadOnlyList<KeyValuePair<string, string>> Headers)
     {
         public string? HeaderValue(string key)
-        {
-            foreach (var header in Headers)
-            {
-                if (string.Equals(header.Key, key, StringComparison.Ordinal))
-                {
-                    return header.Value;
-                }
-            }
-
-            return null;
-        }
+            => Headers.FirstOrDefault(header => string.Equals(header.Key, key, StringComparison.Ordinal)).Value;
     }
 
     private sealed class RecordingProducer : IKafkaEventProducer

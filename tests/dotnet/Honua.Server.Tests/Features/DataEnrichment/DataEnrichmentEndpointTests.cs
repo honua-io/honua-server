@@ -61,14 +61,12 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
         datasets.GetArrayLength().Should().BeGreaterThan(0);
 
         var found = false;
-        foreach (var dataset in datasets.EnumerateArray())
+        foreach (var dataset in datasets.EnumerateArray()
+            .Where(d => string.Equals(d.GetProperty("key").GetString(), DatasetKey, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(dataset.GetProperty("key").GetString(), DatasetKey, StringComparison.OrdinalIgnoreCase))
-            {
-                dataset.GetProperty("category").GetString().Should().Be("boundary");
-                dataset.GetProperty("defaultPredicate").GetString().Should().Be("intersects");
-                found = true;
-            }
+            dataset.GetProperty("category").GetString().Should().Be("boundary");
+            dataset.GetProperty("defaultPredicate").GetString().Should().Be("intersects");
+            found = true;
         }
 
         found.Should().BeTrue("the registered enrichment dataset must appear in the catalog");
@@ -86,9 +84,8 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             predicate = "intersects",
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -122,9 +119,8 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             sourceLayerId = WebAppFixture.TestLayerId,
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -141,9 +137,8 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             method = "point-in-polygon",
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -168,9 +163,8 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             },
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -195,9 +189,8 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             method = "nearest-neighbor",
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
@@ -214,9 +207,8 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             features = new { type = "FeatureCollection", features = Array.Empty<object>() },
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
@@ -263,9 +255,8 @@ public sealed class DataEnrichmentSyncLimitTests : IAsyncLifetime
             method = "intersects",
         });
 
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
     }
@@ -301,9 +292,8 @@ public sealed class DataEnrichmentEditionGateTests : IAsyncLifetime
     public async Task Enrich_CommunityEdition_ReturnsPaymentRequired()
     {
         var payload = JsonSerializer.Serialize(new { datasetKey = "x", sourceLayerId = 0 });
-        var response = await _fixture.Client.PostAsync(
-            "/api/enrich",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
         response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
     }
 }

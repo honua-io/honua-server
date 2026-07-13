@@ -45,6 +45,7 @@ public sealed class ShapefileExportWriterTests
 
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
+        // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
         var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
@@ -92,6 +93,7 @@ public sealed class ShapefileExportWriterTests
 
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
+        // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
         var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
@@ -139,6 +141,7 @@ public sealed class ShapefileExportWriterTests
 
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
+        // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
         var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
@@ -186,6 +189,7 @@ public sealed class ShapefileExportWriterTests
 
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
+        // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
         var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
