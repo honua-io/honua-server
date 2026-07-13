@@ -541,17 +541,15 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         if (element.TryGetProperty("crs", out var crs) &&
             crs.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in crs.EnumerateArray())
+            foreach (var item in crs.EnumerateArray()
+                         .Where(static item => item.ValueKind == JsonValueKind.String &&
+                             !string.IsNullOrWhiteSpace(item.GetString())))
             {
-                if (item.ValueKind == JsonValueKind.String &&
-                    !string.IsNullOrWhiteSpace(item.GetString()))
+                yield return new OgcApiFeaturesCrsDeclaration
                 {
-                    yield return new OgcApiFeaturesCrsDeclaration
-                    {
-                        Role = "supported",
-                        Value = item.GetString()!
-                    };
-                }
+                    Role = "supported",
+                    Value = item.GetString()!
+                };
             }
         }
 
@@ -625,16 +623,20 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             return null;
         }
 
-        foreach (var feature in features.EnumerateArray())
+        return features.EnumerateArray()
+            .Select(static feature => ReadFeatureGeometryType(feature))
+            .FirstOrDefault(static geometryType => geometryType is not null);
+    }
+
+    private static string? ReadFeatureGeometryType(JsonElement feature)
+    {
+        if (feature.ValueKind == JsonValueKind.Object &&
+            feature.TryGetProperty("geometry", out var geometry) &&
+            geometry.ValueKind == JsonValueKind.Object &&
+            geometry.TryGetProperty("type", out var type) &&
+            type.ValueKind == JsonValueKind.String)
         {
-            if (feature.ValueKind == JsonValueKind.Object &&
-                feature.TryGetProperty("geometry", out var geometry) &&
-                geometry.ValueKind == JsonValueKind.Object &&
-                geometry.TryGetProperty("type", out var type) &&
-                type.ValueKind == JsonValueKind.String)
-            {
-                return type.GetString();
-            }
+            return type.GetString();
         }
 
         return null;
@@ -838,15 +840,9 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
-        if (!allowUnsafeLocalUrls)
+        if (!allowUnsafeLocalUrls && addresses.Any(static address => OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address)))
         {
-            foreach (var address in addresses)
-            {
-                if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
-                {
-                    throw new HttpRequestException(DisallowedNetworkAddressMessage);
-                }
-            }
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
@@ -887,6 +883,10 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             }
             finally
             {
+                // Not converted to a `using` declaration: on success the socket's ownership
+                // transfers to the returned NetworkStream (ownsSocket: true), which disposes it
+                // when the stream is closed. An unconditional `using` here would dispose the
+                // socket immediately after return, breaking the stream it was just handed to.
                 if (!connected)
                 {
                     socket.Dispose();

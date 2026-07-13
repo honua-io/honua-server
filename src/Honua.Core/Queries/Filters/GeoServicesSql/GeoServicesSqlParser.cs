@@ -789,27 +789,20 @@ public sealed class GeoServicesSqlParser
             throw new ArgumentException($"Invalid DATE literal '{value}'.");
         }
 
-        // Require an explicit offset only when the literal includes a time component.
         // A bare date (e.g. `2024-01-01`) is unambiguous; a date+time without an offset
-        // (e.g. `2024-01-01T12:00:00`) is not, and AssumeUniversal would silently fold
-        // it to UTC, producing off-by-TZ filters for non-UTC callers.
+        // (e.g. `2024-01-01T12:00:00`) is not, so AssumeUniversal folds it to UTC below
+        // (see PA-026 note) instead of requiring callers to supply an explicit offset.
         if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
         {
-            var hasTimeComponent = value.Contains('T', StringComparison.OrdinalIgnoreCase)
-                || value.Contains(':');
-            if (hasTimeComponent)
-            {
-                var hasOffsetIndicator = value.Contains('Z', StringComparison.OrdinalIgnoreCase)
-                    || value.LastIndexOf('+') > 0
-                    || (value.LastIndexOf('-') > 8); // after the date portion
-                // Mirror ArcGIS Server behaviour: bare datetime literals without a timezone
-                // offset (whether in #...# or quoted form, with or without the TIMESTAMP keyword)
-                // are accepted and treated as UTC. AssumeUniversal above already applied this.
-                // Rejecting them broke legacy ArcGIS client queries (honua-server#PA-026).
-                // The `explicitTimestampKeyword` branch was already accepted; now the bare form
-                // is too. Callers that need strict timezone enforcement should apply their own
-                // validation before reaching the parser.
-            }
+            // Mirror ArcGIS Server behaviour: bare datetime literals without a timezone
+            // offset (whether in #...# or quoted form, with or without the TIMESTAMP keyword)
+            // are accepted and treated as UTC. AssumeUniversal above already applied this.
+            // Rejecting them broke legacy ArcGIS client queries (honua-server#PA-026).
+            // The `explicitTimestampKeyword` branch was already accepted; now the bare form
+            // is too (a `hasOffsetIndicator` check that used to gate a reject-if-missing
+            // branch was removed by PA-026; it is intentionally not restored here). Callers
+            // that need strict timezone enforcement should apply their own validation before
+            // reaching the parser.
 
             if (dateOnly == null && timestamp.TimeOfDay == TimeSpan.Zero)
             {
@@ -844,6 +837,10 @@ public sealed class GeoServicesSqlParser
 
     private bool Match(params TokenType[] types)
     {
+        // Kept as an explicit loop rather than `types.Any(Check)`: this is a hot path
+        // called once per token during every filter parse, and a LINQ predicate here
+        // would add a per-call delegate allocation on top of the existing `params`
+        // array allocation for no readability gain.
         foreach (var type in types)
         {
             if (Check(type))
@@ -1216,13 +1213,11 @@ public sealed class GeoServicesSqlParser
             }
 
             var text = _source[_start.._current];
-            if (!text.Contains('.') && !text.Contains('e', StringComparison.OrdinalIgnoreCase))
+            if (!text.Contains('.') && !text.Contains('e', StringComparison.OrdinalIgnoreCase) &&
+                long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
             {
-                if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
-                {
-                    AddToken(TokenType.Number, longValue);
-                    return;
-                }
+                AddToken(TokenType.Number, longValue);
+                return;
             }
 
             if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue))

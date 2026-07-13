@@ -126,19 +126,16 @@ internal static class CoverageStyleDiagnosticBuilder
         }
 
         // NoData values surfaced via field DomainName (range unit) or capability marker.
-        foreach (var field in resource.Fields)
+        foreach (var field in resource.Fields.Where(HasNoDataMarker))
         {
-            if (HasNoDataMarker(field))
+            sink.Add(new MigrationCoverageStyleDiagnostic
             {
-                sink.Add(new MigrationCoverageStyleDiagnostic
-                {
-                    Kind = KindNoDataValue,
-                    Classification = ClassificationAutomated,
-                    SourceCoverageId = coverageId,
-                    SourceStyleId = field.Name,
-                    Reason = $"NoData marker advertised for band {field.Name}; the slice-2 GeoTIFF import preserves NoData verbatim, but the target style must mask matching pixels."
-                });
-            }
+                Kind = KindNoDataValue,
+                Classification = ClassificationAutomated,
+                SourceCoverageId = coverageId,
+                SourceStyleId = field.Name,
+                Reason = $"NoData marker advertised for band {field.Name}; the slice-2 GeoTIFF import preserves NoData verbatim, but the target style must mask matching pixels."
+            });
         }
 
         // StyleIds → color maps / vendor markers / continuous ramps.

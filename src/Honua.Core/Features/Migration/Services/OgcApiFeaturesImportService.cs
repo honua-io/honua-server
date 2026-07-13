@@ -466,12 +466,9 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             throw new ArgumentException("Bbox must contain exactly 4 (2D) or 6 (3D) ordinates.");
         }
 
-        foreach (var value in bbox)
+        if (bbox.Any(static value => double.IsNaN(value) || double.IsInfinity(value)))
         {
-            if (double.IsNaN(value) || double.IsInfinity(value))
-            {
-                throw new ArgumentException("Bbox ordinates must be finite numbers.");
-            }
+            throw new ArgumentException("Bbox ordinates must be finite numbers.");
         }
 
         if (bbox.Length == 4)
@@ -1084,15 +1081,9 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
-        if (!allowUnsafeLocalUrls)
+        if (!allowUnsafeLocalUrls && addresses.Any(static address => OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address)))
         {
-            foreach (var address in addresses)
-            {
-                if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
-                {
-                    throw new HttpRequestException(DisallowedNetworkAddressMessage);
-                }
-            }
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
@@ -1133,6 +1124,10 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             }
             finally
             {
+                // Not converted to a `using` declaration: on success the socket's ownership
+                // transfers to the returned NetworkStream (ownsSocket: true), which disposes it
+                // when the stream is closed. An unconditional `using` here would dispose the
+                // socket immediately after return, breaking the stream it was just handed to.
                 if (!connected)
                 {
                     socket.Dispose();

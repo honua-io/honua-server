@@ -57,12 +57,9 @@ public static class MetadataV2SpatialExtensions
         var explicitName = resource.Spatial?.PrimaryGeometryField;
         if (!string.IsNullOrWhiteSpace(explicitName))
         {
-            foreach (var field in resource.SchemaFields)
+            foreach (var field in resource.SchemaFields.Where(field => string.Equals(field.Name, explicitName, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(field.Name, explicitName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return field;
-                }
+                return field;
             }
         }
 
@@ -77,12 +74,9 @@ public static class MetadataV2SpatialExtensions
             }
         }
 
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.SchemaFields.Where(field => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
         {
-            if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-            {
-                return field;
-            }
+            return field;
         }
 
         return null;
@@ -119,13 +113,11 @@ public static class MetadataV2SpatialExtensions
                 }
             }
         }
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.SchemaFields.Where(field =>
+            string.Equals(field.Name, "objectid", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(field.Name, "id", StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(field.Name, "objectid", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(field.Name, "id", StringComparison.OrdinalIgnoreCase))
-            {
-                return field;
-            }
+            return field;
         }
         return null;
     }

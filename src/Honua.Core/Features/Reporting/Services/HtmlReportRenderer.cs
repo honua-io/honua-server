@@ -363,21 +363,7 @@ internal sealed class HtmlReportRenderer : IAnalysisReportRenderer
     }
 
     private static double MaxAbsValue(ChartSection chart)
-    {
-        var max = 0d;
-        foreach (var series in chart.Series)
-        {
-            foreach (var value in series.Values)
-            {
-                var abs = Math.Abs(value);
-                if (abs > max)
-                {
-                    max = abs;
-                }
-            }
-        }
-        return max;
-    }
+        => chart.Series.SelectMany(series => series.Values).Select(Math.Abs).DefaultIfEmpty(0d).Max();
 
     private static string NarrativeModeTag(NarrativeMode mode) => mode switch
     {

@@ -86,12 +86,11 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
         }
         else
         {
-            foreach (var mimeType in limits.AllowedMimeTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var mimeType in limits.AllowedMimeTypes
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(mimeType => !IsValidMimeType(mimeType)))
             {
-                if (!IsValidMimeType(mimeType))
-                {
-                    failures.Add($"Attachments.AllowedMimeTypes contains invalid MIME type '{mimeType}'.");
-                }
+                failures.Add($"Attachments.AllowedMimeTypes contains invalid MIME type '{mimeType}'.");
             }
         }
 
@@ -187,16 +186,8 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
             return false;
         }
 
-        foreach (var character in token)
-        {
-            if (!char.IsLetterOrDigit(character) &&
-                character is not '!' and not '#' and not '$' and not '&' and not '-' and not '^' and not '_' and not '.'
-                and not '+' and not '*')
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return token.All(character =>
+            char.IsLetterOrDigit(character) ||
+            character is '!' or '#' or '$' or '&' or '-' or '^' or '_' or '.' or '+' or '*');
     }
 }

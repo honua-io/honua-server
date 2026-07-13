@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Features.Temporal.Abstractions;
 using Honua.Core.Features.Temporal.Domain;
 
@@ -87,14 +88,10 @@ public sealed partial class TemporalHistoryService
         // Batch-fetch the current snapshots for the page's surviving features with a single
         // ObjectIds query instead of one feature read per changed object (avoids up to
         // NormalizeLimit round-trips per diff page).
-        var survivingIds = new HashSet<long>();
-        foreach (var group in pageGroups)
-        {
-            if (group.NetOperation != TemporalChangeKind.Delete)
-            {
-                survivingIds.Add(group.ObjectId);
-            }
-        }
+        var survivingIds = pageGroups
+            .Where(group => group.NetOperation != TemporalChangeKind.Delete)
+            .Select(group => group.ObjectId)
+            .ToHashSet();
 
         var attributesById = await FetchAttributesByIdAsync(storageLayerId, survivingIds, cancellationToken)
             .ConfigureAwait(false);

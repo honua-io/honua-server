@@ -217,6 +217,9 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
 
             Volatile.Write(ref _currentSamplingRate, mlEnhancedRate);
         }
+        // Intentional broad catch: this runs as a background Timer callback with no caller to
+        // observe an exception. A failed rate evaluation must be logged and swallowed so the
+        // sampler keeps using its last-known-good rate instead of crashing the process.
         catch (Exception ex)
         {
             Log.SamplingEvaluationFailed(_logger, ex, Volatile.Read(ref _currentSamplingRate));

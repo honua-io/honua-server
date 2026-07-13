@@ -82,6 +82,10 @@ public static class MigrationAcceptanceScanStageRunner
         var manualReview = 0;
         var unsupported = 0;
 
+        // Not rewritten with LINQ Select/Sum: this loop accumulates four independent counters
+        // from each entry's inventory summary plus a classification breakdown (switch, not a
+        // 1:1 map) in a single pass. Splitting it into per-field Sum() calls would re-enumerate
+        // entries and FidelityClassifications multiple times for no clarity gain.
         foreach (var entry in entries)
         {
             var inventory = entry.Inventory;

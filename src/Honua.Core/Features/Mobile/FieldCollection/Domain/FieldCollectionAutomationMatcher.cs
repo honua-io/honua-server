@@ -54,14 +54,10 @@ public static class FieldCollectionAutomationMatcher
         ArgumentNullException.ThrowIfNull(actions);
         ArgumentNullException.ThrowIfNull(automationEvent);
 
-        var matched = new List<FieldCollectionActionInvocation>();
-        foreach (var action in actions)
-        {
-            if (Matches(action, automationEvent))
-            {
-                matched.Add(FieldCollectionActionInvocation.Create(action, automationEvent));
-            }
-        }
+        var matched = actions
+            .Where(action => Matches(action, automationEvent))
+            .Select(action => FieldCollectionActionInvocation.Create(action, automationEvent))
+            .ToList();
 
         return matched;
     }

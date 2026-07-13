@@ -98,21 +98,19 @@ public static class WorkflowPackageGraphValidator
                 });
             }
 
+            // A required parameter is satisfied either by a literal value or by an incoming
+            // data edge that wires it from an upstream node's output port.
             var wiredInputs = WiredInputPorts(graph, node.NodeId);
-            foreach (var parameter in definition.ParameterSchemas.Where(parameter => parameter.Required))
-            {
-                // A required parameter is satisfied either by a literal value or by an incoming
-                // data edge that wires it from an upstream node's output port.
-                if (!node.Parameters.ContainsKey(parameter.Name) && !wiredInputs.Contains(parameter.Name))
+            failures.AddRange(definition.ParameterSchemas
+                .Where(parameter => parameter.Required
+                    && !node.Parameters.ContainsKey(parameter.Name)
+                    && !wiredInputs.Contains(parameter.Name))
+                .Select(parameter => new WorkflowPackageValidationFailure
                 {
-                    failures.Add(new WorkflowPackageValidationFailure
-                    {
-                        Code = "MISSING_REQUIRED_PARAMETER",
-                        Message = $"Workflow node '{node.NodeId}' is missing required parameter '{parameter.Name}'.",
-                        FieldPath = $"graph.nodes[{node.NodeId}].parameters.{parameter.Name}"
-                    });
-                }
-            }
+                    Code = "MISSING_REQUIRED_PARAMETER",
+                    Message = $"Workflow node '{node.NodeId}' is missing required parameter '{parameter.Name}'.",
+                    FieldPath = $"graph.nodes[{node.NodeId}].parameters.{parameter.Name}"
+                }));
         }
 
         foreach (var edge in graph.Edges)
@@ -187,20 +185,12 @@ public static class WorkflowPackageGraphValidator
     }
 
     private static HashSet<string> WiredInputPorts(WorkflowGraph graph, string nodeId)
-    {
-        var ports = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var edge in graph.Edges)
-        {
-            if (edge.Kind == WorkflowEdgeKind.Data
+        => graph.Edges
+            .Where(edge => edge.Kind == WorkflowEdgeKind.Data
                 && !string.IsNullOrWhiteSpace(edge.TargetPort)
                 && string.Equals(edge.TargetNodeId, nodeId, StringComparison.Ordinal))
-            {
-                ports.Add(edge.TargetPort.Trim());
-            }
-        }
-
-        return ports;
-    }
+            .Select(edge => edge.TargetPort!.Trim())
+            .ToHashSet(StringComparer.Ordinal);
 
     private static bool HasCycle(WorkflowGraph graph)
     {
@@ -209,6 +199,9 @@ public static class WorkflowPackageGraphValidator
             _ => new List<string>(),
             StringComparer.Ordinal);
 
+        // Not a flat filter/map: each qualifying edge appends to a different node's adjacency
+        // list (keyed by source), so this builds a graph structure rather than a single
+        // projected sequence — the explicit loop is clearer than a LINQ chain here.
         foreach (var edge in graph.Edges.Where(edge => edge.Kind != WorkflowEdgeKind.Failure))
         {
             if (adjacency.TryGetValue(edge.SourceNodeId, out var targets)

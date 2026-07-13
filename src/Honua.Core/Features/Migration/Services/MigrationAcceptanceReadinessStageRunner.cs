@@ -190,19 +190,17 @@ public static class MigrationAcceptanceReadinessStageRunner
             });
         }
 
-        foreach (var diagnostic in applyEntry.Outcome.Diagnostics)
+        foreach (var diagnostic in applyEntry.Outcome.Diagnostics
+                     .Where(static diagnostic => string.Equals(diagnostic.Severity, "unsupported", StringComparison.Ordinal)))
         {
-            if (string.Equals(diagnostic.Severity, "unsupported", StringComparison.Ordinal))
+            reasons.Add(new MigrationReadinessReason
             {
-                reasons.Add(new MigrationReadinessReason
-                {
-                    Code = "readiness.apply.unsupported",
-                    Severity = MigrationReadinessReasonSeverities.Fail,
-                    Stage = ApplyStage,
-                    SourceId = diagnostic.SourceId,
-                    Message = diagnostic.Message
-                });
-            }
+                Code = "readiness.apply.unsupported",
+                Severity = MigrationReadinessReasonSeverities.Fail,
+                Stage = ApplyStage,
+                SourceId = diagnostic.SourceId,
+                Message = diagnostic.Message
+            });
         }
 
         return reasons

@@ -321,14 +321,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             };
         }
 
-        var valid = 0;
-        foreach (var feature in features)
-        {
-            if (IsGeometryWellFormed(feature.Geometry))
-            {
-                valid++;
-            }
-        }
+        var valid = features.Count(static feature => IsGeometryWellFormed(feature.Geometry));
 
         var ratio = (double)valid / features.Length;
         var classification = ratio >= options.GeometryPassRatio
@@ -384,6 +377,10 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var targetFields = new HashSet<string>(StringComparer.Ordinal);
         foreach (var feature in features)
         {
+            // Not rewritten as features.Where(f => f.Attributes is not null): the nested loop
+            // accumulates into the shared targetFields set (not a pure filter/project), and moving
+            // the null check into a separate lambda would lose the null-narrowing on
+            // feature.Attributes for the nested foreach below.
             if (feature.Attributes is null)
             {
                 continue;

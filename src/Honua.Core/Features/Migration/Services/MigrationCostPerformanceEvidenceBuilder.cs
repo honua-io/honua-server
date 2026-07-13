@@ -624,9 +624,8 @@ public static class MigrationCostPerformanceEvidenceBuilder
     {
         long sum = 0;
         var hasValue = false;
-        foreach (var metric in metrics)
+        foreach (var value in metrics.Select(selector))
         {
-            var value = selector(metric);
             if (value == null)
             {
                 continue;
@@ -643,9 +642,8 @@ public static class MigrationCostPerformanceEvidenceBuilder
     {
         var sum = 0;
         var hasValue = false;
-        foreach (var metric in metrics)
+        foreach (var value in metrics.Select(selector))
         {
-            var value = selector(metric);
             if (value == null)
             {
                 continue;
@@ -661,9 +659,8 @@ public static class MigrationCostPerformanceEvidenceBuilder
     private static long? MaxLong(IEnumerable<MigrationCostPerformanceMetrics> metrics, Func<MigrationCostPerformanceMetrics, long?> selector)
     {
         long? max = null;
-        foreach (var metric in metrics)
+        foreach (var value in metrics.Select(selector))
         {
-            var value = selector(metric);
             if (value != null && (max == null || value > max))
             {
                 max = value;
@@ -676,9 +673,8 @@ public static class MigrationCostPerformanceEvidenceBuilder
     private static double? MaxDouble(IEnumerable<MigrationCostPerformanceMetrics> metrics, Func<MigrationCostPerformanceMetrics, double?> selector)
     {
         double? max = null;
-        foreach (var metric in metrics)
+        foreach (var value in metrics.Select(selector))
         {
-            var value = selector(metric);
             if (value != null && (max == null || value > max))
             {
                 max = value;
@@ -692,9 +688,8 @@ public static class MigrationCostPerformanceEvidenceBuilder
     {
         double sum = 0;
         var hasValue = false;
-        foreach (var metric in metrics)
+        foreach (var value in metrics.Select(selector))
         {
-            var value = selector(metric);
             if (value == null)
             {
                 continue;

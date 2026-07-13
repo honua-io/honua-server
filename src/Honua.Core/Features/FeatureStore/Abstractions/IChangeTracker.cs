@@ -65,15 +65,6 @@ public interface IChangeTracker
         }
 
         var changes = await GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken).ConfigureAwait(false);
-        var filtered = new List<FeatureChange>();
-        foreach (var change in changes)
-        {
-            if (objectIds.Contains(change.ObjectId))
-            {
-                filtered.Add(change);
-            }
-        }
-
-        return filtered;
+        return changes.Where(change => objectIds.Contains(change.ObjectId)).ToList();
     }
 }

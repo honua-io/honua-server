@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -87,13 +88,12 @@ public readonly struct FilterFieldSchema
 
         if (_resource is not null)
         {
-            foreach (var schemaField in _resource.SchemaFields)
+            var schemaField = _resource.SchemaFields.FirstOrDefault(field =>
+                string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+            if (schemaField is not null)
             {
-                if (string.Equals(schemaField.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-                {
-                    fieldType = NormalizeFieldType(schemaField.Type);
-                    return true;
-                }
+                fieldType = NormalizeFieldType(schemaField.Type);
+                return true;
             }
         }
 

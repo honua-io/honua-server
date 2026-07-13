@@ -315,13 +315,11 @@ public sealed class FormPackageValidator
                 var allowedCodes = layerChoices
                     .Select(static value => JsonElementToString(value.Code))
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                foreach (var choice in field.Domain.Choices)
+                foreach (var code in field.Domain.Choices
+                    .Select(static choice => JsonElementToString(choice.Code))
+                    .Where(code => !allowedCodes.Contains(code)))
                 {
-                    var code = JsonElementToString(choice.Code);
-                    if (!allowedCodes.Contains(code))
-                    {
-                        AddError(issues, "domainChoiceOutsideTarget", $"Domain choice '{code}' is not allowed by target field domain.", field.FieldId);
-                    }
+                    AddError(issues, "domainChoiceOutsideTarget", $"Domain choice '{code}' is not allowed by target field domain.", field.FieldId);
                 }
             }
         }
@@ -436,12 +434,9 @@ public sealed class FormPackageValidator
 
             ValidateRepeatBounds(section, issues);
 
-            foreach (var fieldId in section.FieldIds)
+            foreach (var fieldId in section.FieldIds.Where(fieldId => !fieldIds.Contains(fieldId)))
             {
-                if (!fieldIds.Contains(fieldId))
-                {
-                    AddError(issues, "sectionFieldNotFound", $"Section '{section.SectionId}' references unknown field '{fieldId}'.", fieldId);
-                }
+                AddError(issues, "sectionFieldNotFound", $"Section '{section.SectionId}' references unknown field '{fieldId}'.", fieldId);
             }
         }
     }
@@ -511,12 +506,9 @@ public sealed class FormPackageValidator
             AddError(issues, "attachmentTotalLimitInvalid", $"Attachment total size must be between 1 and {_attachmentLimits.MaxTotalAttachmentSize} bytes.", path: "attachmentPolicy.maxTotalBytes");
         }
 
-        foreach (var contentType in package.AttachmentPolicy.AllowedContentTypes)
+        foreach (var contentType in package.AttachmentPolicy.AllowedContentTypes.Where(contentType => !MimeIsAllowedByServer(contentType)))
         {
-            if (!MimeIsAllowedByServer(contentType))
-            {
-                AddError(issues, "attachmentContentTypeNotAllowed", $"Attachment content type '{contentType}' is not allowed by server limits.", path: "attachmentPolicy.allowedContentTypes");
-            }
+            AddError(issues, "attachmentContentTypeNotAllowed", $"Attachment content type '{contentType}' is not allowed by server limits.", path: "attachmentPolicy.allowedContentTypes");
         }
 
         if (package.AttachmentPolicy.RequireExifStripping ||
@@ -574,20 +566,14 @@ public sealed class FormPackageValidator
             .Select(static field => field.FieldId!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var fieldId in package.PrivacyPolicy.PrivateFieldIds)
+        foreach (var fieldId in package.PrivacyPolicy.PrivateFieldIds.Where(fieldId => !fieldIds.Contains(fieldId)))
         {
-            if (!fieldIds.Contains(fieldId))
-            {
-                AddError(issues, "privacyFieldNotFound", $"Privacy policy references unknown field '{fieldId}'.", fieldId);
-            }
+            AddError(issues, "privacyFieldNotFound", $"Privacy policy references unknown field '{fieldId}'.", fieldId);
         }
 
-        foreach (var transform in package.PrivacyPolicy.RequiredTransformations)
+        foreach (var transform in package.PrivacyPolicy.RequiredTransformations.Where(transform => !_allowedPrivacyTransforms.Contains(transform)))
         {
-            if (!_allowedPrivacyTransforms.Contains(transform))
-            {
-                AddError(issues, "privacyTransformUnsupported", $"Privacy transformation '{transform}' is not supported by this server.", path: "privacyPolicy.requiredTransformations");
-            }
+            AddError(issues, "privacyTransformUnsupported", $"Privacy transformation '{transform}' is not supported by this server.", path: "privacyPolicy.requiredTransformations");
         }
 
         if (package.PrivacyPolicy.RetentionDays is <= 0)
@@ -603,13 +589,11 @@ public sealed class FormPackageValidator
             return;
         }
 
-        foreach (var transport in package.OfflinePolicy.PreferredTransports)
+        foreach (var transport in package.OfflinePolicy.PreferredTransports.Where(transport =>
+            !string.Equals(transport, "feature-server-replica", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(transport, "fieldcollection", StringComparison.OrdinalIgnoreCase)))
         {
-            if (!string.Equals(transport, "feature-server-replica", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(transport, "fieldcollection", StringComparison.OrdinalIgnoreCase))
-            {
-                AddError(issues, "offlineTransportUnsupported", $"Offline transport '{transport}' is not supported.", path: "offlinePolicy.preferredTransports");
-            }
+            AddError(issues, "offlineTransportUnsupported", $"Offline transport '{transport}' is not supported.", path: "offlinePolicy.preferredTransports");
         }
 
         if (!package.OfflinePolicy.ReplicaTransportEnabled &&
@@ -677,12 +661,9 @@ public sealed class FormPackageValidator
             .ToDictionary(static field => field.FieldId!, StringComparer.OrdinalIgnoreCase);
         var targetFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var submittedField in request.Values.Keys)
+        foreach (var submittedField in request.Values.Keys.Where(submittedField => !fields.ContainsKey(submittedField)))
         {
-            if (!fields.ContainsKey(submittedField))
-            {
-                AddError(issues, "fieldNotInPackage", $"Submitted field '{submittedField}' is not defined by the package.", submittedField);
-            }
+            AddError(issues, "fieldNotInPackage", $"Submitted field '{submittedField}' is not defined by the package.", submittedField);
         }
 
         if (OperationEquals(request.Operation, FormSubmissionOperations.Delete))
@@ -868,6 +849,9 @@ public sealed class FormPackageValidator
         }
 
         long totalSize = 0;
+        // Not folded into a trailing .Where(): the guard condition also derives `maxFieldCount`,
+        // which the AddError message below needs, so filtering here would require recomputing
+        // the lookup instead of reusing it.
         foreach (var group in request.Attachments
             .Where(static attachment => !string.IsNullOrWhiteSpace(attachment.FieldId))
             .GroupBy(static attachment => attachment.FieldId!, StringComparer.OrdinalIgnoreCase))
@@ -914,12 +898,10 @@ public sealed class FormPackageValidator
             }
         }
 
-        foreach (var fieldId in requiredAttachmentFields)
+        foreach (var fieldId in requiredAttachmentFields.Where(fieldId =>
+            !request.Attachments.Any(attachment => string.Equals(attachment.FieldId, fieldId, StringComparison.OrdinalIgnoreCase))))
         {
-            if (!request.Attachments.Any(attachment => string.Equals(attachment.FieldId, fieldId, StringComparison.OrdinalIgnoreCase)))
-            {
-                AddError(issues, "requiredAttachmentMissing", $"Required attachment field '{fieldId}' is missing.", fieldId);
-            }
+            AddError(issues, "requiredAttachmentMissing", $"Required attachment field '{fieldId}' is missing.", fieldId);
         }
 
         var maxTotal = package.AttachmentPolicy.MaxTotalBytes ?? _attachmentLimits.MaxTotalAttachmentSize;
@@ -1026,6 +1008,9 @@ public sealed class FormPackageValidator
         if (service.Options.TryGetValue("capabilities", out var element) &&
             element.ValueKind == JsonValueKind.Array)
         {
+            // Kept as a foreach rather than .Where()/.Select(): the array-length capacity hint
+            // above and the non-null/non-empty narrowing on GetString() don't fold cleanly into
+            // a LINQ chain without fighting nullable-reference analysis.
             var list = new List<string>(element.GetArrayLength());
             foreach (var item in element.EnumerateArray())
             {

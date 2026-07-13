@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Validation.Contracts;
@@ -28,20 +29,7 @@ public sealed record FieldValidationResult
     /// </summary>
     [JsonIgnore]
     public bool IsValid
-    {
-        get
-        {
-            foreach (var error in Errors)
-            {
-                if (error.Severity is ValidationSeverity.Error or ValidationSeverity.Blocker)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-    }
+        => !Errors.Any(error => error.Severity is ValidationSeverity.Error or ValidationSeverity.Blocker);
 
     /// <summary>
     /// Creates a result from the supplied errors.

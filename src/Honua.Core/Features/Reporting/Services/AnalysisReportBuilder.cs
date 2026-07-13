@@ -98,6 +98,9 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: the optional LLM narrative pass must never fail the
+                // whole report; the failure is logged and the report falls back to the
+                // deterministic slot text rather than being swallowed silently.
                 AnalysisReportLog.NarrativeFallback(_logger, draft.TemplateId, ex.GetType().Name, ex.Message);
                 narrativeMode = NarrativeMode.FallbackFromLlmError;
             }
@@ -151,16 +154,10 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
         IReadOnlyList<NarrativeSlot> slots,
         Dictionary<string, string> mergedFill)
     {
-        foreach (var slot in slots)
-        {
-            if (mergedFill.TryGetValue(slot.SlotId, out var filled)
-                && !string.IsNullOrWhiteSpace(filled)
-                && !string.Equals(filled, slot.DeterministicText, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-        return false;
+        return slots.Any(slot =>
+            mergedFill.TryGetValue(slot.SlotId, out var filled)
+            && !string.IsNullOrWhiteSpace(filled)
+            && !string.Equals(filled, slot.DeterministicText, StringComparison.Ordinal));
     }
 
     private static List<AnalysisReportSection> ComposeSections(

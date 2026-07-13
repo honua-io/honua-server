@@ -375,11 +375,15 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
                 var high = i < classification.Breaks.Length ? classification.Breaks[i] : dataMax;
                 var colorIdx = Math.Min(i, colors.Length - 1);
 
+                // When i > 0, `low` always comes from classification.Breaks[i - 1] (a non-nullable
+                // double), and when i < Breaks.Length, `high` always comes from Breaks[i]. Only the
+                // i == 0 edge (using dataMin) and the i == Breaks.Length edge (using dataMax) can be
+                // genuinely null, so those are the only branches that need a HasValue fallback.
                 var label = i == 0
                     ? high.HasValue ? $"< {high.Value.ToString("F2", CultureInfo.InvariantCulture)}" : "Minimum"
                     : i == classification.Breaks.Length
-                        ? low.HasValue ? $">= {low.Value.ToString("F2", CultureInfo.InvariantCulture)}" : "Maximum"
-                        : $"{low?.ToString("F2", CultureInfo.InvariantCulture) ?? "?"} - {high?.ToString("F2", CultureInfo.InvariantCulture) ?? "?"}";
+                        ? $">= {low!.Value.ToString("F2", CultureInfo.InvariantCulture)}"
+                        : $"{low!.Value.ToString("F2", CultureInfo.InvariantCulture)} - {high!.Value.ToString("F2", CultureInfo.InvariantCulture)}";
 
                 entries.Add(new LegendEntry
                 {

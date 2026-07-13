@@ -454,14 +454,15 @@ public sealed class QueryProcessor : IQueryProcessor
             {
                 var availableFields = GetAvailableFields();
 
-                foreach (var stat in aggregation.Statistics.Value)
+                var invalidStatField = aggregation.Statistics.Value
+                    .Where(stat => !string.IsNullOrEmpty(stat.OnStatisticField) && !availableFields.ContainsKey(stat.OnStatisticField))
+                    .Select(stat => stat.OnStatisticField)
+                    .FirstOrDefault();
+
+                if (invalidStatField is not null)
                 {
-                    if (!string.IsNullOrEmpty(stat.OnStatisticField) &&
-                        !availableFields.ContainsKey(stat.OnStatisticField))
-                    {
-                        return QueryValidationResult.Failure(
-                            $"Unknown statistics field: {FormatFieldNameForError(stat.OnStatisticField)}");
-                    }
+                    return QueryValidationResult.Failure(
+                        $"Unknown statistics field: {FormatFieldNameForError(invalidStatField)}");
                 }
             }
         }
@@ -531,8 +532,13 @@ public sealed class QueryProcessor : IQueryProcessor
 
         // Convert filter
         SqlFragment? sqlFilter = null;
-        if (query.Filter?.GetFilterExpression() is { } filterExpression)
+        var filter = query.Filter;
+        if (filter?.GetFilterExpression() is { } filterExpression)
         {
+            // Note: `filter` is `QueryFilter?` (a nullable *struct*), so the pattern
+            // match above only proves the extracted `filterExpression` result is
+            // non-null — it does not narrow `filter` itself. Keep using `filter?.`
+            // below rather than a bare `filter.` member access.
             try
             {
                 sqlFilter = _filterTranslator.Translate(filterExpression, resource);
@@ -544,7 +550,7 @@ public sealed class QueryProcessor : IQueryProcessor
                 // CQL2/OGC/where-clause path) have no fragment; swallowing the failure
                 // there would silently execute the query with NO filter at all,
                 // over-exposing data instead of surfacing an error.
-                if (query.Filter?.GetSqlFragment() is not { } fallbackFragment)
+                if (filter?.GetSqlFragment() is not { } fallbackFragment)
                 {
                     throw;
                 }
@@ -553,7 +559,7 @@ public sealed class QueryProcessor : IQueryProcessor
                 sqlFilter = fallbackFragment;
             }
         }
-        else if (query.Filter?.GetSqlFragment() is { } sqlFragment)
+        else if (filter?.GetSqlFragment() is { } sqlFragment)
         {
             sqlFilter = sqlFragment;
         }
@@ -708,6 +714,9 @@ public sealed class QueryProcessor : IQueryProcessor
         }
         catch (Exception ex)
         {
+            // Logged top-level safety net: this method only feeds a streaming-vs-buffered
+            // heuristic, never the actual result set, so a failed COUNT degrades to a
+            // conservative estimate instead of failing the whole query.
             QueryLog.EstimateResultCountFailed(_logger, storageLayerId.Value, ex);
 
             // Return a conservative estimate based on query characteristics

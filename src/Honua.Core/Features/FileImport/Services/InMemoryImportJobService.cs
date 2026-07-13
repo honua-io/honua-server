@@ -290,6 +290,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
+        // Intentional broad catch: ProcessJobAsync runs fire-and-forget (see PA-016 comment
+        // above) with no caller to observe a thrown exception, so any import-provider failure
+        // must be caught here, logged, and recorded on the job's progress rather than becoming
+        // an unobserved task exception.
         catch (Exception ex)
         {
             activity?.SetTag("honua.import.outcome", "failed");
@@ -297,7 +301,6 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             if (_jobs.TryGetValue(jobId, out var state))
             {
                 status = "failed";
-                errorMessage = "Import failed.";
                 failedFeatures = state.Progress.FailedFeatures;
                 state.Progress = state.Progress with
                 {
@@ -323,8 +326,11 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             }
 
             TryDeleteTempFile(tempFilePath);
-            _cancellationTokens.TryRemove(jobId, out var cts);
-            cts?.Dispose();
+            if (_cancellationTokens.TryRemove(jobId, out var cts))
+            {
+                using var _ = cts;
+            }
+
             CleanupCompletedJobsIfNeeded();
         }
     }
@@ -437,14 +443,12 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 kvp.Key,
                 CompletedAt = kvp.Value.Progress.CompletedAt ?? kvp.Value.StartedAt
             })
+            .Where(job => job.CompletedAt <= expirationCutoff)
             .ToList();
 
         foreach (var job in completedJobs)
         {
-            if (job.CompletedAt <= expirationCutoff)
-            {
-                RemoveJob(job.Key);
-            }
+            RemoveJob(job.Key);
         }
 
         var remainingCompleted = _jobs
@@ -581,9 +585,10 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 File.Delete(tempFilePath);
             }
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Best-effort cleanup; ignore failures
+            // Best-effort cleanup; ignore failures (e.g. file locked/in use, already removed,
+            // or the process lacks delete permission on the temp path).
         }
     }
 }

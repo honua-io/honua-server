@@ -158,15 +158,9 @@ internal static class PMTilesDirectory
         for (var i = 0; i < numEntries; i++)
         {
             var v = ReadVarint(data, ref pos);
-            ulong offset;
-            if (v == 0 && i > 0)
-            {
-                offset = entries[i - 1].Offset + entries[i - 1].Length;
-            }
-            else
-            {
-                offset = v - 1;
-            }
+            var offset = v == 0 && i > 0
+                ? entries[i - 1].Offset + entries[i - 1].Length
+                : v - 1;
             entries[i] = entries[i] with { Offset = offset };
         }
 
