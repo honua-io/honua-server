@@ -100,6 +100,28 @@ internal static class GeoServicesErrorCodes
     public const int InternalServerError = 500;
 
     /// <summary>
+    /// Not Implemented - the requested operation or parameter combination is
+    /// recognized but not supported by this server, and no request change other
+    /// than avoiding the operation will succeed.
+    /// Used for: not-implemented raster operations (BandArithmetic/ExtractBand-by-name
+    /// exports, explicit pixelType, unsupported stretch/rendering-rule chains,
+    /// getSamples/identify against a layer with no servable multidimensional reader,
+    /// DEM-less/shadow mensuration height).
+    /// <para>
+    /// Emitted as a deliberate pass-through of HTTP 501 rather than collapsing to
+    /// <see cref="InternalServerError"/> (which signals a transient/internal fault a
+    /// client should retry or report) or to <see cref="BadRequest"/> (which is
+    /// indistinguishable from ordinary parameter-validation failures). The Esri
+    /// GeoServices <c>error.code</c> is a free integer (the spec already carries
+    /// non-HTTP values such as 498/499), so preserving 501 keeps the "operation
+    /// unsupported" signal machine-distinguishable for SDKs/clients that branch on
+    /// <c>error.code</c>. The accompanying error message carries the human-readable
+    /// "not implemented / operation not supported" detail.
+    /// </para>
+    /// </summary>
+    public const int NotImplemented = 501;
+
+    /// <summary>
     /// Bad Gateway - Upstream service error
     /// Used for: Database connection failures, external service errors
     /// </summary>
@@ -133,6 +155,9 @@ internal static class GeoServicesErrorCodes
         498 => InvalidToken,
         499 => TokenRequired,
         500 => InternalServerError,
+        // 501 passes through as a distinct "operation not supported" body code rather
+        // than collapsing to the 500 default; see NotImplemented remarks (honua-server#2795).
+        501 => NotImplemented,
         502 => BadGateway,
         503 => ServiceUnavailable,
         _ => InternalServerError // Default to 500 for unknown codes

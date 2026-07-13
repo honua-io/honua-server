@@ -264,6 +264,8 @@ internal static class StandardErrorResponseFormatter
         // Otherwise map HTTP 401 → 499 (TokenRequired) per the Esri ArcGIS REST API spec; all other codes
         // map 1-to-1 from the HTTP status. The HTTP 401 body code of plain 401 is never emitted in
         // conformant Esri responses — clients rely on 498/499 to trigger credential-prompt flows.
+        // #2795: HTTP 501 maps to body code 501 (NotImplemented) so not-implemented operations stay
+        // distinguishable from a 500 server fault; see GeoServicesErrorCodes.FromHttpStatusCode.
         var bodyCode = options.GeoServicesBodyCode ?? (
             errorResponse.StatusCode == StatusCodes.Status401Unauthorized
                 ? GeoServicesErrorCodes.TokenRequired
