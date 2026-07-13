@@ -325,6 +325,10 @@ public static class InlineColorRamp
         double h = 0;
         if (delta > 0)
         {
+            // max was assigned directly from Math.Max(r, Math.Max(g, b)), which
+            // returns one of its arguments verbatim (no rounding/arithmetic), so
+            // comparing it back against r/g/b for hue-sector selection is exact
+            // bit-identity, not lossy floating-point math.
             if (max == r)
             {
                 h = 60 * (((g - b) / delta) % 6);

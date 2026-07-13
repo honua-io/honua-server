@@ -17,6 +17,12 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
 
+    // Tolerance for treating a geodesic angular distance (radians) as
+    // effectively zero. Far tighter than any meaningful query distance; it
+    // only absorbs floating-point noise so near-coincident endpoints don't
+    // produce NaN/Infinity from dividing by a near-zero sinAngular below.
+    private const double AngularEqualityTolerance = 1e-9;
+
     /// <summary>
     /// Default number of profile samples taken along a line of sight when the
     /// caller does not supply an explicit count.
@@ -415,7 +421,7 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         var a = Math.Sin(deltaPhi / 2) * Math.Sin(deltaPhi / 2)
             + Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(deltaLambda / 2) * Math.Sin(deltaLambda / 2);
         var angular = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        if (angular == 0)
+        if (angular <= AngularEqualityTolerance)
         {
             return (startLon, startLat);
         }

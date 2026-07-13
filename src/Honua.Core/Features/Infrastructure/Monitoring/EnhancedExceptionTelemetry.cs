@@ -483,9 +483,9 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
 
         var exceptions = _recentExceptions.ToArray();
 
-        if (minSeverity.HasValue)
+        if (minSeverity is { } minSeverityValue)
         {
-            exceptions = exceptions.Where(e => e.Classification.Severity >= minSeverity.Value).ToArray();
+            exceptions = exceptions.Where(e => e.Classification.Severity >= minSeverityValue).ToArray();
         }
 
         return exceptions
