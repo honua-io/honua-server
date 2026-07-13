@@ -932,6 +932,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         var parameterizedExpressions = new List<string>(expressions.Count);
+        // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
+        // per-expression parse (null-check vs. comparison), not a pure 1:1 mapping.
         foreach (var expression in expressions)
         {
             var part = expression.Trim();

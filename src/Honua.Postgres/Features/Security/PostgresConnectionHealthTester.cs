@@ -65,6 +65,8 @@ internal sealed class PostgresConnectionHealthTester : IConnectionHealthTester
         }
         catch (Exception ex)
         {
+            // Connection health probe: any failure means "unhealthy", not an exception the caller
+            // should handle — log for diagnostics and return the status instead.
             _logHealthCheckFailed(_logger, ex.GetType().Name, ex);
             return ConnectionHealthStatus.Unhealthy;
         }

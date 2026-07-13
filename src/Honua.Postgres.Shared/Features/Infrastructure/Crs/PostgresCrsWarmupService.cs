@@ -97,6 +97,8 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
             }
             catch (Exception ex)
             {
+                // Background service loop: must not let an unexpected failure crash the host; log and
+                // retry after the standard interval so warmup keeps working on subsequent iterations.
                 Log.WarmupLoopError(_logger, ex);
                 await Task.Delay(LeaderElectionRetryInterval, stoppingToken);
             }
@@ -112,6 +114,7 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
             }
             catch (Exception ex)
             {
+                // Best-effort release during shutdown; the lease will still expire on its own TTL.
                 Log.LeadershipReleaseError(_logger, ex);
             }
         }
@@ -140,6 +143,8 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            // Expected during host shutdown while a warmup resolve is in flight; nothing to log or clean
+            // up here since the outer loop is exiting.
         }
         catch (Exception ex)
         {

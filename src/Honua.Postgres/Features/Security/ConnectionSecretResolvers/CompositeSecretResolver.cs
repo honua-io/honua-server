@@ -99,7 +99,7 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         if (string.IsNullOrWhiteSpace(secretKey))
             throw new ArgumentException("Secret key cannot be null or empty", nameof(secretKey));
 
-        var (provider, path) = ParseSecretReference(secretKey);
+        var (provider, _) = ParseSecretReference(secretKey);
 
         if (!_resolvers.TryGetValue(provider, out var resolver))
         {
@@ -146,6 +146,8 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
         catch (Exception ex)
         {
+            // CanResolve is a best-effort capability probe, not a resolve attempt: any failure means
+            // "cannot resolve", not an exception the caller should handle.
             _logCanResolveError(_logger, secretKey, ex);
             return false;
         }

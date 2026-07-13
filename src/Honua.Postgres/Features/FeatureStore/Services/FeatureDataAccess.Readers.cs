@@ -94,6 +94,8 @@ internal sealed partial class FeatureDataAccess
 
         var filteredAttributes = new Dictionary<string, object?>();
 
+        // Not rewritten as .Where(...): TryGetValue does the existence check and value fetch in one
+        // dictionary lookup; a LINQ filter would need a second lookup (or a sentinel) to get the value.
         foreach (var field in outFields)
         {
             if (feature.Attributes.TryGetValue(field, out var value))

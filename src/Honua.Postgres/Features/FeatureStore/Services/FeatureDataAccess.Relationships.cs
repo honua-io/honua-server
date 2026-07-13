@@ -130,7 +130,7 @@ internal sealed partial class FeatureDataAccess
 
         if (query.Offset.HasValue && query.Offset.Value > 0)
         {
-            sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+            sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
             parameters.Add(query.Offset.Value);
         }
 

@@ -306,14 +306,12 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // An explicit SRID is supplemental (overrides .prj detection) but cannot
         // replace the world file â€” without it pixels map 1:1 to CRS units which is
         // almost certainly wrong.
-        if (request.Format is SupportedRasterFormat.PngWorldFile or SupportedRasterFormat.JpegWorldFile)
+        if (request.Format is SupportedRasterFormat.PngWorldFile or SupportedRasterFormat.JpegWorldFile &&
+            string.IsNullOrWhiteSpace(request.WorldFileContent))
         {
-            if (string.IsNullOrWhiteSpace(request.WorldFileContent))
-            {
-                throw new ArgumentException(
-                    $"{request.Format} imports require a world file (.pgw/.jgw/.tfw) for georeferencing. " +
-                    "An explicit SRID can optionally accompany the world file to override CRS detection.");
-            }
+            throw new ArgumentException(
+                $"{request.Format} imports require a world file (.pgw/.jgw/.tfw) for georeferencing. " +
+                "An explicit SRID can optionally accompany the world file to override CRS detection.");
         }
 
         // COG is a valid TIFF â€” same import path as GeoTIFF.

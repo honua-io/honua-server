@@ -142,6 +142,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             }
             catch (Exception ex)
             {
+                // Resolution/probe failure for this specific connection: log, persist the unhealthy
+                // status so it surfaces in the registry, and return false rather than throwing.
                 _logConnectionStringResolveFailed(_logger, connectionName, ex);
 
                 await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), false, cancellationToken);
@@ -150,6 +152,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         }
         catch (Exception ex)
         {
+            // Outer guard for registry-lookup failures (not covered by the inner try): health-check
+            // probe semantics — any failure means "unhealthy", not an exception the caller should handle.
             _logHealthCheckError(_logger, connectionName, ex);
             return false;
         }
@@ -365,6 +369,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
         }
         catch (Exception ex)
         {
+            // Connection probe failure: log, persist the unhealthy status, and return false rather
+            // than throwing — this is a health-check helper, not a query path.
             _logHealthCheckFailed(_logger, connection.Name, ex.GetType().Name, ex);
 
             await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), false, cancellationToken);

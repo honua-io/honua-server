@@ -107,6 +107,9 @@ internal sealed partial class GeoservicesImportService
         }
         catch (Exception)
         {
+            // Malformed/unrecognized Esri geometry JSON: return null like the "no recognized shape"
+            // path above. The caller (InsertFeaturesAsync) already logs GeometryConversionFailed
+            // whenever this returns null, so the failure is surfaced without duplicating it here.
             return null;
         }
     }
@@ -148,6 +151,9 @@ internal sealed partial class GeoservicesImportService
         }
         catch (Exception)
         {
+            // This only feeds a diagnostic higher-dimension-count statistic, not the actual geometry
+            // insert path; malformed geometry JSON here safely degrades to "no Z observed" rather than
+            // failing the import (the geometry conversion itself has its own error handling/logging).
             return false;
         }
     }

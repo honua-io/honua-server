@@ -322,6 +322,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
         catch (Exception ex)
         {
+            // Row count is an approximate hint (pg_class.reltuples), not correctness-critical; log and
+            // return null so callers degrade gracefully instead of failing table discovery.
             TableDiscoveryLog.RowCountEstimateFailed(_logger, schema, tableName, ex);
             return null;
         }
@@ -391,6 +393,8 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
         catch (Exception ex)
         {
+            // Best-effort column introspection: on failure, log and return whatever columns were read
+            // so far (possibly empty) rather than failing the caller's table discovery entirely.
             TableDiscoveryLog.ColumnDiscoveryFailed(_logger, schema, tableName, ex);
         }
 

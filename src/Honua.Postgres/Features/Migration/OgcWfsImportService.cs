@@ -115,6 +115,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         }
         catch (Exception ex)
         {
+            // Map any source-scan failure (network, malformed capabilities, etc.) to a sanitized
+            // failure result rather than leaking source-URL/provider internals to the caller.
             Log.InventoryScanFailed(_logger, safeSourceUrl, ex);
             return CreateFailureResult(request, jobId, "Failed to scan WFS source for migration planning.", stopwatch.Elapsed);
         }
@@ -204,6 +206,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             }
             catch (Exception ex)
             {
+                // Per-feature-type failure: log and record it as manual-review so the rest of the
+                // selected resources continue importing instead of aborting the whole run.
                 Log.FeatureTypeImportFailed(_logger, resource.Name, ex);
                 perFeatureType.Add(new OgcWfsImportedFeatureType
                 {
@@ -454,12 +458,10 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         }
 
         int? numberMatched = null;
-        if (root.TryGetProperty("numberMatched", out var matched))
+        if (root.TryGetProperty("numberMatched", out var matched) &&
+            matched.ValueKind == JsonValueKind.Number && matched.TryGetInt32(out var value))
         {
-            if (matched.ValueKind == JsonValueKind.Number && matched.TryGetInt32(out var value))
-            {
-                numberMatched = value;
-            }
+            numberMatched = value;
         }
 
         var list = new List<JsonElement>(features.GetArrayLength());
@@ -761,12 +763,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             }
         }
 
-        foreach (var pair in overrides)
+        foreach (var pair in overrides.Where(pair => !string.IsNullOrWhiteSpace(pair.Value)))
         {
-            if (!string.IsNullOrWhiteSpace(pair.Value))
-            {
-                pairs.Add(new KeyValuePair<string, string>(pair.Key, pair.Value));
-            }
+            pairs.Add(new KeyValuePair<string, string>(pair.Key, pair.Value));
         }
 
         return string.Join("&", pairs.Select(p =>
