@@ -187,6 +187,13 @@ public sealed class LicenseCapacityInstance
     /// Whether this instance contributes to the production band calculation.
     /// </summary>
     public required bool CountsTowardBand { get; init; }
+
+    /// <summary>
+    /// The binary version this instance advertised, or <see langword="null"/> when the instance did not
+    /// report one (for example, an older binary from before version advertising shipped). Consumed by
+    /// the migration node-version barrier (#2812) as a live cluster-skew signal.
+    /// </summary>
+    public string? BinaryVersion { get; init; }
 }
 
 /// <summary>
@@ -401,6 +408,12 @@ public sealed class LicenseCapacityRegistrationRequest
     /// Whether this call is a heartbeat refresh for an already admitted instance.
     /// </summary>
     public bool IsRefresh { get; init; }
+
+    /// <summary>
+    /// The binary version this serving instance is running, advertised to the coordinated meter so the
+    /// migration node-version barrier (#2812) can observe live cluster version skew. Optional.
+    /// </summary>
+    public string? BinaryVersion { get; init; }
 }
 
 /// <summary>

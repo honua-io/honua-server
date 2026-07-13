@@ -69,6 +69,12 @@ internal static class LicensingRegistration
         services.AddHostedService(sp =>
             sp.GetRequiredService<LicenseCapacityMeter>());
 
+        // Feed the migration node-version barrier (#2812) from the meter's live, coordinated node
+        // inventory. When Redis is absent the inventory reports no coordination and the barrier stays
+        // inert, so single-node/dev-compose boot is unaffected and needs zero new configuration.
+        services.AddSingleton<Honua.Core.Features.Infrastructure.Migrations.IActiveNodeVersionInventory>(sp =>
+            new LicenseCapacityNodeVersionInventory(sp.GetRequiredService<LicenseCapacityMeter>()));
+
         // Test/dev only: an explicit Licensing:DevGrantEdition grants every entitlement up to that
         // edition without a signed license, so an out-of-process test/CI server can exercise
         // edition-gated features (e.g. FeatureServer editing, honua-server#1591). It is registered

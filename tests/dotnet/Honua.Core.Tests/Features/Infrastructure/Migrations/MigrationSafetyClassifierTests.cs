@@ -156,10 +156,10 @@ public sealed class MigrationSafetyClassifierTests
     }
 
     [Fact]
-    public void Classify_BreakingWithMarker_IsContractAnnotated()
+    public void Classify_BreakingWithIdentityBoundMarker_IsContractAnnotated()
     {
         const string sql = """
-            -- honua:compatibility-review reason=legacy_name unused since v2; dropped after contract phase
+            -- honua:compatibility-review reviewer=jane.doe ticket=honua-server#2812 reason=legacy_name unused since v2
             ALTER TABLE honua.layers DROP COLUMN legacy_name;
             """;
 
@@ -170,13 +170,53 @@ public sealed class MigrationSafetyClassifierTests
         result.BreakingRules.Should().Contain("drop-column");
     }
 
+    [Fact]
+    public void Classify_BreakingWithFreeTextReasonOnlyMarker_IsContractUnannotated()
+    {
+        // AC (b) #2812: a self-service free-text reason= is no longer sufficient — the marker must be
+        // bound to a reviewer AND ticket identity, so an unaccountable self-review fails closed.
+        const string sql = """
+            -- honua:compatibility-review reason=legacy_name unused since v2; dropped after contract phase
+            ALTER TABLE honua.layers DROP COLUMN legacy_name;
+            """;
+
+        var result = MigrationSafetyClassifier.Classify("052_drop_legacy.sql", sql);
+
+        result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
+        result.IsBreaking.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryParseReviewIdentity_ExtractsReviewerAndTicket()
+    {
+        const string sql =
+            "-- honua:compatibility-review reviewer=jane.doe ticket=honua-server#2812 reason=safe after v2\n" +
+            "DROP TABLE honua.layers;";
+
+        MigrationSafetyClassifier.TryParseReviewIdentity(sql, out var identity).Should().BeTrue();
+        identity!.Reviewer.Should().Be("jane.doe");
+        identity.Ticket.Should().Be("honua-server#2812");
+    }
+
+    [Fact]
+    public void TryParseReviewIdentity_AcceptsIssueAlias()
+    {
+        const string sql = "-- honua:compatibility-review reviewer=ops issue=#42 reason=safe";
+
+        MigrationSafetyClassifier.TryParseReviewIdentity(sql, out var identity).Should().BeTrue();
+        identity!.Ticket.Should().Be("#42");
+    }
+
     [Theory]
-    [InlineData("-- honua:compatibility-review reason=safe", true)]
-    [InlineData("--   honua:compatibility-review    reason = safe", true)]
-    [InlineData("-- HONUA:COMPATIBILITY-REVIEW reason=safe", true)]
-    [InlineData("-- honua:compatibility-review (no reason)", false)]
+    [InlineData("-- honua:compatibility-review reviewer=jane ticket=#7 reason=safe", true)]
+    [InlineData("--   honua:compatibility-review   reviewer = jane   ticket = #7   reason = safe", true)]
+    [InlineData("-- HONUA:COMPATIBILITY-REVIEW REVIEWER=jane ISSUE=#7", true)]
+    [InlineData("-- honua:compatibility-review reason=safe", false)]
+    [InlineData("-- honua:compatibility-review reviewer=jane reason=missing ticket", false)]
+    [InlineData("-- honua:compatibility-review ticket=#7 reason=missing reviewer", false)]
+    [InlineData("-- honua:compatibility-review (no fields)", false)]
     [InlineData("-- some other comment", false)]
-    public void HasCompatibilityReviewMarker_MatchesMarkerConvention(string sql, bool expected)
+    public void HasCompatibilityReviewMarker_RequiresReviewerAndTicketIdentity(string sql, bool expected)
     {
         MigrationSafetyClassifier.HasCompatibilityReviewMarker(sql).Should().Be(expected);
     }

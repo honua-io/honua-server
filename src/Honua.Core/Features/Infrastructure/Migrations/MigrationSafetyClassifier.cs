@@ -28,18 +28,37 @@ public enum MigrationSafetyClassification
 
     /// <summary>
     /// A potentially backward-incompatible ("contract") change that carries the explicit
-    /// <c>honua:compatibility-review</c> marker declaring why it is rollout-safe. Must be
-    /// applied in the contract phase (expand → deploy → migrate → contract), not on a
-    /// rolling deploy.
+    /// <c>honua:compatibility-review</c> marker <em>bound to a reviewer and ticket identity</em>
+    /// declaring why it is rollout-safe. Must be applied in the contract phase
+    /// (expand → deploy → migrate → contract), not on a rolling deploy.
     /// </summary>
     ContractAnnotated = 1,
 
     /// <summary>
     /// A potentially backward-incompatible ("contract") change with no compatibility-review
-    /// marker. Rejected by the migration runner (fail closed) because its rollout safety has
-    /// not been declared.
+    /// marker, or a marker that is not bound to a reviewer and ticket identity (free-text
+    /// self-review). Rejected by the migration runner (fail closed) because its rollout safety
+    /// has not been accountably declared.
     /// </summary>
     ContractUnannotated = 2,
+}
+
+/// <summary>
+/// The reviewer and ticket identity a contract-phase migration's compatibility-review marker must
+/// carry so its rollout-safety review is accountable rather than free-text self-service (#2812).
+/// </summary>
+public sealed record MigrationReviewIdentity
+{
+    /// <summary>
+    /// The reviewer identity that signed off the contract-phase change (marker <c>reviewer=</c>).
+    /// </summary>
+    public required string Reviewer { get; init; }
+
+    /// <summary>
+    /// The ticket/issue reference the review is recorded against (marker <c>ticket=</c> or
+    /// <c>issue=</c>).
+    /// </summary>
+    public required string Ticket { get; init; }
 }
 
 /// <summary>
@@ -82,14 +101,26 @@ public static class MigrationSafetyClassifier
 {
     /// <summary>
     /// The compatibility-review marker convention every contract-phase migration must carry,
-    /// shown to authors in enforcement error messages.
+    /// shown to authors in enforcement error messages. The <c>reviewer=</c> and <c>ticket=</c>
+    /// fields bind the sign-off to an accountable identity rather than a free-text self-review
+    /// (#2812); <c>reviewer=</c> and <c>ticket=</c> (or <c>issue=</c>) are both required.
     /// </summary>
     public const string CompatibilityReviewMarkerConvention =
-        "-- honua:compatibility-review reason=<why this migration is rollout-safe>";
+        "-- honua:compatibility-review reviewer=<who reviewed> ticket=<issue ref> reason=<why this migration is rollout-safe>";
 
-    private static readonly Regex CompatibilityReviewMarker = new(
-        @"^\s*--\s*honua:compatibility-review\b.*\breason\s*=",
+    // The marker line itself. The reviewer/ticket identity is parsed from the marker line body so a
+    // multi-line reason= continuation cannot dilute the accountable-identity requirement.
+    private static readonly Regex CompatibilityReviewMarkerLine = new(
+        @"^[ \t]*--[ \t]*honua:compatibility-review\b(?<body>.*)$",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex ReviewerField = new(
+        @"\breviewer\s*=\s*(?<value>\S+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex TicketField = new(
+        @"\b(?:ticket|issue)\s*=\s*(?<value>\S+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
     [
@@ -164,15 +195,48 @@ public static class MigrationSafetyClassifier
     }
 
     /// <summary>
-    /// Whether the SQL carries the <c>-- honua:compatibility-review reason=&lt;...&gt;</c>
-    /// marker declaring a contract-phase migration as reviewed and rollout-safe.
+    /// Whether the SQL carries the <c>honua:compatibility-review</c> marker bound to a reviewer and
+    /// ticket identity, declaring a contract-phase migration as accountably reviewed and rollout-safe.
     /// </summary>
     /// <param name="sql">The raw SQL contents to inspect.</param>
-    /// <returns><see langword="true"/> when the marker is present.</returns>
+    /// <returns>
+    /// <see langword="true"/> when a marker line carries both a non-empty <c>reviewer=</c> and a
+    /// non-empty <c>ticket=</c>/<c>issue=</c> field. A bare marker (or a free-text-only
+    /// <c>reason=</c>) is intentionally rejected so a contract change cannot be self-approved.
+    /// </returns>
     public static bool HasCompatibilityReviewMarker(string sql)
+        => TryParseReviewIdentity(sql, out _);
+
+    /// <summary>
+    /// Parses the reviewer/ticket identity from a contract-phase migration's compatibility-review
+    /// marker. The marker must appear on a single comment line carrying both a non-empty
+    /// <c>reviewer=</c> and a non-empty <c>ticket=</c> (or <c>issue=</c>) field.
+    /// </summary>
+    /// <param name="sql">The raw SQL contents to inspect.</param>
+    /// <param name="identity">The parsed reviewer/ticket identity when present.</param>
+    /// <returns><see langword="true"/> when an identity-bound marker is present.</returns>
+    public static bool TryParseReviewIdentity(string sql, out MigrationReviewIdentity? identity)
     {
         ArgumentNullException.ThrowIfNull(sql);
-        return CompatibilityReviewMarker.IsMatch(sql);
+        identity = null;
+
+        foreach (Match markerLine in CompatibilityReviewMarkerLine.Matches(sql))
+        {
+            var body = markerLine.Groups["body"].Value;
+            var reviewer = ReviewerField.Match(body);
+            var ticket = TicketField.Match(body);
+            if (reviewer.Success && ticket.Success)
+            {
+                identity = new MigrationReviewIdentity
+                {
+                    Reviewer = reviewer.Groups["value"].Value,
+                    Ticket = ticket.Groups["value"].Value,
+                };
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // A single left-to-right lexer pass that removes comments and quoted/dollar-quoted bodies. A

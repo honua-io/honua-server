@@ -90,7 +90,7 @@ public sealed class DeployPreflightProbeTests
         var contract = MigrationSafetyClassifier.Classify(
             "099_drop_legacy.sql",
             """
-            -- honua:compatibility-review reason=legacy column removed after v2 contract phase
+            -- honua:compatibility-review reviewer=jane.doe ticket=honua-server#2812 reason=legacy column removed after v2 contract phase
             ALTER TABLE honua.layers DROP COLUMN legacy_name;
             """);
         contract.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);

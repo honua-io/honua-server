@@ -26,25 +26,35 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
 
+    private const string ContractApprovalTable = "public.honua_contract_migration_approvals";
+
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
-    private readonly bool _contractMigrationsApproved;
+    private readonly IActiveNodeVersionInventory _nodeVersionInventory;
+    private readonly string? _contractApprovalNonce;
 
     public PostgresDatabaseMigrationRunner(
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
         IConfiguration? configuration = null,
-        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
+        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null,
+        IActiveNodeVersionInventory? nodeVersionInventory = null)
     {
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
         _backupHookRecorder = backupHookRecorder;
 
+        // Live cluster version inventory (#2812). Absent (single-node/dev-compose or no coordination
+        // backend) means the mixed-version barrier stays inert and boot proceeds with zero new config.
+        _nodeVersionInventory = nodeVersionInventory ?? NullActiveNodeVersionInventory.Instance;
+
         // The contract-apply approval is an explicit top-level operator signal
-        // (HONUA_APPROVE_CONTRACT_MIGRATIONS=true), read via the IConfiguration indexer (Abstractions
-        // only, no Binder dependency). It intentionally lives outside the bound options record so an
-        // operator can grant one-shot approval for a single upgrade without editing config files.
-        _contractMigrationsApproved =
-            bool.TryParse(configuration?[MigrationSafetyOptions.ApproveContractMigrationsKey], out var approved)
-            && approved;
+        // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer
+        // (Abstractions only, no Binder dependency). It intentionally lives outside the bound options
+        // record so an operator can grant approval for a single upgrade without editing config files.
+        // The value is treated as a one-shot nonce: it is recorded once consumed (see
+        // ContractApprovalTable) so a value left permanently in the environment cannot silently
+        // approve a *later* contract batch (#2812). The legacy literal "true" remains a valid nonce.
+        var nonce = configuration?[MigrationSafetyOptions.ApproveContractMigrationsKey]?.Trim();
+        _contractApprovalNonce = string.IsNullOrWhiteSpace(nonce) ? null : nonce;
     }
 
     public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
@@ -125,7 +135,8 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
     /// </summary>
     private InvalidOperationException? TryBuildContractGateRejection(
         IReadOnlyList<MigrationScriptClassification> classifications,
-        bool journalIsNonEmpty)
+        bool journalIsNonEmpty,
+        ApprovalEvaluation approval)
     {
         if (_safetyOptions.ContractApplyPolicy != ContractApplyPolicy.Gate)
         {
@@ -139,7 +150,7 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return null;
         }
 
-        if (_contractMigrationsApproved)
+        if (approval.State == ApprovalState.Fresh)
         {
             return null;
         }
@@ -154,15 +165,184 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             return null;
         }
 
+        var approvalHint = approval.State == ApprovalState.AlreadyConsumed
+            ? $"The supplied {MigrationSafetyOptions.ApproveContractMigrationsKey} approval has already been " +
+              "consumed for an earlier contract batch and is a one-shot nonce; supply a fresh, unused value to " +
+              "approve this batch."
+            : $"Review them first via 'GET /api/v1/admin/deploy/preflight' and " +
+              $"'GET /api/v1/admin/observability/migrations', then set '{MigrationSafetyOptions.ApproveContractMigrationsKey}" +
+              "=<a fresh one-shot nonce>' to apply them (or run migrations out-of-band with HONUA_SKIP_MIGRATIONS=true, " +
+              "which owns its own safety).";
+
         return new InvalidOperationException(
             "Migration safety gate blocked pending contract-phase migration(s) on an existing database: " +
             $"{string.Join(", ", pendingAnnotated)}. These reviewed (annotated) contract migrations narrow " +
             "or drop schema and must not ride along an unattended upgrade (Database:MigrationSafety:" +
-            "ContractApplyPolicy=Gate). Review them first via 'GET /api/v1/admin/deploy/preflight' and " +
-            $"'GET /api/v1/admin/observability/migrations', then set '{MigrationSafetyOptions.ApproveContractMigrationsKey}" +
-            "=true' to apply them (or run migrations out-of-band with HONUA_SKIP_MIGRATIONS=true, which owns " +
-            "its own safety).");
+            $"ContractApplyPolicy=Gate). {approvalHint}");
     }
+
+    /// <summary>
+    /// Live node-version barrier (#2812). When a coordinated inventory positively observes another live
+    /// serving node running a <em>different</em> binary version than this node (a mixed-version rolling
+    /// upgrade in progress), pending contract-phase (schema-narrowing) scripts must not apply — the old
+    /// binaries still serving traffic may not understand the narrowed schema. Returns
+    /// <see langword="null"/> when no coordinated inventory is available (single-node/dev-compose), when
+    /// every live node runs this version, when nothing pending is a contract change, or when the
+    /// operator supplied a fresh one-shot approval nonce. The rejection is a non-transient
+    /// <see cref="InvalidOperationException"/> so degraded-start recovery does not retry a policy block.
+    /// </summary>
+    private static InvalidOperationException? TryBuildNodeVersionBarrierRejection(
+        IReadOnlyList<MigrationScriptClassification> classifications,
+        ActiveNodeVersionSnapshot snapshot,
+        ApprovalEvaluation approval)
+    {
+        if (!snapshot.MixedVersionDetected)
+        {
+            return null;
+        }
+
+        var pendingContract = classifications
+            .Where(c => c.IsBreaking)
+            .Select(c => c.ScriptName)
+            .ToArray();
+
+        if (pendingContract.Length == 0)
+        {
+            return null;
+        }
+
+        if (approval.State == ApprovalState.Fresh)
+        {
+            return null;
+        }
+
+        var approvalHint = approval.State == ApprovalState.AlreadyConsumed
+            ? $"The supplied {MigrationSafetyOptions.ApproveContractMigrationsKey} approval has already been " +
+              "consumed and is a one-shot nonce; supply a fresh, unused value to override the barrier."
+            : "Finish the rolling upgrade so every live node runs this version, then re-run migrations; or, " +
+              "to deliberately override during a coordinated contract step, set " +
+              $"'{MigrationSafetyOptions.ApproveContractMigrationsKey}=<a fresh one-shot nonce>'.";
+
+        return new InvalidOperationException(
+            "Migration node-version barrier blocked pending contract-phase migration(s): " +
+            $"{string.Join(", ", pendingContract)}. A live serving node is still running a different binary " +
+            $"version (this node: {snapshot.LocalVersion}; other live version(s): " +
+            $"{string.Join(", ", snapshot.DivergentVersions)}), so narrowing or dropping schema now could break " +
+            $"the older binaries still serving traffic. {approvalHint}");
+    }
+
+    /// <summary>
+    /// Evaluates the operator's contract-approval nonce against the consumed-nonce ledger so approval is
+    /// one-shot: an unused nonce is <see cref="ApprovalState.Fresh"/> (valid this once), a nonce already
+    /// recorded from an earlier contract batch is <see cref="ApprovalState.AlreadyConsumed"/> (rejected),
+    /// and an absent nonce is <see cref="ApprovalState.NotProvided"/>.
+    /// </summary>
+    private async Task<ApprovalEvaluation> EvaluateApprovalAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (_contractApprovalNonce is null)
+        {
+            return new ApprovalEvaluation(ApprovalState.NotProvided, null);
+        }
+
+        await EnsureContractApprovalTableAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await using var command = new NpgsqlCommand(
+            $"SELECT 1 FROM {ContractApprovalTable} WHERE nonce = @nonce;",
+            connection);
+        _ = command.Parameters.AddWithValue("nonce", _contractApprovalNonce);
+        var consumed = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+
+        return new ApprovalEvaluation(
+            consumed ? ApprovalState.AlreadyConsumed : ApprovalState.Fresh,
+            _contractApprovalNonce);
+    }
+
+    private static async Task EnsureContractApprovalTableAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"""
+            CREATE TABLE IF NOT EXISTS {ContractApprovalTable} (
+                nonce text PRIMARY KEY,
+                applied_at timestamptz NOT NULL DEFAULT now(),
+                scripts text NOT NULL
+            );
+            """,
+            connection);
+        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records a contract-approval nonce as consumed so the same value cannot approve a later batch.
+    /// Runs only after a successful apply and under the migration advisory lock, so it is serialized.
+    /// Best-effort: an insert failure never changes the already-committed migration outcome.
+    /// </summary>
+    private static async Task RecordApprovalConsumedAsync(
+        NpgsqlConnection connection,
+        string nonce,
+        IReadOnlyList<string> appliedContractScripts,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EnsureContractApprovalTableAsync(connection, cancellationToken).ConfigureAwait(false);
+            await using var command = new NpgsqlCommand(
+                $"""
+                INSERT INTO {ContractApprovalTable} (nonce, scripts)
+                VALUES (@nonce, @scripts)
+                ON CONFLICT (nonce) DO NOTHING;
+                """,
+                connection);
+            _ = command.Parameters.AddWithValue("nonce", nonce);
+            _ = command.Parameters.AddWithValue("scripts", string.Join(", ", appliedContractScripts));
+            _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Consuming the one-shot nonce is bookkeeping; the migration already applied successfully.
+        }
+    }
+
+    /// <summary>
+    /// Reads the live cluster version snapshot, failing open (no coordination) on any inventory error so
+    /// a coordination-backend outage never blocks an otherwise-safe migration.
+    /// </summary>
+    private async Task<ActiveNodeVersionSnapshot> GetNodeVersionSnapshotAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _nodeVersionInventory.GetSnapshotAsync(cancellationToken).ConfigureAwait(false)
+                ?? ActiveNodeVersionSnapshot.NotCoordinated;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ActiveNodeVersionSnapshot.NotCoordinated;
+        }
+    }
+
+    private bool WouldGateBlockWithoutApproval(
+        IReadOnlyList<MigrationScriptClassification> classifications,
+        bool journalIsNonEmpty)
+        => _safetyOptions.ContractApplyPolicy == ContractApplyPolicy.Gate
+            && journalIsNonEmpty
+            && classifications.Any(c => c.Classification == MigrationSafetyClassification.ContractAnnotated);
+
+    private static bool WouldBarrierBlockWithoutApproval(
+        IReadOnlyList<MigrationScriptClassification> classifications,
+        ActiveNodeVersionSnapshot snapshot)
+        => snapshot.MixedVersionDetected && classifications.Any(c => c.IsBreaking);
+
+    private enum ApprovalState
+    {
+        NotProvided,
+        Fresh,
+        AlreadyConsumed,
+    }
+
+    private sealed record ApprovalEvaluation(ApprovalState State, string? Nonce);
 
     /// <summary>
     /// DbUp reports the migration journal via the same <see cref="UpgradeEngine"/> the runner already
@@ -211,14 +391,35 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 return DatabaseMigrationResult.Failed(rejection, rejection.Message);
             }
 
+            // The contract-apply approval nonce, the live cluster version snapshot, and the barrier are
+            // only relevant when a pending script narrows or drops schema. Skip all of it (no Redis call,
+            // no ledger table) on the common additive (expand-only) upgrade path.
+            var hasPendingContract = classifications.Any(c => c.IsBreaking);
+            var approval = hasPendingContract
+                ? await EvaluateApprovalAsync(lockConnection, cancellationToken).ConfigureAwait(false)
+                : new ApprovalEvaluation(ApprovalState.NotProvided, null);
+            var versionSnapshot = hasPendingContract
+                ? await GetNodeVersionSnapshotAsync(cancellationToken).ConfigureAwait(false)
+                : ActiveNodeVersionSnapshot.NotCoordinated;
+
             // 2. Journal-scoped contract-apply gate (#2565): block annotated contract scripts on an
             //    existing database unless the operator approved them.
-            if (TryBuildContractGateRejection(classifications, journalIsNonEmpty) is { } gateRejection)
+            var gateRejection = TryBuildContractGateRejection(classifications, journalIsNonEmpty, approval);
+            if (gateRejection is not null)
             {
                 return DatabaseMigrationResult.Failed(gateRejection, gateRejection.Message);
             }
 
-            // 3. Optional pre-migration backup hook: runs only when contract-class scripts are pending
+            // 3. Live node-version barrier (#2812): block contract-phase scripts while an older binary
+            //    version is still serving traffic (mixed-version rolling upgrade), unless approved.
+            var barrierRejection =
+                TryBuildNodeVersionBarrierRejection(classifications, versionSnapshot, approval);
+            if (barrierRejection is not null)
+            {
+                return DatabaseMigrationResult.Failed(barrierRejection, barrierRejection.Message);
+            }
+
+            // 4. Optional pre-migration backup hook: runs only when contract-class scripts are pending
             //    on an existing database, immediately before they are applied. A hook failure fails the
             //    run closed (nothing is applied).
             if (await TryRunBackupHookAsync(classifications, journalIsNonEmpty, migrationRunId, cancellationToken)
@@ -234,6 +435,22 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             {
                 var error = result.Error ?? new InvalidOperationException("Database migration failed.");
                 return DatabaseMigrationResult.Failed(error, SafeMigrationFailureMessage, appliedScripts);
+            }
+
+            // Consume the one-shot approval nonce only when it was actually required to permit the apply
+            // (the gate or the barrier would otherwise have blocked). Leaving the nonce unrecorded when
+            // it was not needed keeps an unused value valid for the batch that genuinely needs it.
+            var approvalWasRequired =
+                journalIsNonEmpty
+                && (WouldGateBlockWithoutApproval(classifications, journalIsNonEmpty)
+                    || WouldBarrierBlockWithoutApproval(classifications, versionSnapshot));
+            if (approval is { State: ApprovalState.Fresh, Nonce: { } consumedNonce } && approvalWasRequired)
+            {
+                await RecordApprovalConsumedAsync(
+                    lockConnection,
+                    consumedNonce,
+                    classifications.Where(c => c.IsBreaking).Select(c => c.ScriptName).ToArray(),
+                    cancellationToken).ConfigureAwait(false);
             }
 
             return DatabaseMigrationResult.Succeeded(appliedScripts);

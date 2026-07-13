@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -713,6 +714,70 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         }
     }
 
+    /// <summary>
+    /// The binary version of the running host, advertised to the coordinated meter so the migration
+    /// node-version barrier (#2812) can observe live cluster version skew. Resolved once from the entry
+    /// assembly's informational version (falling back to its assembly version).
+    /// </summary>
+    private static readonly string? LocalBinaryVersion = ResolveLocalBinaryVersion();
+
+    private static string? ResolveLocalBinaryVersion()
+    {
+        var assembly = System.Reflection.Assembly.GetEntryAssembly();
+        if (assembly is null)
+        {
+            return null;
+        }
+
+        var informational = assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var version = string.IsNullOrWhiteSpace(informational)
+            ? assembly.GetName().Version?.ToString()
+            : informational;
+        return string.IsNullOrWhiteSpace(version) ? null : version;
+    }
+
+    /// <summary>
+    /// Reads a live view of the serving instances and the binary versions they advertised, for the
+    /// migration node-version barrier (#2812). <see cref="ActiveNodeVersionReading.Coordinated"/> is
+    /// <see langword="true"/> only when a coordinated (Redis) inventory was actually consulted; a
+    /// local-only read reports <see langword="false"/> so the barrier stays inert for single-node hosts.
+    /// </summary>
+    public async Task<ActiveNodeVersionReading> GetActiveNodeVersionsAsync(CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        if (UseRedis)
+        {
+            try
+            {
+                var read = await ReadRedisMeterAsync(now, excludeInstanceId: null).ConfigureAwait(false);
+                _meteringGap = false;
+                return new ActiveNodeVersionReading(
+                    Coordinated: true,
+                    LocalInstanceId: LocalInstanceId,
+                    LocalVersion: LocalBinaryVersion,
+                    Instances: ProjectVersions(read.Instances));
+            }
+            catch (Exception ex) when (IsRedisException(ex))
+            {
+                MarkMeteringGap(ex);
+            }
+        }
+
+        _ = cancellationToken;
+        return new ActiveNodeVersionReading(
+            Coordinated: false,
+            LocalInstanceId: LocalInstanceId,
+            LocalVersion: LocalBinaryVersion,
+            Instances: Array.Empty<ActiveNodeVersionEntry>());
+    }
+
+    private static ActiveNodeVersionEntry[] ProjectVersions(
+        IReadOnlyList<LicenseCapacityInstance> instances)
+        => instances
+            .Select(instance => new ActiveNodeVersionEntry(instance.InstanceId, instance.BinaryVersion))
+            .ToArray();
+
     private LicenseCapacityRegistrationRequest BuildLocalRequest(bool isRefresh)
         => new()
         {
@@ -724,7 +789,8 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
                 _options.Value.ServerlessConcurrentExecutions),
             DeploymentRole = ParseEnum(_options.Value.DeploymentRole, LicenseDeploymentRole.Production),
             Topology = ParseEnum(_options.Value.Topology, LicenseServingTopology.SingleNode),
-            IsRefresh = isRefresh
+            IsRefresh = isRefresh,
+            BinaryVersion = LocalBinaryVersion
         };
 
     private string LocalInstanceId
@@ -739,7 +805,8 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
             ServingUnits = request.ServingUnits > 0m ? request.ServingUnits : 1m,
             DeploymentRole = request.DeploymentRole,
             Topology = request.Topology,
-            IsRefresh = request.IsRefresh
+            IsRefresh = request.IsRefresh,
+            BinaryVersion = string.IsNullOrWhiteSpace(request.BinaryVersion) ? null : request.BinaryVersion.Trim()
         };
 
     private static LicenseCapacityInstance ToInstance(LicenseCapacityRegistrationRequest request, DateTimeOffset now)
@@ -750,7 +817,8 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
             DeploymentRole = request.DeploymentRole,
             Topology = request.Topology,
             LastHeartbeatAt = now,
-            CountsTowardBand = !LicenseCapacityCalculator.IsExcludedRole(request.DeploymentRole)
+            CountsTowardBand = !LicenseCapacityCalculator.IsExcludedRole(request.DeploymentRole),
+            BinaryVersion = request.BinaryVersion
         };
 
     private void UpsertLocalInstance(LicenseCapacityInstance instance)
@@ -826,7 +894,13 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
             instance.DeploymentRole.ToString(),
             instance.Topology.ToString(),
             instance.LastHeartbeatAt.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture),
-            Convert.ToHexString(Encoding.UTF8.GetBytes(instance.InstanceId)));
+            Convert.ToHexString(Encoding.UTF8.GetBytes(instance.InstanceId)),
+            // Sixth field (#2812): hex-encoded binary version, empty when the instance advertised none.
+            // Appended last so older five-field payloads written by prior binaries still parse (version
+            // is then null), keeping the meter format forward/backward compatible across a rolling step.
+            string.IsNullOrEmpty(instance.BinaryVersion)
+                ? string.Empty
+                : Convert.ToHexString(Encoding.UTF8.GetBytes(instance.BinaryVersion)));
 
     private static bool TryParseInstancePayload(
         RedisKey key,
@@ -847,6 +921,9 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         var instanceId = TryDecodeHexString(parts[4], out var decoded)
             ? decoded
             : key.ToString();
+        var binaryVersion = parts.Length >= 6 && !string.IsNullOrEmpty(parts[5]) && TryDecodeHexString(parts[5], out var version)
+            ? version
+            : null;
         instance = new LicenseCapacityInstance
         {
             InstanceId = instanceId,
@@ -854,7 +931,8 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
             DeploymentRole = role,
             Topology = topology,
             LastHeartbeatAt = DateTimeOffset.FromUnixTimeMilliseconds(unixMs),
-            CountsTowardBand = !LicenseCapacityCalculator.IsExcludedRole(role)
+            CountsTowardBand = !LicenseCapacityCalculator.IsExcludedRole(role),
+            BinaryVersion = binaryVersion
         };
         return true;
     }
@@ -975,3 +1053,24 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         string? Reason,
         decimal UsedDaysThisYear);
 }
+
+/// <summary>
+/// A live view of the serving instances and their advertised binary versions, read from the capacity
+/// meter for the migration node-version barrier (#2812).
+/// </summary>
+/// <param name="Coordinated">Whether a coordinated (Redis) inventory was actually consulted.</param>
+/// <param name="LocalInstanceId">This node's stable instance identifier.</param>
+/// <param name="LocalVersion">This node's advertised binary version, if known.</param>
+/// <param name="Instances">Every live instance the meter observed, with its advertised version.</param>
+internal sealed record ActiveNodeVersionReading(
+    bool Coordinated,
+    string LocalInstanceId,
+    string? LocalVersion,
+    IReadOnlyList<ActiveNodeVersionEntry> Instances);
+
+/// <summary>
+/// One live serving instance and the binary version it advertised (null when unknown).
+/// </summary>
+/// <param name="InstanceId">Stable instance identifier.</param>
+/// <param name="Version">Advertised binary version, or null.</param>
+internal sealed record ActiveNodeVersionEntry(string InstanceId, string? Version);

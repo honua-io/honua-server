@@ -1,7 +1,7 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
--- honua:compatibility-review reason=Drops v1 metadata-graph tables orphaned by
+-- honua:compatibility-review reviewer=mike.mcdougall ticket=honua-server#1234 reason=Drops v1 metadata-graph tables orphaned by
 -- the Metadata v2 cutover (#1234 / ADR-0040). All six tables are
 -- write-and-read-by-removed-code: the v2 cutover commit
 -- (c73f491a "Metadata v2 cutover + complete v1 metadata graph removal") removed

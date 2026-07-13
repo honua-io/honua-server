@@ -32,8 +32,8 @@ public sealed class DatabaseMigrationSafetyTests
 
             violations.Add(
                 $"{Path.GetFileName(migrationFile)} contains potentially breaking schema changes ({string.Join(", ", matchedRules)}) " +
-                "but does not declare an explicit compatibility review marker. Add a comment like " +
-                "'-- honua:compatibility-review reason=<why this migration is rollout-safe>'.");
+                "but does not declare an identity-bound compatibility review marker. Add a comment like " +
+                $"'{MigrationSafetyClassifier.CompatibilityReviewMarkerConvention}'.");
         }
 
         violations.Should().BeEmpty(

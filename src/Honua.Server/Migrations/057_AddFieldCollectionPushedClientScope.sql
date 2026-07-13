@@ -13,7 +13,7 @@
 -- Dependencies: Requires honua.fieldcollection_pushed_changes
 --               (024_AddFieldCollectionSync.sql).
 
--- honua:compatibility-review reason=Backfills the new client_id column for all
+-- honua:compatibility-review reviewer=mike.mcdougall ticket=honua-server#894 reason=Backfills the new client_id column for all
 --   existing rows to the 'default' sentinel (the same value the push endpoint
 --   uses for callers that send no X-Honua-Client-Id header) BEFORE applying SET
 --   NOT NULL, so no existing row violates the constraint. The PK is widened from
