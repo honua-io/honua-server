@@ -24,6 +24,8 @@ internal static class I3sConformanceFixturePaths
         var directory = AppContext.BaseDirectory;
         while (directory is not null)
         {
+            // `directory` is the only segment that can be absolute; every trailing
+            // segment is a relative literal, so Path.Combine cannot drop it.
             var candidate = Path.Combine(directory, "tests", "fixtures", "scene", "i3s", leaf);
             if (Directory.Exists(candidate))
             {
