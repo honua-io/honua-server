@@ -685,7 +685,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
             // A zero (or non-finite) pixel scale yields a degenerate geotransform with no spatial
             // extent, so reject it up front rather than persisting an unusable georeference.
-            if (scaleX == 0.0 || scaleY == 0.0 ||
+            // Compare against a tolerance rather than exact 0.0: a pixel scale parsed from
+            // user-supplied world-file text that is merely astronomically small is just as
+            // degenerate as an exact zero, and exact float equality would let it slip through.
+            const double MinPixelScaleMagnitude = 1e-9;
+            if (Math.Abs(scaleX) < MinPixelScaleMagnitude || Math.Abs(scaleY) < MinPixelScaleMagnitude ||
                 !double.IsFinite(scaleX) || !double.IsFinite(scaleY))
             {
                 throw new InvalidDataException("World file pixel scale (lines 1 and 4) must be non-zero and finite.");

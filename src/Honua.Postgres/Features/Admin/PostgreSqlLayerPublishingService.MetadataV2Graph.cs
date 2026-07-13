@@ -265,14 +265,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(service.Metadata.Id, serviceName, StringComparison.Ordinal));
 
-        var serviceId = existing?.Metadata.Id ?? $"svc-publish-{SanitizeMetadataId(serviceName)}";
-        var metadata = (existing?.Metadata ?? new MetadataV2ObjectMetadata()) with
+        // Hoist to a local so every access below narrows through the same null check
+        // instead of repeating `existing?.Metadata` (which CodeQL cannot correlate with
+        // the later null-forgiving access to `existing!.Metadata`).
+        var existingMetadata = existing?.Metadata;
+        var serviceId = existingMetadata?.Id ?? $"svc-publish-{SanitizeMetadataId(serviceName)}";
+        var metadata = (existingMetadata ?? new MetadataV2ObjectMetadata()) with
         {
             Id = serviceId,
-            Name = string.IsNullOrWhiteSpace(existing?.Metadata.Name) ? serviceName : existing!.Metadata.Name,
-            Title = existing?.Metadata.Title ?? serviceName,
-            Description = existing?.Metadata.Description ?? $"Honua service '{serviceName}'",
-            CreatedAt = existing?.Metadata.CreatedAt ?? now,
+            Name = existingMetadata is not null && !string.IsNullOrWhiteSpace(existingMetadata.Name)
+                ? existingMetadata.Name
+                : serviceName,
+            Title = existingMetadata?.Title ?? serviceName,
+            Description = existingMetadata?.Description ?? $"Honua service '{serviceName}'",
+            CreatedAt = existingMetadata?.CreatedAt ?? now,
             UpdatedAt = now
         };
 

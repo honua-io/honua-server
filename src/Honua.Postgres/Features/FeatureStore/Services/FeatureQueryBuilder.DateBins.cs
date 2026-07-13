@@ -120,23 +120,33 @@ internal sealed partial class FeatureQueryBuilder
         };
     }
 
+    // TimeSpan.TotalDays/TotalHours/TotalMinutes are computed by dividing Ticks by a
+    // constant, which can leave a whole-unit duration a few ULPs away from its exact
+    // integer value. Compare within a tolerance instead of exact float equality so a
+    // duration like "7 days" reliably formats as whole days rather than falling through
+    // to a fractional/seconds representation.
+    private const double WholeUnitTolerance = 1e-9;
+
     private static string FormatInterval(TimeSpan interval)
     {
-        if (interval.TotalDays >= 1 && interval.TotalDays == Math.Floor(interval.TotalDays))
+        if (interval.TotalDays >= 1 && IsWholeUnit(interval.TotalDays))
         {
             return FormattableString.Invariant($"{(int)interval.TotalDays} days");
         }
 
-        if (interval.TotalHours >= 1 && interval.TotalHours == Math.Floor(interval.TotalHours))
+        if (interval.TotalHours >= 1 && IsWholeUnit(interval.TotalHours))
         {
             return FormattableString.Invariant($"{(int)interval.TotalHours} hours");
         }
 
-        if (interval.TotalMinutes >= 1 && interval.TotalMinutes == Math.Floor(interval.TotalMinutes))
+        if (interval.TotalMinutes >= 1 && IsWholeUnit(interval.TotalMinutes))
         {
             return FormattableString.Invariant($"{(int)interval.TotalMinutes} minutes");
         }
 
         return FormattableString.Invariant($"{(int)interval.TotalSeconds} seconds");
     }
+
+    private static bool IsWholeUnit(double value)
+        => Math.Abs(value - Math.Floor(value)) < WholeUnitTolerance;
 }
