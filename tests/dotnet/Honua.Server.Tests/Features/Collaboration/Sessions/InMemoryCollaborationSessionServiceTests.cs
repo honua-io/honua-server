@@ -213,7 +213,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         service.DrainEvents(local.SessionId).Should().ContainSingle(e =>
             e.Type == CollaborationSessionEventTypes.CursorUpdated &&
-            e.Cursor is not null &&
+            e.Cursor != null &&
             Math.Abs(e.Cursor.Longitude - -122.4) < 1e-9);
     }
 

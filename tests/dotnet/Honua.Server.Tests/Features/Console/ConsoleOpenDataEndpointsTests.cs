@@ -415,7 +415,7 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         foreach (var value in forbiddenValues.Where(value => !string.IsNullOrWhiteSpace(value)))
         {
-            Assert.DoesNotContain(value, body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(value!, body, StringComparison.OrdinalIgnoreCase);
         }
     }
 

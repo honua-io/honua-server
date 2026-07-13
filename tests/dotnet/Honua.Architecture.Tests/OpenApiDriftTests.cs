@@ -21,6 +21,14 @@ public sealed class OpenApiDriftTests
         "patch"
     };
 
+    private static readonly string[] _spatialAnalyticsPaths =
+    [
+        "/collections/{collectionId}/clusters",
+        "/collections/{collectionId}/spatial-join",
+        "/collections/{collectionId}/buffer-aggregate",
+        "/collections/{collectionId}/density"
+    ];
+
     [ArchitectureTest]
     public void OpenApiSpecs_AlignWithEndpointRegistry()
     {
@@ -268,13 +276,8 @@ public sealed class OpenApiDriftTests
         var root = document.RootElement;
         var paths = root.GetProperty("paths");
 
-        foreach (var schemaRef in new[]
-                 {
-                     "/collections/{collectionId}/clusters",
-                     "/collections/{collectionId}/spatial-join",
-                     "/collections/{collectionId}/buffer-aggregate",
-                     "/collections/{collectionId}/density"
-                 }.Select(path => paths.GetProperty(path)
+        foreach (var schemaRef in _spatialAnalyticsPaths
+                     .Select(path => paths.GetProperty(path)
                      .GetProperty("post")
                      .GetProperty("responses")
                      .GetProperty("200")

@@ -78,8 +78,8 @@ public sealed class KubernetesJobBatchComputeBackendTests
                 m.Name == "honua-job-create" &&
                 m.Namespace == "default" &&
                 // Serving↔worker job-contract version (ADR-0060 #3b) injected for the worker to re-check.
-                m.EnvironmentVariables.TryGetValue("HONUA_CONTRACT_VERSION", out var contractVersion) &&
-                contractVersion == "1"),
+                m.EnvironmentVariables.ContainsKey("HONUA_CONTRACT_VERSION") &&
+                m.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "1"),
             Arg.Any<CancellationToken>());
     }
 
