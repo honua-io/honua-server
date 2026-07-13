@@ -17,6 +17,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private const int TestLayerId = 0; // Use existing test layer
+    private static readonly string[] OptionalLinkFieldNames = ["rel", "type", "title"];
 
     public async Task InitializeAsync()
     {
@@ -79,7 +80,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
                 hreflang.ValueKind.Should().Be(JsonValueKind.String);
             }
 
-            foreach (var name in new[] { "rel", "type", "title" }.Where(name => link.TryGetProperty(name, out _)))
+            foreach (var name in OptionalLinkFieldNames.Where(name => link.TryGetProperty(name, out _)))
             {
                 link.GetProperty(name).ValueKind.Should().NotBe(JsonValueKind.Null);
             }
