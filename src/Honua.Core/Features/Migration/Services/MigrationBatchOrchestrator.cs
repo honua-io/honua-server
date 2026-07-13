@@ -274,10 +274,14 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             // Apply relationships only when every child published cleanly and the
             // batch asked for it (issue #1256). NeedsReview children still published
             // data, so relationship-apply is eligible; hard failures are not.
+            //
+            // Note: `pending == 0` is not checked here separately because it is already
+            // implied — we are inside `isTerminal`, and `isTerminal` is only true without
+            // a blocking failure when `running == 0 && pending == 0` (see isTerminal above).
+            // Since `!hasBlockingFailure` holds in this branch, `pending == 0` is guaranteed.
             if (batch.ApplyRelationships
                 && !relationshipsApplied
-                && !hasBlockingFailure
-                && pending == 0)
+                && !hasBlockingFailure)
             {
                 note = await ApplyRelationshipsAsync(services, batch, children, cancellationToken).ConfigureAwait(false);
                 relationshipsApplied = true;

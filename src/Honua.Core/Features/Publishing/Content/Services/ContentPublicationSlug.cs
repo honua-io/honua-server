@@ -71,15 +71,10 @@ public static class ContentPublicationSlug
         }
 
         var rawSegments = folded.ToString().Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var segments = new List<string>(rawSegments.Length);
-        foreach (var raw in rawSegments)
-        {
-            var segment = CollapseDashes(raw).Trim('-');
-            if (segment.Length > 0)
-            {
-                segments.Add(segment);
-            }
-        }
+        var segments = rawSegments
+            .Select(raw => CollapseDashes(raw).Trim('-'))
+            .Where(segment => segment.Length > 0)
+            .ToList();
 
         if (segments.Count == 0)
         {

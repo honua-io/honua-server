@@ -145,12 +145,9 @@ public static class ReplicaConflictClassifier
         }
 
         // Esri attribute names are conventionally case-insensitive; fall back to a case-insensitive scan.
-        foreach (var property in container.EnumerateObject())
+        foreach (var property in container.EnumerateObject().Where(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value;
-            }
+            return property.Value;
         }
 
         return null;

@@ -32,6 +32,8 @@ public static class MigrationCatalogReconciler
 
     private static readonly StringComparer FieldNameComparer = StringComparer.OrdinalIgnoreCase;
 
+    private static readonly string[] PreferredSridRoles = ["declared", "native", "service"];
+
     /// <summary>
     /// Reconcile a batch of inventory resources against their published catalog entries.
     /// </summary>
@@ -757,15 +759,16 @@ public static class MigrationCatalogReconciler
         }
 
         // Prefer the declared/native role; fall back to the first reference with a resolvable SRID.
-        foreach (var preferredRole in new[] { "declared", "native", "service" })
-        {
-            var match = references.FirstOrDefault(reference =>
+        // The Select is lazily evaluated, so FirstOrDefault only probes as many roles as needed
+        // to find a match, preserving the original loop's early-exit behavior.
+        var preferredMatch = PreferredSridRoles
+            .Select(preferredRole => references.FirstOrDefault(reference =>
                 string.Equals(reference.Role, preferredRole, StringComparison.OrdinalIgnoreCase) &&
-                reference.Srid.HasValue);
-            if (match is not null)
-            {
-                return match.Srid;
-            }
+                reference.Srid.HasValue))
+            .FirstOrDefault(static match => match is not null);
+        if (preferredMatch is not null)
+        {
+            return preferredMatch.Srid;
         }
 
         return references.FirstOrDefault(static reference => reference.Srid.HasValue)?.Srid;

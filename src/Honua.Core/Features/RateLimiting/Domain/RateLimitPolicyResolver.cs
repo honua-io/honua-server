@@ -59,14 +59,13 @@ public static class RateLimitPolicyResolver
                 continue;
             }
 
-            foreach (var policy in policies)
+            var match = policies.FirstOrDefault(policy =>
+                policy.Enabled
+                && string.Equals(policy.Scope, scope, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(policy.Key, subject, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
             {
-                if (policy.Enabled
-                    && string.Equals(policy.Scope, scope, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(policy.Key, subject, StringComparison.OrdinalIgnoreCase))
-                {
-                    return policy;
-                }
+                return match;
             }
         }
 

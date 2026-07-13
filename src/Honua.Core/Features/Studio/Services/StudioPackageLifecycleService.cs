@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -445,16 +446,14 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             throw new ArgumentException("packageKey must be 200 characters or fewer.", nameof(packageKey));
         }
 
-        foreach (var c in trimmed)
+        var hasInvalidCharacter = trimmed.Any(c => c is not (
+            (>= 'a' and <= 'z')
+            or (>= 'A' and <= 'Z')
+            or (>= '0' and <= '9')
+            or '-' or '_' or '.'));
+        if (hasInvalidCharacter)
         {
-            var allowed = c is >= 'a' and <= 'z'
-                || c is >= 'A' and <= 'Z'
-                || c is >= '0' and <= '9'
-                || c is '-' or '_' or '.';
-            if (!allowed)
-            {
-                throw new ArgumentException("packageKey may contain only letters, numbers, dash, underscore, or dot.", nameof(packageKey));
-            }
+            throw new ArgumentException("packageKey may contain only letters, numbers, dash, underscore, or dot.", nameof(packageKey));
         }
     }
 

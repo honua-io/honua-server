@@ -158,14 +158,14 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
             // Try UTF-8 first
             return Encoding.UTF8.GetString(content);
         }
-        catch
+        catch (DecoderFallbackException)
         {
             try
             {
                 // Fall back to ASCII
                 return Encoding.ASCII.GetString(content);
             }
-            catch
+            catch (DecoderFallbackException)
             {
                 return null;
             }
@@ -214,15 +214,12 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         }
 
         // GML detection — look for the GML namespace or a FeatureCollection root element
-        if (trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.StartsWith('<'))
+        if ((trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith('<')) &&
+            (trimmed.Contains("opengis.net/gml") ||
+             trimmed.Contains("FeatureCollection") ||
+             trimmed.Contains(":FeatureCollection")))
         {
-            if (trimmed.Contains("opengis.net/gml") ||
-                trimmed.Contains("FeatureCollection") ||
-                trimmed.Contains(":FeatureCollection"))
-            {
-                return SupportedFileFormat.Gml;
-            }
+            return SupportedFileFormat.Gml;
         }
 
         // WKT detection (simple heuristic)

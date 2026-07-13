@@ -90,6 +90,9 @@ internal static class TemplateBuildHelpers
 
         var combined = new List<string>(package.Assumptions.Count + package.Provenance.Assumptions.Count);
         combined.AddRange(package.Assumptions);
+        // Not a simple filter: the Contains check reads `combined` as it grows, so a
+        // `.Where(...)` filter evaluated against the list being appended to would be
+        // fragile/unclear here; the explicit loop makes the incremental dedupe obvious.
         foreach (var item in package.Provenance.Assumptions)
         {
             if (!combined.Contains(item, StringComparer.Ordinal))
@@ -157,6 +160,8 @@ internal static class TemplateBuildHelpers
     /// </summary>
     public static string? FirstArtifactMetadata(AnalysisResultPackage package, string key)
     {
+        // Not a simple filter: TryGetValue's out-param is the value being returned, so
+        // `.Where(...)` can't express this without duplicating the TryGetValue call.
         foreach (var artifact in package.Artifacts)
         {
             if (artifact.Metadata.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))

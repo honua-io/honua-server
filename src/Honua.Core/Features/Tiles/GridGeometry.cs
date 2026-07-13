@@ -64,6 +64,10 @@ public sealed record GridGeometry
     /// <param name="level">The tile matrix (zoom) level identifier.</param>
     public GridLevel? FindLevel(int level)
     {
+        // GridLevel is a value-type record struct, so LINQ's FirstOrDefault would return
+        // default(GridLevel) (Level == 0) rather than null when nothing matches; that would
+        // silently misreport "found level 0" for a not-found gridset level. The explicit loop
+        // preserves the intended nullable "no such level" contract.
         foreach (var candidate in Levels)
         {
             if (candidate.Level == level)

@@ -52,12 +52,10 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         {
             if (_versionsByPublicationId.TryGetValue(publicationId, out var versions))
             {
-                foreach (var version in versions)
+                var match = versions.FirstOrDefault(version => string.Equals(version.VersionId, versionId, StringComparison.Ordinal));
+                if (match is not null)
                 {
-                    if (string.Equals(version.VersionId, versionId, StringComparison.Ordinal))
-                    {
-                        return Task.FromResult<ContentPublicationVersion?>(version);
-                    }
+                    return Task.FromResult<ContentPublicationVersion?>(match);
                 }
             }
 
@@ -72,12 +70,10 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         {
             if (_versionsByPublicationId.TryGetValue(publicationId, out var versions))
             {
-                foreach (var version in versions)
+                var match = versions.FirstOrDefault(version => version.Revision == revision);
+                if (match is not null)
                 {
-                    if (version.Revision == revision)
-                    {
-                        return Task.FromResult<ContentPublicationVersion?>(version);
-                    }
+                    return Task.FromResult<ContentPublicationVersion?>(match);
                 }
             }
 
@@ -168,13 +164,10 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
                 _versionsByPublicationId[publicationId] = versions;
             }
 
-            foreach (var existing in versions)
+            if (versions.Any(existing => existing.Revision == version.Revision
+                    || string.Equals(existing.VersionId, version.VersionId, StringComparison.Ordinal)))
             {
-                if (existing.Revision == version.Revision
-                    || string.Equals(existing.VersionId, version.VersionId, StringComparison.Ordinal))
-                {
-                    throw new ContentPublicationConflictException("Version revision or id already exists.");
-                }
+                throw new ContentPublicationConflictException("Version revision or id already exists.");
             }
 
             versions.Add(version);

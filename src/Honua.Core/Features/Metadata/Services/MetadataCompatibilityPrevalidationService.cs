@@ -281,14 +281,11 @@ public sealed class MetadataCompatibilityPrevalidationService(
             throw new ArgumentException($"Data script '{scriptId}' {collectionPath} must be an array.", propertyName);
         }
 
-        foreach (var value in values)
+        if (values.Any(value => value is null))
         {
-            if (value is null)
-            {
-                throw new ArgumentException(
-                    $"Data script '{scriptId}' {collectionPath} cannot contain null entries.",
-                    propertyName);
-            }
+            throw new ArgumentException(
+                $"Data script '{scriptId}' {collectionPath} cannot contain null entries.",
+                propertyName);
         }
     }
 

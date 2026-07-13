@@ -76,18 +76,16 @@ public static class ZarrDimensionSliceResolver
             return true;
         }
 
-        foreach (var axis in metadata.Axes)
+        var axis = metadata.Axes.FirstOrDefault(a => string.Equals(a.Name, dimensionName, StringComparison.OrdinalIgnoreCase));
+        if (axis is not null)
         {
-            if (string.Equals(axis.Name, dimensionName, StringComparison.OrdinalIgnoreCase))
+            if (!CfCoordinateAxisIndexer.TryResolveIndexRange(axis, coordinate, coordinate, out var low, out _, out var axisError))
             {
-                if (!CfCoordinateAxisIndexer.TryResolveIndexRange(axis, coordinate, coordinate, out var low, out _, out var axisError))
-                {
-                    error = axisError;
-                    return false;
-                }
-                index = low;
-                return true;
+                error = axisError;
+                return false;
             }
+            index = low;
+            return true;
         }
 
         error = string.Create(

@@ -236,15 +236,7 @@ public static class AttributeRuleEngine
             _ => string.Empty
         };
 
-        foreach (var configured in rule.TriggeringEvents)
-        {
-            if (string.Equals(configured, token, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return rule.TriggeringEvents.Any(configured => string.Equals(configured, token, StringComparison.OrdinalIgnoreCase));
     }
 }
 

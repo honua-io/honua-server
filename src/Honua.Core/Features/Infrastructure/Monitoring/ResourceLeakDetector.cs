@@ -231,16 +231,13 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
 
         // Only enable in development/test environments
-        if (_options.Enabled && (_environment.IsDevelopment() || IsTestEnvironment()))
+        if (_options.Enabled && (_environment.IsDevelopment() || IsTestEnvironment()) && _options.EnableAutoScan)
         {
-            if (_options.EnableAutoScan)
-            {
-                _autoScanTimer = new Timer(
-                    AutoScanCallback,
-                    null,
-                    _options.AutoScanInterval,
-                    _options.AutoScanInterval);
-            }
+            _autoScanTimer = new Timer(
+                AutoScanCallback,
+                null,
+                _options.AutoScanInterval,
+                _options.AutoScanInterval);
         }
     }
 
@@ -328,26 +325,19 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
         var threshold = olderThan ?? _options.LeakSuspicionThreshold;
         var cutoffTime = DateTime.UtcNow.Subtract(threshold);
 
-        var leaks = new List<ResourceLeakInfo>();
-
-        foreach (var tracked in _trackedResources.Values)
-        {
-            if (tracked.TrackedAt < cutoffTime)
+        var leaks = _trackedResources.Values
+            .Where(tracked => tracked.TrackedAt < cutoffTime)
+            .Select(tracked => new ResourceLeakInfo
             {
-                var age = DateTime.UtcNow - tracked.TrackedAt;
-                leaks.Add(new ResourceLeakInfo
-                {
-                    ResourceType = tracked.ResourceType,
-                    CorrelationId = tracked.CorrelationId,
-                    AllocationContext = tracked.AllocationContext,
-                    TrackedAt = tracked.TrackedAt,
-                    Age = age,
-                    AllocationStackTrace = tracked.AllocationStackTrace,
-                    IsAlive = tracked.WeakReference.IsAlive,
-                    ResourceHashCode = tracked.ResourceHashCode
-                });
-            }
-        }
+                ResourceType = tracked.ResourceType,
+                CorrelationId = tracked.CorrelationId,
+                AllocationContext = tracked.AllocationContext,
+                TrackedAt = tracked.TrackedAt,
+                Age = DateTime.UtcNow - tracked.TrackedAt,
+                AllocationStackTrace = tracked.AllocationStackTrace,
+                IsAlive = tracked.WeakReference.IsAlive,
+                ResourceHashCode = tracked.ResourceHashCode
+            });
 
         return leaks.OrderByDescending(l => l.Age).ToList();
     }

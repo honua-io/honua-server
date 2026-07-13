@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -324,15 +325,15 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
     private void EnsurePackageKeyAvailable(StudioPackageDraft draft)
     {
-        foreach (var item in _items.Values)
+        var conflicts = _items.Values.Any(item =>
+            item.ItemId != draft.ItemId &&
+            item.Family == draft.Family &&
+            string.Equals(item.PackageKey, draft.PackageKey, StringComparison.Ordinal) &&
+            string.Equals(item.WorkspaceId ?? string.Empty, draft.WorkspaceId ?? string.Empty, StringComparison.Ordinal));
+
+        if (conflicts)
         {
-            if (item.ItemId != draft.ItemId &&
-                item.Family == draft.Family &&
-                string.Equals(item.PackageKey, draft.PackageKey, StringComparison.Ordinal) &&
-                string.Equals(item.WorkspaceId ?? string.Empty, draft.WorkspaceId ?? string.Empty, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("Studio package key conflicts with an existing content item.");
-            }
+            throw new InvalidOperationException("Studio package key conflicts with an existing content item.");
         }
     }
 

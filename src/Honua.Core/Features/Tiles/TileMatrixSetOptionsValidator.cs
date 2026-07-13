@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Honua.Core.Configuration;
 
 namespace Honua.Core.Features.Tiles;
@@ -38,13 +39,9 @@ public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixS
             }
             else
             {
-                foreach (var reserved in TileMatrixSetRegistry.ReservedIds)
-                {
-                    if (string.Equals(reserved, entry.Id, StringComparison.OrdinalIgnoreCase))
-                    {
-                        failures.Add($"{label} collides with the reserved built-in tile matrix set '{reserved}'.");
-                    }
-                }
+                failures.AddRange(TileMatrixSetRegistry.ReservedIds
+                    .Where(reserved => string.Equals(reserved, entry.Id, StringComparison.OrdinalIgnoreCase))
+                    .Select(reserved => $"{label} collides with the reserved built-in tile matrix set '{reserved}'."));
 
                 if (!seenIds.Add(entry.Id))
                 {

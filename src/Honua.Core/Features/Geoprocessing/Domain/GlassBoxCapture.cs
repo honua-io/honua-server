@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Text;
 
 namespace Honua.Core.Features.Geoprocessing.Domain;
@@ -114,15 +115,8 @@ public sealed class GlassBoxCapture
             return "''";
         }
 
-        var needsQuote = false;
-        foreach (var ch in token)
-        {
-            if (!(char.IsLetterOrDigit(ch) || ch is '_' or '-' or '.' or '/' or ':' or '=' or '@' or '+' or ','))
-            {
-                needsQuote = true;
-                break;
-            }
-        }
+        var needsQuote = token.Any(ch =>
+            !(char.IsLetterOrDigit(ch) || ch is '_' or '-' or '.' or '/' or ':' or '=' or '@' or '+' or ','));
 
         if (!needsQuote)
         {

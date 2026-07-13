@@ -633,7 +633,19 @@ public static class AttributeRuleExpression
             }
         }
 
-        private bool AsBool(object? value) => value is bool b ? b : Fail() is null && false;
+        private bool AsBool(object? value)
+        {
+            if (value is bool b)
+            {
+                return b;
+            }
+
+            // Non-bool operand: record the parse failure. The returned value is never
+            // observed as a real result — TryParse() checks _failed first and discards
+            // whatever ParseOr()/ParseAnd() computed — so any placeholder is fine here.
+            Fail();
+            return false;
+        }
 
         private object? Arithmetic(object? left, object? right, char op)
         {

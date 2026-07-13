@@ -266,12 +266,9 @@ public static class Symbology3DResolver
         // Feature attribute bags are typically ordinal-keyed; fall back to a
         // case-insensitive scan so authoring-side casing does not silently
         // drop a rule.
-        foreach (var pair in attributes)
+        foreach (var pair in attributes.Where(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return pair.Value;
-            }
+            return pair.Value;
         }
 
         return null;
