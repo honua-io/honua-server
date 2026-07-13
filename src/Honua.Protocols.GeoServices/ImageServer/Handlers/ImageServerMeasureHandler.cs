@@ -318,16 +318,12 @@ internal sealed class ImageServerMeasureHandler
                     continue;
                 }
 
-                foreach (var pair in ring.EnumerateArray())
-                {
-                    if (pair.ValueKind == JsonValueKind.Array &&
+                points.AddRange(ring.EnumerateArray()
+                    .Where(pair => pair.ValueKind == JsonValueKind.Array &&
                         pair.GetArrayLength() >= 2 &&
                         pair[0].ValueKind == JsonValueKind.Number &&
                         pair[1].ValueKind == JsonValueKind.Number)
-                    {
-                        points.Add(new MeasurePoint(pair[0].GetDouble(), pair[1].GetDouble(), null, srid));
-                    }
-                }
+                    .Select(pair => new MeasurePoint(pair[0].GetDouble(), pair[1].GetDouble(), null, srid)));
             }
 
             if (points.Count < 4)

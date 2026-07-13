@@ -133,15 +133,13 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             // exactly as on exportImage.
             RasterIdentifyRendering? rendering = null;
             var rawRenderingRule = GetString(values, "renderingRule");
-            if (!string.IsNullOrWhiteSpace(rawRenderingRule))
+            if (!string.IsNullOrWhiteSpace(rawRenderingRule) &&
+                !TryMapRenderingRule(rawRenderingRule, out rendering, out var renderingError, out var notImplemented))
             {
-                if (!TryMapRenderingRule(rawRenderingRule, out rendering, out var renderingError, out var notImplemented))
-                {
-                    ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, renderingError ?? "Invalid renderingRule");
-                    return notImplemented
-                        ? StandardErrorHelpers.CreateNotImplemented(context, renderingError ?? "renderingRule is not implemented.")
-                        : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
-                }
+                ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, renderingError ?? "Invalid renderingRule");
+                return notImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, renderingError ?? "renderingRule is not implemented.")
+                    : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
             }
 
             // When the caller supplies an AOI geometry we scope raster selection to the rasters
@@ -308,30 +306,12 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
         if (requestedBands is { Length: > 0 })
         {
-            foreach (var band in requestedBands)
-            {
-                if (seen.Add(band))
-                {
-                    orderedBands.Add(band);
-                }
-            }
+            orderedBands.AddRange(requestedBands.Where(band => seen.Add(band)));
         }
 
-        foreach (var s in statistics)
-        {
-            if (seen.Add(s.Band))
-            {
-                orderedBands.Add(s.Band);
-            }
-        }
+        orderedBands.AddRange(statistics.Select(s => s.Band).Where(band => seen.Add(band)));
 
-        foreach (var h in histograms)
-        {
-            if (seen.Add(h.Band))
-            {
-                orderedBands.Add(h.Band);
-            }
-        }
+        orderedBands.AddRange(histograms.Select(h => h.Band).Where(band => seen.Add(band)));
 
         foreach (var band in orderedBands)
         {

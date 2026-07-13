@@ -133,12 +133,9 @@ internal static class VectorTileStyleComposer
         }
 
         // Rewrite any existing vector source in place so layer source-bindings stay valid.
-        foreach (var entry in sources.ToArray())
+        foreach (var source in sources.ToArray().Select(entry => entry.Value).OfType<JsonObject>())
         {
-            if (entry.Value is JsonObject source)
-            {
-                RewriteVectorSource(source, tileUrl);
-            }
+            RewriteVectorSource(source, tileUrl);
         }
 
         if (sources[sourceId] is not JsonObject configured)
@@ -191,18 +188,10 @@ internal static class VectorTileStyleComposer
             return false;
         }
 
-        foreach (var layer in layers)
-        {
-            if (layer is JsonObject layerObject
-                && layerObject["type"] is JsonValue typeValue
-                && typeValue.TryGetValue(out string? type)
-                && string.Equals(type, "symbol", StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return layers.Any(layer => layer is JsonObject layerObject
+            && layerObject["type"] is JsonValue typeValue
+            && typeValue.TryGetValue(out string? type)
+            && string.Equals(type, "symbol", StringComparison.Ordinal));
     }
 
     private static void EnsureVersionAndName(JsonObject root, string serviceName)

@@ -491,7 +491,6 @@ internal static partial class MapServerEndpoints
                 return true;
             case "zip":
             case "":
-                tilePackage = tilePackage || false;
                 return true;
             case "tpkx":
             case "compact":

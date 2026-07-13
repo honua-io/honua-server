@@ -84,6 +84,9 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                 AbsoluteExpirationRelativeToNow = effectiveTtl
             }, cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: IDistributedCache implementations can throw a wide range of
+        // provider-specific exceptions (network, serialization, timeout); all are logged and
+        // translated to the single ServiceUnavailableException contract callers expect.
         catch (Exception ex)
         {
             Log.WriteReplicaFailed(_logger, replica.ReplicaId, ex);
@@ -180,6 +183,8 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
                 }
                 return null;
             }
+            // Intentional catch-all: a distributed cache read failure degrades to a cache miss
+            // (logged) rather than surfacing a provider-specific exception to the caller.
             catch (Exception ex)
             {
                 Log.ReadReplicaFailed(_logger, replicaId, ex);
@@ -244,6 +249,8 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
             await _cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return existing != null;
         }
+        // Intentional catch-all: a distributed cache removal failure degrades to "not removed"
+        // (logged) rather than surfacing a provider-specific exception to the caller.
         catch (Exception ex)
         {
             Log.RemoveReplicaFailed(_logger, replicaId, ex);

@@ -45,6 +45,10 @@ internal sealed class ImageServerSlicesHandler
         int layerId,
         CancellationToken cancellationToken = default)
     {
+        // Intentionally not a `using` declaration: activity must stay live and undisposed
+        // through the catch block below so RecordException can still attach the exception to
+        // the in-flight activity. Disposing via a using-scope ending inside the try would stop
+        // the activity before the catch runs, dropping exception telemetry.
         Activity? activity = null;
 
         try

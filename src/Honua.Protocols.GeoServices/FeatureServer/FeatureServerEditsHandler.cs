@@ -306,6 +306,8 @@ internal sealed class FeatureServerEditsHandler(
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -438,6 +440,8 @@ internal sealed class FeatureServerEditsHandler(
                     code: GeoServicesEditErrorCodes.ValidationFailed,
                     description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage));
             }
+            // Intentional catch-all: one add-slot's unexpected failure must not abort the whole
+            // batch; it is logged and reported as a per-slot GeoServices edit failure.
             catch (Exception ex)
             {
                 FeatureServerLog.FeatureAddFailed(logger, i, ex.Message, ex);
@@ -536,7 +540,10 @@ internal sealed class FeatureServerEditsHandler(
                     continue;
                 }
 
-                var internalObjectId = existingFeature?.Id ?? objectId;
+                // existingFeature is guaranteed to have a value here (the null case returns above),
+                // so the previous `existingFeature?.Id ?? objectId` had a dead `?? objectId` branch
+                // that could never execute; access .Value.Id directly instead.
+                var internalObjectId = existingFeature.Value.Id;
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
@@ -571,6 +578,8 @@ internal sealed class FeatureServerEditsHandler(
                     description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage),
                     objectId: objectId);
             }
+            // Intentional catch-all: one update-slot's unexpected failure must not abort the whole
+            // batch; it is logged and reported as a per-slot GeoServices edit failure.
             catch (Exception ex)
             {
                 FeatureServerLog.FeatureUpdateFailed(logger, i, ex.Message, ex);
@@ -1212,13 +1221,9 @@ internal sealed class FeatureServerEditsHandler(
     {
         var objectIds = new List<long>(slotObjectIds.Length);
         var seen = new HashSet<long>();
-        foreach (var slotObjectId in slotObjectIds)
-        {
-            if (slotObjectId is { } objectId && seen.Add(objectId))
-            {
-                objectIds.Add(objectId);
-            }
-        }
+        // OfType<long> both drops null slots and unwraps the Nullable<long>; seen.Add doubles as
+        // the de-duplication predicate (HashSet<T>.Add returns false for an already-seen value).
+        objectIds.AddRange(slotObjectIds.OfType<long>().Where(seen.Add));
 
         var resolved = new Dictionary<long, Feature>(objectIds.Count);
         if (objectIds.Count == 0)
@@ -1272,6 +1277,9 @@ internal sealed class FeatureServerEditsHandler(
             },
             cancellationToken).ConfigureAwait(false);
 
+        // Not rewritten as .Where(...): the Try-pattern (TryGetValue + TryConvertToLong) needs to
+        // produce two correlated outputs (key and feature) from a single pass, which a filter
+        // predicate can't express as clearly as the loop.
         foreach (var feature in result.Items)
         {
             if (feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue)
@@ -1618,6 +1626,8 @@ internal sealed class FeatureServerEditsHandler(
             return false;
         }
 
+        // Not rewritten as .Where(...): this is a first-match short-circuit that returns from
+        // inside the loop body (including the Try-pattern conversion result), not a pure filter.
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         foreach (var entry in attributes)
         {

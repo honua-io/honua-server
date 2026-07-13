@@ -112,12 +112,11 @@ internal static class ImageServerCatalogFields
         }
 
         var normalized = Normalize(fieldName);
-        foreach (var canonical in CanonicalNames)
+        var canonicalMatch = CanonicalNames.FirstOrDefault(
+            canonical => string.Equals(Normalize(canonical), normalized, StringComparison.Ordinal));
+        if (canonicalMatch != null)
         {
-            if (string.Equals(Normalize(canonical), normalized, StringComparison.Ordinal))
-            {
-                return canonical;
-            }
+            return canonicalMatch;
         }
 
         return normalized switch

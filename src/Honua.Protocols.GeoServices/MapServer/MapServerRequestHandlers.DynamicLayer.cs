@@ -278,24 +278,20 @@ internal static partial class MapServerEndpoints
         definitionExpression = null;
         error = null;
 
-        if (element.TryGetProperty("definitionExpression", out var definitionElement))
+        if (element.TryGetProperty("definitionExpression", out var definitionElement) &&
+            !TryReadJsonStringOrNumber(definitionElement, out definitionExpression))
         {
-            if (!TryReadJsonStringOrNumber(definitionElement, out definitionExpression))
-            {
-                error = $"dynamicLayer '{dynamicLayerId}' has an invalid definitionExpression.";
-                return false;
-            }
+            error = $"dynamicLayer '{dynamicLayerId}' has an invalid definitionExpression.";
+            return false;
         }
 
         if (definitionExpression == null &&
             layerDefinition is { } definition &&
-            definition.TryGetProperty("definitionExpression", out var nestedDefinition))
+            definition.TryGetProperty("definitionExpression", out var nestedDefinition) &&
+            !TryReadJsonStringOrNumber(nestedDefinition, out definitionExpression))
         {
-            if (!TryReadJsonStringOrNumber(nestedDefinition, out definitionExpression))
-            {
-                error = $"dynamicLayer '{dynamicLayerId}' has an invalid layerDefinition.definitionExpression.";
-                return false;
-            }
+            error = $"dynamicLayer '{dynamicLayerId}' has an invalid layerDefinition.definitionExpression.";
+            return false;
         }
 
         if (!string.IsNullOrWhiteSpace(definitionExpression))

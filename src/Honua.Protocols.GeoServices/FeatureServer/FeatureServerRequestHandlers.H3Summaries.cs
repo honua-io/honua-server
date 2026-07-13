@@ -371,12 +371,10 @@ internal static partial class FeatureServerEndpoints
                 var includeOther = TryReadBool(element, "includeOther", out var parsedIncludeOther) && parsedIncludeOther;
 
                 ImmutableArray<SpatialAggregationRangeBucketDefinition>? ranges = null;
-                if (kind == SpatialAggregationSummaryKind.Range)
+                if (kind == SpatialAggregationSummaryKind.Range &&
+                    !TryParseRangeBuckets(context, element, out ranges, out error))
                 {
-                    if (!TryParseRangeBuckets(context, element, out ranges, out error))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
 
                 if (kind == SpatialAggregationSummaryKind.Histogram)
@@ -1024,12 +1022,9 @@ internal static partial class FeatureServerEndpoints
         }
 
         var summaryValues = new Dictionary<string, SpatialAggregationSummaryValueResponse>(StringComparer.Ordinal);
-        foreach (var summary in summaries)
+        foreach (var summary in summaries.Where(s => attributes.ContainsKey(s.Id)))
         {
-            if (attributes.TryGetValue(summary.Id, out var value))
-            {
-                summaryValues[summary.Id] = CreateSummaryValue(summary, value);
-            }
+            summaryValues[summary.Id] = CreateSummaryValue(summary, attributes[summary.Id]);
         }
 
         return new SpatialAggregationCellResponse
@@ -1688,13 +1683,12 @@ internal static partial class FeatureServerEndpoints
             return true;
         }
 
-        foreach (var field in resource.SchemaFields)
+        var match = resource.SchemaFields.FirstOrDefault(
+            field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
         {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                fieldType = field.Type;
-                return true;
-            }
+            fieldType = match.Type;
+            return true;
         }
 
         fieldType = default;

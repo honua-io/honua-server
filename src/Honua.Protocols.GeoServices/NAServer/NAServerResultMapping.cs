@@ -291,13 +291,10 @@ internal static class NAServerResultMapping
 
         // Sum allocated weight per chosen facility for the facility feature output.
         var weightByFacility = new Dictionary<int, double>();
-        foreach (var allocation in result.Allocations)
+        foreach (var allocation in result.Allocations.Where(allocation => allocation.AllocatedFacilityId >= 0))
         {
-            if (allocation.AllocatedFacilityId >= 0)
-            {
-                weightByFacility.TryGetValue(allocation.AllocatedFacilityId, out var existing);
-                weightByFacility[allocation.AllocatedFacilityId] = existing + allocation.Weight;
-            }
+            weightByFacility.TryGetValue(allocation.AllocatedFacilityId, out var existing);
+            weightByFacility[allocation.AllocatedFacilityId] = existing + allocation.Weight;
         }
 
         var facilityFeatures = new NAServerLaFacilityFeature[result.ChosenFacilityIds.Count];

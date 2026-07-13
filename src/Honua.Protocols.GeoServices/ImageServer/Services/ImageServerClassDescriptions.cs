@@ -140,13 +140,7 @@ internal static class ImageServerClassDescriptions
 
         if (classElement.TryGetProperty("geometries", out var many) && many.ValueKind == JsonValueKind.Array)
         {
-            foreach (var element in many.EnumerateArray())
-            {
-                if (element.ValueKind == JsonValueKind.Object)
-                {
-                    geometryElements.Add(element);
-                }
-            }
+            geometryElements.AddRange(many.EnumerateArray().Where(element => element.ValueKind == JsonValueKind.Object));
         }
 
         if (geometryElements.Count == 0)

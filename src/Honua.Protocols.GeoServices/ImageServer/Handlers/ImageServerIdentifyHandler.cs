@@ -129,15 +129,13 @@ internal sealed class ImageServerIdentifyHandler
             // Stretch/Colormap/Clip the exportImage path executes are applied at the sampled
             // pixel via the shared raster pipeline; unsupported chains surface 400/501 as in export.
             RasterIdentifyRendering? rendering = null;
-            if (!string.IsNullOrWhiteSpace(request.RenderingRule))
+            if (!string.IsNullOrWhiteSpace(request.RenderingRule) &&
+                !TryMapRenderingRule(request.RenderingRule, out rendering, out var renderingError, out var notImplemented))
             {
-                if (!TryMapRenderingRule(request.RenderingRule, out rendering, out var renderingError, out var notImplemented))
-                {
-                    ImageServerLog.InvalidIdentifyParameters(_logger, layerId, renderingError ?? "Invalid renderingRule");
-                    return notImplemented
-                        ? StandardErrorHelpers.CreateNotImplemented(context, renderingError ?? "renderingRule is not implemented.")
-                        : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
-                }
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, renderingError ?? "Invalid renderingRule");
+                return notImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, renderingError ?? "renderingRule is not implemented.")
+                    : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
             }
 
             var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);

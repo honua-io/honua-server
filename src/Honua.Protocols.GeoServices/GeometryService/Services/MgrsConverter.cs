@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
@@ -169,12 +170,9 @@ internal static class MgrsConverter
             throw new FormatException($"Numeric location in '{mgrs}' exceeds the maximum precision of 10 digits.");
         }
 
-        foreach (var ch in digits)
+        if (!digits.All(char.IsAsciiDigit))
         {
-            if (!char.IsAsciiDigit(ch))
-            {
-                throw new FormatException($"Numeric location in '{mgrs}' must contain only digits.");
-            }
+            throw new FormatException($"Numeric location in '{mgrs}' must contain only digits.");
         }
 
         var precision = digits.Length / 2;

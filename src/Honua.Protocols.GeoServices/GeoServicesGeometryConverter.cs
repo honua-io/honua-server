@@ -320,17 +320,15 @@ internal static class GeoServicesGeometryConverter
     // produce topologically invalid geometries after downstream transformation.
     private static void ValidateGeographicCoordinateRange(Geometry geometry, int srid)
     {
-        foreach (var coord in geometry.Coordinates)
+        var outOfRange = geometry.Coordinates.FirstOrDefault(coord =>
+            coord.X < -180.0 || coord.X > 180.0 || coord.Y < -90.0 || coord.Y > 90.0);
+        if (outOfRange != null)
         {
-            if (coord.X < -180.0 || coord.X > 180.0
-                || coord.Y < -90.0 || coord.Y > 90.0)
-            {
-                throw new ArgumentException(
-                    $"Coordinate ({coord.X.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}, "
-                    + $"{coord.Y.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}) "
-                    + $"is outside the valid range for geographic CRS EPSG:{srid} "
-                    + "(longitude -180..180, latitude -90..90).");
-            }
+            throw new ArgumentException(
+                $"Coordinate ({outOfRange.X.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}, "
+                + $"{outOfRange.Y.ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}) "
+                + $"is outside the valid range for geographic CRS EPSG:{srid} "
+                + "(longitude -180..180, latitude -90..90).");
         }
     }
 
@@ -514,14 +512,13 @@ internal static class GeoServicesGeometryConverter
             }
         }
 
-        var polygons = new List<Polygon>();
-        foreach (var shell in shells)
+        var polygons = shells.Select(shell =>
         {
             holeAssignments.TryGetValue(shell, out var assigned);
-            polygons.Add(factory.CreatePolygon(shell, assigned?.ToArray() ?? Array.Empty<LinearRing>()));
-        }
+            return factory.CreatePolygon(shell, assigned?.ToArray() ?? Array.Empty<LinearRing>());
+        }).ToArray();
 
-        return polygons.Count == 1 ? polygons[0] : factory.CreateMultiPolygon(polygons.ToArray());
+        return polygons.Length == 1 ? polygons[0] : factory.CreateMultiPolygon(polygons);
     }
 
     private static double[][] EnsureClosed(double[][] ring)
@@ -552,16 +549,8 @@ internal static class GeoServicesGeometryConverter
             return Array.Empty<double[]>();
         }
 
-        var valid = new List<double[]>(points.Length);
-        foreach (var point in points)
-        {
-            if (point is { Length: >= 2 })
-            {
-                valid.Add(point);
-            }
-        }
-
-        return valid.Count == points.Length ? points : valid.ToArray();
+        var valid = points.Where(static point => point is { Length: >= 2 }).ToArray();
+        return valid.Length == points.Length ? points : valid;
     }
 
     private static GeoServicesGeometry? ConvertGeometryToGeoServicesGeometry(Geometry geometry, GeoServicesSpatialReference? spatialReference)

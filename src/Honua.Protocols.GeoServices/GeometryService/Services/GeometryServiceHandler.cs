@@ -2224,15 +2224,11 @@ internal sealed class GeometryServiceHandler(
         // parameters.ExtendHow is parsed but intentionally not honored here (#2742): trimExtend
         // applies the default trim/extend behavior regardless of the extendHow bit flags.
         var trimLine = ReadGeometry(parameters.TrimExtendToJson);
-        var results = new List<byte[]>(parameters.PolylineJsonStrings.Length);
         var writer = new WKBWriter();
 
-        foreach (var polylineJson in parameters.PolylineJsonStrings)
-        {
-            var polyline = ReadGeometry(polylineJson);
-            var adjusted = TrimOrExtend(polyline, trimLine);
-            results.Add(writer.Write(adjusted));
-        }
+        var results = parameters.PolylineJsonStrings
+            .Select(polylineJson => writer.Write(TrimOrExtend(ReadGeometry(polylineJson), trimLine)))
+            .ToList();
 
         var response = ConvertToResponse(results, parameters.SR, "esriGeometryPolyline");
         GeometryServiceLog.BinaryOperationCompleted(_logger, "trimExtend", results.Count);
@@ -2312,36 +2308,32 @@ internal sealed class GeometryServiceHandler(
         // OffsetDistance has already been converted to the SR's native units by
         // HandleOffsetAsync (offsetUnit -> meters -> native units).
         var distance = parameters.OffsetDistance;
-        var results = new List<byte[]>(parameters.GeometryJsonStrings.Length);
         var writer = new WKBWriter();
         var joinStyle = ResolveOffsetJoinStyle(parameters.OffsetHow);
 
-        foreach (var geomJson in parameters.GeometryJsonStrings)
-        {
-            var geometry = ReadGeometry(geomJson);
-            Geometry offset;
-            if (geometry is IPolygonal)
+        var results = parameters.GeometryJsonStrings
+            .Select(geomJson =>
             {
-                // For polygons an offset is the buffer of the area by the (signed) distance.
-                offset = geometry.Buffer(distance);
-            }
-            else
-            {
-                // OffsetCurve produces a line offset to one side of the input line(s),
-                // which is the polyline semantics ArcGIS exposes for offset. NTS (like
-                // PostGIS ST_OffsetCurve) treats a positive distance as the LEFT side of the
-                // line direction; Esri treats a positive offsetDistance as the RIGHT side, so
-                // negate to match the GeoServices contract.
-                offset = NetTopologySuite.Operation.Buffer.OffsetCurve.GetCurve(
-                    geometry,
-                    -distance,
-                    NetTopologySuite.Operation.Buffer.BufferParameters.DefaultQuadrantSegments,
-                    joinStyle,
-                    Math.Max(parameters.BevelRatio, NetTopologySuite.Operation.Buffer.BufferParameters.DefaultMitreLimit));
-            }
+                var geometry = ReadGeometry(geomJson);
 
-            results.Add(writer.Write(offset));
-        }
+                // For polygons an offset is the buffer of the area by the (signed) distance.
+                // For polylines, OffsetCurve produces a line offset to one side of the input
+                // line(s), which is the polyline semantics ArcGIS exposes for offset. NTS
+                // (like PostGIS ST_OffsetCurve) treats a positive distance as the LEFT side of
+                // the line direction; Esri treats a positive offsetDistance as the RIGHT side,
+                // so negate to match the GeoServices contract.
+                Geometry offset = geometry is IPolygonal
+                    ? geometry.Buffer(distance)
+                    : NetTopologySuite.Operation.Buffer.OffsetCurve.GetCurve(
+                        geometry,
+                        -distance,
+                        NetTopologySuite.Operation.Buffer.BufferParameters.DefaultQuadrantSegments,
+                        joinStyle,
+                        Math.Max(parameters.BevelRatio, NetTopologySuite.Operation.Buffer.BufferParameters.DefaultMitreLimit));
+
+                return writer.Write(offset);
+            })
+            .ToList();
 
         var response = ConvertToResponse(results, parameters.SR, parameters.GeometryType);
         GeometryServiceLog.BinaryOperationCompleted(_logger, "offset", results.Count);
@@ -2360,20 +2352,11 @@ internal sealed class GeometryServiceHandler(
     private IResult ExecuteAutoComplete(AutoCompleteParameters parameters, HonuaTelemetryScope scope)
     {
         var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory();
+        var inputPolygons = parameters.PolygonJsonStrings.Select(ReadGeometry).ToList();
+
         var edges = new List<Geometry>();
-        var inputPolygons = new List<Geometry>();
-
-        foreach (var polygonJson in parameters.PolygonJsonStrings)
-        {
-            var polygon = ReadGeometry(polygonJson);
-            inputPolygons.Add(polygon);
-            edges.Add(polygon.Boundary);
-        }
-
-        foreach (var polylineJson in parameters.PolylineJsonStrings)
-        {
-            edges.Add(ReadGeometry(polylineJson));
-        }
+        edges.AddRange(inputPolygons.Select(polygon => polygon.Boundary));
+        edges.AddRange(parameters.PolylineJsonStrings.Select(ReadGeometry));
 
         // Union all boundary/polyline edges to node them, then polygonize the closed regions.
         Geometry noded = factory.CreateGeometryCollection(edges.ToArray());
@@ -2429,8 +2412,6 @@ internal sealed class GeometryServiceHandler(
     // replaced by the reshaper line, yielding a modified geometry.
     private static Geometry ReshapeGeometry(Geometry target, Geometry reshaper)
     {
-        var factory = target.Factory;
-
         if (target is IPolygonal)
         {
             var boundary = target.Boundary;
@@ -2580,26 +2561,27 @@ internal sealed class GeometryServiceHandler(
 
     private IResult ExecuteDensify(DensifyParameters parameters, HonuaTelemetryScope scope)
     {
-        var densified = new List<byte[]>(parameters.GeometryJsonStrings.Length);
         var writer = new WKBWriter();
-        foreach (var geomJson in parameters.GeometryJsonStrings)
-        {
-            var geometry = ReadGeometry(geomJson);
-            // Bound the interpolated output BEFORE densifying. NTS adds roughly
-            // (totalLength / maxSegmentLength) coordinates; reject when that would exceed the
-            // per-geometry vertex cap so a tiny maxSegmentLength over a large extent cannot OOM
-            // the host (#2064). maxSegmentLength is already validated > 0 / finite upstream.
-            var estimatedVertices = geometry.Length / parameters.MaxSegmentLength;
-            if (double.IsNaN(estimatedVertices)
-                || estimatedVertices > MaxDensifiedVerticesPerGeometry)
+        var densified = parameters.GeometryJsonStrings
+            .Select(geomJson =>
             {
-                throw new ArgumentException(
-                    "densify would generate too many vertices; maxSegmentLength is too small for the geometry extent.");
-            }
+                var geometry = ReadGeometry(geomJson);
+                // Bound the interpolated output BEFORE densifying. NTS adds roughly
+                // (totalLength / maxSegmentLength) coordinates; reject when that would exceed the
+                // per-geometry vertex cap so a tiny maxSegmentLength over a large extent cannot OOM
+                // the host (#2064). maxSegmentLength is already validated > 0 / finite upstream.
+                var estimatedVertices = geometry.Length / parameters.MaxSegmentLength;
+                if (double.IsNaN(estimatedVertices)
+                    || estimatedVertices > MaxDensifiedVerticesPerGeometry)
+                {
+                    throw new ArgumentException(
+                        "densify would generate too many vertices; maxSegmentLength is too small for the geometry extent.");
+                }
 
-            var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
-            densified.Add(writer.Write(result));
-        }
+                var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
+                return writer.Write(result);
+            })
+            .ToList();
 
         var response = ConvertToResponse(densified, parameters.SR, parameters.GeometryType);
         GeometryServiceLog.SimplifyOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
@@ -2632,14 +2614,11 @@ internal sealed class GeometryServiceHandler(
 
     private IResult ExecuteGeneralize(GeneralizeParameters parameters, HonuaTelemetryScope scope)
     {
-        var generalized = new List<byte[]>(parameters.GeometryJsonStrings.Length);
         var writer = new WKBWriter();
-        foreach (var geomJson in parameters.GeometryJsonStrings)
-        {
-            var geometry = ReadGeometry(geomJson);
-            var result = NetTopologySuite.Simplify.DouglasPeuckerSimplifier.Simplify(geometry, parameters.MaxDeviation);
-            generalized.Add(writer.Write(result));
-        }
+        var generalized = parameters.GeometryJsonStrings
+            .Select(geomJson => writer.Write(
+                NetTopologySuite.Simplify.DouglasPeuckerSimplifier.Simplify(ReadGeometry(geomJson), parameters.MaxDeviation)))
+            .ToList();
 
         var response = ConvertToResponse(generalized, parameters.SR, parameters.GeometryType);
         GeometryServiceLog.SimplifyOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
@@ -2649,16 +2628,12 @@ internal sealed class GeometryServiceHandler(
 
     private IResult ExecuteLabelPoints(LabelPointsParameters parameters, HonuaTelemetryScope scope)
     {
-        var points = new List<byte[]>(parameters.GeometryJsonStrings.Length);
         var writer = new WKBWriter();
-        foreach (var geomJson in parameters.GeometryJsonStrings)
-        {
-            var geometry = ReadGeometry(geomJson);
-            // InteriorPoint is guaranteed to lie inside the polygon, matching the
-            // semantics ArcGIS uses for label placement points.
-            var labelPoint = geometry.InteriorPoint;
-            points.Add(writer.Write(labelPoint));
-        }
+        // InteriorPoint is guaranteed to lie inside the polygon, matching the
+        // semantics ArcGIS uses for label placement points.
+        var points = parameters.GeometryJsonStrings
+            .Select(geomJson => writer.Write(ReadGeometry(geomJson).InteriorPoint))
+            .ToList();
 
         // The Esri /labelPoints operation returns the result points under a
         // `labelPoints` key (not the generic `geometries` array). Emitting the
@@ -3356,18 +3331,9 @@ internal sealed class GeometryServiceHandler(
     }
 
     private static string? GetPreferredValue(IReadOnlyDictionary<string, StringValues> values, params string[] keys)
-    {
-        foreach (var key in keys)
-        {
-            var value = GeometryServiceRequestParser.GetValue(values, key);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return null;
-    }
+        => keys
+            .Select(key => GeometryServiceRequestParser.GetValue(values, key))
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private async Task<byte[]> ProjectForGeodeticMeasurementAsync(byte[] wkb, int srid, CancellationToken ct)
     {

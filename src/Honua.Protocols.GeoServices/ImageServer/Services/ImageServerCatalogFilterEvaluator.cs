@@ -46,16 +46,7 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             throw new ImageServerCatalogFilterException(ex.Message, ex);
         }
 
-        var result = new List<ImageServerCatalogItem>();
-        foreach (var item in items)
-        {
-            if (Evaluate(expression, item))
-            {
-                result.Add(item);
-            }
-        }
-
-        return result;
+        return items.Where(item => Evaluate(expression, item)).ToList();
     }
 
     private static bool Evaluate(FilterExpression expression, ImageServerCatalogItem item)
@@ -192,16 +183,8 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
             throw new ImageServerCatalogFilterException("Right operand of IN must be a value list.");
         }
 
-        foreach (var value in values.Values)
-        {
-            var resolved = ResolveValue(value, item);
-            if (CompareEquality(left, resolved))
-            {
-                return !negate;
-            }
-        }
-
-        return negate;
+        var matched = values.Values.Any(value => CompareEquality(left, ResolveValue(value, item)));
+        return matched ? !negate : negate;
     }
 
     private static bool TryCoerceToDouble(object? value, out double result)

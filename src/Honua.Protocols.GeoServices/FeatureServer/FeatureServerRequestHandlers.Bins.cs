@@ -193,18 +193,11 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static bool IsSchemaField(MetadataV2Resource resource, string fieldName)
     {
-        foreach (var field in resource.SchemaFields)
-        {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return string.Equals(
-            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
-            fieldName,
-            StringComparison.OrdinalIgnoreCase);
+        return resource.SchemaFields.Any(field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            || string.Equals(
+                GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+                fieldName,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -216,13 +209,10 @@ internal static partial class FeatureServerEndpoints
         ImmutableArray<StatisticDefinition> statistics,
         out string? error)
     {
-        foreach (var statistic in statistics)
+        foreach (var statistic in statistics.Where(s => !IsSchemaField(resource, s.OnStatisticField)))
         {
-            if (!IsSchemaField(resource, statistic.OnStatisticField))
-            {
-                error = $"onStatisticField '{statistic.OnStatisticField}' does not exist on the layer.";
-                return false;
-            }
+            error = $"onStatisticField '{statistic.OnStatisticField}' does not exist on the layer.";
+            return false;
         }
 
         error = null;

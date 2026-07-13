@@ -175,12 +175,9 @@ internal static class GPServerEsriInputTranslation
         // When the caller supplied an esriGeometry/FeatureSet but no explicit
         // 'srid' input, surface the geometry's spatial reference so the adapter
         // can populate the canonical srid parameter the engine requires.
-        if (anyTranslated && inputSpatialReference is { } sridValue)
+        if (anyTranslated && inputSpatialReference is { } sridValue && !translated.ContainsKey("srid"))
         {
-            if (!translated.ContainsKey("srid"))
-            {
-                translated["srid"] = sridValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            }
+            translated["srid"] = sridValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         return new EsriInputTranslationResult(
