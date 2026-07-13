@@ -406,13 +406,11 @@ internal static class DeployControlEndpoints
                     $"Deploy operation '{operationId}' was not found.");
             }
 
-            if (operation.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested)
+            if (operation.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.RollbackRequested
+                && reconciler != null)
             {
-                if (reconciler != null)
-                {
-                    await reconciler.ReconcileWorkflowOperationAsync(operationId, context.RequestAborted).ConfigureAwait(false);
-                    operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false) ?? operation;
-                }
+                await reconciler.ReconcileWorkflowOperationAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+                operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false) ?? operation;
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);

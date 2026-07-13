@@ -196,6 +196,9 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
 
     private static long ResolveIdentifier(ImmutableDictionary<string, object?> attributes, int ordinal)
     {
+        // Not a simple filter: each key must be looked up and converted via two chained
+        // TryXxx calls whose out-parameter feeds the return value, so a LINQ Where/Select
+        // would not read more clearly than the short-circuiting loop below.
         foreach (var key in IdentifierKeys)
         {
             if (attributes.TryGetValue(key, out var value) && TryConvertToInt64(value, out var id))

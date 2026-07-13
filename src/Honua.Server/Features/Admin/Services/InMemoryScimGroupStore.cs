@@ -95,12 +95,10 @@ internal sealed class InMemoryScimGroupStore(InMemoryUserStore userStore) : ISci
             var renamed = !existing.DisplayName.Equals(newName, StringComparison.OrdinalIgnoreCase);
 
             // Revoke the (old) role from members that are leaving or affected by a rename.
-            foreach (var userId in existing.MemberUserIds)
+            foreach (var userId in existing.MemberUserIds.Where(userId =>
+                renamed || !newMembers.Contains(userId, StringComparer.OrdinalIgnoreCase)))
             {
-                if (renamed || !newMembers.Contains(userId, StringComparer.OrdinalIgnoreCase))
-                {
-                    _userStore.RemoveRole(userId, existing.DisplayName);
-                }
+                _userStore.RemoveRole(userId, existing.DisplayName);
             }
 
             // Grant the (new) role to the resulting member set.
@@ -136,6 +134,9 @@ internal sealed class InMemoryScimGroupStore(InMemoryUserStore userStore) : ISci
 
             var members = existing.MemberUserIds.ToList();
 
+            // Not a simple filter: members.RemoveAll(...) is itself the mutation being
+            // conditioned on, so folding it into a LINQ Where predicate would hide a
+            // side-effecting call inside what should read as a pure filter.
             foreach (var userId in NormalizeMembers(change.Remove))
             {
                 if (members.RemoveAll(m => m.Equals(userId, StringComparison.OrdinalIgnoreCase)) > 0)
@@ -144,13 +145,11 @@ internal sealed class InMemoryScimGroupStore(InMemoryUserStore userStore) : ISci
                 }
             }
 
-            foreach (var userId in NormalizeMembers(change.Add))
+            foreach (var userId in NormalizeMembers(change.Add).Where(userId =>
+                !members.Contains(userId, StringComparer.OrdinalIgnoreCase)))
             {
-                if (!members.Contains(userId, StringComparer.OrdinalIgnoreCase))
-                {
-                    members.Add(userId);
-                    _userStore.AddRole(userId, existing.DisplayName);
-                }
+                members.Add(userId);
+                _userStore.AddRole(userId, existing.DisplayName);
             }
 
             var updated = new ScimGroup

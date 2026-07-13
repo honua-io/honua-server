@@ -155,14 +155,9 @@ internal static class AdminEndpoints
             string connectionString;
             try
             {
-                if (Guid.TryParse(id, out var connectionId))
-                {
-                    connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
-                }
-                else
-                {
-                    connectionString = await resolver.ResolveConnectionStringAsync(id, context.RequestAborted);
-                }
+                connectionString = Guid.TryParse(id, out var connectionId)
+                    ? await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted)
+                    : await resolver.ResolveConnectionStringAsync(id, context.RequestAborted);
             }
             catch (ArgumentException)
             {
