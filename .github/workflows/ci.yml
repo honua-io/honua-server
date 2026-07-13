@@ -1002,7 +1002,7 @@ jobs:
       - name: Restore exact-head shard cache
         if: github.run_attempt > 1
         id: shard-cache-download
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
           key: ${{ steps.shard-cache-plan.outputs.cache_key }}
@@ -1074,7 +1074,7 @@ jobs:
         if: steps.shard-cache-package.outcome == 'success'
         id: shard-cache-save
         continue-on-error: true
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
           key: ${{ steps.shard-cache-plan.outputs.cache_key }}
