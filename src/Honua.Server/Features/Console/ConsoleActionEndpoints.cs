@@ -69,6 +69,10 @@ internal static class ConsoleActionEndpoints
                 // Reject undefined numeric values (e.g. actions: [999]) — the
                 // default JsonStringEnumConverter accepts integers, but the
                 // contract is a closed string set.
+                // Not rewritten as .Where(...)/.FirstOrDefault(...): this loop returns
+                // directly from the enclosing method on the first invalid value, and a
+                // default(ConsoleContentAction) sentinel from FirstOrDefault would be
+                // indistinguishable from a legitimately-defined zero value.
                 foreach (var action in supplied)
                 {
                     if (!ConsoleEnumParser.IsDefined(action))
@@ -197,14 +201,6 @@ internal static class ConsoleActionEndpoints
             return Array.Empty<ConsoleContentAction>();
 
         var allowedSet = new HashSet<ConsoleContentAction>(allowed);
-        var denied = new List<ConsoleContentAction>(candidates.Count);
-        foreach (var action in candidates)
-        {
-            if (!allowedSet.Contains(action))
-            {
-                denied.Add(action);
-            }
-        }
-        return denied;
+        return candidates.Where(action => !allowedSet.Contains(action)).ToList();
     }
 }

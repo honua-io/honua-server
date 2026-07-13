@@ -57,11 +57,13 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             case AlertTriggerType.Dwell:
                 if (insideNow)
                 {
+                    // ResolveEnteredAt always returns a non-null value when insideNow is
+                    // true, so the "?? evaluatedAt" fallback here can never trigger.
                     var dwellSeconds = TryGetIntCondition(rule.ConditionsJson, "dwellSeconds", 0);
-                    var elapsedSeconds = (evaluatedAt - (enteredAt ?? evaluatedAt)).TotalSeconds;
+                    var elapsedSeconds = (evaluatedAt - enteredAt!.Value).TotalSeconds;
                     if (elapsedSeconds >= dwellSeconds && CanEmit(rule.CooldownSeconds, lastAlertAt, evaluatedAt))
                     {
-                        var durationMs = (long)(evaluatedAt - (enteredAt ?? evaluatedAt)).TotalMilliseconds;
+                        var durationMs = (long)(evaluatedAt - enteredAt!.Value).TotalMilliseconds;
                         var status = lastAlertAt.HasValue ? AlertIncidentStatus.Ongoing : AlertIncidentStatus.Started;
                         generatedEvent = CreateEvent(change, rule, evaluatedAt, "dwell", feature, zone,
                             evaluatedAt.ToUnixTimeSeconds(), status, durationMs);
@@ -399,6 +401,10 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             return true;
         }
 
+        // Not a straightforward .Where(...) rewrite: this is a Try-style lookup with an
+        // early return on first case-insensitive match, falling through to a "not found"
+        // result otherwise — a .Where()/FirstOrDefault() pair would need an extra
+        // existence check to distinguish "found with null value" from "not found".
         foreach (var pair in feature.Attributes)
         {
             if (string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase))

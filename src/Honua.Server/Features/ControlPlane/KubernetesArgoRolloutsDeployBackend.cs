@@ -450,13 +450,13 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
         return rollout.CanaryWeight == desiredCanaryWeight.Value;
     }
 
-    private static ArgoRolloutsDeployTarget ResolveTarget(DeployOperationSpec spec)
+    private ArgoRolloutsDeployTarget ResolveTarget(DeployOperationSpec spec)
     {
         var parameters = spec.Parameters;
         return new ArgoRolloutsDeployTarget
         {
             Namespace = GetParameter(parameters, NamespaceParameter)
-                ?? KubernetesJobClient.TryReadInClusterNamespace(),
+                ?? KubernetesJobClient.TryReadInClusterNamespace(logger),
             RolloutName = GetParameter(parameters, RolloutNameParameter) ?? spec.TargetName,
             ContainerName = GetParameter(parameters, ContainerNameParameter)
         };

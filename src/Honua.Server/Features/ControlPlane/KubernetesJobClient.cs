@@ -343,7 +343,7 @@ internal sealed partial class KubernetesJobClient(
     /// self-signed CA); otherwise falls back to the OS trust store so operators whose API
     /// server chains to a public CA keep working. Wired at DI registration time.
     /// </summary>
-    internal static HttpMessageHandler CreatePrimaryHandler(bool inClusterAutoDetect, string? caBundlePath = null)
+    internal static HttpMessageHandler CreatePrimaryHandler(bool inClusterAutoDetect, string? caBundlePath = null, ILogger? logger = null)
     {
         var handler = new HttpClientHandler();
         var resolvedPath = ResolveTrustedCaPath(inClusterAutoDetect, caBundlePath, InClusterCaCertPath);
@@ -359,10 +359,14 @@ internal sealed partial class KubernetesJobClient(
                         ValidateAgainstTrustedCas(leaf, presentedChain, errors, trustedRoots);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Fall back to the default OS trust store if the CA bundle is malformed;
                 // the connection will still fail at the transport layer if the CA is untrusted.
+                if (logger is not null)
+                {
+                    Log.CaBundleLoadFailed(logger, ex, resolvedPath);
+                }
             }
         }
 
@@ -452,9 +456,8 @@ internal sealed partial class KubernetesJobClient(
         // discoverable on the client.
         if (presentedChain != null)
         {
-            foreach (var element in presentedChain.ChainElements)
+            foreach (var cert in presentedChain.ChainElements.Select(element => element.Certificate))
             {
-                var cert = element.Certificate;
                 if (cert != null && !ReferenceEquals(cert, leaf))
                 {
                     customChain.ChainPolicy.ExtraStore.Add(cert);
@@ -469,7 +472,7 @@ internal sealed partial class KubernetesJobClient(
     /// Reads the projected namespace file written by the kubelet; used by the adapter
     /// to default the target namespace when none is configured explicitly.
     /// </summary>
-    internal static string? TryReadInClusterNamespace()
+    internal static string? TryReadInClusterNamespace(ILogger? logger = null)
     {
         try
         {
@@ -479,9 +482,13 @@ internal sealed partial class KubernetesJobClient(
                 return string.IsNullOrEmpty(ns) ? null : ns;
             }
         }
-        catch
+        catch (Exception ex)
         {
             // Ignore I/O failures; the adapter falls back to the configured default.
+            if (logger is not null)
+            {
+                Log.InClusterNamespaceReadFailed(logger, ex);
+            }
         }
 
         return null;
@@ -492,5 +499,13 @@ internal sealed partial class KubernetesJobClient(
         [LoggerMessage(9050, LogLevel.Warning,
             "Kubernetes API call to {Operation} failed with status {StatusCode}: {Body}")]
         public static partial void KubernetesApiError(ILogger logger, string operation, int statusCode, string body);
+
+        [LoggerMessage(9051, LogLevel.Warning,
+            "Failed to load the Kubernetes CA bundle from {CaBundlePath}; falling back to the default OS trust store.")]
+        public static partial void CaBundleLoadFailed(ILogger logger, Exception exception, string caBundlePath);
+
+        [LoggerMessage(9052, LogLevel.Debug,
+            "Failed to read the projected in-cluster namespace file; falling back to the configured default.")]
+        public static partial void InClusterNamespaceReadFailed(ILogger logger, Exception exception);
     }
 }

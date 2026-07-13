@@ -17,13 +17,16 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<TeamsAlertDeliverySink>? _logger;
 
     public TeamsAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
-        IOptions<AlertDeliveryOptions> options)
+        IOptions<AlertDeliveryOptions> options,
+        ILogger<TeamsAlertDeliverySink>? logger = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger;
     }
 
     public AlertChannelType ChannelType => AlertChannelType.MicrosoftTeams;
@@ -111,8 +114,9 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Microsoft Teams alert delivery failed for event {DedupeKey}.", alertEvent.DedupeKey);
             return new AlertDeliveryResult
             {
                 Succeeded = false,

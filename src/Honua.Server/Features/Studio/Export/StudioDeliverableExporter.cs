@@ -85,6 +85,8 @@ internal sealed class StudioDeliverableExporter : IStudioDeliverableExporter
         }
 
         StudioContentVersion? latest = null;
+        // Not a simple .Where(): this is a running-max fold (each iteration compares
+        // against the previous iteration's winner), not a filter/projection.
         foreach (var candidate in versions)
         {
             if (latest is null || candidate.VersionNumber > latest.VersionNumber)

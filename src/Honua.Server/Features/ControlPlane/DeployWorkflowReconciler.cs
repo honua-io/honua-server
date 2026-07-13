@@ -153,6 +153,8 @@ internal sealed partial class DeployWorkflowReconciler(
             }
             catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
             {
+                // Expected: the Cancel() call above is what stops the lease-renewal loop,
+                // so its resulting OperationCanceledException is normal shutdown, not an error.
             }
 
             await workflowStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);

@@ -47,18 +47,7 @@ internal static class ConsoleShareMapper
     {
         var effectiveTier = ResolveEffectiveTier(state, item);
         var publicLinkTierEnabled = effectiveTier is ConsoleShareAccessTier.PublicLink or ConsoleShareAccessTier.PublicIndexed;
-        var publicLinkEnabled = false;
-        if (publicLinkTierEnabled)
-        {
-            foreach (var token in publicLinkTokens)
-            {
-                if (!token.IsExpired)
-                {
-                    publicLinkEnabled = true;
-                    break;
-                }
-            }
-        }
+        var publicLinkEnabled = publicLinkTierEnabled && publicLinkTokens.Any(token => !token.IsExpired);
 
         var embedEnabled = state?.EmbedEnabled ?? false;
         var openDataEligible = IsDistributableType(item.ItemType)

@@ -62,14 +62,12 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
         // ids, unresolved references, version-skew) must surface as
         // InvalidArgument rather than a successful response with an empty plan
         // plus error warnings. Admin tooling keys off the diagnostic `code`.
-        foreach (var warning in plan.Warnings)
+        var firstErrorWarning = plan.Warnings.FirstOrDefault(warning => warning.Severity == SpecDiagnosticSeverity.Error);
+        if (firstErrorWarning is not null)
         {
-            if (warning.Severity == SpecDiagnosticSeverity.Error)
-            {
-                throw new RpcException(new Status(
-                    StatusCode.InvalidArgument,
-                    $"{warning.Code}: {warning.Message}"));
-            }
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{firstErrorWarning.Code}: {firstErrorWarning.Message}"));
         }
 
         return new Proto.PlanSpecResponse
@@ -117,14 +115,12 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
         }
 
         var plan = await _planner.PlanAsync(document, context.CancellationToken).ConfigureAwait(false);
-        foreach (var warning in plan.Warnings)
+        var firstErrorWarning = plan.Warnings.FirstOrDefault(warning => warning.Severity == SpecDiagnosticSeverity.Error);
+        if (firstErrorWarning is not null)
         {
-            if (warning.Severity == SpecDiagnosticSeverity.Error)
-            {
-                throw new RpcException(new Status(
-                    StatusCode.InvalidArgument,
-                    $"{warning.Code}: {warning.Message}"));
-            }
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"{firstErrorWarning.Code}: {firstErrorWarning.Message}"));
         }
 
         var requestServices = context.GetHttpContext()?.RequestServices ?? _services;

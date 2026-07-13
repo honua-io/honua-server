@@ -84,8 +84,9 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
             AlertChannelType.AzureEventHub => false,
 #else
             AlertChannelType.AzureEventGrid => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventGrid?.TopicEndpoint),
-            AlertChannelType.AzureEventHub => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventHub?.ConnectionString)
-                && !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.AzureEventHub?.EventHubName),
+            AlertChannelType.AzureEventHub => _deliveryOptions.Dispatch.AzureEventHub is { } azureEventHub
+                && !string.IsNullOrWhiteSpace(azureEventHub.ConnectionString)
+                && !string.IsNullOrWhiteSpace(azureEventHub.EventHubName),
 #endif
             _ => false
         };

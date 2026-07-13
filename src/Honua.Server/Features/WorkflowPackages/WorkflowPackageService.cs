@@ -619,6 +619,9 @@ internal sealed class WorkflowPackageService(
                 continue;
             }
 
+            // Not a simple .Where(): the filter condition depends on Enum.TryParse's `out`
+            // value, which the body also needs, so a LINQ predicate can't cleanly carry
+            // that state without re-parsing per candidate.
             foreach (var output in definition.OutputSchemas)
             {
                 if (Enum.TryParse<ArtifactKind>(output.Name, ignoreCase: false, out var kind))
@@ -758,6 +761,9 @@ internal sealed class WorkflowPackageService(
         IReadOnlyList<WorkflowNodePortSchema> outputSchemas)
     {
         var kinds = new HashSet<ArtifactKind>();
+        // Not a simple .Where(): the filter condition depends on Enum.TryParse's `out`
+        // value, which the body also needs, so a LINQ predicate can't cleanly carry
+        // that state without re-parsing per candidate.
         foreach (var schema in outputSchemas)
         {
             if (Enum.TryParse<ArtifactKind>(schema.Name, ignoreCase: false, out var kind))

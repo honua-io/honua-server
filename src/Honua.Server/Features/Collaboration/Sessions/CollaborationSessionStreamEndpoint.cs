@@ -73,7 +73,7 @@ internal static partial class CollaborationSessionStreamEndpoint
 
         var sessionId = join.Response.SessionId;
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
-        var writeLock = new SemaphoreSlim(1, 1);
+        using var writeLock = new SemaphoreSlim(1, 1);
 
         try
         {
@@ -116,7 +116,6 @@ internal static partial class CollaborationSessionStreamEndpoint
         {
             // Always remove the participant so presence does not leak when the socket closes.
             sessions.Leave(sessionId, reason: "disconnected");
-            writeLock.Dispose();
 
             if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {

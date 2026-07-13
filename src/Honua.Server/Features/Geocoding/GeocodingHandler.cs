@@ -112,12 +112,10 @@ internal sealed class GeocodingHandler(
         // query. An opaque-but-unverifiable token is rejected (it was not minted by this service).
         var rawMagicKey = GetValue(values, "magicKey");
         GeocodeMagicKey? decodedMagicKey = null;
-        if (!string.IsNullOrWhiteSpace(rawMagicKey))
+        if (!string.IsNullOrWhiteSpace(rawMagicKey) &&
+            (!GeocodeMagicKeyCodec.TryDecode(rawMagicKey, out decodedMagicKey) || decodedMagicKey is null))
         {
-            if (!GeocodeMagicKeyCodec.TryDecode(rawMagicKey, out decodedMagicKey) || decodedMagicKey is null)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, "magicKey is invalid or was not issued by this service.");
-            }
+            return StandardErrorHelpers.CreateBadRequest(context, "magicKey is invalid or was not issued by this service.");
         }
 
         // magicKey carries the resolvable suggestion text; fall back to singleLine/structured input.
@@ -734,6 +732,9 @@ internal sealed class GeocodingHandler(
             queries = new List<string>(recordsArray.GetArrayLength());
             List<int>? invalidIndices = null;
             var index = 0;
+            // Not a simple .Select(): the loop branches into two different accumulators
+            // (queries vs. invalidIndices) keyed by the positional index, so a LINQ map
+            // wouldn't preserve the dual-output/index-tracking behavior cleanly.
             foreach (var record in recordsArray.EnumerateArray())
             {
                 var address = ExtractAddressFromRecord(record);
@@ -1238,6 +1239,8 @@ internal sealed class GeocodingHandler(
 
         var tokens = rawOutFields.Split(',');
         var selected = new List<string>(tokens.Length);
+        // Not a simple .Select(): the loop short-circuits with early returns (empty-field
+        // error, "*" wildcard) that a LINQ map/filter chain can't replicate.
         foreach (var token in tokens)
         {
             var trimmed = token.Trim();
@@ -1291,12 +1294,9 @@ internal sealed class GeocodingHandler(
 
         var requested = new HashSet<string>(fields, StringComparer.OrdinalIgnoreCase);
         var projected = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (var pair in attributes)
+        foreach (var pair in attributes.Where(pair => requested.Contains(pair.Key)))
         {
-            if (requested.Contains(pair.Key))
-            {
-                projected[pair.Key] = pair.Value;
-            }
+            projected[pair.Key] = pair.Value;
         }
 
         return projected;

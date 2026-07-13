@@ -135,16 +135,9 @@ internal static class ExecutionWorkloadGate
             return true;
         }
 
-        foreach (var entry in parameters)
-        {
-            if (entry.Key.StartsWith(JobDefinitionArnTierPrefix, StringComparison.Ordinal)
-                && !string.IsNullOrWhiteSpace(entry.Value))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return parameters.Any(entry =>
+            entry.Key.StartsWith(JobDefinitionArnTierPrefix, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(entry.Value));
     }
 
     private static bool HasValue(IReadOnlyDictionary<string, string> parameters, string key)

@@ -594,6 +594,9 @@ internal static class ArgoRolloutsPatchSerializer
             return null;
         }
 
+        // Not rewritten as .Where(...)/.Select(...): this is a find-first lookup that
+        // returns a derived value (the image string) directly from the loop, falling
+        // through to null when no container matches.
         foreach (var container in containers.EnumerateArray())
         {
             if (container.ValueKind == JsonValueKind.Object &&

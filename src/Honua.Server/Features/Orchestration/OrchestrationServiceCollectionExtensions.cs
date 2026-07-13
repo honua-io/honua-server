@@ -66,12 +66,10 @@ internal static class OrchestrationServiceCollectionExtensions
             return roots;
         }
 
-        foreach (var child in section.GetChildren())
+        foreach (var child in section.GetChildren()
+                     .Where(child => !string.IsNullOrWhiteSpace(child.Key) && !string.IsNullOrWhiteSpace(child.Value)))
         {
-            if (!string.IsNullOrWhiteSpace(child.Key) && !string.IsNullOrWhiteSpace(child.Value))
-            {
-                roots[child.Key] = child.Value!;
-            }
+            roots[child.Key] = child.Value!;
         }
 
         return roots;

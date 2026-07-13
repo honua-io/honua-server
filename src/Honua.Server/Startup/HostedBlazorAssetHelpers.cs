@@ -147,15 +147,7 @@ internal static class HostedBlazorAssetHelpers
                 return true;
             }
 
-            foreach (var blockedPrefix in _blockedPrefixes)
-            {
-                if (route.StartsWith(blockedPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return !_blockedPrefixes.Any(blockedPrefix => route.StartsWith(blockedPrefix, StringComparison.OrdinalIgnoreCase));
         }
     }
 }
