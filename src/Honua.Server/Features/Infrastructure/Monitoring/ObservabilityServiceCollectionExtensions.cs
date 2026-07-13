@@ -29,9 +29,23 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
         services.AddPerformanceMonitoring();
-        services.TryAddSingleton<ConnectionPoolMetrics>();
+        // Source utilization + windowed acquisition-timeout reads from the live admission gate
+        // (IDatabaseAdmissionPressureSource) when the active provider registers one (Postgres);
+        // absent a gate the metrics honestly report utilization unavailable (honua-server#2805).
+        services.TryAddSingleton(sp => new ConnectionPoolMetrics(
+            sp.GetRequiredService<IActiveDbConnectionTracker>(),
+            sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseAdmissionPressureSource>()));
         services.AddSingleton<ProductionMetricsCollector>();
-        services.AddSingleton<IOpsDatabasePressureSignal, ProductionMetricsDatabasePressureSignal>();
+        // The ops-findings db-pressure rule reads the admission gate directly when available so its
+        // sensor is a genuine production signal; on providers without a gate it falls back to the
+        // (now gate-backed, honestly-unavailable) production-metrics view.
+        services.AddSingleton<IOpsDatabasePressureSignal>(sp =>
+        {
+            var source = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseAdmissionPressureSource>();
+            return source is not null
+                ? new AdmissionGateDatabasePressureSignal(source)
+                : new ProductionMetricsDatabasePressureSignal(sp.GetRequiredService<ProductionMetricsCollector>());
+        });
         services.Configure<RecentErrorBufferOptions>(
             configuration.GetSection(RecentErrorBufferOptions.SectionName));
         services.AddSingleton<RecentErrorBuffer>();

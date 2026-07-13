@@ -7,12 +7,14 @@ using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
@@ -327,6 +329,81 @@ public sealed class OpsFindingsServiceTests
         var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
         Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
         Assert.Null(finding.RecommendedAction);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DbPoolPressure_FiresOnRealAdmissionGateExhaustion()
+    {
+        // honua-server#2805 core regression: the db-pressure rule must fire on a REAL exhaustion
+        // event driven through the actual admission gate — not a hand-fabricated snapshot. Prior to
+        // this fix the rule read counters no production code wrote, so it could never fire.
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            MaxConnectionPoolSize = 1,
+            ConnectionAcquisitionTimeoutSeconds = 1,
+        });
+
+        // Take the single slot (utilization -> 1.0) then force a genuine acquisition timeout.
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeFalse();
+
+        var reading = ((IDatabaseAdmissionPressureSource)gate).GetPressureReading();
+        reading.Utilization.Should().Be(1.0);
+        reading.AcquisitionTimeoutsInWindow.Should().BeGreaterThanOrEqualTo(1);
+
+        var signal = new AdmissionGateDatabasePressureSignal(gate);
+        var options = new OpsFindingsOptions
+        {
+            DbPoolUtilizationThreshold = 0.9,
+            DbConnectionAcquisitionTimeoutThreshold = 1,
+        };
+        var service = CreateService(databasePressureSignal: signal, admissionGate: gate, options: options);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleDbBoundedAdmissionPressure);
+        Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
+        Assert.Contains(finding.EvidenceRefs, e => e.StartsWith("db-pool-utilization:", StringComparison.Ordinal));
+        Assert.Contains(finding.EvidenceRefs, e => e.StartsWith("db-acquisition-timeouts:", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_ServingLatencyP99Breach_ProducesInformationalWarning()
+    {
+        // honua-server#2805: the serving-latency rule now also breaches on the p99 tail, not p95 only.
+        var now = DateTimeOffset.UtcNow;
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(new List<OpsHealthLatencyRow>
+            {
+                new()
+                {
+                    ReplicaId = "replica-1",
+                    BucketStart = now.AddMinutes(-1),
+                    Point = new OpsHealthLatencyPoint
+                    {
+                        Protocol = "OgcApiFeatures",
+                        RequestCount = 100,
+                        ErrorCount = 0,
+                        // p95 under the 2000ms default threshold, but p99 tail over the 4000ms default.
+                        P50Ms = 100,
+                        P95Ms = 1500,
+                        P99Ms = 5000,
+                        MaxMs = 7000,
+                    },
+                },
+            });
+        var service = CreateService(rollupStore: rollupStore);
+
+        var findings = await service.EvaluateAsync();
+
+        var finding = Assert.Single(findings, f => f.Rule == OpsFindingsService.RuleServingLatencySlo);
+        Assert.Equal(OpsFindingSeverity.Warning, finding.Severity);
+        Assert.Contains(finding.EvidenceRefs, e => e.StartsWith("p99-latency-ms:", StringComparison.Ordinal));
+        Assert.DoesNotContain(finding.EvidenceRefs, e => e.StartsWith("p95-latency-ms:", StringComparison.Ordinal));
     }
 
     [UnitTest]

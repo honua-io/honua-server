@@ -108,6 +108,11 @@ internal static class ServiceCollectionExtensions
         // restart (the value reverts to the configured limits on restart).
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(
             sp => sp.GetRequiredService<QueryConcurrencyGate>());
+        // Expose the same singleton as the real database admission-pressure source consumed by
+        // server-side observability (ops-findings db-pressure rule + ops-health snapshot). This
+        // replaces the decorative, never-written ConnectionPoolMetrics counters (honua-server#2805).
+        services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IDatabaseAdmissionPressureSource>(
+            sp => sp.GetRequiredService<QueryConcurrencyGate>());
 
         // Singleton cache that resolves the connection string / secret exactly once (PA-077).
         // Scoped factories must await ResolvedConnectionStringTask instead of calling the

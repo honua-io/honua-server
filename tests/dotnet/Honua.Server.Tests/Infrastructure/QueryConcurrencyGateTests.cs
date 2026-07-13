@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -439,6 +440,62 @@ public sealed class QueryConcurrencyGateTests
 
         (await queued.WaitAsync(TimeSpan.FromSeconds(2))).Should().BeTrue(
             "raising the admission target must admit queued waiters");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetPressureReading_WhenSaturated_ReportsFullUtilizationAndQueuedWaiter()
+    {
+        // honua-server#2805: the db-pressure findings rule reads the gate's real saturation signal.
+        using var gate = new QueryConcurrencyGate(new ConnectionLimits
+        {
+            MaxConcurrentQueries = 1,
+            ConnectionAcquisitionTimeoutSeconds = 5
+        });
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        var queued = gate.WaitAsync(CancellationToken.None);
+        queued.IsCompleted.Should().BeFalse("the single slot is taken, so the second waiter must queue");
+
+        var reading = ((IDatabaseAdmissionPressureSource)gate).GetPressureReading();
+        reading.HasUtilization.Should().BeTrue();
+        reading.Utilization.Should().Be(1.0);
+        reading.InFlight.Should().Be(1);
+        reading.CurrentLimit.Should().Be(1);
+        reading.QueuedWaiters.Should().Be(1);
+
+        gate.Release();
+        (await queued.WaitAsync(TimeSpan.FromSeconds(2))).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetPressureReading_AcquisitionTimeoutSignal_IsWindowedNotLifetimeMonotonic()
+    {
+        // honua-server#2805: the timeout signal must be windowed, so a burst of timeouts relaxes
+        // back to zero once the window elapses instead of latching a Critical finding until restart.
+        var clock = new ManualTimeProvider();
+        using var gate = new QueryConcurrencyGate(
+            new ConnectionLimits
+            {
+                MaxConcurrentQueries = 1,
+                ConnectionAcquisitionTimeoutSeconds = 1
+            },
+            clock,
+            timeoutWindow: TimeSpan.FromSeconds(30));
+
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeTrue();
+        // The single slot is taken; this attempt waits the full acquisition timeout and records a
+        // windowed timeout at the current (manual) clock position.
+        (await gate.WaitAsync(CancellationToken.None)).Should().BeFalse();
+
+        ((IDatabaseAdmissionPressureSource)gate).GetPressureReading()
+            .AcquisitionTimeoutsInWindow.Should().Be(1, "a genuine acquisition timeout was just recorded");
+
+        // Advance past the rolling window: the timeout must age out.
+        clock.Advance(TimeSpan.FromSeconds(31));
+        ((IDatabaseAdmissionPressureSource)gate).GetPressureReading()
+            .AcquisitionTimeoutsInWindow.Should().Be(0, "the timeout must fall out of the rolling window");
     }
 
     private sealed class ManualTimeProvider : TimeProvider

@@ -69,6 +69,15 @@ public sealed class OpsFindingsOptions
     public double ServingLatencyP95ThresholdMs { get; set; } = 2000;
 
     /// <summary>
+    /// Gets or sets the per-protocol 99th-percentile serving-latency threshold (milliseconds) at or
+    /// above which the <c>serving-latency-slo-breach</c> rule raises a finding. The p99 tail is a
+    /// stricter tail-latency guard than p95: a breach here catches a small fraction of very slow
+    /// requests (burn-rate) that p95 can mask. Default is 4000ms.
+    /// </summary>
+    [Range(1, double.MaxValue)]
+    public double ServingLatencyP99ThresholdMs { get; set; } = 4000;
+
+    /// <summary>
     /// Gets or sets the per-protocol server-error rate (0.0-1.0) at or above which the
     /// <c>serving-latency-slo-breach</c> rule raises a finding. Default is 0.05 (5%).
     /// </summary>
