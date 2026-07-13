@@ -149,16 +149,16 @@ public class HttpResiliencePolicyTests
             new TaskCanceledException("Timeout", new TimeoutException()));
         Assert.True(HttpResiliencePolicies.IsTransientHttpFailure(timeoutException));
 
-        var serverError = new DelegateResult<HttpResponseMessage>(
-            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        using var serverErrorResponse = new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        var serverError = new DelegateResult<HttpResponseMessage>(serverErrorResponse);
         Assert.True(HttpResiliencePolicies.IsTransientHttpFailure(serverError));
 
-        var serviceUnavailable = new DelegateResult<HttpResponseMessage>(
-            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        using var serviceUnavailableResponse = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        var serviceUnavailable = new DelegateResult<HttpResponseMessage>(serviceUnavailableResponse);
         Assert.True(HttpResiliencePolicies.IsTransientHttpFailure(serviceUnavailable));
 
-        var tooManyRequests = new DelegateResult<HttpResponseMessage>(
-            new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        using var tooManyRequestsResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        var tooManyRequests = new DelegateResult<HttpResponseMessage>(tooManyRequestsResponse);
         Assert.True(HttpResiliencePolicies.IsTransientHttpFailure(tooManyRequests));
     }
 
@@ -166,16 +166,16 @@ public class HttpResiliencePolicyTests
     public void IsTransientHttpFailure_WithNonTransientErrors_ReturnsFalse()
     {
         // Arrange & Act & Assert
-        var notFound = new DelegateResult<HttpResponseMessage>(
-            new HttpResponseMessage(HttpStatusCode.NotFound));
+        using var notFoundResponse = new HttpResponseMessage(HttpStatusCode.NotFound);
+        var notFound = new DelegateResult<HttpResponseMessage>(notFoundResponse);
         Assert.False(HttpResiliencePolicies.IsTransientHttpFailure(notFound));
 
-        var badRequest = new DelegateResult<HttpResponseMessage>(
-            new HttpResponseMessage(HttpStatusCode.BadRequest));
+        using var badRequestResponse = new HttpResponseMessage(HttpStatusCode.BadRequest);
+        var badRequest = new DelegateResult<HttpResponseMessage>(badRequestResponse);
         Assert.False(HttpResiliencePolicies.IsTransientHttpFailure(badRequest));
 
-        var unauthorized = new DelegateResult<HttpResponseMessage>(
-            new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        using var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        var unauthorized = new DelegateResult<HttpResponseMessage>(unauthorizedResponse);
         Assert.False(HttpResiliencePolicies.IsTransientHttpFailure(unauthorized));
 
         var argumentException = new DelegateResult<HttpResponseMessage>(

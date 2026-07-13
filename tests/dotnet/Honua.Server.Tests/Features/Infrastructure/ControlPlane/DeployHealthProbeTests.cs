@@ -18,7 +18,8 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeAsync_AllChecksReturnExpectedStatus_ReportsNoFailures()
     {
-        var probe = new HttpDeployHealthProbe(StubFactory(HttpStatusCode.OK));
+        using var factory = StubFactory(HttpStatusCode.OK);
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeAsync(
             new DeployHealthProbeRequest { Url = "https://example.com/healthz/ready", Samples = 3 },
@@ -32,7 +33,8 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeAsync_AllChecksUnhealthy_CountsEveryFailure()
     {
-        var probe = new HttpDeployHealthProbe(StubFactory(HttpStatusCode.ServiceUnavailable));
+        using var factory = StubFactory(HttpStatusCode.ServiceUnavailable);
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeAsync(
             new DeployHealthProbeRequest { Url = "https://example.com/healthz/ready", Samples = 4 },
@@ -46,8 +48,9 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeAsync_TransportFailure_CountsAsUnhealthy()
     {
-        var probe = new HttpDeployHealthProbe(
-            new StubHttpClientFactory(new HttpClient(new ThrowingHandler())));
+        using var httpClient = new HttpClient(new ThrowingHandler());
+        using var factory = new StubHttpClientFactory(httpClient);
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeAsync(
             new DeployHealthProbeRequest { Url = "https://example.com/healthz/ready", Samples = 2 },
@@ -61,8 +64,9 @@ public sealed class DeployHealthProbeTests
     public async Task ProbeAsync_PrivateOrNonHttpsUrl_IsNotValidated_AndDoesNotProbe()
     {
         var sendCount = 0;
-        var probe = new HttpDeployHealthProbe(
-            new StubHttpClientFactory(new HttpClient(new CountingHandler(() => sendCount++))));
+        using var httpClient = new HttpClient(new CountingHandler(() => sendCount++));
+        using var factory = new StubHttpClientFactory(httpClient);
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeAsync(
             new DeployHealthProbeRequest { Url = "http://localhost:8080/healthz/ready", Samples = 3 },
@@ -76,7 +80,8 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeGoldenQueryAsync_BodyContainsToken_Matches()
     {
-        var probe = new HttpDeployHealthProbe(BodyFactory(HttpStatusCode.OK, "{\"marker\":\"GOLDEN-OK\"}"));
+        using var factory = BodyFactory(HttpStatusCode.OK, "{\"marker\":\"GOLDEN-OK\"}");
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeGoldenQueryAsync(
             new DeployGoldenQueryRequest { Url = "https://example.com/probe", ExpectedBodyContains = "GOLDEN-OK" },
@@ -90,7 +95,8 @@ public sealed class DeployHealthProbeTests
     public async Task ProbeGoldenQueryAsync_HealthyStatusButCorruptBody_DoesNotMatch()
     {
         // The heart of #2811: status 200 but a wrong/garbled body must be a mismatch (correctness gate).
-        var probe = new HttpDeployHealthProbe(BodyFactory(HttpStatusCode.OK, "<html>error page</html>"));
+        using var factory = BodyFactory(HttpStatusCode.OK, "<html>error page</html>");
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeGoldenQueryAsync(
             new DeployGoldenQueryRequest { Url = "https://example.com/probe", ExpectedBodyContains = "GOLDEN-OK" },
@@ -104,7 +110,8 @@ public sealed class DeployHealthProbeTests
     [Fact]
     public async Task ProbeGoldenQueryAsync_ChecksumMismatch_DoesNotMatch()
     {
-        var probe = new HttpDeployHealthProbe(BodyFactory(HttpStatusCode.OK, "actual-body"));
+        using var factory = BodyFactory(HttpStatusCode.OK, "actual-body");
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeGoldenQueryAsync(
             new DeployGoldenQueryRequest
@@ -121,8 +128,9 @@ public sealed class DeployHealthProbeTests
     public async Task ProbeGoldenQueryAsync_PrivateOrNonHttpsUrl_IsNotValidated()
     {
         var sendCount = 0;
-        var probe = new HttpDeployHealthProbe(
-            new StubHttpClientFactory(new HttpClient(new CountingHandler(() => sendCount++))));
+        using var httpClient = new HttpClient(new CountingHandler(() => sendCount++));
+        using var factory = new StubHttpClientFactory(httpClient);
+        var probe = new HttpDeployHealthProbe(factory);
 
         var result = await probe.ProbeGoldenQueryAsync(
             new DeployGoldenQueryRequest { Url = "http://localhost:8080/probe", ExpectedBodyContains = "x" },
@@ -139,20 +147,26 @@ public sealed class DeployHealthProbeTests
     private static StubHttpClientFactory BodyFactory(HttpStatusCode status, string body)
         => new(new HttpClient(new FixedBodyHandler(status, body)));
 
-    private sealed class StubHttpClientFactory(HttpClient client) : IHttpClientFactory
+    private sealed class StubHttpClientFactory(HttpClient client) : IHttpClientFactory, IDisposable
     {
         public HttpClient CreateClient(string name) => client;
+
+        public void Dispose() => client.Dispose();
     }
 
     private sealed class FixedStatusHandler(HttpStatusCode status) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            // Ownership of the response transfers to the caller, which disposes it via its
+            // own `using var response = ...` (HttpDeployHealthProbe.cs).
             => Task.FromResult(new HttpResponseMessage(status));
     }
 
     private sealed class FixedBodyHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            // Ownership of the response transfers to the caller, which disposes it via its
+            // own `using var response = ...` (HttpDeployHealthProbe.cs).
             => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
     }
 
@@ -167,6 +181,8 @@ public sealed class DeployHealthProbeTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             onSend();
+            // Ownership of the response transfers to the caller, which disposes it via its
+            // own `using var response = ...` (HttpDeployHealthProbe.cs).
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }

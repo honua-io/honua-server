@@ -33,7 +33,7 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
 
     public ConstructionDemoGenerationTests()
     {
-        _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-scene-899-{Guid.NewGuid():N}");
+        _outputRoot = Path.Join(Path.GetTempPath(), $"honua-scene-899-{Guid.NewGuid():N}");
         _featureSource = new StubFeatureSource { Features = ConstructionDemoFixture.Features };
         _registration = new StubRegistrationService();
         _metadataProvider = new TestMetadataV2GraphProvider(ConstructionDemoFixture.BuildMetadataGraph());
@@ -71,13 +71,13 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
         var second = await _executor.RunDirectAsync(
             BuildIntent(sceneId: "construction-demo-b"), CancellationToken.None);
 
-        var glb1 = await File.ReadAllBytesAsync(Path.Combine(first.Result.AssetRoot, "tile_0000.glb"));
-        var glb2 = await File.ReadAllBytesAsync(Path.Combine(second.Result.AssetRoot, "tile_0000.glb"));
+        var glb1 = await File.ReadAllBytesAsync(Path.Join(first.Result.AssetRoot, "tile_0000.glb"));
+        var glb2 = await File.ReadAllBytesAsync(Path.Join(second.Result.AssetRoot, "tile_0000.glb"));
         glb1.Should().Equal(glb2,
             "two runs of the construction fixture must produce byte-identical GLB output for CI golden checks.");
 
-        var tileset1 = await File.ReadAllBytesAsync(Path.Combine(first.Result.AssetRoot, "tileset.json"));
-        var tileset2 = await File.ReadAllBytesAsync(Path.Combine(second.Result.AssetRoot, "tileset.json"));
+        var tileset1 = await File.ReadAllBytesAsync(Path.Join(first.Result.AssetRoot, "tileset.json"));
+        var tileset2 = await File.ReadAllBytesAsync(Path.Join(second.Result.AssetRoot, "tileset.json"));
         tileset1.Should().Equal(tileset2,
             "two runs of the construction fixture must produce byte-identical tileset.json output.");
     }
@@ -88,7 +88,7 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
         var outcome = await _executor.RunDirectAsync(
             BuildIntent(sceneId: "construction-demo-ids"), CancellationToken.None);
 
-        var glb = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var glb = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         using var doc = JsonDocument.Parse(ExtractJsonChunk(glb));
 
         var properties = doc.RootElement
@@ -124,7 +124,7 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
         var outcome = await _executor.RunDirectAsync(
             BuildIntent(sceneId: "construction-demo-attrs"), CancellationToken.None);
 
-        var glb = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var glb = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         using var doc = JsonDocument.Parse(ExtractJsonChunk(glb));
 
         var properties = doc.RootElement
@@ -176,7 +176,7 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
         // The tileset.json bounding region must enclose every fixture vertex
         // (radians). A region tighter than the fixture footprints would let
         // CesiumJS cull the tile prematurely and lose buildings on demo zoom.
-        var tilesetJson = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        var tilesetJson = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using var tilesetDoc = JsonDocument.Parse(tilesetJson);
         var region = tilesetDoc.RootElement.GetProperty("root")
             .GetProperty("boundingVolume").GetProperty("region");

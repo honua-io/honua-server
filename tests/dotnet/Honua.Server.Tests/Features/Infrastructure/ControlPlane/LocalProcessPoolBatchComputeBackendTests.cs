@@ -25,7 +25,7 @@ public sealed class LocalProcessPoolBatchComputeBackendTests
     public async Task BuildEnvironment_WorkloadCannotOverrideContractVersionGate()
     {
         using var backend = CreateBackend();
-        var outFile = Path.Combine(Path.GetTempPath(), $"honua-contract-{Guid.NewGuid():N}.txt");
+        var outFile = Path.Join(Path.GetTempPath(), $"honua-contract-{Guid.NewGuid():N}.txt");
         try
         {
             var job = CreateJob("job-gate", new Dictionary<string, string>

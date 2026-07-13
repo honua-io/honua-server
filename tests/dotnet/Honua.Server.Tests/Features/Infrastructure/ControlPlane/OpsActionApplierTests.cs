@@ -186,7 +186,12 @@ public sealed class OpsActionApplierTests : IAsyncLifetime
         });
 
         eventId.Should().NotBeNull();
-        await dispatchStore.EnqueueAsync(eventId!.Value, ImmutableArray.Create(channel));
+        if (eventId is null)
+        {
+            throw new InvalidOperationException("TryAppendAsync failed to produce an event id.");
+        }
+
+        await dispatchStore.EnqueueAsync(eventId.Value, ImmutableArray.Create(channel));
         return eventId.Value;
     }
 

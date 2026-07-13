@@ -94,8 +94,8 @@ public sealed class TemporalExtentHelpersTests
 
         range.Should().NotBeNull();
         range!.Value.Min.Should().Be(startMin);
-        range.Value.Max.Should().Be(startMax);
-        range.Value.HasExtent.Should().BeTrue();
+        range!.Value.Max.Should().Be(startMax);
+        range!.Value.HasExtent.Should().BeTrue();
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class TemporalExtentHelpersTests
 
         range.Should().NotBeNull();
         range!.Value.Min.Should().Be(startMin);
-        range.Value.Max.Should().Be(endMax);
+        range!.Value.Max.Should().Be(endMax);
     }
 
     [Fact]

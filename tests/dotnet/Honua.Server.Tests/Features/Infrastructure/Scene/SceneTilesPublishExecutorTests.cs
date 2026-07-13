@@ -38,7 +38,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
     public SceneTilesPublishExecutorTests()
     {
-        _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-scene-{Guid.NewGuid():N}");
+        _outputRoot = Path.Join(Path.GetTempPath(), $"honua-scene-{Guid.NewGuid():N}");
         _featureSource = new StubFeatureSource();
         _registration = new StubRegistrationService();
         _metadataProvider = new TestMetadataV2GraphProvider(BuildSceneGraph());
@@ -80,12 +80,12 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var outcome1 = await _executor.RunDirectAsync(intent1, CancellationToken.None);
         var outcome2 = await _executor.RunDirectAsync(intent2, CancellationToken.None);
 
-        var tile1 = await File.ReadAllBytesAsync(Path.Combine(outcome1.Result.AssetRoot, "tile_0000.glb"));
-        var tile2 = await File.ReadAllBytesAsync(Path.Combine(outcome2.Result.AssetRoot, "tile_0000.glb"));
+        var tile1 = await File.ReadAllBytesAsync(Path.Join(outcome1.Result.AssetRoot, "tile_0000.glb"));
+        var tile2 = await File.ReadAllBytesAsync(Path.Join(outcome2.Result.AssetRoot, "tile_0000.glb"));
         tile1.Should().Equal(tile2);
 
-        var json1 = await File.ReadAllBytesAsync(Path.Combine(outcome1.Result.AssetRoot, "tileset.json"));
-        var json2 = await File.ReadAllBytesAsync(Path.Combine(outcome2.Result.AssetRoot, "tileset.json"));
+        var json1 = await File.ReadAllBytesAsync(Path.Join(outcome1.Result.AssetRoot, "tileset.json"));
+        var json2 = await File.ReadAllBytesAsync(Path.Join(outcome2.Result.AssetRoot, "tileset.json"));
         json1.Should().Equal(json2);
     }
 
@@ -119,7 +119,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         glbCount.Should().Be(outcome.Result.Summary.TileCount);
         glbCount.Should().BeGreaterThan(1);
 
-        var tilesetBytes = await File.ReadAllBytesAsync(Path.Combine(root, "tileset.json"));
+        var tilesetBytes = await File.ReadAllBytesAsync(Path.Join(root, "tileset.json"));
         using var doc = JsonDocument.Parse(tilesetBytes);
         var rootTile = doc.RootElement.GetProperty("root");
         rootTile.GetProperty("refine").GetString().Should().Be("REPLACE");
@@ -158,15 +158,15 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         a.Result.Summary.TileCount.Should().Be(b.Result.Summary.TileCount).And.BeGreaterThan(1);
 
-        var tilesetA = await File.ReadAllBytesAsync(Path.Combine(a.Result.AssetRoot, "tileset.json"));
-        var tilesetB = await File.ReadAllBytesAsync(Path.Combine(b.Result.AssetRoot, "tileset.json"));
+        var tilesetA = await File.ReadAllBytesAsync(Path.Join(a.Result.AssetRoot, "tileset.json"));
+        var tilesetB = await File.ReadAllBytesAsync(Path.Join(b.Result.AssetRoot, "tileset.json"));
         tilesetA.Should().Equal(tilesetB);
 
         for (var i = 0; i < a.Result.Summary.TileCount; i++)
         {
             var name = $"tile_{i:0000}.glb";
-            var glbA = await File.ReadAllBytesAsync(Path.Combine(a.Result.AssetRoot, name));
-            var glbB = await File.ReadAllBytesAsync(Path.Combine(b.Result.AssetRoot, name));
+            var glbA = await File.ReadAllBytesAsync(Path.Join(a.Result.AssetRoot, name));
+            var glbB = await File.ReadAllBytesAsync(Path.Join(b.Result.AssetRoot, name));
             glbA.Should().Equal(glbB, "LOD tile {0} must be byte-identical across runs.", name);
         }
     }
@@ -178,7 +178,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
-        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var tile = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         var json = ExtractJsonChunk(tile);
 
         using var doc = JsonDocument.Parse(json);
@@ -215,7 +215,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
 
         // style.json sidecar is emitted with the contract shape.
-        var stylePath = Path.Combine(outcome.Result.AssetRoot, "style.json");
+        var stylePath = Path.Join(outcome.Result.AssetRoot, "style.json");
         File.Exists(stylePath).Should().BeTrue("a layer with symbology must emit the style-metadata contract.");
         using (var styleJson = JsonDocument.Parse(await File.ReadAllBytesAsync(stylePath)))
         {
@@ -226,7 +226,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         }
 
         // tileset.json advertises the style contract via extras.
-        var tilesetBytes = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        var tilesetBytes = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using (var tilesetJson = JsonDocument.Parse(tilesetBytes))
         {
             var style = tilesetJson.RootElement.GetProperty("extras").GetProperty("honua_style");
@@ -235,7 +235,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         }
 
         // GLB bakes a COLOR_0 attribute; feature B (height 50 > 30) resolves to red.
-        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var tile = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         var glbJson = ExtractJsonChunk(tile);
         using var doc = JsonDocument.Parse(glbJson);
         doc.RootElement.GetProperty("meshes")[0].GetProperty("primitives")[0]
@@ -252,10 +252,10 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
 
-        File.Exists(Path.Combine(outcome.Result.AssetRoot, "style.json")).Should().BeFalse(
+        File.Exists(Path.Join(outcome.Result.AssetRoot, "style.json")).Should().BeFalse(
             "a layer with no symbology must not emit a style sidecar.");
 
-        var tilesetBytes = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        var tilesetBytes = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using var tilesetJson = JsonDocument.Parse(tilesetBytes);
         tilesetJson.RootElement.TryGetProperty("extras", out _).Should().BeFalse();
     }
@@ -302,7 +302,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         storage.Keys.Should().Contain("scenes/replicated/tile_0000.glb");
         storage.Keys.Should().Contain($"scenes/replicated/{SceneAssetHydration.ManifestObjectName}");
 
-        File.Exists(Path.Combine(outcome.Result.AssetRoot, SceneAssetHydration.MarkerFileName))
+        File.Exists(Path.Join(outcome.Result.AssetRoot, SceneAssetHydration.MarkerFileName))
             .Should().BeTrue("the promoted local dir must be stamped so the publishing node treats it as a cache.");
         // The marker is a local-only stamp; it must NOT be replicated to the store.
         storage.Keys.Should().NotContain($"scenes/replicated/{SceneAssetHydration.MarkerFileName}");
@@ -323,7 +323,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var record = _registration.Records.Single(r => r.Id == "node-local");
         record.AssetStoragePrefix.Should().BeNull(
             "with no object store the scene must remain filesystem-only.");
-        File.Exists(Path.Combine(outcome.Result.AssetRoot, SceneAssetHydration.MarkerFileName))
+        File.Exists(Path.Join(outcome.Result.AssetRoot, SceneAssetHydration.MarkerFileName))
             .Should().BeFalse("no hydration marker is written when there is nothing to hydrate from.");
     }
 
@@ -484,7 +484,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
-        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var tile = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         var json = ExtractJsonChunk(tile);
 
         using var doc = JsonDocument.Parse(json);
@@ -542,7 +542,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
 
-        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var tile = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         var json = ExtractJsonChunk(tile);
         using var doc = JsonDocument.Parse(json);
         // GLB Z bounds reflect baseHeight + extrusionHeight in ECEF space.
@@ -555,7 +555,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // Tileset.json bounding region heights are read from disk and must
         // include the 100m base offset; without the fix the max height would
         // be just the extrusion height (max ~50m) and ignore the 100m base.
-        var tilesetJson = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        var tilesetJson = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using var tilesetDoc = JsonDocument.Parse(tilesetJson);
         var region = tilesetDoc.RootElement.GetProperty("root").GetProperty("boundingVolume").GetProperty("region");
         var minHeightMeters = region[4].GetDouble();
@@ -585,7 +585,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var outcome = await _executor.RunDirectAsync(
             BuildIntent(sceneId: "downward-extrusion"), CancellationToken.None);
 
-        var tilesetJson = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        var tilesetJson = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using var tilesetDoc = JsonDocument.Parse(tilesetJson);
         var region = tilesetDoc.RootElement.GetProperty("root").GetProperty("boundingVolume").GetProperty("region");
         var minHeightMeters = region[4].GetDouble();
@@ -620,12 +620,12 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         // Pre-create the on-disk artifacts to verify the executor does not
         // overwrite them when the sceneId already exists in the registry.
-        var existingDir = Path.Combine(_outputRoot, "existing-scene");
+        var existingDir = Path.Join(_outputRoot, "existing-scene");
         Directory.CreateDirectory(existingDir);
         var existingTileBytes = new byte[] { 0x01, 0x02, 0x03 };
         var existingTilesetBytes = Encoding.UTF8.GetBytes("{\"asset\":{\"version\":\"1.1\"}}");
-        await File.WriteAllBytesAsync(Path.Combine(existingDir, "tile_0000.glb"), existingTileBytes);
-        await File.WriteAllBytesAsync(Path.Combine(existingDir, "tileset.json"), existingTilesetBytes);
+        await File.WriteAllBytesAsync(Path.Join(existingDir, "tile_0000.glb"), existingTileBytes);
+        await File.WriteAllBytesAsync(Path.Join(existingDir, "tileset.json"), existingTilesetBytes);
 
         BuildLayer();
         _featureSource.Features = SamplePolygons();
@@ -637,9 +637,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         // Files must remain byte-identical — preflight catches the duplicate
         // before Directory.CreateDirectory or File.WriteAllBytesAsync runs.
-        (await File.ReadAllBytesAsync(Path.Combine(existingDir, "tile_0000.glb")))
+        (await File.ReadAllBytesAsync(Path.Join(existingDir, "tile_0000.glb")))
             .Should().Equal(existingTileBytes);
-        (await File.ReadAllBytesAsync(Path.Combine(existingDir, "tileset.json")))
+        (await File.ReadAllBytesAsync(Path.Join(existingDir, "tileset.json")))
             .Should().Equal(existingTilesetBytes);
     }
 
@@ -654,7 +654,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
         ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
-        Directory.Exists(Path.Combine(_outputRoot, tooLong)).Should().BeFalse(
+        Directory.Exists(Path.Join(_outputRoot, tooLong)).Should().BeFalse(
             "validation must reject before any directory is created.");
     }
 
@@ -682,7 +682,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
         ex.And.Message.Should().StartWith(SceneGenerationErrorCodes.OptionsInvalid);
-        Directory.Exists(Path.Combine(_outputRoot, "cache-too-long")).Should().BeFalse(
+        Directory.Exists(Path.Join(_outputRoot, "cache-too-long")).Should().BeFalse(
             "validation must reject before any directory is created.");
     }
 
@@ -758,12 +758,12 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // SceneDatasetAlreadyExistsException. The loser must NOT overwrite the
         // winner's final-path files. Pre-creating the final-path bytes here
         // models the post-winner state.
-        var finalDir = Path.Combine(_outputRoot, "concurrent-loser");
+        var finalDir = Path.Join(_outputRoot, "concurrent-loser");
         Directory.CreateDirectory(finalDir);
         var winnerTileBytes = new byte[] { 0xAA, 0xBB, 0xCC };
         var winnerTilesetBytes = Encoding.UTF8.GetBytes("{\"asset\":{\"version\":\"1.1\"},\"winner\":true}");
-        await File.WriteAllBytesAsync(Path.Combine(finalDir, "tile_0000.glb"), winnerTileBytes);
-        await File.WriteAllBytesAsync(Path.Combine(finalDir, "tileset.json"), winnerTilesetBytes);
+        await File.WriteAllBytesAsync(Path.Join(finalDir, "tile_0000.glb"), winnerTileBytes);
+        await File.WriteAllBytesAsync(Path.Join(finalDir, "tileset.json"), winnerTilesetBytes);
 
         // Preflight returns null (registry record is hidden) but RegisterAsync
         // throws — this is the case the staging-then-promote path is meant to
@@ -779,9 +779,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // Winner's bytes survived: registration failed before the rename, and
         // the loser's outputs were staged under a separate intent-scoped
         // directory.
-        (await File.ReadAllBytesAsync(Path.Combine(finalDir, "tile_0000.glb")))
+        (await File.ReadAllBytesAsync(Path.Join(finalDir, "tile_0000.glb")))
             .Should().Equal(winnerTileBytes);
-        (await File.ReadAllBytesAsync(Path.Combine(finalDir, "tileset.json")))
+        (await File.ReadAllBytesAsync(Path.Join(finalDir, "tileset.json")))
             .Should().Equal(winnerTilesetBytes);
 
         // Staging directory must be cleaned up — only the final dir remains.
@@ -798,9 +798,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // hypothetical post-promote step). The staging promotion path must
         // overwrite the stale directory so the registry record and disk
         // contents agree.
-        var finalDir = Path.Combine(_outputRoot, "stale-overwrite");
+        var finalDir = Path.Join(_outputRoot, "stale-overwrite");
         Directory.CreateDirectory(finalDir);
-        await File.WriteAllBytesAsync(Path.Combine(finalDir, "leftover.txt"),
+        await File.WriteAllBytesAsync(Path.Join(finalDir, "leftover.txt"),
             Encoding.UTF8.GetBytes("orphaned"));
 
         BuildLayer();
@@ -810,10 +810,10 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             BuildIntent(sceneId: "stale-overwrite"), CancellationToken.None);
 
         outcome.Result.SceneId.Should().Be("stale-overwrite");
-        File.Exists(Path.Combine(finalDir, "leftover.txt")).Should().BeFalse(
+        File.Exists(Path.Join(finalDir, "leftover.txt")).Should().BeFalse(
             "stale detritus must be removed during staging promotion.");
-        File.Exists(Path.Combine(finalDir, "tile_0000.glb")).Should().BeTrue();
-        File.Exists(Path.Combine(finalDir, "tileset.json")).Should().BeTrue();
+        File.Exists(Path.Join(finalDir, "tile_0000.glb")).Should().BeTrue();
+        File.Exists(Path.Join(finalDir, "tileset.json")).Should().BeTrue();
     }
 
     [UnitTest]
@@ -861,7 +861,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // already occupies the slot. The executor must then compensate
         // by deactivating the registry record it inserted moments before.
         Directory.CreateDirectory(_outputRoot);
-        var finalPath = Path.Combine(_outputRoot, "promo-fail");
+        var finalPath = Path.Join(_outputRoot, "promo-fail");
         await File.WriteAllTextAsync(finalPath, "blocks-move");
 
         BuildLayer();
@@ -1075,7 +1075,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var outcome = await _executor.RunDirectAsync(
             BuildIntent(sceneId: "collision-test"), CancellationToken.None);
 
-        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var tile = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tile_0000.glb"));
         using var doc = JsonDocument.Parse(ExtractJsonChunk(tile));
         var properties = doc.RootElement
             .GetProperty("extensions").GetProperty("EXT_structural_metadata")
