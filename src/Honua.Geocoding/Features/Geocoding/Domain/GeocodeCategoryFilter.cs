@@ -57,15 +57,7 @@ public static class GeocodeCategoryFilter
             return false;
         }
 
-        foreach (var requested in requestedCategories)
-        {
-            if (CategoryEquals(categoryValue, requested))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return requestedCategories.Any(requested => CategoryEquals(categoryValue, requested));
     }
 
     private static bool CategoryEquals(string value, string requested)

@@ -30,6 +30,10 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
     private readonly ILogger<PluginBackgroundServiceHost> _logger;
     private readonly bool _enabledByConfig;
     private readonly List<Task> _runners = [];
+
+    // Not a `using` field: this token source's lifetime spans the host's StartAsync/StopAsync
+    // pair (IHostedService lifecycle), not a single method scope, so it is disposed explicitly
+    // in StopAsync's finally block rather than via a using declaration.
     private CancellationTokenSource? _stoppingCts;
 
     public PluginBackgroundServiceHost(

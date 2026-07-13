@@ -46,7 +46,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
     private readonly int _maxBufferPerConnection;
     private int _activeSessionCount;
     private long _slowConsumerDrops;
-    private bool _clusterEnabled;
+    private readonly bool _clusterEnabled;
 
     public ObservationStreamSessionManager(
         ILogger<ObservationStreamSessionManager> logger,
@@ -161,6 +161,9 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
             return;
         }
 
+        // Not a candidate for .Select(...): each mapped frame is immediately fanned out via
+        // the side-effecting BroadcastLocally/TryPublishCluster calls below rather than
+        // collected, so this is a side-effecting loop, not a projection.
         foreach (var observation in observations)
         {
             var frame = ObservationStreamFrame.FromObservation(observation);
@@ -184,6 +187,8 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: cluster fan-out is best-effort (single-node delivery
+            // already happened via BroadcastLocally); log and continue rather than fail ingest.
             ObservationStreamLog.ClusterPublishFailed(_logger, ex);
         }
     }
@@ -208,6 +213,8 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: a malformed/incompatible cluster broadcast message must
+            // not tear down the Redis subscriber callback; log and drop this message only.
             ObservationStreamLog.ClusterPublishFailed(_logger, ex);
         }
     }
