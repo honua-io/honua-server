@@ -23,7 +23,7 @@ public sealed class TemporaryFileEndpointTests : IDisposable
 {
     private const string AdminPassword = "test-temp-admin-password";
 
-    private readonly string _storageDirectory = Path.Combine(
+    private readonly string _storageDirectory = Path.Join(
         Path.GetTempPath(),
         $"honua-temp-endpoint-tests-{Guid.NewGuid():N}");
 

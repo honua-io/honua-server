@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
 public sealed class TemporaryFileServiceTests : IDisposable
 {
-    private readonly string _storageDirectory = Path.Combine(
+    private readonly string _storageDirectory = Path.Join(
         Path.GetTempPath(),
         $"honua-temp-tests-{Guid.NewGuid():N}");
 
@@ -122,8 +122,10 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 await service.StoreTemporaryFileAsync(new byte[128 * 1024], "image/png");
                 return null;
             }
-            catch (Exception ex)
+            catch (TemporaryStorageLimitExceededException ex)
             {
+                // Only the expected quota-exceeded exception is caught here; any other
+                // exception type indicates a genuine bug and should propagate/fail the test.
                 return ex;
             }
         }
@@ -150,7 +152,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
             DefaultExpiration = TimeSpan.FromMinutes(5)
         });
 
-        var orphanPath = Path.Combine(_storageDirectory, $"{Guid.NewGuid():N}.png");
+        var orphanPath = Path.Join(_storageDirectory, $"{Guid.NewGuid():N}.png");
         Directory.CreateDirectory(_storageDirectory);
         await File.WriteAllBytesAsync(orphanPath, [1, 2, 3, 4]);
         File.SetLastWriteTimeUtc(orphanPath, DateTime.UtcNow - TimeSpan.FromMinutes(5));
@@ -172,7 +174,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
             DefaultExpiration = TimeSpan.FromMinutes(5)
         });
 
-        var orphanPath = Path.Combine(_storageDirectory, $"{Guid.NewGuid():N}.png");
+        var orphanPath = Path.Join(_storageDirectory, $"{Guid.NewGuid():N}.png");
         Directory.CreateDirectory(_storageDirectory);
         await File.WriteAllBytesAsync(orphanPath, [1, 2, 3, 4]);
 
@@ -229,7 +231,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         result.Should().NotBeNull();
         result!.Value.contentType.Should().Be("image/png");
-        result.Value.data.Should().Equal(1, 2, 3);
+        result!.Value.data.Should().Equal(1, 2, 3);
     }
 
     [Fact]
@@ -275,7 +277,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var firstService = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp"
             },
             cloudStorage,
@@ -284,7 +286,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var secondService = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-b"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-b"),
                 BaseUrl = "/temp"
             },
             cloudStorage,
@@ -302,7 +304,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         retrieved.Should().NotBeNull();
         retrieved!.Value.contentType.Should().Be("image/png");
-        retrieved.Value.data.Should().Equal(1, 2, 3, 4);
+        retrieved!.Value.data.Should().Equal(1, 2, 3, 4);
     }
 
     [Fact]
@@ -314,7 +316,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp"
             },
             cloudStorage,
@@ -345,7 +347,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp"
             },
             cloudStorage,
@@ -363,7 +365,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         retrieved.Should().NotBeNull();
         retrieved!.Value.data.Should().Equal(4, 5, 6);
-        retrieved.Value.contentType.Should().Be("image/png");
+        retrieved!.Value.contentType.Should().Be("image/png");
     }
 
     [Fact]
@@ -373,7 +375,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp"
             },
             cloudStorage);
@@ -418,7 +420,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var redis = CreateRedisLeaseMultiplexer();
         var options = new TemporaryFileOptions
         {
-            StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+            StorageDirectory = Path.Join(_storageDirectory, "node-a"),
             BaseUrl = "/temp",
             MaxFileCount = 1,
             MaxTotalStorageBytes = 1024 * 1024,
@@ -437,8 +439,10 @@ public sealed class TemporaryFileServiceTests : IDisposable
                 await service.StoreTemporaryFileAsync([1, 2, 3], "image/png").ConfigureAwait(false);
                 return null;
             }
-            catch (Exception ex)
+            catch (TemporaryStorageLimitExceededException ex)
             {
+                // Only the expected quota-exceeded exception is caught here; any other
+                // exception type indicates a genuine bug and should propagate/fail the test.
                 return ex;
             }
         }
@@ -462,7 +466,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp",
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
@@ -482,7 +486,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp",
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
@@ -502,7 +506,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp",
                 DefaultExpiration = TimeSpan.FromMinutes(5)
             },
@@ -535,7 +539,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp",
                 MaxFileCount = 0,
                 MaxTotalStorageBytes = 2025,
@@ -562,7 +566,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp",
                 MaxFileCount = 1,
                 MaxTotalStorageBytes = 1,
@@ -580,7 +584,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var retrieved = await service.GetTemporaryFileAsync(fileId);
         retrieved.Should().NotBeNull();
         retrieved!.Value.data.Should().Equal(4, 5, 6);
-        retrieved.Value.contentType.Should().Be("image/png");
+        retrieved!.Value.contentType.Should().Be("image/png");
         logger.Entries.Should().Contain(entry =>
             entry.Level == LogLevel.Warning &&
             entry.Exception == capacityFailure &&
@@ -597,7 +601,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
         var service = CreateCloudAwareService(
             new TemporaryFileOptions
             {
-                StorageDirectory = Path.Combine(_storageDirectory, "node-a"),
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
                 BaseUrl = "/temp"
             },
             cloudStorage,
@@ -613,7 +617,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         retrieved.Should().NotBeNull();
         retrieved!.Value.data.Should().Equal(9, 8, 7);
-        retrieved.Value.contentType.Should().Be("image/png");
+        retrieved!.Value.contentType.Should().Be("image/png");
     }
 
     public void Dispose()
@@ -865,6 +869,9 @@ public sealed class TemporaryFileServiceTests : IDisposable
 
         public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
         {
+            // Ownership of the MemoryStream transfers to the caller via the returned
+            // Task<Stream?>; the caller is responsible for disposing it (mirrors the
+            // real ICloudFileStorage contract), so it is intentionally not disposed here.
             return Task.FromResult<Stream?>(_payloads.TryGetValue(fileId, out var payload)
                 ? new MemoryStream(payload, writable: false)
                 : null);
@@ -926,6 +933,10 @@ public sealed class TemporaryFileServiceTests : IDisposable
             var now = DateTimeOffset.UtcNow;
             var removed = 0;
 
+            // The expiry filter itself is already an explicit .Where(...) above; the inner
+            // "if" is not applicable to a further .Where(...) because TryRemove is a
+            // mutating side effect, not a pure predicate — moving it into a filter
+            // expression would be misleading rather than clearer.
             foreach (var file in _files.Values.Where(file => file.ExpiresAt.HasValue && file.ExpiresAt.Value <= now).ToArray())
             {
                 if (_files.TryRemove(file.FileId, out _))
