@@ -7,7 +7,14 @@ set -euo pipefail
 #
 # Scope is derived from the diff against a base ref (default: origin/trunk):
 #   - build      -> scripts/ci/compute-affected-projects.sh (affected .csproj
-#                   closure, or ALL when shared infrastructure changed)
+#                   closure, or ALL when shared infrastructure changed), then
+#                   PRUNED of test projects that neither run in this
+#                   invocation nor contain changes: test projects are
+#                   dependency leaves, so skipping them skips only their own
+#                   compile + bin/ copy (each one materializes its full
+#                   dependency tree + native runtimes, ~1-2 GB), while every
+#                   src project still compiles. CI builds all test projects
+#                   in its own shards. FULL mode disables pruning.
 #   - server tests -> scripts/ci/honua-server-targeted-tests.sh (targeted shard
 #                   subset, or run_all)
 #   - unit tests -> only the *.Tests projects in the affected closure
@@ -25,6 +32,9 @@ set -euo pipefail
 #                           push loop stays quick. Run without it (the default
 #                           SMART tier) or with HONUA_PRE_PR_FULL=1 before opening
 #                           a PR for the full local gate.
+#   HONUA_PRE_PR_PRINT_BUILD_PLAN=1  print the resolved build set (the .slnf
+#                           project list after pruning) and exit without
+#                           restoring or building — for debugging scope.
 #   HONUA_PRE_PR_SHARD_PARALLELISM=<n>  how many server-test shards to run
 #                           concurrently in SMART/FULL mode (default 2). Each
 #                           shard is a separate dotnet-test process with its own
@@ -125,20 +135,86 @@ affected_contains() {
     printf '%s\n' "${AFFECTED}" | grep -qF "$1"
 }
 
+# ---------------------------------------------------------------------------
+# Local run set — which test projects will this invocation actually execute.
+# Shard selection is resolved HERE (not at test time) so the build step can
+# prune test projects that never run locally. The affected closure of a
+# shared-infrastructure edit (Honua.Core, Honua.Hosting, ...) is effectively
+# the whole solution, and every test project copies its full dependency tree
+# plus native runtime assets into bin/, so "build the closure" degrades into
+# tens of GB and 10+ minutes spent compiling suites this script never runs
+# (provider tests, unselected protocol shards). Test projects are dependency
+# LEAVES — nothing references them — so dropping them from the solution
+# filter removes exactly their own compile+copy cost while every src project
+# still builds (listed, or pulled transitively as a ProjectReference of a
+# kept test project). CI compiles everything in its own shards, so no
+# warnings-as-errors coverage is lost overall; a test project that is itself
+# edited stays in the build (its compile IS the local signal), and FULL mode
+# keeps the build-everything behavior.
+# ---------------------------------------------------------------------------
+UNIT_TEST_PROJECTS=$'tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj\ntests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj\ntests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj\ntests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj'
+ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
+MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+
+RUN_ALL_SHARDS="$(jq -r '.run_all // false' <<< "${TARGETED}")"
+SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
+if [[ "${FAST}" == "1" ]]; then
+    SELECTED_SHARDS=""
+elif [[ "${RUN_ALL_SHARDS}" == "true" ]]; then
+    SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json | tr -d '\r')"
+else
+    SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}" | tr -d '\r')"
+fi
+
+# A shard without a csproj runs against the Honua.Server.Tests monolith
+# (mirroring run-server-test-shard.sh's fallback), so that project must be
+# built whenever such a shard is selected.
+SHARD_TEST_PROJECTS=""
+while IFS= read -r shard_name; do
+    [[ -z "${shard_name}" ]] && continue
+    shard_csproj="$(jq -r --arg n "${shard_name}" \
+        '.shards[] | select(.shard_name==$n) | .csproj // ""' .github/ci-shards.json)"
+    SHARD_TEST_PROJECTS+="${shard_csproj:-${MONOLITH_TEST_PROJECT}}"$'\n'
+done <<< "${SELECTED_SHARDS}"
+
+RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n' \
+    "${UNIT_TEST_PROJECTS}" "${ARCHITECTURE_TEST_PROJECT}" "${SHARD_TEST_PROJECTS}" \
+    | sed '/^$/d' | sort -u)"
+
+# Full committed diff — used to keep directly-edited test projects in the
+# build even when they will not run locally.
+CHANGED_FILES_ALL="$(git diff --name-only "${BASE_REF}...HEAD" 2>/dev/null || true)"
+
+test_project_kept() {
+    # Usage: test_project_kept <csproj-path> -> 0 keep, 1 prune.
+    # Non-test projects are always kept; test projects are kept when they
+    # will run locally or contain changes themselves.
+    local proj="$1"
+    [[ "${proj}" != tests/dotnet/* ]] && return 0
+    grep -qxF "${proj}" <<< "${RUN_TEST_PROJECTS}" && return 0
+    local dir
+    dir="$(dirname "${proj}")/"
+    grep -q "^${dir}" <<< "${CHANGED_FILES_ALL}" && return 0
+    return 1
+}
+
 echo "1. Checking canonical instructions..."
 bash scripts/ci/check-instructions-sync.sh
 
-echo "2. Restoring packages..."
-dotnet restore Honua.sln
+if [[ "${FULL}" == "1" ]]; then
+    if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
+        echo "BUILD PLAN: Honua.sln (FULL mode — every project)"
+        exit 0
+    fi
+    echo "2. Restoring packages (full solution)..."
+    dotnet restore Honua.sln
 
-echo "3. Building with warnings as errors..."
-if [[ "${AFFECTED}" == "ALL" ]]; then
-    echo "   (full solution — shared infrastructure changed or full mode)"
+    echo "3. Building with warnings as errors (full solution)..."
     dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
 else
-    # Build only the affected project closure via a throwaway solution filter so
-    # shared dependencies compile once. Architecture.Tests is always included so
-    # the topology guards run.
+    # Compose the build set via a throwaway solution filter so shared
+    # dependencies compile once. Architecture.Tests is always included so the
+    # topology guards run.
     # The .slnf must live beside Honua.sln: its "path"/"projects" entries are
     # resolved relative to the filter file's directory, so a /tmp filter would
     # look for /tmp/Honua.sln and fail (MSB4014).
@@ -149,27 +225,60 @@ else
     # under docker/, which has its own solution) must be dropped or MSBuild
     # fails with MSB5028; they are built by their own dedicated checks.
     sln_members="$(grep -oE '"[^"]+\.csproj"' Honua.sln | tr -d '"' | sed 's#\\#/#g' | sort -u)"
-    affected_in_sln=""
+    if [[ "${AFFECTED}" == "ALL" ]]; then
+        # Shared infrastructure changed (props/sln/CI paths) or the affected
+        # computation failed: every src project must compile, but test-project
+        # pruning below still applies — that is where the bulk of the disk and
+        # wall-clock goes.
+        echo "   (build scope: all src projects — shared infrastructure changed)"
+        candidates="${sln_members}"
+    else
+        candidates=""
+        while IFS= read -r proj; do
+            [[ -z "${proj}" ]] && continue
+            if grep -qxF "${proj}" <<< "${sln_members}"; then
+                candidates+="${proj}"$'\n'
+            else
+                echo "   (skipping ${proj} — not a Honua.sln member; built by its own gate)"
+            fi
+        done <<< "$(printf '%s\n' "${AFFECTED}" | sed 's#\\#/#g')"
+    fi
+    kept=""
+    pruned_count=0
     while IFS= read -r proj; do
         [[ -z "${proj}" ]] && continue
-        if grep -qxF "${proj}" <<< "${sln_members}"; then
-            affected_in_sln+="${proj}"$'\n'
+        if test_project_kept "${proj}"; then
+            kept+="${proj}"$'\n'
         else
-            echo "   (skipping ${proj} — not a Honua.sln member; built by its own gate)"
+            pruned_count=$((pruned_count + 1))
         fi
-    done <<< "$(printf '%s\n' "${AFFECTED}" | sed 's#\\#/#g')"
-    projects_json="$(printf '%s' "${affected_in_sln}" \
+    done <<< "${candidates}"
+    projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
         | jq -R . | jq -s 'unique')"
     projects_json="$(jq -n --argjson p "${projects_json}" \
-        '($p + ["tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"]) | unique')"
+        --arg arch "${ARCHITECTURE_TEST_PROJECT}" \
+        '($p + [$arch]) | unique')"
     jq -n --argjson p "${projects_json}" '{solution:{path:"Honua.sln",projects:$p}}' > "${SLNF}"
-    echo "   (affected projects only: $(jq -r '.solution.projects|length' "${SLNF}") projects)"
+    echo "   (build set: $(jq -r '.solution.projects|length' "${SLNF}") projects; pruned ${pruned_count} test projects that neither run locally nor changed)"
+    if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
+        echo "BUILD PLAN:"
+        jq -r '.solution.projects[]' "${SLNF}"
+        exit 0
+    fi
+
+    echo "2. Restoring packages (build set only)..."
+    dotnet restore "${SLNF}"
+
+    echo "3. Building with warnings as errors..."
     dotnet build "${SLNF}" --no-restore --configuration Release /p:TreatWarningsAsErrors=true
 fi
 
 echo "4. Checking code format..."
-if [[ "${AFFECTED}" == "ALL" ]]; then
+# Scope by FULL (not AFFECTED): a force-full build scope (props/CI paths
+# changed) does not widen the set of .cs files whose format could differ —
+# CHANGED_CS is still the authoritative list in SMART mode.
+if [[ "${FULL}" == "1" ]]; then
     FORMAT_TARGET=(Honua.sln)
     format_scope_args=()
 else
@@ -186,7 +295,10 @@ else
     fi
 fi
 if [[ ${#FORMAT_TARGET[@]} -gt 0 ]]; then
-    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes --verbosity diagnostic; then
+    # Diagnostic verbosity makes dotnet-format log every analyzed document —
+    # on a 76-project solution that is minutes of pure console I/O. The
+    # failure output at normal verbosity still names each unformatted file.
+    if ! dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}" --verify-no-changes; then
         echo "❌ Format check failed. Running 'dotnet format' to fix..."
         dotnet format "${FORMAT_TARGET[@]}" "${format_scope_args[@]}"
         echo "✅ Code formatted. Please review changes and commit if needed."
@@ -228,14 +340,9 @@ run_unit_project tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
 if [[ "${FAST}" == "1" ]]; then
     echo "   (FAST tier: skipping Honua.Server.Tests shards — they run in CI / the merge queue)"
 else
-    RUN_ALL_SHARDS="$(jq -r '.run_all // false' <<< "${TARGETED}")"
-    SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
+    # RUN_ALL_SHARDS / SHARD_REASON / SELECTED_SHARDS were resolved before the
+    # build step so the build set could be pruned to match.
     echo "   Honua.Server.Tests shards (router: ${SHARD_REASON})..."
-    if [[ "${RUN_ALL_SHARDS}" == "true" ]]; then
-        SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json | tr -d '\r')"
-    else
-        SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}" | tr -d '\r')"
-    fi
     if [[ -z "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
         echo "   (no server-test shards selected for this diff)"
     else
