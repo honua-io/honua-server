@@ -103,6 +103,7 @@ jobs:
       contents: read
       packages: read
       security-events: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -116,9 +117,7 @@ jobs:
         if: ${{ env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
           aws-region: ${{ env.ECR_REGION }}
 
       - name: Resolve ECR registry
@@ -357,6 +356,7 @@ jobs:
             source_arches: "amd64"
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -365,9 +365,7 @@ jobs:
         if: ${{ env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
           aws-region: ${{ env.ECR_REGION }}
 
       - name: Resolve ECR registry
