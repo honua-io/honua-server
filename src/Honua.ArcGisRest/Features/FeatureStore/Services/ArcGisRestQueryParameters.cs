@@ -246,13 +246,10 @@ internal static class ArcGisRestQueryParameters
         // " ASC" token that the upstream server rejects with an opaque 400.
         // Reject it here with a clear message, mirroring the explicit validation
         // applied to spatial filters and distinct.
-        foreach (var clause in orderBy)
+        foreach (var clause in orderBy.Where(clause => string.IsNullOrWhiteSpace(clause.Field)))
         {
-            if (string.IsNullOrWhiteSpace(clause.Field))
-            {
-                throw new NotSupportedException(
-                    "ArcGIS REST provider cannot forward an order-by clause with an empty or whitespace field name.");
-            }
+            throw new NotSupportedException(
+                "ArcGIS REST provider cannot forward an order-by clause with an empty or whitespace field name.");
         }
 
         var clauses = string.Join(',', orderBy.Select(c => $"{c.Field} {(c.Ascending ? "ASC" : "DESC")}"));

@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using Honua.ArcGisRest.Features.FeatureStore.Models;
 using Honua.ArcGisRest.Features.FeatureStore.Services;
@@ -214,7 +215,6 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             pageOffset += pageLength;
         }
 
-        objectIdFieldName ??= ResolveObjectIdFieldName(wireField: null, context.Resource);
         var built = items.ToImmutable();
 
         // When the loop drained every matching record (the final page did not flag
@@ -522,13 +522,10 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
             return true;
         }
 
-        foreach (var kvp in attributes)
+        foreach (var kvp in attributes.Where(kvp => kvp.Key.Equals(fieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (kvp.Key.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                value = kvp.Value;
-                return true;
-            }
+            value = kvp.Value;
+            return true;
         }
 
         value = default;

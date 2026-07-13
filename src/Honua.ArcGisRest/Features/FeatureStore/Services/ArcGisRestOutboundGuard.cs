@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 
@@ -89,12 +90,9 @@ internal static class ArcGisRestOutboundGuard
             throw new ArgumentException(DisallowedNetworkAddressMessage);
         }
 
-        foreach (var address in addresses)
+        foreach (var address in addresses.Where(IsPrivateOrReservedAddressCore))
         {
-            if (IsPrivateOrReservedAddressCore(address))
-            {
-                throw new ArgumentException(DisallowedNetworkAddressMessage);
-            }
+            throw new ArgumentException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
@@ -118,6 +116,10 @@ internal static class ArcGisRestOutboundGuard
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // Not converted to a `using` statement: ownership of the socket transfers
+            // to the returned NetworkStream (ownsSocket: true) on success, so the
+            // socket must survive past this scope in that case. The manual dispose
+            // in `finally` only runs when the connect attempt did not succeed.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 
