@@ -335,10 +335,13 @@ internal static class ProcessEndpoints
         }
         catch (GeoprocessingAuthorizationException authEx)
         {
+            // Log the operation the denied check actually evaluated (e.g.
+            // ExecuteMutatingProcess) so a mutating-tier 403 is distinguishable from a
+            // baseline Execute denial rather than always reading as Execute (#2798).
             OgcProcessesLog.AuthorizationDenied(
                 logger,
-                OperatorResourceType.Process.ToString(),
-                OperatorOperation.Execute.ToString());
+                (authEx.ResourceType ?? OperatorResourceType.Process).ToString(),
+                (authEx.Operation ?? OperatorOperation.Execute).ToString());
             return FormatOgcAuthError(authEx.RequiresAuthentication);
         }
         catch (GeoprocessingApprovalRequiredException approvalEx)

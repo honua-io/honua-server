@@ -535,7 +535,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 
     [UnitTest]
@@ -569,8 +570,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
         // ExtractBand changes the band set; computeStatisticsHistograms does not yet honour it, so it
-        // returns NotImplemented (501), which GeoServices maps to body error.code 500 (FromHttpStatusCode default).
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+        // returns NotImplemented (501), which GeoServices passes through as body error.code 501 (#2795).
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 
     private void SetupSuccessfulCompute()

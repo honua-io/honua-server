@@ -119,6 +119,19 @@ public readonly record struct MapRenderRequest
     public int? Quality { get; init; }
 
     /// <summary>
+    /// Layer id → canonical resource identities that a protocol handler already
+    /// resolved (collision-aware) for this request. When present, renderers MUST
+    /// resolve each layer's resource through this identity (via the
+    /// <c>ResourcesById</c> index) instead of re-resolving through the first-wins
+    /// <c>ResourcesByStorageLayerId</c> index, which can select the wrong resource
+    /// when one numeric layer id is published through multiple storage bindings
+    /// (for example a raster + vector compatibility publication that share a
+    /// StorageLayerId). <see langword="null"/> preserves the legacy first-wins
+    /// resolution behavior.
+    /// </summary>
+    public IReadOnlyList<ResolvedMapLayer>? ResolvedLayers { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the MapRenderRequest struct.
     /// </summary>
     public MapRenderRequest(double[] boundingBox, int width, int height)
@@ -128,3 +141,13 @@ public readonly record struct MapRenderRequest
         Height = height;
     }
 }
+
+/// <summary>
+/// A storage layer id paired with the canonical Metadata v2 resource id that a
+/// protocol handler already resolved for it. Flowing this identity into a renderer
+/// lets the renderer skip a second, first-wins storage-layer lookup that can pick a
+/// colliding resource of the wrong kind.
+/// </summary>
+/// <param name="LayerId">Storage layer id.</param>
+/// <param name="ResourceId">Canonical resource id (Metadata v2 <c>Metadata.Id</c>).</param>
+public readonly record struct ResolvedMapLayer(int LayerId, string ResourceId);

@@ -14,6 +14,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.MapTools;
@@ -949,6 +950,56 @@ public sealed class McpMapToolTests
         structured.GetProperty("status").GetString().Should().Be("error");
         structured.GetProperty("code").GetString().Should().Be("invalid_argument");
         structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_NativeRenderingRuntimeUnavailable_ReturnsFailedPreconditionCapabilityError()
+    {
+        // honua-server#2770: when the deployed (serverless/AOT) image cannot load the
+        // native SkiaSharp rasterizer, the render seam raises
+        // RasterRenderingUnavailableException. The MCP adapter must surface an actionable
+        // failed_precondition capability error naming the missing rendering capability —
+        // NOT a generic internal / ExecutionFailed envelope — while still validating
+        // against the advertised outputSchema.
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderDatasetMapAsync(
+                Arg.Any<int[]>(),
+                Arg.Any<MapRenderRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<RasterResult>>(_ => throw new RasterRenderingUnavailableException(
+                new DllNotFoundException(
+                    "Unable to load shared library 'libSkiaSharp' or one of its dependencies: "
+                    + "libfontconfig.so.1: cannot open shared object file")));
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(renderer: renderer)),
+            ToolCall("render-nonative-1", RenderMapTool.ToolName, $$"""
+                {
+                  "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
+                  "bbox":[-10,-10,10,10],
+                  "width":256,
+                  "height":256
+                }
+                """),
+            CancellationToken.None);
+
+        // No protocol-level JSON-RPC error: the failure travels inside the tool result.
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("status").GetString().Should().Be("error");
+        structured.GetProperty("code").GetString().Should().Be("failed_precondition");
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("PreconditionFailed");
+        structured.GetProperty("message").GetString().Should()
+            .Contain("Map rendering is unavailable", "the capability message must name the missing rendering capability")
+            .And.NotContain("libfontconfig.so.1", "the raw native-load detail must not leak to clients");
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
     }
 

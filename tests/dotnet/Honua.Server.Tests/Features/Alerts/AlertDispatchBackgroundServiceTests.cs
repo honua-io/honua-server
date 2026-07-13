@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -134,6 +135,7 @@ public sealed class AlertDispatchBackgroundServiceTests
             new AlertNotificationRateLimiter(),
             breaker,
             options,
+            TestTelemetry.CreateAlertPipelineMetrics(),
             NullLogger<AlertDispatchBackgroundService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

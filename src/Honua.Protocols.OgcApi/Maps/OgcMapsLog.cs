@@ -125,4 +125,14 @@ internal static partial class OgcMapsLog
         Message = "No map raster data found for dataset request with {LayerCount} layers")]
     public static partial void NoDatasetMapDataFound(ILogger logger, int layerCount);
 
+    [LoggerMessage(
+        EventId = 5919,
+        Level = LogLevel.Warning,
+        Message = "Storage layer id {StorageLayerId} is bound by multiple resources; the first-wins index resolved '{IndexedResourceId}' which is not OGC API - Maps enabled, so the colliding Maps-enabled resource '{ResolvedResourceId}' was used instead. Duplicate StorageLayerIds are a supported compatibility pattern but should be reviewed.")]
+    public static partial void StorageLayerCollisionFallback(
+        ILogger logger,
+        int storageLayerId,
+        string indexedResourceId,
+        string resolvedResourceId);
+
 }

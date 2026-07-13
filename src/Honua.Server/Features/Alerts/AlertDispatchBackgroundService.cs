@@ -14,6 +14,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private readonly AlertOptions _options;
     private readonly AlertNotificationRateLimiter _rateLimiter;
     private readonly AlertChannelCircuitBreaker _circuitBreaker;
+    private readonly AlertPipelineMetrics _metrics;
     private readonly ILogger<AlertDispatchBackgroundService> _logger;
 
     private volatile bool _isRunning;
@@ -27,6 +28,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         AlertNotificationRateLimiter rateLimiter,
         AlertChannelCircuitBreaker circuitBreaker,
         IOptions<AlertOptions> options,
+        AlertPipelineMetrics metrics,
         ILogger<AlertDispatchBackgroundService> logger)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
@@ -34,6 +36,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         _rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -152,7 +155,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         var backlog = await dispatchStore.GetBacklogAsync(cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref _lastBacklog, backlog);
         _storagePollFailing = false;
-        AlertPipelineMetrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount);
+        _metrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount);
         return backlog;
     }
 
@@ -191,7 +194,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             await dispatchStore
                 .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "No delivery sink registered.", cancellationToken)
                 .ConfigureAwait(false);
-            AlertPipelineMetrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
+            _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
             return;
         }
 
@@ -201,7 +204,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             await dispatchStore
                 .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "Alert event not found.", cancellationToken)
                 .ConfigureAwait(false);
-            AlertPipelineMetrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
+            _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
             return;
         }
 
@@ -214,7 +217,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         if (lifecycle?.SuppressedUntil is { } suppressedUntil && suppressedUntil > now)
         {
             await dispatchStore.RescheduleAsync(item.DispatchId, suppressedUntil, cancellationToken).ConfigureAwait(false);
-            AlertPipelineMetrics.RecordDeliverySuppressed(item.ChannelType);
+            _metrics.RecordDeliverySuppressed(item.ChannelType);
             LogSuppressed(_logger, item.DispatchId, item.ChannelType, suppressedUntil);
             return;
         }
@@ -227,7 +230,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         {
             var deferUntil = _circuitBreaker.NextProbeAt(item.ChannelType, now);
             await dispatchStore.RescheduleAsync(item.DispatchId, deferUntil, cancellationToken).ConfigureAwait(false);
-            AlertPipelineMetrics.RecordDeliveryCircuitDeferred(item.ChannelType);
+            _metrics.RecordDeliveryCircuitDeferred(item.ChannelType);
             LogCircuitDeferred(_logger, item.DispatchId, item.ChannelType, deferUntil);
             return;
         }
@@ -239,7 +242,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         {
             var deferUntil = AlertDispatchRetryPolicy.ComputeNextAttempt(1, now, _options.Dispatch);
             await dispatchStore.RescheduleAsync(item.DispatchId, deferUntil, cancellationToken).ConfigureAwait(false);
-            AlertPipelineMetrics.RecordDeliveryRateCapped(item.ChannelType);
+            _metrics.RecordDeliveryRateCapped(item.ChannelType);
             LogRateCapped(_logger, item.DispatchId, item.ChannelType, _options.Dispatch.MaxNotificationsPerMinutePerChannel);
             return;
         }
@@ -252,7 +255,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         {
             await dispatchStore.MarkDeliveredAsync(item.DispatchId, now, cancellationToken).ConfigureAwait(false);
             _circuitBreaker.RecordSuccess(item.ChannelType);
-            AlertPipelineMetrics.RecordDeliverySucceeded(item.ChannelType, elapsedMs);
+            _metrics.RecordDeliverySucceeded(item.ChannelType, elapsedMs);
             LogDelivered(_logger, item.DispatchId, item.ChannelType);
             return;
         }
@@ -269,7 +272,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             LogChannelCircuitOpened(_logger, item.ChannelType, _options.Dispatch.CircuitBreakerCooldown);
         }
 
-        AlertPipelineMetrics.RecordDeliveryFailed(item.ChannelType, exhausted, elapsedMs);
+        _metrics.RecordDeliveryFailed(item.ChannelType, exhausted, elapsedMs);
         LogFailed(_logger, item.DispatchId, item.ChannelType, exhausted, result.Error ?? "Delivery failed.");
     }
 

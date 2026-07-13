@@ -297,26 +297,10 @@ internal sealed class OgcMapsTileSetHandler
         CancellationToken cancellationToken)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
-        {
-            return (null, null);
-        }
 
-        // Pick the OGC-API-Maps publication for this resource if one exists; otherwise null.
-        MetadataV2Service? service = null;
-        foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
-        {
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidate))
-            {
-                continue;
-            }
-            if (IsProtocolEnabled(candidate, OgcApiMapsProtocol))
-            {
-                service = candidate;
-                break;
-            }
-        }
-
-        return (resource, service);
+        // Collision-aware resolution shared with OgcMapsRenderingHandler so the map/tiles
+        // sibling endpoints resolve the same Maps-enabled resource as the map endpoint when
+        // a numeric layer id is published through multiple storage bindings (#2799).
+        return OgcMapsResourceResolver.ResolveMapsResource(snapshot, storageLayerId, _logger);
     }
 }

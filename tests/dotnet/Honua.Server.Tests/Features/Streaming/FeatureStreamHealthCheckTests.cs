@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,7 +27,8 @@ public sealed class FeatureStreamHealthCheckTests
                 MaxConcurrentSessions = maxConcurrentSessions,
                 ReplayBatchSize = 100,
             }),
-            NullLogger<FeatureStreamSessionManager>.Instance);
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics());
 
     private static async Task<HealthCheckResult> CheckAsync(FeatureStreamSessionManager manager)
     {

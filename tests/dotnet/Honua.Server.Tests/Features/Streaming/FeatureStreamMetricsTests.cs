@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -14,17 +14,24 @@ namespace Honua.Server.Tests.Features.Streaming;
 /// <summary>
 /// Unit coverage for the GA-promotion (#2428) streaming telemetry. Verifies the OTel
 /// instruments land on the shared "Honua" meter with the expected tags so backpressure,
-/// reconnect/replay, and cross-node broadcast loss are observable. Mirrors
-/// <c>AlertPipelineMetricsTests</c>.
+/// reconnect/replay, and cross-node broadcast loss are observable. Each test constructs an
+/// isolated <see cref="FeatureStreamMetrics"/> over its own <see cref="TestMeterFactory"/> and
+/// filters the listener to that exact meter instance, so parallel tests never pollute one
+/// another's observations and the active-session gauge is asserted with a single deterministic
+/// read (#2802). Mirrors <c>AlertPipelineMetricsTests</c>.
 /// </summary>
 public sealed class FeatureStreamMetricsTests
 {
     [UnitTest]
     public void RecordSessionOpened_IncrementsCounter_TaggedByTransport()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.sessions_opened_total",
-            () => FeatureStreamMetrics.RecordSessionOpened("WebSocket"));
+            () => metrics.RecordSessionOpened("WebSocket"));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -34,9 +41,13 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void RecordSessionClosed_IncrementsCounter_TaggedByTransportAndReason()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.sessions_closed_total",
-            () => FeatureStreamMetrics.RecordSessionClosed("SSE", FeatureStreamDisconnectReason.ClientClosed));
+            () => metrics.RecordSessionClosed("SSE", FeatureStreamDisconnectReason.ClientClosed));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -47,9 +58,13 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void RecordSlowConsumerDrop_IncrementsBackpressureCounter_TaggedByTransport()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.slow_consumer_drops_total",
-            () => FeatureStreamMetrics.RecordSlowConsumerDrop("WebSocket"));
+            () => metrics.RecordSlowConsumerDrop("WebSocket"));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -59,9 +74,13 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void RecordSessionRejected_IncrementsCapCounter()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.sessions_rejected_total",
-            FeatureStreamMetrics.RecordSessionRejected);
+            metrics.RecordSessionRejected);
 
         measurements.Should().Contain(m => m.Value == 1);
     }
@@ -69,9 +88,13 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void RecordReplayEventsDelivered_AddsCount_TaggedByTransport()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.replay_events_delivered_total",
-            () => FeatureStreamMetrics.RecordReplayEventsDelivered("SSE", 7));
+            () => metrics.RecordReplayEventsDelivered("SSE", 7));
 
         measurements.Should().Contain(m =>
             m.Value == 7 &&
@@ -81,9 +104,13 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void RecordReplayEventsDelivered_WithZeroCount_EmitsNothing()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.replay_events_delivered_total",
-            () => FeatureStreamMetrics.RecordReplayEventsDelivered("SSE", 0));
+            () => metrics.RecordReplayEventsDelivered("SSE", 0));
 
         measurements.Should().BeEmpty();
     }
@@ -91,9 +118,13 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void RecordClusterBroadcastDropped_IncrementsLossCounter()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.streaming.cluster_broadcast_dropped_total",
-            FeatureStreamMetrics.RecordClusterBroadcastDropped);
+            metrics.RecordClusterBroadcastDropped);
 
         measurements.Should().Contain(m => m.Value == 1);
     }
@@ -101,12 +132,18 @@ public sealed class FeatureStreamMetricsTests
     [UnitTest]
     public void DisconnectSession_RecordsAdminCloseAndRefreshesActiveGauge()
     {
-        var closed = new ConcurrentBag<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)>();
-        var active = new ConcurrentBag<long>();
+        using var factory = new TestMeterFactory();
+        var metrics = new FeatureStreamMetrics(factory);
+
+        var closed = new List<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)>();
+        var active = new List<long>();
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Meter.Name != "Honua")
+            // Filter to this test's meter instance for full parallel isolation: another test's
+            // FeatureStreamMetrics uses a different TestMeterFactory and meter, so its
+            // active-session gauge is never observed here.
+            if (!ReferenceEquals(instrument.Meter, metrics.Meter))
             {
                 return;
             }
@@ -131,7 +168,8 @@ public sealed class FeatureStreamMetricsTests
 
         using var manager = new FeatureStreamSessionManager(
             Options.Create(new FeatureStreamOptions()),
-            NullLogger<FeatureStreamSessionManager>.Instance);
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            metrics);
         using var session = manager.CreateSession("WebSocket", null);
 
         manager.DisconnectSession(session.SessionId).Should().BeTrue();
@@ -141,24 +179,18 @@ public sealed class FeatureStreamMetricsTests
             m.Tags.Any(t => t.Key == "transport" && (string?)t.Value == "WebSocket") &&
             m.Tags.Any(t => t.Key == "reason" && (string?)t.Value == "AdminDisconnect"));
 
-        // The active-session gauge is process-global (FeatureStreamMetrics is a
-        // static class), so parallel tests that hold their own sessions can be
-        // observed at the instant of a single poll. Poll with a deadline until the
-        // refresh from this manager's disconnect (count 0) is observed, instead of
-        // asserting one instantaneous snapshot.
-        var deadline = TimeSpan.FromSeconds(10);
-        var watch = System.Diagnostics.Stopwatch.StartNew();
+        // The active-session gauge reads this manager's own metrics instance, which no other
+        // test shares, so a single observable read after the disconnect deterministically yields
+        // the post-disconnect count (0). No deadline polling is required.
         listener.RecordObservableInstruments();
-        while (!active.Contains(0) && watch.Elapsed < deadline)
-        {
-            Thread.Sleep(25);
-            listener.RecordObservableInstruments();
-        }
 
-        active.Should().Contain(0, "DisconnectSession must refresh the active-session gauge to this manager's count");
+        active.Should().NotBeEmpty();
+        active.Should().OnlyContain(v => v == 0,
+            "DisconnectSession must refresh the active-session gauge to this manager's count (0)");
     }
 
     private static List<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> CaptureLongMeasurements(
+        Meter meter,
         string instrumentName,
         Action emit)
     {
@@ -166,7 +198,7 @@ public sealed class FeatureStreamMetricsTests
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Meter.Name == "Honua" && instrument.Name == instrumentName)
+            if (ReferenceEquals(instrument.Meter, meter) && instrument.Name == instrumentName)
             {
                 l.EnableMeasurementEvents(instrument);
             }

@@ -12,6 +12,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Geoprocessing.CustomCode;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
@@ -607,6 +608,29 @@ public sealed class GeoprocessingJobServiceTests
             Arg.Any<ClaimsPrincipal>(),
             Arg.Is<OperatorAuthorizationRequest>(request => request.Operation == OperatorOperation.ExecuteMutatingProcess),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCodeSubmissionWithMutatingStep_StillRequiresMutatingTier()
+    {
+        // #2798: the custom-code branch skips catalog validation, so the mutating-tier check
+        // must run unconditionally. A custom-code submission that smuggles a mutating catalog
+        // Geoprocess step must not slip past ExecuteMutatingProcess just because it carries the
+        // custom-code runtime marker (ExecuteCustomCode alone is not sufficient).
+        DenyMutatingProcessPermission();
+        var customCodeMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [CustomCodeJobContract.RuntimeParam] = "python"
+        };
+
+        var act = async () => await _sut.SubmitJobAsync(
+            CreateDeleteFeaturesPlan(), null, CreatePrincipal(), customCodeMetadata);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

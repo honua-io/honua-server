@@ -16,13 +16,19 @@ namespace Honua.Core.Features.Shared.Models;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Today these static lists are the <b>only</b> classification source outside the Postgres
-/// <c>CrsMetrics</c> path, which derives geographic-ness directly from the live
-/// <c>spatial_ref_sys</c> WKT/proj4 and only consults this classifier as a fallback when the SRID
-/// is absent from the registry. There is deliberately no registry-backed derivation here yet: a
-/// shared <c>ICrsRegistry</c>-backed classifier that resolves arbitrary EPSG codes from CRS
-/// definitions is future work (tracked as a follow-up to #2732), and until it exists the
-/// enumerated bootstrap lists below are authoritative for every non-Postgres call site.
+/// These static lists are the <b>bootstrap / fallback tier</b> of classification (#2794). The
+/// registry-backed <see cref="IGeographicSridClassifier"/> (implemented by
+/// <c>RegistryGeographicSridClassifier</c> in <c>Honua.Core</c>) is the preferred source at any
+/// call site that can reach dependency injection: it derives geographic-ness from the live
+/// <c>spatial_ref_sys</c> WKT/proj4 via <c>ICrsRegistry</c> / <c>CrsDefinition.IsGeographic</c> and
+/// consults these static lists only when the registry has no answer (SRID absent, or no provider
+/// registered a registry — e.g. the DuckDB/MySQL read-only profiles). The DI-reachable ImageServer
+/// mensuration handlers consume that service; the Postgres <c>CrsMetrics</c> path likewise derives
+/// geographic-ness from the live registry. The remaining static-only consumers are the ones that
+/// cannot inject an async dependency — <c>BoundingBox.IsGeographicSrid</c>,
+/// <c>SpatialReference.IsGeographic</c> (WKT-first, this list as the numeric fallback), and
+/// <c>TileMatrixSetRegistry</c> custom-gridset seeding (a singleton built from options) — and for
+/// those this list remains the documented fallback-tier answer.
 /// </para>
 /// <para>
 /// Two deliberately different buckets are exposed because "is this lat/lon?" and "is this safe to
@@ -133,10 +139,20 @@ public static class GeographicSridClassifier
     /// Well-known geocentric (X/Y/Z Cartesian metre) CRSes that share the EPSG 4000–4999
     /// geographic-2D/3D block. These must never be swept into the geographic bucket by the range
     /// heuristic in <see cref="IsGeographicOrUnlistedGeographicRangeSrid(int)"/>: their coordinates
-    /// are metres from the geocentre, not lat/lon degrees. This is a conservative, documented set
-    /// (the widely encountered datum realizations) rather than a full geocentric enumeration; the
-    /// authoritative geocentric-vs-geographic determination is deferred to registry-backed
-    /// derivation (see type remarks). Each entry:
+    /// are metres from the geocentre, not lat/lon degrees.
+    /// <para>
+    /// This is a deliberately conservative subset (the widely encountered datum realizations), not
+    /// a complete geocentric enumeration. A complete enumeration is intentionally <b>not</b>
+    /// maintained here (#2794): the EPSG geocentric block is large and versioned, and this repo
+    /// carries no static EPSG dataset to verify a full list against — the authoritative
+    /// geographic-vs-geocentric determination for every DI-reachable consumer now comes from
+    /// <see cref="IGeographicSridClassifier"/>, which asks the live registry and classifies
+    /// geocentric CRSes as projected directly from their WKT (<c>GEODCRS … CS[Cartesian …]</c> /
+    /// <c>+proj=geocent</c>). This range heuristic therefore survives only as the no-registry
+    /// fallback for the offline mensuration path, where the conservative subset is sufficient
+    /// because a genuinely geocentric code that slipped through would be measured planar-in-metres —
+    /// the correct treatment for its metre coordinates anyway. Each entry:
+    /// </para>
     /// <list type="bullet">
     ///   <item><description>4936 — ETRS89 (geocentric).</description></item>
     ///   <item><description>4978 — WGS 84 (geocentric); the code the #2732 audit named explicitly.</description></item>

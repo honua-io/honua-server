@@ -137,6 +137,23 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return _authorizer.EnsureAuthorizedAsync(principal, resourceType, operation, cancellationToken);
     }
 
+    public async Task EnsurePlanExecutionTierAuthorizedAsync(
+        AnalysisPlan plan,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        if (ContainsMutatingProcess(plan))
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                principal,
+                OperatorResourceType.Process,
+                OperatorOperation.ExecuteMutatingProcess,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
     {
         ValidatePlanStructure(plan);
@@ -292,15 +309,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         else
         {
             EnsurePlanCatalogValid(plan);
+        }
 
-            if (ContainsMutatingProcess(plan))
-            {
-                await _authorizer.EnsureAuthorizedAsync(
-                    principal,
-                    OperatorResourceType.Process,
-                    OperatorOperation.ExecuteMutatingProcess,
-                    cancellationToken).ConfigureAwait(false);
-            }
+        // Evaluate the mutating-process tier unconditionally — including for custom-code
+        // submissions, which skip catalog validation. Nothing else asserts that a custom-code
+        // plan carries no executable mutating Geoprocess step, so running this for both
+        // branches closes the gap where a mutating catalog step smuggled onto a custom-code
+        // submission would never face the ExecuteMutatingProcess gate (#2798).
+        if (ContainsMutatingProcess(plan))
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                principal,
+                OperatorResourceType.Process,
+                OperatorOperation.ExecuteMutatingProcess,
+                cancellationToken).ConfigureAwait(false);
         }
 
         EnsureApproved(principal, plan);

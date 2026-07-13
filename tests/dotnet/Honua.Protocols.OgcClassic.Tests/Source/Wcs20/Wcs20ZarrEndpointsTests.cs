@@ -145,6 +145,26 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_ZarrSliceWithRangeSubset_ReturnsOperationNotSupported()
+    {
+        // Documented divergence (#2796): the Zarr slice path renders a single-band
+        // grayscale PNG and does not compose RANGESUBSET-selected bands, so it rejects
+        // the selection explicitly rather than silently returning the primary render.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
+            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
+            "&FORMAT=image/png&SUBSET=elevation(333.3333)&RANGESUBSET=band1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
+        content.Should().Contain("exceptionCode=\"OperationNotSupported\"");
+        content.Should().Contain("locator=\"RANGESUBSET\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_OversizeZarrSlice_ReturnsInvalidParameterValue()
     {
         var response = await _fixture.Client.GetAsync(
