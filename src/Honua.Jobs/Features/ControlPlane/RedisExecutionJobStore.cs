@@ -236,7 +236,7 @@ internal sealed partial class RedisExecutionJobStore(
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var (entry, jobId) = candidates[i];
+                    var (entry, _) = candidates[i];
                     var payload = payloads[i];
                     if (!payload.HasValue)
                     {
@@ -585,15 +585,7 @@ internal sealed partial class RedisExecutionJobStore(
             return true;
         }
 
-        foreach (var candidate in candidates)
-        {
-            if (Matches(expected, candidate))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return candidates.Any(candidate => Matches(expected, candidate));
     }
 
     private static bool Matches(string? expected, string? actual)
