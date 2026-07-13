@@ -376,11 +376,15 @@ internal static class StyleJsonUtilities
             : delta / (max + min);
 
         double hue;
-        if (max == r)
+        // Equals() (not ==) is intentional: `max` is exactly Math.Max's chosen operand (r, g, or
+        // b unmodified, no arithmetic performed on it), so this is a deterministic identity check,
+        // not a tolerance-based comparison of independently computed floats. r/g/b can never be
+        // NaN here (derived from byte channels / 255d), so Equals' NaN-equal semantics don't apply.
+        if (max.Equals(r))
         {
             hue = ((g - b) / delta) + (g < b ? 6d : 0d);
         }
-        else if (max == g)
+        else if (max.Equals(g))
         {
             hue = ((b - r) / delta) + 2d;
         }

@@ -12,7 +12,7 @@ namespace Honua.Alerts;
 /// Default in-memory implementation of the alert notification broadcaster.
 /// Maintains a concurrent set of subscriber callbacks and fans out events.
 /// </summary>
-internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster, IStreamingSubscriptionManager
+internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster, IStreamingSubscriptionManager, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, SubscriptionEntry> _subscribers = new();
 
@@ -82,6 +82,24 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         {
             entry.Cts.Cancel();
             entry.Cts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Disposes the <see cref="CancellationTokenSource"/> of every still-connected subscriber.
+    /// This type is registered as a singleton, so the host disposes it once at shutdown;
+    /// individual subscriptions are otherwise disposed as they disconnect via
+    /// <see cref="RemoveSubscriber"/>/<see cref="DisconnectSubscriber"/>.
+    /// </summary>
+    public void Dispose()
+    {
+        foreach (var id in _subscribers.Keys)
+        {
+            if (_subscribers.TryRemove(id, out var entry))
+            {
+                entry.Cts.Cancel();
+                entry.Cts.Dispose();
+            }
         }
     }
 

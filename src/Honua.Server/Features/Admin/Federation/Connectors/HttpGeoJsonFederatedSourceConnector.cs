@@ -223,7 +223,10 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
             case short s:
                 result = s;
                 return true;
-            case double d when d == Math.Floor(d) && !double.IsInfinity(d):
+            // Equals() (not ==) is intentional: this is an exact whole-number check (identifiers
+            // must round-trip losslessly to long), not a tolerance-based geometry comparison.
+            // IsFinite excludes NaN/Infinity, which Equals() would otherwise treat as self-equal.
+            case double d when double.IsFinite(d) && d.Equals(Math.Floor(d)):
                 result = (long)d;
                 return true;
             case string str when long.TryParse(str, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed):

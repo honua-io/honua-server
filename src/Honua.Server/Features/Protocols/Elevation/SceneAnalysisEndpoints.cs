@@ -41,6 +41,13 @@ internal static class SceneAnalysisEndpoints
     private const string SunShadowEntitlement = "analytics.sun-shadow";
     private const string SliceEntitlement = "analytics.slice";
 
+    /// <summary>
+    /// Tolerance (in decimal degrees) for treating two WGS 84 coordinates as the same point
+    /// when checking for degenerate (identical start/end) analysis requests. Avoids exact
+    /// double equality on user-supplied coordinates.
+    /// </summary>
+    private const double CoordinateEqualityEpsilon = 1e-9;
+
     public static IEndpointRouteBuilder MapSceneAnalysisEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/elevation/{datasetId}/sun-shadow", HandleSunShadow)
@@ -272,7 +279,8 @@ internal static class SceneAnalysisEndpoints
             }
         }
 
-        if (startLon == endLon && startLat == endLat)
+        if (Math.Abs(startLon - endLon) < CoordinateEqualityEpsilon &&
+            Math.Abs(startLat - endLat) < CoordinateEqualityEpsilon)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
