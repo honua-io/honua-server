@@ -231,6 +231,7 @@ public sealed class CustomCodeJobContractDriftTests
 
     private static HarnessContractFixture LoadHarnessContractFixture()
     {
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var path = Path.Combine(AppContext.BaseDirectory, "Features", "Geoprocessing", FixtureFileName);
         File.Exists(path).Should().BeTrue($"the checked-in harness contract fixture must be copied to the test output: {path}");
 

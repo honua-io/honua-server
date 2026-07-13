@@ -257,7 +257,7 @@ public sealed class SharingCommunityTests : IAsyncLifetime
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, string url, params (string Key, string Value)[] pairs)
     {
-        var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
+        using var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
         return await client.PostAsync(url, content);
     }
 

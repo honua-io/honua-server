@@ -251,8 +251,8 @@ public sealed class ImportBackgroundServiceTests
             lastObservedProgress.Should().NotBeNull();
             lastObservedProgress!.Status.Should().Be(
                 GeoservicesImportStatus.Queued,
-                $"expected the strict-mode import to requeue after leadership loss, but observed phase '{lastObservedProgress.CurrentPhase}'");
-            lastObservedProgress.CurrentPhase.Should().Be("Queued for recovery after leadership loss");
+                $"expected the strict-mode import to requeue after leadership loss, but observed phase '{lastObservedProgress!.CurrentPhase}'");
+            lastObservedProgress!.CurrentPhase.Should().Be("Queued for recovery after leadership loss");
 
             (await jobManager.RequestStore.GetProgressAsync(jobId).ConfigureAwait(false)).Should().NotBeNull();
             _ = database.DidNotReceive().ListRemoveAsync(

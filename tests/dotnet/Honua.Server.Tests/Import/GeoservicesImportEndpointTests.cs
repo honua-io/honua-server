@@ -648,7 +648,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
 
         latestProgress.Should().NotBeNull();
         latestProgress!.Status.Should().Be(GeoservicesImportStatus.Failed);
-        latestProgress.ErrorMessage.Should().Contain("not allowed");
+        latestProgress!.ErrorMessage.Should().Contain("not allowed");
     }
 
     #endregion

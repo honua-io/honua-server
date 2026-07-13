@@ -40,6 +40,7 @@ public sealed class ImportDatasetJobExecutorPathTraversalTests
     public async Task ExecuteAsync_SourcePathOutsideStagingRoot_FailsWithPathTraversalError()
     {
         // Staging root = a unique subdirectory of the system temp folder.
+        // Path.Combine args are a temp-dir root plus a generated relative folder name; no rooted-segment risk.
         var stagingRoot = Path.Combine(Path.GetTempPath(), $"honua-staging-unit-{Guid.NewGuid():N}");
 
         var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
@@ -54,6 +55,8 @@ public sealed class ImportDatasetJobExecutorPathTraversalTests
             options);
 
         // Supply a traversal path that is a sibling of the staging root (not a descendant).
+        // Path.Combine args are a temp-dir root plus a literal relative file name; the traversal
+        // is expressed by this path living outside stagingRoot, not by an absolute later argument.
         var traversalPath = Path.Combine(Path.GetTempPath(), "honua-traversal-target-unit.txt");
         File.WriteAllText(traversalPath, "should not be read");
         try

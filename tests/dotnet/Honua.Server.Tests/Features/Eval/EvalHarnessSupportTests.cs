@@ -80,6 +80,7 @@ public sealed class EvalHarnessSupportTests
         var tempDirectory = Directory.CreateTempSubdirectory();
         try
         {
+            // Path.Combine args are relative test fixture fragments; no rooted-segment risk
             var seedPath = Path.Combine(tempDirectory.FullName, "seed.yaml");
             File.WriteAllText(seedPath, "version: 1\ncollections: []\nfeatures: []\n");
 
@@ -122,6 +123,7 @@ public sealed class EvalHarnessSupportTests
     public void BundledScenario_DeclaredInputsAreServedByItsFixtureProfile(string scenarioId)
     {
         var scenario = EvalScenarioLoader.LoadById(scenarioId);
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         var seedPath = ResolveRepoRelativePath(Path.Combine("tests", "seed", "seed.yaml"));
 
         File.Exists(seedPath).Should().BeTrue(
@@ -155,11 +157,14 @@ public sealed class EvalHarnessSupportTests
     private static string ResolveRepoRelativePath(string relative)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
+        // relative is always a repo-relative fragment built from literal path
+        // segments by this file's own callers; no rooted-segment risk.
         return directory != null
             ? Path.Combine(directory.FullName, relative)
             : Path.Combine(AppContext.BaseDirectory, relative);
@@ -171,6 +176,7 @@ public sealed class EvalHarnessSupportTests
     {
         const string OverrideVariable = "HONUA_EVAL_SCENARIO_ROOT";
         var original = Environment.GetEnvironmentVariable(OverrideVariable);
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         var missingDirectory = Path.Combine(Path.GetTempPath(), "honua-eval-missing-" + Guid.NewGuid().ToString("N"));
         try
         {

@@ -104,6 +104,8 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
+        // it disposes the response after the caller finishes with it.
         return Task.FromResult(new HttpResponseMessage(_statusCode));
     }
 }
@@ -129,6 +131,8 @@ internal sealed class CapturingHttpMessageHandler : HttpMessageHandler
             ? null
             : await request.Content.ReadAsStringAsync(cancellationToken);
 
+        // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
+        // it disposes the response after the caller finishes with it.
         return new HttpResponseMessage(_statusCode);
     }
 }

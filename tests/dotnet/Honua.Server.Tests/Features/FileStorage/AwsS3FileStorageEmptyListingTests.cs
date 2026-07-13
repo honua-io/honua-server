@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.IO;
 using System.Net;
 using System.Text;
 using FluentAssertions;
@@ -176,7 +177,7 @@ public sealed class AwsS3FileStorageEmptyListingTests
 
         private static int GetFreeTcpPort()
         {
-            var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            using var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
             probe.Start();
             var port = ((IPEndPoint)probe.LocalEndpoint).Port;
             probe.Stop();
@@ -219,9 +220,10 @@ public sealed class AwsS3FileStorageEmptyListingTests
                         context.Response.StatusCode = 404;
                     }
                 }
-                catch (Exception)
+                catch (Exception ex) when (ex is HttpListenerException or IOException or ObjectDisposedException)
                 {
-                    // The client may abort mid-response during shutdown; ignore.
+                    // The client may abort mid-response, or the listener may already be
+                    // stopping/stopped, during shutdown; ignore.
                 }
                 finally
                 {
@@ -229,7 +231,7 @@ public sealed class AwsS3FileStorageEmptyListingTests
                     {
                         context.Response.Close();
                     }
-                    catch (Exception)
+                    catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException)
                     {
                         // Already closed/aborted.
                     }
@@ -245,7 +247,7 @@ public sealed class AwsS3FileStorageEmptyListingTests
                 _listener.Stop();
                 _listener.Close();
             }
-            catch (Exception)
+            catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException or InvalidOperationException)
             {
                 // Listener may already be stopped.
             }
@@ -254,9 +256,10 @@ public sealed class AwsS3FileStorageEmptyListingTests
             {
                 _serveLoop.Wait(TimeSpan.FromSeconds(5));
             }
-            catch (Exception)
+            catch (AggregateException)
             {
-                // Best-effort shutdown; the loop exits on listener stop.
+                // Best-effort shutdown; the loop exits on listener stop. Task.Wait wraps any
+                // fault from ServeAsync's own exception handling in an AggregateException.
             }
 
             _shutdown.Dispose();

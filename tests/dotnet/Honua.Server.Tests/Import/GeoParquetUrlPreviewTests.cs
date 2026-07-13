@@ -89,6 +89,8 @@ public sealed class GeoParquetUrlPreviewTests : IAsyncLifetime
             var content = new ByteArrayContent(body);
             content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
 
+            // Returned to the HttpClient pipeline; disposal ownership transfers to the
+            // caller, so this must not be wrapped in `using` here.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = content

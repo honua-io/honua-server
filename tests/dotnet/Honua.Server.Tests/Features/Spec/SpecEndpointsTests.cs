@@ -142,38 +142,37 @@ public sealed class SpecEndpointsTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync(
-            "/v1/spec/validate",
-            new StringContent(
-                """
-                {
-                  "spec": {
-                    "grammar": "v1.0",
-                    "sources": [
-                      {
-                        "id": "hospitals",
-                        "type": "layer",
-                        "ref": "catalog:layer:1"
-                      }
-                    ],
-                    "compute": [
-                      {
-                        "id": "broken",
-                        "op": "buffer",
-                        "params": {
-                          "distance": {
-                            "kind": "distance",
-                            "unit": "m",
-                            "value": 1e400
-                          }
-                        }
-                      }
-                    ]
+        using var content = new StringContent(
+            """
+            {
+              "spec": {
+                "grammar": "v1.0",
+                "sources": [
+                  {
+                    "id": "hospitals",
+                    "type": "layer",
+                    "ref": "catalog:layer:1"
                   }
-                }
-                """,
-                Encoding.UTF8,
-                "application/json"));
+                ],
+                "compute": [
+                  {
+                    "id": "broken",
+                    "op": "buffer",
+                    "params": {
+                      "distance": {
+                        "kind": "distance",
+                        "unit": "m",
+                        "value": 1e400
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+        using var response = await client.PostAsync("/v1/spec/validate", content);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -192,9 +191,8 @@ public sealed class SpecEndpointsTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync(
-            "/v1/spec/validate",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/v1/spec/validate", content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -240,9 +238,8 @@ public sealed class SpecEndpointsTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync(
-            "/v1/spec/plan",
-            new StringContent("{not:valid", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{not:valid", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/v1/spec/plan", content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -787,9 +784,8 @@ public sealed class SpecEndpointsTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync(
-            "/v1/spec/cancel",
-            new StringContent("{\"applyToken\":\"does-not-exist\"}", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{\"applyToken\":\"does-not-exist\"}", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/v1/spec/cancel", content);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -804,9 +800,8 @@ public sealed class SpecEndpointsTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync(
-            "/v1/spec/cancel",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/v1/spec/cancel", content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

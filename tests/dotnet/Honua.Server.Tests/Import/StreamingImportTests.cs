@@ -73,7 +73,7 @@ public class StreamingImportTests : IAsyncLifetime
             features
         });
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJson, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -85,7 +85,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -134,7 +134,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -146,7 +146,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -159,7 +159,7 @@ public class StreamingImportTests : IAsyncLifetime
     public async Task GetLimits_ReturnsConfiguredLimits()
     {
         // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/limits");
+        using var response = await _client.GetAsync("/api/v1/admin/import/limits");
 
         // Assert
         response.BeSuccessful();
@@ -177,7 +177,7 @@ public class StreamingImportTests : IAsyncLifetime
     public async Task GetActiveJobs_WithNoJobs_ReturnsEmptyList()
     {
         // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/jobs");
+        using var response = await _client.GetAsync("/api/v1/admin/import/jobs");
 
         // Assert
         response.BeSuccessful();
@@ -190,7 +190,7 @@ public class StreamingImportTests : IAsyncLifetime
     public async Task GetJobStatus_WithInvalidJobId_ReturnsNotFound()
     {
         // Act
-        var response = await _client.GetAsync("/api/v1/admin/import/jobs/nonexistent");
+        using var response = await _client.GetAsync("/api/v1/admin/import/jobs/nonexistent");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -207,7 +207,7 @@ public class StreamingImportTests : IAsyncLifetime
         POLYGON((-122.4 37.7, -122.4 37.8, -122.5 37.8, -122.5 37.7, -122.4 37.7))
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(wktContent, Encoding.UTF8, "text/plain");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -220,7 +220,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -241,7 +241,7 @@ public class StreamingImportTests : IAsyncLifetime
             {"attributes":{"zone_code":"500","zone_name":"Commercial"},"geometry":{"x":-156.40,"y":20.90}}]}
             """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(esriJson, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -252,7 +252,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("esrijson_import_table"), "TableName");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -270,7 +270,7 @@ public class StreamingImportTests : IAsyncLifetime
         WriteWkbPoint(buffer, -156.30, 20.80);
         WriteWkbPoint(buffer, -156.40, 20.90);
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(buffer.ToArray());
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -283,7 +283,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("4326"), "SourceSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -305,7 +305,7 @@ public class StreamingImportTests : IAsyncLifetime
             </gpx>
             """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(gpx, Encoding.UTF8, "application/gpx+xml");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -316,7 +316,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("gpx_import_table"), "TableName");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -344,7 +344,7 @@ public class StreamingImportTests : IAsyncLifetime
             3,"Half Moon Bay, CA",-122.4286,37.4636,town
             """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(csvContent, Encoding.UTF8, "text/csv");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -355,7 +355,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("csv_import_table"), "TableName");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -444,7 +444,7 @@ public class StreamingImportTests : IAsyncLifetime
         </kml>
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(kmlContent, Encoding.UTF8, "application/vnd.google-earth.kml+xml");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -456,7 +456,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -485,7 +485,7 @@ public class StreamingImportTests : IAsyncLifetime
 
         var kmzBytes = BuildKmzArchive(kmlContent);
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(kmzBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.google-earth.kmz");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -497,7 +497,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("kmz_import_table"), "TableName");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -603,7 +603,7 @@ public class StreamingImportTests : IAsyncLifetime
         </gpx>
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(gpxContent, Encoding.UTF8, "application/gpx+xml");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -615,7 +615,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -694,7 +694,7 @@ public class StreamingImportTests : IAsyncLifetime
             features
         });
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJson, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -704,7 +704,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.BeSuccessful();
@@ -734,7 +734,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -747,7 +747,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "ForceBackground");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
@@ -778,7 +778,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -790,7 +790,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -821,7 +821,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -832,7 +832,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("missing_geometry_table"), "TableName");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
@@ -865,7 +865,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -877,7 +877,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("999999"), "TargetSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
@@ -909,7 +909,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -922,7 +922,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("4326"), "TargetSrid");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         var result = DeserializeImportResult(await response.Content.ReadAsStringAsync());
@@ -937,7 +937,7 @@ public class StreamingImportTests : IAsyncLifetime
     public async Task CancelJob_WithInvalidJobId_ReturnsNotFound()
     {
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/jobs/nonexistent/cancel", null);
+        using var response = await _client.PostAsync("/api/v1/admin/import/jobs/nonexistent/cancel", null);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -967,7 +967,7 @@ public class StreamingImportTests : IAsyncLifetime
             columns);
         var fgbBytes = fgbStream.ToArray();
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(fgbBytes);
         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
         fileContent.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data")
@@ -981,7 +981,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -1004,7 +1004,7 @@ public class StreamingImportTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -1016,7 +1016,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1045,7 +1045,7 @@ public class StreamingImportTests : IAsyncLifetime
 
     private async Task<string> ImportDelimitedCsvAsync(string csvContent, string tableName)
     {
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(csvContent, Encoding.UTF8, "text/csv");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -1056,7 +1056,7 @@ public class StreamingImportTests : IAsyncLifetime
         content.Add(new StringContent(tableName), "TableName");
         content.Add(new StringContent("true"), "OverwriteExisting");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.BeSuccessful();
         return await response.Content.ReadAsStringAsync();

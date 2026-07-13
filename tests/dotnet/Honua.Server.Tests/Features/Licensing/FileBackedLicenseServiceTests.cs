@@ -41,6 +41,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_MissingLicenseFile_PublishesSafeCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "missing.honua-license.json");
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
@@ -59,6 +60,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_ValidSignedLicense_LoadsEditionAndEntitlements()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
@@ -130,6 +132,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_InlineLicenseContent_TakesPrecedenceOverLicensePath()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "missing.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
@@ -160,6 +163,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_MalformedLicenseFile_PublishesSafeCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         await File.WriteAllTextAsync(licensePath, "not json");
         var logger = new RecordingLogger<FileBackedLicenseService>();
@@ -178,6 +182,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_OversizedLicenseFile_PublishesMalformedCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         await File.WriteAllBytesAsync(licensePath, new byte[MaxLicenseFileBytes + 1]);
         var logger = new RecordingLogger<FileBackedLicenseService>();
@@ -199,6 +204,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_UnknownSigningKey_PublishesSafeCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, keyId: "unknown-key");
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
@@ -218,6 +224,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_InvalidSignature_PublishesSafeCommunitySnapshot()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, tamperSignature: true);
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
@@ -246,6 +253,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_ExpiredLicense_PublishesSafeCommunitySnapshotWithLicenseIdentity()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
@@ -490,6 +498,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task UploadLicenseAsync_OversizedStream_StopsReadingAfterSizeLimit()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(

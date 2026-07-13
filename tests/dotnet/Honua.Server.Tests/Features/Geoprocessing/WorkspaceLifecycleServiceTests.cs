@@ -848,7 +848,8 @@ public class WorkspaceLifecycleServiceTests
     [Fact]
     public async Task RunCleanup_DeletesExpiredWorkspacesAfterGracePeriod()
     {
-        var gracePeriod = TimeSpan.FromHours(1);
+        // Default WorkspaceOptions.CleanupGracePeriod is 1 hour; this workspace expired 2 hours
+        // ago, i.e. past the grace period, so it must be deleted.
         var expiredLongAgo = CreateWorkspace("ws-1", WorkspaceKind.Scratch, WorkspaceLifecycleState.Expired,
             expiresAt: Now.AddHours(-2));
         _workspaceStore.ListExpiredAsync(Now, Arg.Any<int>(), Arg.Any<CancellationToken>())

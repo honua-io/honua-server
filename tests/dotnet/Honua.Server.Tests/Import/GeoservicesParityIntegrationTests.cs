@@ -2367,13 +2367,9 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var rows = ExtractRows(json);
 
         var distinctValues = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var row in rows)
-        {
-            if (row.TryGetValue(fieldName, out var value))
-            {
-                distinctValues.Add(NormalizeValue(value));
-            }
-        }
+        distinctValues.UnionWith(rows
+            .Where(row => row.ContainsKey(fieldName))
+            .Select(row => NormalizeValue(row[fieldName])));
 
         return distinctValues.OrderBy(static value => value, StringComparer.Ordinal).ToArray();
     }
@@ -3089,16 +3085,9 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             return false;
         }
 
-        foreach (var feature in features.EnumerateArray())
-        {
-            if (TryGetPropertyCaseInsensitive(feature, "geometry", out var geometry) &&
-                geometry.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return features.EnumerateArray().Any(feature =>
+            TryGetPropertyCaseInsensitive(feature, "geometry", out var geometry) &&
+            geometry.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined);
     }
 
     private static Dictionary<string, object?> ParseAttributesJson(string json)
@@ -3356,9 +3345,10 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             .OrderBy(static field => field.SanitizedName, StringComparer.Ordinal)
             .ToArray();
 
+        var builder = new StringBuilder();
         foreach (var row in rows)
         {
-            var builder = new StringBuilder();
+            builder.Clear();
             foreach (var field in orderedFields)
             {
                 var queryFieldName = useSanitizedFieldNames ? field.SanitizedName : field.SourceName;
@@ -3538,11 +3528,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         var maxX = double.MinValue;
         var maxY = double.MinValue;
 
-        foreach (var token in coordinateTokens)
+        foreach (var (x, y) in coordinateTokens.Select(ParseCoordinateToken))
         {
-            var parts = token.Split(',', 2, StringSplitOptions.None);
-            var x = double.Parse(parts[0], CultureInfo.InvariantCulture);
-            var y = double.Parse(parts[1], CultureInfo.InvariantCulture);
             minX = Math.Min(minX, x);
             minY = Math.Min(minY, y);
             maxX = Math.Max(maxX, x);
@@ -3550,6 +3537,14 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
         }
 
         return (minX, minY, maxX, maxY);
+    }
+
+    private static (double X, double Y) ParseCoordinateToken(string token)
+    {
+        var parts = token.Split(',', 2, StringSplitOptions.None);
+        return (
+            double.Parse(parts[0], CultureInfo.InvariantCulture),
+            double.Parse(parts[1], CultureInfo.InvariantCulture));
     }
 
     private static string DetermineGeometryKind(JsonElement geometry)
@@ -3855,13 +3850,11 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
 
         if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in element.EnumerateObject())
+            foreach (var property in element.EnumerateObject()
+                         .Where(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-                {
-                    value = property.Value;
-                    return true;
-                }
+                value = property.Value;
+                return true;
             }
         }
 
@@ -4096,8 +4089,10 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             GeneratedAtUtc: DateTimeOffset.UtcNow,
             Cases: _scorecardEntries.ToArray());
 
+        // Path.Combine args are a temp-root plus a literal/generated relative fragment; no rooted-segment risk.
         var directory = Path.Combine(Path.GetTempPath(), "honua-parity-scorecards");
         Directory.CreateDirectory(directory);
+        // Path.Combine args are a directory plus a generated relative file name; no rooted-segment risk.
         var filePath = Path.Combine(
             directory,
             $"geoservices-parity-scorecard-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");

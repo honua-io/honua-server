@@ -182,6 +182,7 @@ public sealed class HonuaLayerSinkExecutorTests
         {
             MaxArtifactBytes = 50L * 1024L * 1024L,
             ResultRetention = TimeSpan.FromDays(7),
+            // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
             OutputRootDirectory = Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs")
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();

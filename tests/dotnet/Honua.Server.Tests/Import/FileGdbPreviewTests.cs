@@ -36,10 +36,11 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
     public async Task Preview_WithFileGdbArchive_ReturnsPreviewWithFeatures()
     {
         // Arrange
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -67,10 +68,11 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
     public async Task Preview_WithSparseFileGdb_ReturnsPreviewWithFeatures()
     {
         // Arrange
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "sparse.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")

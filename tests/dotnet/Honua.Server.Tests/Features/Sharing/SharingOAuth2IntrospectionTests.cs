@@ -251,7 +251,7 @@ public sealed class SharingOAuth2IntrospectionTests
 
     private static async Task<HttpResponseMessage> PostIntrospectAsync(HttpClient client, string token)
     {
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("token", token),
         });
