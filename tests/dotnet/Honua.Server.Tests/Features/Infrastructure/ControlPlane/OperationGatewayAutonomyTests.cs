@@ -21,6 +21,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -412,10 +413,11 @@ public sealed class OperationGatewayAutonomyTests
         };
 
         return new OpsNotificationService(
-            new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance),
+            new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance),
             new AllowAllAlertEditionPolicy(),
             new AlertChannelCircuitBreaker(Options.Create(options)),
             Options.Create(options),
+            TestTelemetry.CreateAlertPipelineMetrics(),
             NullLogger<OpsNotificationService>.Instance);
     }
 

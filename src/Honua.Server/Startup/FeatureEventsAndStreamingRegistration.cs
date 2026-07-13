@@ -66,10 +66,12 @@ internal static partial class FeatureEventsAndStreamingRegistration
             .Bind(configuration.GetSection(FeatureStreamOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<FeatureStreamOptions>, FeatureStreamOptionsValidator>();
+        services.AddSingleton<FeatureStreamMetrics>();
         services.AddSingleton<FeatureStreamSessionManager>(sp =>
             new FeatureStreamSessionManager(
                 sp.GetRequiredService<IOptions<FeatureStreamOptions>>(),
                 sp.GetRequiredService<ILogger<FeatureStreamSessionManager>>(),
+                sp.GetRequiredService<FeatureStreamMetrics>(),
                 sp.GetService<IConnectionMultiplexer>()));
         services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<PendingFeatureChangeSignal>());
         services.AddSingleton<IFeatureChangeRetryQueue>(sp =>
@@ -148,6 +150,7 @@ internal static partial class FeatureEventsAndStreamingRegistration
         // it wins over this TryAdd; when infrastructure registration is skipped, the dispatcher
         // still constructs and immediately exits because SupportsTransactionalOutbox is false.
         services.TryAddSingleton<IOutboxCapabilityProvider, NoOpOutboxCapabilityProvider>();
+        services.AddSingleton<OutboxMetrics>();
         services.AddSingleton<OutboxDispatcherBackgroundService>();
         services.AddSingleton<IOutboxHealth>(sp =>
             sp.GetRequiredService<OutboxDispatcherBackgroundService>());

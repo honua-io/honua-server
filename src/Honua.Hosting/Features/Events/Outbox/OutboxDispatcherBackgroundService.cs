@@ -25,6 +25,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
     private readonly IServiceProvider _services;
     private readonly IOutboxCapabilityProvider _capability;
     private readonly OutboxDispatcherOptions _options;
+    private readonly OutboxMetrics _metrics;
     private readonly ILogger<OutboxDispatcherBackgroundService> _logger;
     private readonly string _nodeId;
 
@@ -49,11 +50,13 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         IServiceProvider services,
         IOutboxCapabilityProvider capability,
         IOptions<OutboxDispatcherOptions> options,
+        OutboxMetrics metrics,
         ILogger<OutboxDispatcherBackgroundService> logger)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _capability = capability ?? throw new ArgumentNullException(nameof(capability));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _nodeId = $"{Environment.MachineName}:{Environment.ProcessId}";
     }
@@ -253,7 +256,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             }
 
             _lastDispatchAt = DateTimeOffset.UtcNow;
-            OutboxMetrics.Dispatched.Add(1);
+            _metrics.RecordDispatched();
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -327,15 +330,15 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         }
     }
 
-    private static void RecordTerminalOutcomeMetric(MarkFailedOutcome outcome)
+    private void RecordTerminalOutcomeMetric(MarkFailedOutcome outcome)
     {
         switch (outcome)
         {
             case MarkFailedOutcome.Failed:
-                OutboxMetrics.Failed.Add(1);
+                _metrics.RecordFailed();
                 break;
             case MarkFailedOutcome.DeadLettered:
-                OutboxMetrics.DeadLettered.Add(1);
+                _metrics.RecordDeadLettered();
                 break;
                 // StaleClaim and Errored: the row's terminal state belongs elsewhere
                 // (a different node, or a future pass), so this dispatcher must not
@@ -356,7 +359,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             var recovered = await repository.RecoverExpiredClaimsAsync(cancellationToken).ConfigureAwait(false);
             if (recovered > 0)
             {
-                OutboxMetrics.RecoveredClaims.Add(recovered);
+                _metrics.RecordRecoveredClaims(recovered);
                 Log.ClaimsRecovered(_logger, recovered);
             }
             _lastRecoveryPollSuccessAt = DateTimeOffset.UtcNow;
@@ -378,7 +381,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         {
             var backlog = await repository.GetBacklogMetricsAsync(cancellationToken).ConfigureAwait(false);
             _lastBacklog = backlog;
-            OutboxMetrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount, backlog.OldestPendingAgeSeconds);
+            _metrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount, backlog.OldestPendingAgeSeconds);
             _lastBacklogPollSuccessAt = DateTimeOffset.UtcNow;
         }
         catch (Exception ex)
