@@ -154,6 +154,8 @@ internal sealed class ODataQueryParameterAdapter(
             ODataPreparedAdaptersLog.InvalidQueryParameters(_logger, ex);
             return Task.FromResult(QueryAdapterResult.Failure(ex.Message));
         }
+        // Intentional broad catch: parameter-adaptation boundary; already logged
+        // (QueryParameterConversionFailed) and mapped to an adapter failure result.
         catch (Exception ex)
         {
             ODataPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
@@ -221,6 +223,10 @@ internal sealed class ODataQueryParameterAdapter(
             field => field.Name,
             StringComparer.OrdinalIgnoreCase);
 
+        // Not rewritten as `.Select(...)`: beyond mapping rawField -> trimmed, this loop
+        // validates syntax and throws ArgumentException per-segment, and conditionally
+        // appends to `clauses` - a LINQ projection would obscure the early-exit validation
+        // and per-item side effects rather than simplify them.
         foreach (var rawField in orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
             var trimmed = rawField.Trim();
@@ -309,12 +315,10 @@ internal sealed class ODataQueryParameterAdapter(
 
         if (!string.IsNullOrWhiteSpace(expand))
         {
-            foreach (var segment in expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var segment in expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(segment => !string.IsNullOrWhiteSpace(segment)))
             {
-                if (!string.IsNullOrWhiteSpace(segment))
-                {
-                    allowed.Add(segment);
-                }
+                allowed.Add(segment);
             }
         }
 

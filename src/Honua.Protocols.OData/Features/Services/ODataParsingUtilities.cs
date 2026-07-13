@@ -86,14 +86,6 @@ internal static class ODataParsingUtilities
             return false;
         }
 
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
     }
 }

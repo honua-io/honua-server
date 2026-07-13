@@ -35,12 +35,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
-        Activity? activity = null;
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureQuery,
+            ActivityKind.Internal);
         try
         {
-            activity = HonuaTelemetry.ActivitySource.StartActivity(
-                HonuaTelemetry.Activities.FeatureQuery,
-                ActivityKind.Internal);
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "apply");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -114,16 +113,14 @@ internal sealed partial class ODataAdvancedQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", safeDetail);
         }
+        // Intentional broad catch: this is the request-handling boundary for $apply; the
+        // exception is logged (Log.ApplyFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.ApplyFailed(_logger, layerId, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the aggregation request", 500);
-        }
-        finally
-        {
-            activity?.Dispose();
         }
     }
 
@@ -144,12 +141,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
         [FromQuery(Name = "$format")] string? format = null,
         CancellationToken cancellationToken = default)
     {
-        Activity? activity = null;
+        using var activity = HonuaTelemetry.ActivitySource.StartActivity(
+            HonuaTelemetry.Activities.FeatureQuery,
+            ActivityKind.Internal);
         try
         {
-            activity = HonuaTelemetry.ActivitySource.StartActivity(
-                HonuaTelemetry.Activities.FeatureQuery,
-                ActivityKind.Internal);
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             activity?.SetTag(HonuaTelemetry.Tags.Operation, "search");
             activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -269,16 +265,14 @@ internal sealed partial class ODataAdvancedQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", safeDetail);
         }
+        // Intentional broad catch: this is the request-handling boundary for $search; the
+        // exception is logged (Log.SearchFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.SearchFailed(_logger, layerId, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
                 "An error occurred processing the search request", 500);
-        }
-        finally
-        {
-            activity?.Dispose();
         }
     }
 

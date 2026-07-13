@@ -124,20 +124,11 @@ internal sealed class ODataMetadataHandler(
         HttpContext context,
         IEnumerable<ODataV2Lookups.ResolvedODataPublication> publications)
     {
-        var requiresAuthentication = false;
-
-        foreach (var pub in publications)
-        {
-            var decision = AccessPolicyHelpers.EvaluateAccess(
+        var requiresAuthentication = publications.Any(pub =>
+            AccessPolicyHelpers.EvaluateAccess(
                 context,
                 pub.Resource.AccessPolicy,
-                pub.Service.AccessPolicy);
-
-            if (decision.RequiresAuthentication)
-            {
-                requiresAuthentication = true;
-            }
-        }
+                pub.Service.AccessPolicy).RequiresAuthentication);
 
         return requiresAuthentication
             ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)

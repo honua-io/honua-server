@@ -270,14 +270,6 @@ internal sealed partial class ODataBatchHandler
             return null;
         }
 
-        foreach (var kvp in headers)
-        {
-            if (kvp.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
-            {
-                return kvp.Value;
-            }
-        }
-
-        return null;
+        return headers.FirstOrDefault(kvp => kvp.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Value;
     }
 }

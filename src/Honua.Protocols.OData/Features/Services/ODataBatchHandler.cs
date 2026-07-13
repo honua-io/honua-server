@@ -137,6 +137,11 @@ internal sealed partial class ODataBatchHandler
             var dependencyOrder = OrderRequestsByDependencies(groupRequests);
             if (dependencyOrder.ErrorsById.Count > 0)
             {
+                // Not rewritten as `.Where(...)`: the filter predicate (TryGetValue) both
+                // produces the `error` value used in the loop body and de-duplicates via the
+                // side-effecting `addedErrors.Add`, so a LINQ `Where` would need to either
+                // re-run the lookup inside the loop or project through an intermediate tuple -
+                // neither is clearer than the explicit loop.
                 var addedErrors = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var request in groupRequests)
                 {

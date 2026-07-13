@@ -278,12 +278,10 @@ internal sealed partial class ODataSearchService
 
             if (aggregation.Type == AggregationType.GroupBy && aggregation.GroupByFields.HasValue)
             {
-                foreach (var field in aggregation.GroupByFields.Value)
+                var unknownField = aggregation.GroupByFields.Value.FirstOrDefault(field => !FieldExists(resource, field));
+                if (unknownField != null)
                 {
-                    if (!FieldExists(resource, field))
-                    {
-                        throw new ArgumentException($"Unknown field '{field}' in $apply.");
-                    }
+                    throw new ArgumentException($"Unknown field '{unknownField}' in $apply.");
                 }
             }
         }
@@ -313,6 +311,9 @@ internal sealed partial class ODataSearchService
 
         var tokenMatches = SearchTokenRegex().Matches(search);
 
+        // Not rewritten as `.Select(...)`: beyond mapping match -> token, this loop carries
+        // mutable parser state (currentGroup/negate/termGroups) across iterations and throws
+        // on overlong terms, so a LINQ projection would not simplify it.
         foreach (Match match in tokenMatches)
         {
             var token = match.Value;
@@ -783,6 +784,9 @@ internal sealed partial class ODataSearchService
             return optionsByName;
         }
 
+        // Not rewritten as `.Select(...)`: beyond mapping segment -> trimmed, this loop
+        // validates $expand syntax and throws ArgumentException per-segment, and populates
+        // `optionsByName` with side effects - a LINQ projection would obscure that flow.
         var segments = SplitTopLevel(expand);
         foreach (var segment in segments)
         {

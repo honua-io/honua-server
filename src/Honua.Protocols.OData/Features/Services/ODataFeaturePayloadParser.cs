@@ -123,13 +123,10 @@ internal static class ODataFeaturePayloadParser
         string name,
         out object? value)
     {
-        foreach (var kvp in properties)
+        foreach (var kvp in properties.Where(p => p.Key.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (kvp.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
-            {
-                value = kvp.Value;
-                return true;
-            }
+            value = kvp.Value;
+            return true;
         }
 
         value = null;
