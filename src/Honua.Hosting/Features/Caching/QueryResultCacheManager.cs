@@ -472,15 +472,15 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
             var cacheOptions = CreateMemoryCacheEntryOptions(options);
             var hasEstimatedSize = TryEstimateObjectSize(result, out var estimatedSize);
 
-            if (!hasEstimatedSize && options?.MaxSizeBytes.HasValue == true)
+            if (!hasEstimatedSize && options?.MaxSizeBytes is long maxSizeBytesForUnknown)
             {
-                CacheLog.ResultSizeUnknown(_logger, cacheKey, options.MaxSizeBytes.Value);
+                CacheLog.ResultSizeUnknown(_logger, cacheKey, maxSizeBytesForUnknown);
                 return;
             }
 
-            if (options?.MaxSizeBytes.HasValue == true && estimatedSize > options.MaxSizeBytes.Value)
+            if (options?.MaxSizeBytes is long maxSizeBytes && estimatedSize > maxSizeBytes)
             {
-                CacheLog.ResultTooLarge(_logger, cacheKey, estimatedSize, options.MaxSizeBytes.Value);
+                CacheLog.ResultTooLarge(_logger, cacheKey, estimatedSize, maxSizeBytes);
                 return;
             }
 
@@ -519,9 +519,9 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
             AbsoluteExpirationRelativeToNow = options?.Expiration ?? _options.DefaultExpiration
         };
 
-        if (options?.SlidingExpiration.HasValue == true)
+        if (options?.SlidingExpiration is { } slidingExpiration)
         {
-            cacheOptions.SlidingExpiration = options.SlidingExpiration;
+            cacheOptions.SlidingExpiration = slidingExpiration;
         }
 
         // Add eviction callback to track statistics.  The callback is the authoritative

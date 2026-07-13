@@ -315,8 +315,9 @@ internal sealed class PortalOAuthBroker(
         }
 
         var client = _httpClientFactory.CreateClient(HttpClientName);
+        using var content = new FormUrlEncodedContent(form);
         using var response = await client
-            .PostAsync(tokenEndpoint, new FormUrlEncodedContent(form), cancellationToken)
+            .PostAsync(tokenEndpoint, content, cancellationToken)
             .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)

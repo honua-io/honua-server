@@ -197,9 +197,10 @@ public static class OidcAuthenticationExtensions
                 var clientCertificateOptions = context.RequestServices
                     .GetService<IOptions<ClientCertificateAuthenticationOptions>>()?
                     .Value;
-                if (clientCertificateOptions?.Mode != ClientCertificateAuthenticationMode.Disabled &&
+                if (clientCertificateOptions is not null &&
+                    clientCertificateOptions.Mode != ClientCertificateAuthenticationMode.Disabled &&
                     (context.Connection.ClientCertificate is not null ||
-                     (clientCertificateOptions?.ForwardedCertificate.Enabled == true &&
+                     (clientCertificateOptions.ForwardedCertificate.Enabled &&
                       context.Request.Headers.ContainsKey(clientCertificateOptions.ForwardedCertificate.HeaderName))))
                 {
                     return ClientCertificateAuthenticationDefaults.AuthenticationScheme;

@@ -381,7 +381,7 @@ internal sealed partial class OutputCacheInvalidationService
                     continue;
                 }
                 var resource = snapshot.ResolveResource(pub);
-                if (!string.IsNullOrWhiteSpace(resource?.Metadata.Name))
+                if (resource is not null && !string.IsNullOrWhiteSpace(resource.Metadata.Name))
                 {
                     collectionIds.Add(resource.Metadata.Name);
                 }

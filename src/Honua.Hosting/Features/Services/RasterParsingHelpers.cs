@@ -23,6 +23,12 @@ internal static class RasterParsingHelpers
     private const double MaxProjectedBound = 40_000_000;
 
     /// <summary>
+    /// Tolerance used in place of exact floating-point equality when checking for a
+    /// degenerate (zero-width) geographic bounding box.
+    /// </summary>
+    private const double DegenerateWidthEpsilon = 1e-9;
+
+    /// <summary>
     /// Safely parses a bounding box string with validation.
     /// Supports both geographic and projected coordinate systems.
     /// </summary>
@@ -86,7 +92,7 @@ internal static class RasterParsingHelpers
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minY >= maxY ||
             (!isGeographic && minX >= maxX) ||
-            (isGeographic && minX == maxX))
+            (isGeographic && Math.Abs(minX - maxX) < DegenerateWidthEpsilon))
         {
             return false;
         }
