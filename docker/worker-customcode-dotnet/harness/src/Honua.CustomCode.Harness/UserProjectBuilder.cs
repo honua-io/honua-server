@@ -44,6 +44,14 @@ public sealed class UserProjectBuilder
     /// <exception cref="UserBuildException">On a path-escape, a missing project, or a failed build.</exception>
     public UserBuildResult Build(string sourceRoot, string depsManifest, string outputDirectory)
     {
+        // Reject a rooted/absolute manifest path up front: Path.Combine silently drops
+        // the source root when the second argument is already absolute, which would
+        // otherwise let a job-supplied deps_manifest point anywhere on disk.
+        if (Path.IsPathRooted(depsManifest))
+        {
+            throw new UserBuildException($"deps_manifest '{depsManifest}' must be relative to the source root.");
+        }
+
         var root = Path.GetFullPath(sourceRoot);
         var project = Path.GetFullPath(Path.Combine(root, depsManifest));
 

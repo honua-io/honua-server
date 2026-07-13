@@ -38,6 +38,11 @@ public sealed class BufferTool : IGeoprocessingTool
         var outName = context.Params.TryGetProperty("out_name", out var n) && n.ValueKind == JsonValueKind.String
             ? n.GetString()!
             : "buffered.geojson";
+        if (!ArtifactNames.IsSimpleFileName(outName))
+        {
+            return Task.FromResult(GpResult.Failed(
+                $"params.out_name '{outName}' must be a simple file name (no path separators or '..')."));
+        }
 
         context.Log.Info($"buffering '{wkt}' by {distance}");
         context.Progress.Report(10.0, "parsing input");
