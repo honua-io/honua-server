@@ -90,7 +90,7 @@ jobs:
       - name: Restore exact-head cache
         if: github.run_attempt > 1
         id: cache-download
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ steps.cache-plan.outputs.payload_dir }}
           key: ${{ steps.cache-key.outputs.value }}
@@ -138,7 +138,7 @@ jobs:
       - name: Save exact-head project cache
         if: steps.package.outcome == 'success'
         continue-on-error: true
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ${{ steps.cache-plan.outputs.payload_dir }}
           key: ${{ steps.cache-key.outputs.value }}
