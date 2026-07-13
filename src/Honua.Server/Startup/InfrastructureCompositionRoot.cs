@@ -63,6 +63,17 @@ internal static class InfrastructureCompositionRoot
         // protocol adapter (FeatureServer, OGC API Features, WFS-T, OData, gRPC).
         services.AddAuditingFeatureWriter();
 
+        // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
+        // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
+        // static GeographicSridClassifier fallback so DI-reachable call sites (ImageServer
+        // mensuration handlers, etc.) classify arbitrary EPSG codes from live spatial_ref_sys WKT
+        // rather than the static 21-code list. Scoped to match the scoped ICrsRegistry; the
+        // implementation's ICrsRegistry dependency is optional, so this stays resolvable for
+        // read-only providers (DuckDB/MySQL) that do not register a registry.
+        services.TryAddScoped<
+            Honua.Core.Features.Shared.Models.IGeographicSridClassifier,
+            Honua.Core.Features.Shared.Services.RegistryGeographicSridClassifier>();
+
         // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
         // Metadata v2 publications whose connection resolves to provider 'sqlserver'/'mssql' are routed here
         // through the shared FeatureProviderQueryRouter. Disabled when SqlServer:Enabled is explicitly false.

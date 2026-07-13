@@ -25,4 +25,15 @@ internal static partial class RasterMapRenderingPipelineLog
         ILogger logger,
         string styleId,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 3472,
+        Level = LogLevel.Error,
+        Message = "Native map-rendering runtime (SkiaSharp) failed to load while rendering {LayerCount} layer(s) at {Width}x{Height}; the deployed runtime image cannot rasterize maps. Surfacing a capability error.")]
+    public static partial void RenderingRuntimeUnavailable(
+        ILogger logger,
+        int layerCount,
+        int width,
+        int height,
+        Exception exception);
 }

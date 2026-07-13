@@ -74,7 +74,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
             return JobExecutionResult.Failed($"Invalid rasterize inputs: {burnError}");
         }
 
-        if (!TryBuildGridArgs(parameters, opts, out var gridArgs, out var gridError))
+        if (!TryBuildGridArgs(parameters, opts, out var gridArgs, out var targetCellSize, out var gridError))
         {
             return JobExecutionResult.Failed($"Invalid rasterize inputs: {gridError}");
         }
@@ -83,6 +83,19 @@ internal sealed partial class GdalRasterizeJobExecutor(
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid rasterize inputs: {sourceError}");
+        }
+
+        // Bound the caller-controlled OUTPUT resolution (cellSize → -tr) before
+        // gdal_rasterize derives the output grid from the input LAYER extent ÷ target cell
+        // size (#2793). The extent comes from the untrusted GeoJSON payload envelope; when
+        // it holds no readable positions the input/timeout backstop remains. The -ts
+        // (width+height) path is already bounded inside TryBuildGridArgs.
+        if (targetCellSize is double cellSize
+            && GdalVectorEnvelopeReader.TryReadEnvelope(sourceBytes, out var envelope)
+            && !GdalOutputGridGuard.TryAdmitResolution(
+                envelope.Width, envelope.Height, cellSize, cellSize, opts, out var resolutionError))
+        {
+            return JobExecutionResult.Failed($"Invalid rasterize inputs: {resolutionError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -174,15 +187,20 @@ internal sealed partial class GdalRasterizeJobExecutor(
     /// <summary>
     /// Requires exactly one of <c>cellSize</c> (<c>-tr</c>) or <c>width</c>+<c>height</c>
     /// (<c>-ts</c>) so the output grid is unambiguous. The extent is inferred from the
-    /// input layer by gdal_rasterize.
+    /// input layer by gdal_rasterize. On the <c>-tr</c> path <paramref name="cellSize"/>
+    /// surfaces the parsed target cell size so the caller can bound the resolution-derived
+    /// output grid against the payload envelope (#2793); it is <c>null</c> on the <c>-ts</c>
+    /// path, which <see cref="GdalOutputGridGuard.TryAdmit"/> bounds inline here.
     /// </summary>
     private static bool TryBuildGridArgs(
         IReadOnlyDictionary<string, string> parameters,
         GdalWorkerOptions options,
         out List<string> args,
+        out double? cellSize,
         out string failure)
     {
         args = [];
+        cellSize = null;
         failure = "";
 
         var hasCellSize = GdalJobInputReader.TryGetInput(parameters, "cellSize", out var cellRaw) && !string.IsNullOrWhiteSpace(cellRaw);
@@ -206,6 +224,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
             args.Add("-tr");
             args.Add(cellLiteral);
             args.Add(cellLiteral);
+            cellSize = cell;
             return true;
         }
 

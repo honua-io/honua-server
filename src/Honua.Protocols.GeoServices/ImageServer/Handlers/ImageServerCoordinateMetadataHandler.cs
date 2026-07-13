@@ -16,6 +16,7 @@ using Microsoft.Extensions.Primitives;
 using SpatialConstants = Honua.Core.Features.Shared.Models.SpatialConstants;
 using SpatialReferenceExtensions = Honua.Core.Features.Shared.Models.SpatialReferenceExtensions;
 using WebMercatorMath = Honua.Core.Features.Shared.Models.WebMercatorMath;
+using IGeographicSridClassifier = Honua.Core.Features.Shared.Models.IGeographicSridClassifier;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
@@ -30,17 +31,20 @@ internal sealed class ImageServerCoordinateMetadataHandler
     private readonly IImageServerCatalogReader _catalogReader;
     private readonly ILogger<ImageServerCoordinateMetadataHandler> _logger;
     private readonly ICoordinateTransformService? _transformService;
+    private readonly IGeographicSridClassifier? _geographicSridClassifier;
 
     public ImageServerCoordinateMetadataHandler(
         IRasterStore rasterStore,
         IImageServerCatalogReader catalogReader,
         ILogger<ImageServerCoordinateMetadataHandler> logger,
-        ICoordinateTransformService? transformService = null)
+        ICoordinateTransformService? transformService = null,
+        IGeographicSridClassifier? geographicSridClassifier = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _catalogReader = catalogReader ?? throw new ArgumentNullException(nameof(catalogReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _transformService = transformService;
+        _geographicSridClassifier = geographicSridClassifier;
     }
 
     /// <summary>
@@ -218,10 +222,12 @@ internal sealed class ImageServerCoordinateMetadataHandler
             }
 
             var shape = BuildBoundaryShape(extent.Value);
+            var extentIsGeographic = await ResolveExtentIsGeographicForMeasurementAsync(
+                extent.Value.Srid, cancellationToken).ConfigureAwait(false);
             var response = new QueryBoundaryResponse
             {
                 Shape = shape,
-                Area = CalculateApproximateArea(extent.Value),
+                Area = CalculateApproximateArea(extent.Value, extentIsGeographic),
             };
 
             ImageServerLog.CatalogQueryCompleted(_logger, layerId, 1, 1);
@@ -523,7 +529,34 @@ internal sealed class ImageServerCoordinateMetadataHandler
         };
     }
 
-    private static double CalculateApproximateArea(RasterExtent extent)
+    /// <summary>
+    /// Resolves whether the extent's SRID measures as geographic (lon/lat degrees) for the offline
+    /// area computation, preferring the registry-backed <see cref="IGeographicSridClassifier"/>
+    /// (#2794) and falling back to the static
+    /// <see cref="Honua.Core.Features.Shared.Models.GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(int)"/>
+    /// heuristic when no classifier is injected (e.g. read-only providers without a CRS registry).
+    /// </summary>
+    private async ValueTask<bool> ResolveExtentIsGeographicForMeasurementAsync(
+        int? srid,
+        CancellationToken cancellationToken)
+    {
+        if (srid is not int value)
+        {
+            return false;
+        }
+
+        if (_geographicSridClassifier is not null)
+        {
+            return await _geographicSridClassifier
+                .IsGeographicForMeasurementAsync(value, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return Honua.Core.Features.Shared.Models.GeographicSridClassifier
+            .IsGeographicOrUnlistedGeographicRangeSrid(value);
+    }
+
+    private static double CalculateApproximateArea(RasterExtent extent, bool isGeographicForMeasurement)
     {
         // Web Mercator (EPSG:3857) is conformal: an axis-aligned extent inverse-projects to an
         // axis-aligned lon/lat quadrangle, so inverse-project the corners and use the same
@@ -537,10 +570,12 @@ internal sealed class ImageServerCoordinateMetadataHandler
 
         // Geographic extents (WGS 84, NAD83, the other confirmed geographic SRIDs, and any
         // unlisted EPSG 4000–4999 geographic-block code such as EPSG:4301/4314/4322) are already
-        // lon/lat degrees. Classification is unified through the canonical GeographicSridClassifier
-        // (#2732); the broad-list-plus-range variant restores the pre-#2732 range behaviour so
-        // these codes are not mis-measured as degrees-squared-as-metres in the planar branch below.
-        if (extent.Srid is int geoSrid && Honua.Core.Features.Shared.Models.GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(geoSrid))
+        // lon/lat degrees. The geographic determination is resolved by the caller through the
+        // registry-backed IGeographicSridClassifier (#2794), which classifies arbitrary codes from
+        // live spatial_ref_sys WKT and falls back to the static broad-list-plus-range heuristic
+        // (#2732) so these codes are not mis-measured as degrees-squared-as-metres in the planar
+        // branch below.
+        if (isGeographicForMeasurement)
         {
             return SphericalQuadrangleArea(extent.XMin, extent.YMin, extent.XMax, extent.YMax);
         }

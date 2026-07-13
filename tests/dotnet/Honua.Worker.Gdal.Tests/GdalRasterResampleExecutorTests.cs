@@ -159,6 +159,69 @@ public sealed class GdalRasterResampleExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Resample_TinyCellSizeOverInputExtent_FailsBeforeReachingTheCli()
+    {
+        // A modest input raster (1000×1000 px @ 30-unit ModelPixelScale → 30 000-unit
+        // ground extent) resampled to a 0.1-unit cell would derive a 300 000 px output
+        // grid — past the width cap. The -tr output must be refused before gdalwarp runs.
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for an over-cap -tr output grid"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterResampleJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096),
+            NullLogger<GdalRasterResampleJobExecutor>.Instance);
+        try
+        {
+            var tiff = TiffHeaderBuilder.ClassicWithPixelScale(width: 1000, height: 1000, scaleX: 30.0, scaleY: 30.0);
+            var job = GdalJobFactory.Job(
+                GdalRasterResampleJobExecutor.HandledProcessId,
+                ("source", Convert.ToBase64String(tiff)),
+                ("cellSize", "0.1"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("exceeds configured");
+            runner.Invocations.Should().BeEmpty("the over-cap -tr output grid must be refused before gdalwarp runs");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Resample_CellSizeYieldingBoundedGrid_RunsGdalwarp()
+    {
+        // 1000×1000 px @ 30-unit scale → 30 000-unit extent; a 30-unit target cell derives
+        // a 1000×1000 output grid — within caps, so the legitimate resample proceeds.
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("resampled"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterResampleJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxRasterWidth: 4096, maxRasterHeight: 4096),
+            NullLogger<GdalRasterResampleJobExecutor>.Instance);
+        try
+        {
+            var tiff = TiffHeaderBuilder.ClassicWithPixelScale(width: 1000, height: 1000, scaleX: 30.0, scaleY: 30.0);
+            var job = GdalJobFactory.Job(
+                GdalRasterResampleJobExecutor.HandledProcessId,
+                ("source", Convert.ToBase64String(tiff)),
+                ("cellSize", "30"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Single().Arguments.Should().ContainInOrder("-tr", "30", "30");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     private static GdalRasterResampleJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

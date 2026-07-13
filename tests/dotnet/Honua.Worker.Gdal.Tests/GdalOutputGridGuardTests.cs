@@ -76,4 +76,67 @@ public sealed class GdalOutputGridGuardTests
         GdalOutputGridGuard.TryAdmit(0, 16, Options(), out var error).Should().BeFalse();
         error.Should().Contain("positive");
     }
+
+    // --- resolution-derived (-tr) bound (#2793) --------------------------------
+
+    [UnitTest]
+    public void TryAdmitResolution_WithinCaps_Admits()
+    {
+        // 10 000-unit extent ÷ 10-unit cell = 1000 px per axis, well under all caps.
+        GdalOutputGridGuard.TryAdmitResolution(10_000, 10_000, 10, 10, Options(), out var error)
+            .Should().BeTrue();
+        error.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void TryAdmitResolution_TinyCellOverWideExtent_RejectsOnWidthCap()
+    {
+        // 1000-unit extent ÷ 0.001-unit cell = 1 000 000 px width > the 100k width cap.
+        GdalOutputGridGuard.TryAdmitResolution(1000, 1000, 0.001, 0.001, Options(), out var error)
+            .Should().BeFalse();
+        error.Should().Contain("output grid width").And.Contain("MaxRasterWidth");
+    }
+
+    [UnitTest]
+    public void TryAdmitResolution_OverPixelCap_Rejects()
+    {
+        // 60k×60k derived pixels = 3.6 GP > the 500 MP cap, while each axis (60 000) stays
+        // under the 100k width/height caps, so MaxRasterPixels is what trips.
+        GdalOutputGridGuard.TryAdmitResolution(60_000, 60_000, 1, 1, Options(), out var error)
+            .Should().BeFalse();
+        error.Should().Contain("MaxRasterPixels");
+    }
+
+    [UnitTest]
+    public void TryAdmitResolution_OverDecodedByteCap_Rejects()
+    {
+        // 30k×30k = 900 MP × 8 bytes (single-band Float64) = 7.2 GB > the 4 GiB byte cap;
+        // raise MaxRasterPixels so the pixel cap does not trip first.
+        var options = new GdalWorkerOptions { MaxRasterPixels = long.MaxValue };
+        GdalOutputGridGuard.TryAdmitResolution(30_000, 30_000, 1, 1, options, out var error)
+            .Should().BeFalse();
+        error.Should().Contain("MaxDecodedRasterBytes");
+    }
+
+    [UnitTest]
+    public void TryAdmitResolution_NonFiniteCellSize_Rejects()
+    {
+        GdalOutputGridGuard.TryAdmitResolution(1000, 1000, double.NaN, 10, Options(), out var error)
+            .Should().BeFalse();
+        error.Should().Contain("cell size");
+
+        GdalOutputGridGuard.TryAdmitResolution(1000, 1000, 0, 10, Options(), out error)
+            .Should().BeFalse();
+        error.Should().Contain("cell size");
+    }
+
+    [UnitTest]
+    public void TryAdmitResolution_DegenerateExtent_Admits()
+    {
+        // A zero / non-positive extent (single-point or vertical envelope, or a raster
+        // with no derivable georeferencing) has nothing to bound on the resolution axis.
+        GdalOutputGridGuard.TryAdmitResolution(0, 0, 0.0001, 0.0001, Options(), out var error)
+            .Should().BeTrue();
+        error.Should().BeEmpty();
+    }
 }

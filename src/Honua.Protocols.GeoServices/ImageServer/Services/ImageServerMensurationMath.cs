@@ -62,6 +62,16 @@ internal static class ImageServerMensurationMath
     /// transform service is required.
     /// </summary>
     internal static bool TryConvertToLonLat(double x, double y, int srid, out double lon, out double lat)
+        => TryConvertToLonLat(x, y, srid, IsGeographicSrid(srid), out lon, out lat);
+
+    /// <summary>
+    /// Overload that accepts a precomputed geographic classification (#2794). Handlers that can
+    /// reach dependency injection resolve <paramref name="sridIsGeographic"/> once per request
+    /// through the registry-backed <c>IGeographicSridClassifier</c> (which classifies arbitrary
+    /// EPSG codes from live <c>spatial_ref_sys</c> WKT) and pass it here, keeping this math pure and
+    /// synchronous while superseding the static range heuristic in <see cref="IsGeographicSrid"/>.
+    /// </summary>
+    internal static bool TryConvertToLonLat(double x, double y, int srid, bool sridIsGeographic, out double lon, out double lat)
     {
         if (SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid) == 3857)
         {
@@ -69,7 +79,7 @@ internal static class ImageServerMensurationMath
             return true;
         }
 
-        if (IsGeographicSrid(srid))
+        if (sridIsGeographic)
         {
             lon = x;
             lat = y;
