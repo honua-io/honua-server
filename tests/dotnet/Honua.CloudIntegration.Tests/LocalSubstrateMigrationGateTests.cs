@@ -249,7 +249,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
         var runner = CreateRunner(
             new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Auto },
-            nodeVersionInventory: MixedVersionInventory());
+            nodeVersionInventory: MixedVersionInventory);
         var upgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
             ("001_expand.sql", ExpandScript),
@@ -279,7 +279,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
         var runner = CreateRunner(
             new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Auto },
-            nodeVersionInventory: UniformVersionInventory());
+            nodeVersionInventory: UniformVersionInventory);
         var upgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
             ("001_expand.sql", ExpandScript),
@@ -304,7 +304,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
 
         var runner = CreateRunner(
             new MigrationSafetyOptions { Enforce = true, ContractApplyPolicy = ContractApplyPolicy.Auto },
-            nodeVersionInventory: MixedVersionInventory(),
+            nodeVersionInventory: MixedVersionInventory,
             approvalNonce: $"override-{Guid.NewGuid():N}");
         var upgrade = SyntheticMigrationsCompiler.Compile(
             assemblyName,
@@ -511,16 +511,16 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             Options.Create(options), configuration, backupHookRecorder, nodeVersionInventory);
     }
 
-    private static IActiveNodeVersionInventory MixedVersionInventory()
-        => new FakeNodeVersionInventory(new ActiveNodeVersionSnapshot
+    private static readonly FakeNodeVersionInventory MixedVersionInventory =
+        new(new ActiveNodeVersionSnapshot
         {
             Coordinated = true,
             LocalVersion = "2.0.0",
             OtherActiveVersions = new[] { "1.9.0" },
         });
 
-    private static IActiveNodeVersionInventory UniformVersionInventory()
-        => new FakeNodeVersionInventory(new ActiveNodeVersionSnapshot
+    private static readonly FakeNodeVersionInventory UniformVersionInventory =
+        new(new ActiveNodeVersionSnapshot
         {
             Coordinated = true,
             LocalVersion = "2.0.0",

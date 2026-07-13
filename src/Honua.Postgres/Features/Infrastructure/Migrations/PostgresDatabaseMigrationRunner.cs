@@ -441,9 +441,8 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             // (the gate or the barrier would otherwise have blocked). Leaving the nonce unrecorded when
             // it was not needed keeps an unused value valid for the batch that genuinely needs it.
             var approvalWasRequired =
-                journalIsNonEmpty
-                && (WouldGateBlockWithoutApproval(classifications, journalIsNonEmpty)
-                    || WouldBarrierBlockWithoutApproval(classifications, versionSnapshot));
+                WouldGateBlockWithoutApproval(classifications, journalIsNonEmpty)
+                || WouldBarrierBlockWithoutApproval(classifications, versionSnapshot);
             if (approval is { State: ApprovalState.Fresh, Nonce: { } consumedNonce } && approvalWasRequired)
             {
                 await RecordApprovalConsumedAsync(
