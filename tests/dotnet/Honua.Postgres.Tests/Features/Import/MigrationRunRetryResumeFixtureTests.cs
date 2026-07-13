@@ -102,6 +102,8 @@ public sealed class MigrationRunRetryResumeFixtureTests
 
     private static FixtureFile LoadFixture()
     {
+        // All segments below are fixed literals and can never be rooted, so Path.Combine cannot
+        // drop earlier segments here (cs/path-combine false positive).
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "Features",

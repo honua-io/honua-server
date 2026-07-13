@@ -94,21 +94,22 @@ public sealed class DatumGridProvisioningTests : IAsyncLifetime
 
         result.Should().NotBeNull(
             "the provisioned us_noaa_conus.tif grid must let PROJ resolve the NAD27->NAD83 NADCON operation");
+        var transformed = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
 
         // It must be a real datum shift, not identity (NAD27 and NAD83 differ by ~30-40 m in CONUS).
         var shiftDegrees = Math.Sqrt(
-            Math.Pow(result!.Value.X - lon, 2) + Math.Pow(result.Value.Y - lat, 2));
+            Math.Pow(transformed.X - lon, 2) + Math.Pow(transformed.Y - lat, 2));
         shiftDegrees.Should().BeGreaterThan(1e-4,
             "NAD27<->NAD83 is a real (non-identity) datum transformation in CONUS");
 
         // And it must stay within the NAD27<->NAD83 CONUS bound (well under ~0.01 deg / ~1 km).
-        result.Value.X.Should().BeApproximately(lon, 1e-3);
-        result.Value.Y.Should().BeApproximately(lat, 1e-3);
+        transformed.X.Should().BeApproximately(lon, 1e-3);
+        transformed.Y.Should().BeApproximately(lat, 1e-3);
 
         // Pin the measured canonical-grid value so a regression to the low-accuracy bundled
         // fallback (which differs at the ~1e-4 deg level) is caught.
-        result.Value.X.Should().BeApproximately(-100.0004056, 5e-6);
-        result.Value.Y.Should().BeApproximately(40.0000058, 5e-6);
+        transformed.X.Should().BeApproximately(-100.0004056, 5e-6);
+        transformed.Y.Should().BeApproximately(40.0000058, 5e-6);
     }
 
     [IntegrationTest]
@@ -127,7 +128,8 @@ public sealed class DatumGridProvisioningTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(lon, lat, 4267, 4269);
 
         result.Should().NotBeNull();
-        result!.Value.X.Should().BeApproximately(-76.9996986, 5e-6);
-        result.Value.Y.Should().BeApproximately(38.9001112, 5e-6);
+        var transformed = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        transformed.X.Should().BeApproximately(-76.9996986, 5e-6);
+        transformed.Y.Should().BeApproximately(38.9001112, 5e-6);
     }
 }

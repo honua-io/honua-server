@@ -104,7 +104,7 @@ public sealed class CsvPreviewTests
         // The streaming reader should throw before consuming all available memory
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            await foreach (var feature in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
+            await foreach (var _ in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
             {
                 // Should not reach here due to the memory limit
             }

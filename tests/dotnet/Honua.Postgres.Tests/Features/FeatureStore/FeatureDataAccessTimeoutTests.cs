@@ -58,8 +58,9 @@ public sealed class FeatureDataAccessTimeoutTests
 
         var il = moveNext!.GetMethodBody()?.GetILAsByteArray();
         il.Should().NotBeNull();
+        var ilBytes = il ?? throw new InvalidOperationException("Expected IL bytes for the async state machine's MoveNext method.");
 
-        ContainsMethodCall(il!, moveNext.Module, applyTimeout!).Should().BeTrue();
+        ContainsMethodCall(ilBytes, moveNext.Module, applyTimeout!).Should().BeTrue();
     }
 
     private static bool ContainsMethodCall(byte[] il, Module module, MethodInfo target)

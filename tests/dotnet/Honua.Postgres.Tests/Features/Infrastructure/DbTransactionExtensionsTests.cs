@@ -23,7 +23,7 @@ public sealed class DbTransactionExtensionsTests
         var wasCommitCalled = false;
         var stub = new StubDbTransaction(onCommit: _ => { wasCommitCalled = true; return Task.CompletedTask; });
 
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
