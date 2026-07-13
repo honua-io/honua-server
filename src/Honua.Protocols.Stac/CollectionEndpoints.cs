@@ -148,6 +148,7 @@ internal static class CollectionEndpoints
             StacTelemetry.RecordException(activity, ex);
             throw;
         }
+        // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
         catch (Exception ex)
         {
             StacTelemetry.RecordException(activity, ex);
@@ -211,6 +212,7 @@ internal static class CollectionEndpoints
             StacTelemetry.RecordException(activity, ex);
             throw;
         }
+        // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
         catch (Exception ex)
         {
             StacTelemetry.RecordException(activity, ex);
@@ -235,6 +237,7 @@ internal static class CollectionEndpoints
 
             return Task.FromResult(Results.Json(schema, StacJsonContext.Default.QueryablesSchema, MediaTypes.SchemaJson));
         }
+        // Endpoint boundary: catch-all is intentional here, already logged below.
         catch (Exception ex)
         {
             StacLog.OperationFailed(logger, ex);
@@ -283,6 +286,7 @@ internal static class CollectionEndpoints
         {
             throw;
         }
+        // Endpoint boundary: catch-all is intentional here, already logged below.
         catch (Exception ex)
         {
             StacLog.OperationFailed(logger, ex);

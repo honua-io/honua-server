@@ -259,9 +259,8 @@ public static class I3sAttributeBufferBuilder
         // span[4..8] reserved (zero) for 8-byte value-array alignment.
 
         var offset = HeaderBytes;
-        foreach (var feature in features)
+        foreach (var value in features.Select(feature => TryGetNumeric(feature, attributeKey) ?? 0.0))
         {
-            var value = TryGetNumeric(feature, attributeKey) ?? 0.0;
             BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(offset, Float64ValueBytes), value);
             offset += Float64ValueBytes;
         }

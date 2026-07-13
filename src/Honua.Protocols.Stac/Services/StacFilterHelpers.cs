@@ -271,17 +271,13 @@ internal static class StacFilterHelpers
 
         foreach (var candidate in fallbackCandidates)
         {
-            foreach (var field in resource.SchemaFields)
+            var isTemporalField = resource.SchemaFields.Any(field =>
+                string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase)
+                && field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time);
+
+            if (isTemporalField)
             {
-                if (string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (field.Type is MetadataV2FieldType.Date
-                        or MetadataV2FieldType.DateTime
-                        or MetadataV2FieldType.Time)
-                    {
-                        return candidate;
-                    }
-                }
+                return candidate;
             }
         }
         return null;
