@@ -68,48 +68,48 @@ public sealed class ErrorHandlingPolicyTests
     {
         // Pure route-table partials and dispatcher files whose handlers live
         // in companion files that *do* carry error-handling scaffolding.
-        Path.Combine("src", "Honua.Server", "Features", "Admin", "AdminInfoEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminInfoEndpoints.cs"),
         // Error shaping uses the alert-admin surface's ApiResponse failure envelope
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.
-        Path.Combine("src", "Honua.Server", "Features", "Admin", "AlertOpsAdminEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Collaboration", "CollaborationEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AlertOpsAdminEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Collaboration", "CollaborationEndpoints.cs"),
         // Pure route-table wiring; all request validation + error shaping (StandardErrorHelpers
         // BadRequest/NotFound/NotImplemented) lives in the companion DataEnrichmentRequestHandlers.cs.
-        Path.Combine("src", "Honua.Server", "Features", "DataEnrichment", "DataEnrichmentEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "FileStorage", "FileStorageEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Forms", "FormPackageEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "FieldWorkflows", "Export", "FieldExportEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "FieldWorkflows", "Review", "FieldReviewEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Geocoding", "GeocodingEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Infrastructure", "Caching", "CachingEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "GeoServices", "FeatureServer", "FeatureServerEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "GeoServices", "MapServer", "MapServerEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "GeoServices", "NAServer", "NAServerEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "OData", "ODataEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Coverages", "OgcCoveragesEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Features", "FeaturesEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Features", "OgcFeaturesEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Processes", "CoreEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Processes", "OgcProcessesEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Tiles", "CoreEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Tiles", "OgcTilesEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Classic", "OgcClassicEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Classic", "Wcs20", "Wcs20Endpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Ogc", "Classic", "Wfs20", "Wfs20Endpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "Protocols", "Stac", "StacEndpoints.cs"),
-        Path.Combine("src", "Honua.Server", "Features", "StaticMap", "StaticMapEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "DataEnrichment", "DataEnrichmentEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "FileStorage", "FileStorageEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Forms", "FormPackageEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "FieldWorkflows", "Export", "FieldExportEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "FieldWorkflows", "Review", "FieldReviewEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Geocoding", "GeocodingEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Infrastructure", "Caching", "CachingEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "GeoServices", "FeatureServer", "FeatureServerEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "GeoServices", "MapServer", "MapServerEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "GeoServices", "NAServer", "NAServerEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "OData", "ODataEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Coverages", "OgcCoveragesEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Features", "FeaturesEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Features", "OgcFeaturesEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Processes", "CoreEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Processes", "OgcProcessesEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Tiles", "CoreEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Api", "Tiles", "OgcTilesEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Classic", "OgcClassicEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Classic", "Wcs20", "Wcs20Endpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Ogc", "Classic", "Wfs20", "Wfs20Endpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Protocols", "Stac", "StacEndpoints.cs"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "StaticMap", "StaticMapEndpoints.cs"),
     };
 
     [ArchitectureTest]
     public void GlobalExceptionMiddleware_IsWiredInProgram()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var middlewarePath = Path.Combine(repoRoot, GlobalMiddlewareRelativePath);
-        var programPath = Path.Combine(repoRoot, ProgramRelativePath);
+        var middlewarePath = ArchitectureTestHelpers.CombinePath(repoRoot, GlobalMiddlewareRelativePath);
+        var programPath = ArchitectureTestHelpers.CombinePath(repoRoot, ProgramRelativePath);
 
         File.Exists(middlewarePath).Should().BeTrue(
             "the audit relies on src/Honua.Server/.../GlobalExceptionMiddleware.cs being present "
@@ -131,7 +131,7 @@ public sealed class ErrorHandlingPolicyTests
     public void EveryEndpointFile_HasErrorHandlingScaffolding()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
+        var featuresRoot = ArchitectureTestHelpers.CombinePath(repoRoot, FeaturesRelativePath);
 
         var offenders = new List<string>();
         foreach (var file in Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories)
@@ -167,7 +167,7 @@ public sealed class ErrorHandlingPolicyTests
     public void Server_AvoidsBareExceptionThrows()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var serverRoot = Path.Combine(repoRoot, ServerRelativePath);
+        var serverRoot = ArchitectureTestHelpers.CombinePath(repoRoot, ServerRelativePath);
 
         // `throw new Exception("...");` is too generic for production code —
         // it loses the failure mode and forces callers to catch everything.
@@ -204,7 +204,7 @@ public sealed class ErrorHandlingPolicyTests
     public void Server_AvoidsEmptyExceptionCatches()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var serverRoot = Path.Combine(repoRoot, ServerRelativePath);
+        var serverRoot = ArchitectureTestHelpers.CombinePath(repoRoot, ServerRelativePath);
 
         // A pattern like `catch (Exception) { }` (optionally with `ex`) and a
         // body that holds nothing but whitespace is a smell — it silently

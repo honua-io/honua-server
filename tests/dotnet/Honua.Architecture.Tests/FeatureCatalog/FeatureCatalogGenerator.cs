@@ -157,11 +157,11 @@ internal static class FeatureCatalogGenerator
         foreach (var method in ArchitectureTestHelpers.IntegrationTestMethods())
         {
             var testId = $"{method.DeclaringType?.FullName}.{method.Name}";
-            foreach (var endpointAttribute in method
+            foreach (var key in method
                          .GetCustomAttributes(typeof(EndpointAttribute), inherit: true)
-                         .Cast<EndpointAttribute>())
+                         .Cast<EndpointAttribute>()
+                         .Select(endpointAttribute => EndpointKey.Normalize(endpointAttribute.Endpoint)))
             {
-                var key = EndpointKey.Normalize(endpointAttribute.Endpoint);
                 if (key is null)
                 {
                     continue;

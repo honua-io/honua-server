@@ -72,9 +72,9 @@ public sealed class DependencyRulesTests
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var forbiddenDirectories = new[]
         {
-            Path.Combine(repositoryRoot, "src", "Honua.Core", "Transport", "Clients"),
-            Path.Combine(repositoryRoot, "src", "Honua.Core", "Transport", "Converters"),
-            Path.Combine(repositoryRoot, "src", "Honua.Core", "Transport", "Proto")
+            ArchitectureTestHelpers.CombinePath(repositoryRoot, "src", "Honua.Core", "Transport", "Clients"),
+            ArchitectureTestHelpers.CombinePath(repositoryRoot, "src", "Honua.Core", "Transport", "Converters"),
+            ArchitectureTestHelpers.CombinePath(repositoryRoot, "src", "Honua.Core", "Transport", "Proto")
         };
 
         forbiddenDirectories
@@ -83,7 +83,7 @@ public sealed class DependencyRulesTests
             .Should()
             .BeEmpty("portable gRPC clients/converters belong in Honua.Sdk.* and canonical proto definitions stay in geospatial-grpc");
 
-        var coreProject = File.ReadAllText(Path.Combine(repositoryRoot, "src", "Honua.Core", "Honua.Core.csproj"));
+        var coreProject = File.ReadAllText(ArchitectureTestHelpers.CombinePath(repositoryRoot, "src", "Honua.Core", "Honua.Core.csproj"));
         coreProject.Should().NotContain("Geospatial.Grpc", "Honua.Core should not own generated gRPC bindings");
         coreProject.Should().NotContain("Grpc.Net.Client", "gRPC client behavior belongs in Honua.Sdk.Grpc");
         coreProject.Should().NotContain("Grpc.Core.Api", "server gRPC protocol adapters should depend on gRPC directly");

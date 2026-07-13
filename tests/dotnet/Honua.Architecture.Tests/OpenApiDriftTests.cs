@@ -268,24 +268,22 @@ public sealed class OpenApiDriftTests
         var root = document.RootElement;
         var paths = root.GetProperty("paths");
 
-        foreach (var path in new[]
+        foreach (var schemaRef in new[]
                  {
                      "/collections/{collectionId}/clusters",
                      "/collections/{collectionId}/spatial-join",
                      "/collections/{collectionId}/buffer-aggregate",
                      "/collections/{collectionId}/density"
-                 })
+                 }.Select(path => paths.GetProperty(path)
+                     .GetProperty("post")
+                     .GetProperty("responses")
+                     .GetProperty("200")
+                     .GetProperty("content")
+                     .GetProperty("application/geo+json")
+                     .GetProperty("schema")
+                     .GetProperty("$ref")
+                     .GetString()))
         {
-            var schemaRef = paths.GetProperty(path)
-                .GetProperty("post")
-                .GetProperty("responses")
-                .GetProperty("200")
-                .GetProperty("content")
-                .GetProperty("application/geo+json")
-                .GetProperty("schema")
-                .GetProperty("$ref")
-                .GetString();
-
             schemaRef.Should().Be("#/components/schemas/SpatialAnalyticsFeatureCollection");
         }
 
@@ -417,9 +415,8 @@ public sealed class OpenApiDriftTests
                     continue;
                 }
 
-                foreach (var basePath in basePaths)
+                foreach (var fullPath in basePaths.Select(basePath => CombinePath(basePath, pathEntry.Name)))
                 {
-                    var fullPath = CombinePath(basePath, pathEntry.Name);
                     endpoints.Add(FormatKey(methodEntry.Name, fullPath));
                 }
             }
@@ -434,13 +431,14 @@ public sealed class OpenApiDriftTests
             serversElement.ValueKind == JsonValueKind.Array)
         {
             var servers = new List<string>();
-            foreach (var server in serversElement.EnumerateArray())
+            foreach (var url in serversElement.EnumerateArray()
+                .Select(server => server.TryGetProperty("url", out var urlElement)
+                    && urlElement.GetString() is { Length: > 0 } url
+                        ? url
+                        : null)
+                .OfType<string>())
             {
-                if (server.TryGetProperty("url", out var urlElement) &&
-                    urlElement.GetString() is { Length: > 0 } url)
-                {
-                    servers.Add(url);
-                }
+                servers.Add(url);
             }
 
             if (servers.Count > 0)
@@ -492,7 +490,7 @@ public sealed class OpenApiDriftTests
     }
 
     private static string ResolveOpenApiPath(string fileName)
-        => Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Server", fileName);
+        => ArchitectureTestHelpers.CombinePath(ArchitectureTestHelpers.ResolveRepositoryRoot(), "src", "Honua.Server", fileName);
 
     private static string[] GetAnalyticsContractSpecPaths()
         =>
@@ -502,7 +500,7 @@ public sealed class OpenApiDriftTests
         ];
 
     private static string ResolveDeveloperOpenApiPath(string fileName)
-        => Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(), "docs", "developer", "api-specs", fileName);
+        => ArchitectureTestHelpers.CombinePath(ArchitectureTestHelpers.ResolveRepositoryRoot(), "docs", "developer", "api-specs", fileName);
 
     private static void AssertTileEndpoint(JsonElement tileEndpoint)
     {

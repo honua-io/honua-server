@@ -212,7 +212,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
                         continue;
                     }
 
-                    File.Exists(Path.Combine(repoRoot, evidenceLocation))
+                    File.Exists(ArchitectureTestHelpers.CombinePath(repoRoot, evidenceLocation))
                         .Should()
                         .BeTrue($"evidence location '{evidenceLocation}' for surface '{surface.SurfaceId}' must exist");
                 }
@@ -256,7 +256,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     public void ClientTemplateVersionMatrix_ShouldUseConcreteEvidenceLinks()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var matrixPath = Path.Combine(repoRoot, "docs", "gis", "CLIENT_TEMPLATE_VERSION_MATRIX.md");
+        var matrixPath = ArchitectureTestHelpers.CombinePath(repoRoot, "docs", "gis", "CLIENT_TEMPLATE_VERSION_MATRIX.md");
         var matrixDirectory = Path.GetDirectoryName(matrixPath)!;
 
         var evidenceRows = File.ReadAllLines(matrixPath)
@@ -284,7 +284,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
                     continue; // External artifact URLs are valid on release branches
                 }
 
-                var resolvedPath = Path.GetFullPath(Path.Combine(matrixDirectory, link));
+                var resolvedPath = Path.GetFullPath(ArchitectureTestHelpers.CombinePath(matrixDirectory, link));
                 File.Exists(resolvedPath)
                     .Should()
                     .BeTrue($"matrix link '{link}' must resolve to a committed immutable evidence artifact");
@@ -482,7 +482,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     private static PublicInterfaceProofLedger LoadLedger()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var ledgerPath = Path.Combine(repoRoot, "docs", "gis", "data", "public-interface-proof.json");
+        var ledgerPath = ArchitectureTestHelpers.CombinePath(repoRoot, "docs", "gis", "data", "public-interface-proof.json");
 
         using var stream = File.OpenRead(ledgerPath);
         return JsonSerializer.Deserialize(stream, PublicInterfaceProofLedgerJsonContext.Default.PublicInterfaceProofLedger)
@@ -492,7 +492,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     private static string LoadSdkCompatibilityWorkflow()
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        return File.ReadAllText(Path.Combine(repoRoot, ".github", "workflows", "sdk-server-compatibility.yml"));
+        return File.ReadAllText(ArchitectureTestHelpers.CombinePath(repoRoot, ".github", "workflows", "sdk-server-compatibility.yml"));
     }
 
     private static string[] ExtractWorkflowProtocolSurfaceArray(string workflow, string propertyName)

@@ -239,8 +239,8 @@ public sealed class VerticalSliceIsolationTests
     {
         var currentDir = Directory.GetCurrentDirectory();
         var projectRoot = FindProjectRoot(currentDir);
-        var infraServerPath = Path.Combine(projectRoot, "src", "Honua.Server", "Features", "Infrastructure");
-        var infraHostingPath = Path.Combine(projectRoot, "src", "Honua.Hosting", "Features");
+        var infraServerPath = ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Features", "Infrastructure");
+        var infraHostingPath = ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Hosting", "Features");
 
         var observed = new HashSet<string>(StringComparer.Ordinal);
         AccumulateSubAreaNames(infraServerPath, observed);
@@ -277,7 +277,7 @@ public sealed class VerticalSliceIsolationTests
     {
         var currentDir = Directory.GetCurrentDirectory();
         var projectRoot = FindProjectRoot(currentDir);
-        var featuresPath = Path.Combine(projectRoot, "src", "Honua.Server", "Features");
+        var featuresPath = ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Features");
 
         Directory.Exists(featuresPath).Should().BeTrue($"Features directory should exist at {featuresPath}");
 
@@ -288,7 +288,7 @@ public sealed class VerticalSliceIsolationTests
         // Verify each feature has proper structure
         foreach (var featureDir in featureDirectories)
         {
-            var featurePath = Path.Combine(featuresPath, featureDir);
+            var featurePath = ArchitectureTestHelpers.CombinePath(featuresPath, featureDir);
 
             // Skip infrastructure as it's a cross-cutting concern.
             // Skip parent containers (Protocols, Mobile) whose vertical slices live in sub-directories.
@@ -307,7 +307,7 @@ public sealed class VerticalSliceIsolationTests
             };
 
             var hasEndpointsOrHandler = expectedFiles
-                .Select(file => Path.Combine(featurePath, file))
+                .Select(file => ArchitectureTestHelpers.CombinePath(featurePath, file))
                 .Any(File.Exists) ||
                 Directory.GetFiles(featurePath, "*Endpoints.cs").Length > 0 ||
                 Directory.GetFiles(featurePath, "*Handler.cs").Length > 0;
@@ -348,15 +348,13 @@ public sealed class VerticalSliceIsolationTests
                     continue;
                 }
 
-                foreach (var forbidden in forbiddenNamespaces)
+                foreach (var forbidden in forbiddenNamespaces.Where(forbidden =>
+                    ns.Equals(forbidden, StringComparison.Ordinal) ||
+                    ns.StartsWith(forbidden + ".", StringComparison.Ordinal)))
                 {
-                    if (ns.Equals(forbidden, StringComparison.Ordinal) ||
-                        ns.StartsWith(forbidden + ".", StringComparison.Ordinal))
-                    {
-                        violations.Add(
-                            $"Mcp type '{type.FullName}' references '{referenced.FullName}' from '{forbidden}'. " +
-                            $"The MCP operator surface must only consume canonical domain services, not other protocol adapters.");
-                    }
+                    violations.Add(
+                        $"Mcp type '{type.FullName}' references '{referenced.FullName}' from '{forbidden}'. " +
+                        $"The MCP operator surface must only consume canonical domain services, not other protocol adapters.");
                 }
             }
         }
@@ -371,16 +369,16 @@ public sealed class VerticalSliceIsolationTests
     {
         var currentDir = Directory.GetCurrentDirectory();
         var projectRoot = FindProjectRoot(currentDir);
-        var featuresPath = Path.Combine(projectRoot, "src", "Honua.Server", "Features");
+        var featuresPath = ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Features");
 
         foreach (var adapterName in _protocolAdapterNames)
         {
-            Directory.Exists(Path.Combine(featuresPath, adapterName)).Should().BeFalse(
+            Directory.Exists(ArchitectureTestHelpers.CombinePath(featuresPath, adapterName)).Should().BeFalse(
                 $"{adapterName} is a protocol adapter and must live under Features/Protocols/{adapterName}");
         }
 
         var legacyCogFolder = string.Concat("Cloud", "Cog");
-        Directory.Exists(Path.Combine(featuresPath, legacyCogFolder)).Should().BeFalse(
+        Directory.Exists(ArchitectureTestHelpers.CombinePath(featuresPath, legacyCogFolder)).Should().BeFalse(
             "COG protocol code should use the concise Features/Protocols/Cog location and naming.");
     }
 
@@ -522,14 +520,12 @@ public sealed class VerticalSliceIsolationTests
             return null;
         }
 
-        foreach (var otherFeature in otherFeatures)
+        var matchedFeature = otherFeatures.FirstOrDefault(otherFeature => typeNamespace.Contains($"Features.{otherFeature}"));
+        if (matchedFeature is not null)
         {
-            if (typeNamespace.Contains($"Features.{otherFeature}"))
-            {
-                return $"Feature '{currentFeature}' type '{containingType.FullName}' " +
-                       $"directly references type '{typeToCheck.FullName}' from feature '{otherFeature}'. " +
-                       $"Use shared abstractions in Core or Infrastructure instead.";
-            }
+            return $"Feature '{currentFeature}' type '{containingType.FullName}' " +
+                   $"directly references type '{typeToCheck.FullName}' from feature '{matchedFeature}'. " +
+                   $"Use shared abstractions in Core or Infrastructure instead.";
         }
 
         return null;
@@ -554,17 +550,17 @@ public sealed class VerticalSliceIsolationTests
 
         foreach (var field in type.GetFields(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
         {
-            foreach (var t in Expand(field.FieldType))
+            foreach (var t in Expand(field.FieldType).Where(seen.Add))
             {
-                if (seen.Add(t)) yield return t;
+                yield return t;
             }
         }
 
         foreach (var property in type.GetProperties(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static))
         {
-            foreach (var t in Expand(property.PropertyType))
+            foreach (var t in Expand(property.PropertyType).Where(seen.Add))
             {
-                if (seen.Add(t)) yield return t;
+                yield return t;
             }
         }
 
@@ -572,25 +568,25 @@ public sealed class VerticalSliceIsolationTests
         {
             foreach (var parameter in constructor.GetParameters())
             {
-                foreach (var t in Expand(parameter.ParameterType))
+                foreach (var t in Expand(parameter.ParameterType).Where(seen.Add))
                 {
-                    if (seen.Add(t)) yield return t;
+                    yield return t;
                 }
             }
         }
 
         foreach (var method in type.GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
         {
-            foreach (var t in Expand(method.ReturnType))
+            foreach (var t in Expand(method.ReturnType).Where(seen.Add))
             {
-                if (seen.Add(t)) yield return t;
+                yield return t;
             }
 
             foreach (var parameter in method.GetParameters())
             {
-                foreach (var t in Expand(parameter.ParameterType))
+                foreach (var t in Expand(parameter.ParameterType).Where(seen.Add))
                 {
-                    if (seen.Add(t)) yield return t;
+                    yield return t;
                 }
             }
         }
@@ -616,7 +612,7 @@ public sealed class VerticalSliceIsolationTests
         var current = new DirectoryInfo(startPath);
         while (current != null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
+            if (File.Exists(ArchitectureTestHelpers.CombinePath(current.FullName, "Honua.sln")))
             {
                 return current.FullName;
             }

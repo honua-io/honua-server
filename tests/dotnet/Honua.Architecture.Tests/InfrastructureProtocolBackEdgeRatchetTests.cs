@@ -43,7 +43,7 @@ public sealed class InfrastructureProtocolBackEdgeRatchetTests
     public void ODataRequiredInfrastructureSubAreas_ShouldNotUsing_AnyProtocolNamespace()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var infrastructureRoot = Path.Combine(
+        var infrastructureRoot = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
             "Honua.Server",
@@ -57,9 +57,9 @@ public sealed class InfrastructureProtocolBackEdgeRatchetTests
 
         var violations = new List<string>();
 
-        foreach (var subArea in ODataRequiredSubAreas)
+        foreach (var subAreaDir in ODataRequiredSubAreas
+            .Select(subArea => ArchitectureTestHelpers.CombinePath(infrastructureRoot, subArea)))
         {
-            var subAreaDir = Path.Combine(infrastructureRoot, subArea);
             if (!Directory.Exists(subAreaDir))
             {
                 // The sub-area may have been extracted to a new assembly /
@@ -70,13 +70,14 @@ public sealed class InfrastructureProtocolBackEdgeRatchetTests
 
             foreach (var file in Directory.EnumerateFiles(subAreaDir, "*.cs", SearchOption.AllDirectories))
             {
-                foreach (var line in File.ReadLines(file))
+                // FirstOrDefault (not Where+foreach) intentionally preserves the original
+                // break-after-first-match behavior: only the first offending line per file is
+                // recorded, and File.ReadLines' lazy enumeration still stops there.
+                var offendingLine = File.ReadLines(file)
+                    .FirstOrDefault(line => line.StartsWith(ProtocolsNamespacePrefix, StringComparison.Ordinal));
+                if (offendingLine is not null)
                 {
-                    if (line.StartsWith(ProtocolsNamespacePrefix, StringComparison.Ordinal))
-                    {
-                        violations.Add($"{Path.GetRelativePath(repositoryRoot, file)}: {line.Trim()}");
-                        break;
-                    }
+                    violations.Add($"{Path.GetRelativePath(repositoryRoot, file)}: {offendingLine.Trim()}");
                 }
             }
         }
