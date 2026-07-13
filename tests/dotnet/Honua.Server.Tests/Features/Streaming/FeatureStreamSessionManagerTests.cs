@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -28,7 +29,7 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             MaxBufferPerConnection = 4,
             ReplayBatchSize = 100
         });
-        _manager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance);
+        _manager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics());
     }
 
     public void Dispose() => _manager.Dispose();
@@ -54,7 +55,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
                 MaxConcurrentSessions = 1,
                 ReplayBatchSize = 100
             }),
-            NullLogger<FeatureStreamSessionManager>.Instance);
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics());
 
         var startGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sessions = new ConcurrentBag<FeatureStreamSession>();
@@ -708,7 +710,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
                 ReplayBatchSize = 100,
                 MaxSubscriptionsPerSession = 2
             }),
-            NullLogger<FeatureStreamSessionManager>.Instance);
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics());
         using var session = manager.CreateSession("WebSocket", "cap-test");
 
         // Default subscription is already present; adding one more reaches cap=2.
@@ -843,8 +846,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             ReplayBatchSize = 100
         });
 
-        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
-        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
+        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
         using var localSession = localManager.CreateSession("WebSocket", "local");
         using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
 
@@ -945,8 +948,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             ReplayBatchSize = 100
         });
 
-        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
-        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
+        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
         using var localSession = localManager.CreateSession("WebSocket", "local");
         using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
 
@@ -996,8 +999,8 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
             ReplayBatchSize = 100
         });
 
-        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
-        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, redis);
+        using var localManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
+        using var remoteManager = new FeatureStreamSessionManager(options, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics(), redis);
         using var localSession = localManager.CreateSession("WebSocket", "local");
         using var remoteSession = remoteManager.CreateSession("WebSocket", "remote");
 

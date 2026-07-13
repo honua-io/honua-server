@@ -5,18 +5,29 @@ using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Alerts;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
+/// <summary>
+/// Unit coverage for the alert-pipeline OTel instruments. Each test constructs an isolated
+/// <see cref="AlertPipelineMetrics"/> over its own <see cref="TestMeterFactory"/> and filters the
+/// listener to that exact meter instance, so parallel tests never pollute one another's
+/// observations and no shared process-global instrument state is involved (#2802).
+/// </summary>
 public sealed class AlertPipelineMetricsTests
 {
     [UnitTest]
     public void RecordEventEmitted_IncrementsCounter_TaggedByTrigger()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new AlertPipelineMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.alerts.events_emitted_total",
-            () => AlertPipelineMetrics.RecordEventEmitted(AlertTriggerType.Dwell));
+            () => metrics.RecordEventEmitted(AlertTriggerType.Dwell));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -26,9 +37,13 @@ public sealed class AlertPipelineMetricsTests
     [UnitTest]
     public void RecordDispatchEnqueued_IncrementsCounter_TaggedByChannel()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new AlertPipelineMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.alerts.dispatches_enqueued_total",
-            () => AlertPipelineMetrics.RecordDispatchEnqueued(AlertChannelType.Slack));
+            () => metrics.RecordDispatchEnqueued(AlertChannelType.Slack));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -38,9 +53,13 @@ public sealed class AlertPipelineMetricsTests
     [UnitTest]
     public void RecordDeliverySucceeded_IncrementsCounter_TaggedByChannel()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new AlertPipelineMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.alerts.deliveries_succeeded_total",
-            () => AlertPipelineMetrics.RecordDeliverySucceeded(AlertChannelType.Webhook, latencyMs: 12.5));
+            () => metrics.RecordDeliverySucceeded(AlertChannelType.Webhook, latencyMs: 12.5));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -50,9 +69,13 @@ public sealed class AlertPipelineMetricsTests
     [UnitTest]
     public void RecordDeliveryRateCapped_IncrementsCounter()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new AlertPipelineMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.alerts.deliveries_rate_capped_total",
-            () => AlertPipelineMetrics.RecordDeliveryRateCapped(AlertChannelType.Email));
+            () => metrics.RecordDeliveryRateCapped(AlertChannelType.Email));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -62,9 +85,13 @@ public sealed class AlertPipelineMetricsTests
     [UnitTest]
     public void RecordOpsNotification_IncrementsCounter_TaggedBySourceSeverityOutcome()
     {
+        using var factory = new TestMeterFactory();
+        var metrics = new AlertPipelineMetrics(factory);
+
         var measurements = CaptureLongMeasurements(
+            metrics.Meter,
             "honua.alerts.ops_notifications_total",
-            () => AlertPipelineMetrics.RecordOpsNotification("deploy-workflow", AlertSeverity.Critical, "enqueued"));
+            () => metrics.RecordOpsNotification("deploy-workflow", AlertSeverity.Critical, "enqueued"));
 
         measurements.Should().Contain(m =>
             m.Value == 1 &&
@@ -73,6 +100,7 @@ public sealed class AlertPipelineMetricsTests
     }
 
     private static List<(long Value, IReadOnlyList<KeyValuePair<string, object?>> Tags)> CaptureLongMeasurements(
+        Meter meter,
         string instrumentName,
         Action emit)
     {
@@ -80,7 +108,7 @@ public sealed class AlertPipelineMetricsTests
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Meter.Name == "Honua" && instrument.Name == instrumentName)
+            if (ReferenceEquals(instrument.Meter, meter) && instrument.Name == instrumentName)
             {
                 l.EnableMeasurementEvents(instrument);
             }

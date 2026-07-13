@@ -145,6 +145,7 @@ internal static partial class FeatureStreamEndpoints
                     options.ReplayBatchSize,
                     logger,
                     session.SessionId,
+                    sessionManager,
                     linkedCts.Token,
                     subscriptionFilter,
                     FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
@@ -158,6 +159,7 @@ internal static partial class FeatureStreamEndpoints
                     options.ReplayBatchSize,
                     logger,
                     session.SessionId,
+                    sessionManager,
                     linkedCts.Token,
                     subscriptionFilter,
                     FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
@@ -214,6 +216,7 @@ internal static partial class FeatureStreamEndpoints
                         options.ReplayBatchSize,
                         logger,
                         session.SessionId,
+                        sessionManager,
                         linkedCts.Token,
                         subscriptionFilter,
                         FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
@@ -261,6 +264,7 @@ internal static partial class FeatureStreamEndpoints
                         options.ReplayBatchSize,
                         logger,
                         session.SessionId,
+                        sessionManager,
                         linkedCts.Token,
                         subscriptionFilter,
                         FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
@@ -301,6 +305,7 @@ internal static partial class FeatureStreamEndpoints
                                 options.ReplayBatchSize,
                                 logger,
                                 session.SessionId,
+                                sessionManager,
                                 linkedCts.Token,
                                 subscriptionFilter,
                                 FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
@@ -359,6 +364,7 @@ internal static partial class FeatureStreamEndpoints
                         options.ReplayBatchSize,
                         logger,
                         session.SessionId,
+                        sessionManager,
                         linkedCts.Token,
                         subscriptionFilter,
                         FeatureStreamSessionManager.DefaultSubscriptionId).ConfigureAwait(false);
