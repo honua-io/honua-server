@@ -125,15 +125,9 @@ class TestMvtTiles:
         """MVT tiles should have cache control headers."""
         response = http_client.get(f"/tiles/{test_layer_id}/0/0/0.mvt")
 
-        if response.status_code in [200, 204]:
-            # Should have some form of cache header
-            has_cache = (
-                "cache-control" in response.headers or
-                "etag" in response.headers or
-                "expires" in response.headers
-            )
-            # Cache headers are recommended but not required
-            # Just check response is valid
+        # Cache headers (cache-control/etag/expires) are recommended but not
+        # required, so this test only checks that the response succeeds.
+        assert response.status_code in [200, 204]
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -159,6 +153,7 @@ class TestMvtTileFormats:
         # This might be a different endpoint or return 404
         response = http_client.get(f"/tiles/{test_layer_id}/0/0/0")
         # Behavior depends on routing - may redirect or 404
+        assert response.status_code in [200, 301, 302, 404]
 
     @pytest.mark.integration
     @pytest.mark.featureserver

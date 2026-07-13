@@ -147,7 +147,7 @@ def _get_gdal_version() -> str | None:
         if result.returncode == 0:
             return result.stdout.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+        pass  # ogrinfo missing or unresponsive; treat as "version unknown"
     return None
 
 
@@ -385,6 +385,7 @@ def extract_first_layer_name(ogrinfo_output: str) -> str:
 
             return after_colon
     pytest.fail(f"Could not extract layer name from ogrinfo output:\n{ogrinfo_output}")
+    raise AssertionError("unreachable")  # pytest.fail() always raises; satisfies -> str
 
 
 @pytest.fixture(scope="session")

@@ -95,7 +95,7 @@ class TestPaginationLinks:
         prev_links = [link for link in links if link.get("rel") == "prev"]
 
         # If we have an offset, should have prev link (unless at first page after offset)
-        # This is optional in the spec but recommended
+        assert len(prev_links) >= 1, "Should have prev link when offset > 0"
 
     @pytest.mark.integration
     @pytest.mark.ogc

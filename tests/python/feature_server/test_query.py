@@ -24,7 +24,6 @@ from shapely.geometry import shape
 
 from shared.geometry import GeometryGenerator
 from shared.geoservices import assert_geoservices_error
-from conftest import assert_esri_feature_set
 
 
 class TestQueryBasic:
@@ -418,8 +417,9 @@ class TestQueryOutput:
         # Verify limited fields returned
         for feature in features:
             attrs = feature.get("attributes", {})
-            # Should contain 'name' if it exists in schema
-            # Other fields like OBJECTID may also be included
+            # Requested outFields=name, so the field must be present.
+            # Other fields like OBJECTID may also be included.
+            assert "name" in attrs
 
     @pytest.mark.integration
     @pytest.mark.featureserver
