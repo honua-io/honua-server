@@ -173,6 +173,9 @@ internal sealed partial class MySqlFeatureQueryBuilder
         }
 
         var translated = new List<string>(expressions.Count);
+        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
+        // throw, mutate the shared `paramIndex`/`parameters` accumulators, and `continue`
+        // early per branch -- not a pure map of one iteration variable to another.
         foreach (var raw in expressions)
         {
             var expr = raw.Trim();
@@ -233,12 +236,9 @@ internal sealed partial class MySqlFeatureQueryBuilder
             return;
         }
 
-        foreach (var column in mapping.AttributeColumns)
+        if (mapping.AttributeColumns.Any(column => column.Equals(field, StringComparison.OrdinalIgnoreCase)))
         {
-            if (column.Equals(field, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         throw new ArgumentException(

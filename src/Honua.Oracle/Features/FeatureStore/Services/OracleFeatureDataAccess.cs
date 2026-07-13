@@ -269,7 +269,7 @@ internal sealed class OracleFeatureDataAccess
 
     private static byte[] ReadBlob(OracleBlob blob)
     {
-        try
+        using (blob)
         {
             var length = blob.Length;
             if (length == 0)
@@ -299,10 +299,6 @@ internal sealed class OracleFeatureDataAccess
             var trimmed = new byte[offset];
             Array.Copy(buffer, trimmed, offset);
             return trimmed;
-        }
-        finally
-        {
-            blob.Dispose();
         }
     }
 }
