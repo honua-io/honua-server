@@ -151,7 +151,8 @@ internal sealed class QueryFeaturesTool : IMcpTool
             NextCursor = nextOffset?.ToString(CultureInfo.InvariantCulture),
             Count = result.TotalCount,
             Features = mcpFeatures,
-            GeoJson = new McpGeoJsonFeatureCollection { Features = geoJsonFeatures }
+            GeoJson = new McpGeoJsonFeatureCollection { Features = geoJsonFeatures },
+            Warnings = BuildZeroResultWarnings(geoJsonFeatures.Count, argument.Bbox, argument.BboxSrid)
         };
 
         return McpToolHelpers.SuccessResult(
@@ -189,15 +190,24 @@ internal sealed class QueryFeaturesTool : IMcpTool
             ? string.Format(CultureInfo.InvariantCulture, "more available: re-query with cursor=\"{0}\" or resultOffset={0}", next)
             : "last page";
 
+        // A bbox query that returns nothing is ambiguous: either there is genuinely no
+        // data in the window, or the bbox is in a different CRS than bboxSrid claims
+        // (the classic Web Mercator × 4326 mistake). Surface the structured CRS hint so
+        // the agent does not silently accept "0 features" as "no data here".
+        var crsHint = output.Warnings is { Count: > 0 }
+            ? " " + string.Join(" ", output.Warnings)
+            : string.Empty;
+
         return string.Format(
             CultureInfo.InvariantCulture,
-            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Feature attributes are in structuredContent.features; GeoJSON FeatureCollection is in structuredContent.geojson.",
+            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Feature attributes are in structuredContent.features; GeoJSON FeatureCollection is in structuredContent.geojson.{6}",
             output.ReturnedCount,
             output.ServiceId,
             output.LayerId,
             output.ResultOffset,
             pagingNote,
-            geometryNote);
+            geometryNote,
+            crsHint);
     }
 
     private static int ResolveLimit(int? requested)
@@ -289,6 +299,34 @@ internal sealed class QueryFeaturesTool : IMcpTool
         return translation.SqlFilter;
     }
 
+    /// <summary>
+    /// Emits a structured CRS warning when a <c>bbox</c>-filtered query returns zero
+    /// features. An in-range bbox that legitimately matches nothing is indistinguishable
+    /// from a bbox whose ordinates are in a different CRS than <c>bboxSrid</c> declares
+    /// (the definitively wrong cases are rejected up front by
+    /// <see cref="McpBboxCrsGuard"/>); the warning lets the agent tell "no data here"
+    /// apart from "your bbox is in the wrong CRS".
+    /// </summary>
+    private static IReadOnlyList<string>? BuildZeroResultWarnings(
+        int returnedCount,
+        IReadOnlyList<double>? bbox,
+        int? bboxSrid)
+    {
+        if (returnedCount != 0 || bbox is null)
+        {
+            return null;
+        }
+
+        return
+        [
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "0 features — bbox may be in the wrong CRS. Verify the bbox ordinates match bboxSrid {0} "
+                + "(projected metres vs lon/lat degrees) before concluding there is no data in this window.",
+                bboxSrid ?? 4326)
+        ];
+    }
+
     private static SpatialFilter? BuildBboxFilter(
         IGeometryService geometryService,
         IReadOnlyList<double>? bbox,
@@ -314,6 +352,12 @@ internal sealed class QueryFeaturesTool : IMcpTool
         }
 
         var srid = bboxSrid ?? 4326;
+
+        // Reject a bbox whose ordinate ranges are implausible for the declared SRID
+        // (e.g. a Web Mercator metre bbox under the default geographic bboxSrid 4326),
+        // which would otherwise silently query the wrong window and return 0 features.
+        McpBboxCrsGuard.Validate(minX, minY, maxX, maxY, srid);
+
         var wkt = string.Format(
             CultureInfo.InvariantCulture,
             "POLYGON(({0} {1},{2} {1},{2} {3},{0} {3},{0} {1}))",

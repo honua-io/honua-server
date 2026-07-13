@@ -222,6 +222,17 @@ internal sealed class McpQueryFeaturesOutput
     /// <summary>RFC 7946 GeoJSON <c>FeatureCollection</c> for the returned features. Omitted when <c>returnCountOnly=true</c>.</summary>
     [JsonPropertyName("geojson")]
     public McpGeoJsonFeatureCollection? GeoJson { get; set; }
+
+    /// <summary>
+    /// Non-fatal advisories about this result. Populated when a <c>bbox</c>-filtered
+    /// query returns zero features to warn that the bbox may be in a different CRS than
+    /// <c>bboxSrid</c> declares, so an agent can distinguish "no data here" from "your
+    /// bbox is in the wrong coordinate system". Omitted (null) when there is nothing to
+    /// warn about.
+    /// </summary>
+    [JsonPropertyName("warnings")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Warnings { get; set; }
 }
 
 /// <summary>

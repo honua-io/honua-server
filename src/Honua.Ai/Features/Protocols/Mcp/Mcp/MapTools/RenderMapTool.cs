@@ -85,6 +85,11 @@ internal sealed class RenderMapTool : IMcpTool
             throw new GeoprocessingValidationException("'bboxSrid' must be a positive SRID/WKID.");
         }
 
+        // Reject a bbox whose ordinate ranges are implausible for the declared SRID
+        // (e.g. a Web Mercator metre extent under the default geographic bboxSrid 4326),
+        // which would otherwise render an empty or wrong-window map with no signal.
+        McpBboxCrsGuard.Validate(bbox[0], bbox[1], bbox[2], bbox[3], bboxSrid);
+
         var width = ResolveSize(argument.Width, "width");
         var height = ResolveSize(argument.Height, "height");
 

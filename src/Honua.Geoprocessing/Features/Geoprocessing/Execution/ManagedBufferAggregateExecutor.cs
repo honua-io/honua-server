@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -27,11 +28,15 @@ namespace Honua.Geoprocessing.Execution;
 /// contributed to it. When <c>dissolve=false</c>, one buffered feature is
 /// emitted per input with the input's attributes carried through verbatim.
 ///
-/// Distance is normalised to CRS units after applying the unit factor
-/// (meters/kilometers/feet/miles). Geodesic conversion is not performed —
-/// callers operating on a geographic CRS must supply a distance already in
-/// the layer's coordinate units. This matches the convention of the managed
-/// <c>geometry.buffer</c> executor.
+/// Distance is normalised to planar CRS units after applying the unit factor
+/// (meters/kilometers/feet/miles). Geodesic conversion is not performed, so the
+/// linear unit is only meaningful on a metric projected CRS. A linear-unit buffer
+/// against a geographic (lon/lat degree) CRS — resolved from the explicit <c>srid</c>
+/// input, else the input geometry SRID, else the GeoJSON default 4326 — is rejected
+/// via the canonical <see cref="GeographicSridClassifier"/> rather than silently
+/// applying metres as degrees. Callers must reproject to a metric CRS (or declare the
+/// projected <c>srid</c> the geometries are in) first. This matches the convention of
+/// the managed <c>geometry.buffer</c> executor.
 /// </summary>
 internal sealed class ManagedBufferAggregateExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
@@ -48,7 +53,27 @@ internal sealed class ManagedBufferAggregateExecutor(
         CancellationToken cancellationToken)
     {
         var distance = ReadDistance(inputs);
-        var unitFactor = ReadUnitFactor(inputs);
+        var (unitName, unitFactor) = ReadUnit(inputs);
+        var srid = ResolveSrid(inputs, source);
+
+        // A linear unit (metres/km/feet/miles) applied as planar CRS units to a geographic
+        // (lon/lat degree) CRS silently produces wrong-scale geometry — a "500 metres"
+        // buffer becomes a 500-degree buffer. Reject up front instead of returning a
+        // plausible-but-wrong result; the caller must reproject to a metric/projected CRS
+        // first (e.g. transform.reproject to EPSG:3857) or declare the projected 'srid'
+        // the geometries are actually in. Uses the canonical SRID classifier (#2732), not
+        // a local allowlist.
+        if (GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(srid))
+        {
+            throw new TransformInputException(string.Format(
+                CultureInfo.InvariantCulture,
+                "buffer distance unit '{0}' is a linear (metric) unit but the input CRS (EPSG:{1}) is geographic "
+                + "(lon/lat degrees); a metric buffer applied to degree coordinates produces wrong-scale geometry. "
+                + "Reproject the features to a metric/projected CRS (e.g. transform.reproject to EPSG:3857) before "
+                + "buffering, or set 'srid' to the projected CRS the geometries are actually in.",
+                unitName, srid));
+        }
+
         var effectiveDistance = distance * unitFactor;
         var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);
@@ -164,10 +189,10 @@ internal sealed class ManagedBufferAggregateExecutor(
         return value;
     }
 
-    private static double ReadUnitFactor(StepInputReader inputs)
+    private static (string Name, double Factor) ReadUnit(StepInputReader inputs)
     {
         var raw = inputs.GetOrDefault("unit", "meters").Trim().ToLowerInvariant();
-        return raw switch
+        var factor = raw switch
         {
             "" or "meters" or "meter" or "m" => 1.0,
             "kilometers" or "kilometer" or "km" => 1000.0,
@@ -176,6 +201,41 @@ internal sealed class ManagedBufferAggregateExecutor(
             _ => throw new TransformInputException(
                 $"unit '{raw}' is not supported (allowed: meters, kilometers, feet, miles)"),
         };
+
+        return (string.IsNullOrEmpty(raw) ? "meters" : raw, factor);
+    }
+
+    /// <summary>
+    /// Resolves the CRS the buffer distance is applied in. Prefers an explicit
+    /// <c>srid</c> input; otherwise samples the first non-empty input geometry's SRID
+    /// (preserved end-to-end across streamed artifacts); otherwise defaults to WGS&#160;84
+    /// (4326), the GeoJSON convention. The resolved SRID drives the geographic-unit guard
+    /// so a metric buffer on degree coordinates is rejected rather than silently wrong.
+    /// </summary>
+    private static int ResolveSrid(StepInputReader inputs, FeatureCollection source)
+    {
+        if (inputs.TryGet("srid", out var raw)
+            && !string.IsNullOrWhiteSpace(raw))
+        {
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var declared)
+                || declared <= 0)
+            {
+                throw new TransformInputException("'srid' must be a positive integer SRID/WKID");
+            }
+
+            return declared;
+        }
+
+        foreach (var feature in source)
+        {
+            var geometry = feature.Geometry;
+            if (geometry is not null && !geometry.IsEmpty && geometry.SRID > 0)
+            {
+                return geometry.SRID;
+            }
+        }
+
+        return 4326;
     }
 
     private static bool ReadBool(StepInputReader inputs, string name, bool defaultValue)

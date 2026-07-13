@@ -405,6 +405,134 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_ProjectedBboxUnderGeographicSrid_ReturnsValidationError()
+    {
+        // #2808: a Web Mercator (metre) bbox submitted with the default geographic
+        // bboxSrid 4326 previously returned 0 features with no signal. It must now be
+        // rejected as a structured invalid_argument tool error naming the mismatch.
+        var reader = Substitute.For<IFeatureReader>();
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("query-badcrs-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"bbox":[-13600000,4500000,-13500000,4600000]}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("invalid_argument");
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ValidationFailed");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+
+        // The wrong-CRS bbox must never reach the canonical reader.
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_GeographicBboxUnderProjectedSrid_ReturnsValidationError()
+    {
+        // #2808 inverse: a lon/lat degree bbox tagged with a projected bboxSrid is the
+        // symmetric mistake and is likewise rejected rather than silently mis-queried.
+        var reader = Substitute.For<IFeatureReader>();
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("query-badcrs-2", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"bbox":[-10,-10,10,10],"bboxSrid":3857}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("invalid_argument");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+
+        await reader.DidNotReceive().QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_PlausibleBboxWithZeroResults_SummaryWarnsAboutCrs()
+    {
+        // #2808: a plausible (in-range) geographic bbox that legitimately matches no
+        // features must carry a CRS hint in the summary so the agent does not silently
+        // accept "0 features" as "no data here".
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 0,
+                HasMoreResults = false,
+                Items = []
+            });
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("query-empty-bbox-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"bbox":[-1,-1,1,1]}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(0);
+
+        var warnings = structured.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()).ToArray();
+        warnings.Should().ContainSingle(w => w!.Contains("bbox may be in the wrong CRS"));
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_render_map")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_RenderMap_ProjectedBboxUnderGeographicSrid_ReturnsValidationError()
+    {
+        // #2808: the same bbox/SRID plausibility guard protects the render tool so a
+        // wrong-CRS extent fails fast instead of rendering an empty or wrong window.
+        var renderer = Substitute.For<IRasterMapRenderer>();
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(renderer: renderer)),
+            ToolCall("render-badcrs-1", RenderMapTool.ToolName, $$"""
+                {
+                  "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
+                  "bbox":[-13600000,4500000,-13500000,4600000],
+                  "width":256,
+                  "height":256
+                }
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("invalid_argument");
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
+
+        await renderer.DidNotReceive().RenderDatasetMapAsync(
+            Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_QueryFeatures_ReturnCountOnly_ReturnsCountWithoutFeatures()
     {
         var reader = Substitute.For<IFeatureReader>();
