@@ -748,7 +748,7 @@ public sealed class Cql2JsonParser
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minY >= maxY ||
             (!isGeographic && minX >= maxX) ||
-            (isGeographic && minX == maxX))
+            (isGeographic && Math.Abs(minX - maxX) < CoordinateEpsilon))
         {
             throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
         }
@@ -760,6 +760,10 @@ public sealed class Cql2JsonParser
             throw new ArgumentException("Invalid bbox literal in CQL2-JSON");
         }
     }
+
+    // Tolerance for comparing bbox longitude bounds; avoids exact floating-point
+    // equality checks when detecting a degenerate (zero-width) geographic bbox.
+    private const double CoordinateEpsilon = 1e-9;
 
     private static bool IsValidCoordinate(double coordinate)
         => !double.IsNaN(coordinate) &&

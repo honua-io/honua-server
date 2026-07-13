@@ -484,7 +484,21 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         var safeName = fileId
             .Replace('/', '_')
             .Replace('\\', '_');
-        return Path.Combine(_metadataPath, $"{safeName}.json");
+
+        // Defence-in-depth: the slash/backslash replacement above already prevents
+        // POSIX-style traversal, but it does not prevent a rooted result on platforms
+        // where a bare "C:" prefix (no separator) makes a path rooted. Resolve and
+        // verify containment the same way GetSafeFullPath does for storage paths.
+        var candidate = Path.GetFullPath(Path.Combine(_metadataPath, $"{safeName}.json"));
+        var root = Path.GetFullPath(_metadataPath) + Path.DirectorySeparatorChar;
+        if (!candidate.StartsWith(root, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The resolved metadata path escapes the metadata directory.",
+                nameof(fileId));
+        }
+
+        return candidate;
     }
 
     private static void ValidateObjectKeyOverride(string objectKey)

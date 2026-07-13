@@ -86,7 +86,7 @@ internal sealed class BinaryNode(ExpressionTokenKind op, ExpressionNode left, Ex
             case ExpressionTokenKind.Slash:
                 {
                     var divisor = ExpressionValues.ToNumber(r);
-                    if (divisor == 0d)
+                    if (Math.Abs(divisor) < ExpressionValues.ZeroTolerance)
                     {
                         throw new ExpressionEvaluationException("division by zero");
                     }
@@ -96,7 +96,7 @@ internal sealed class BinaryNode(ExpressionTokenKind op, ExpressionNode left, Ex
             case ExpressionTokenKind.Percent:
                 {
                     var divisor = ExpressionValues.ToNumber(r);
-                    if (divisor == 0d)
+                    if (Math.Abs(divisor) < ExpressionValues.ZeroTolerance)
                     {
                         throw new ExpressionEvaluationException("modulo by zero");
                     }
@@ -148,6 +148,16 @@ internal sealed class FunctionNode(string name, IReadOnlyList<ExpressionNode> ar
 /// </summary>
 internal static class ExpressionValues
 {
+    /// <summary>
+    /// Tolerance used wherever a computed <c>double</c> is compared against the literal
+    /// zero sentinel (divide/modulo-by-zero guards, truthy coercion). A value derived
+    /// through a chain of arithmetic that mathematically cancels to zero can round to a
+    /// tiny non-zero residue instead of exact <c>0.0</c>; comparing with exact equality
+    /// would let that residue silently produce a huge/garbage result (division) or the
+    /// wrong branch (truthiness) instead of the intended zero-sentinel behavior.
+    /// </summary>
+    internal const double ZeroTolerance = 1e-9;
+
     /// <summary>Coerces a value to a <c>double</c>, throwing for non-numeric input.</summary>
     public static double ToNumber(object? value)
     {
@@ -194,7 +204,7 @@ internal static class ExpressionValues
     {
         null => false,
         bool b => b,
-        double d => d != 0d,
+        double d => Math.Abs(d) >= ZeroTolerance,
         string s => s.Length > 0 && !string.Equals(s, "false", StringComparison.OrdinalIgnoreCase) && s != "0",
         _ => true,
     };
@@ -214,6 +224,12 @@ internal static class ExpressionValues
 
         if (TryToNumber(left, out var ln) && TryToNumber(right, out var rn))
         {
+            // Intentional exact equality: this backs the expression language's `==`/`!=`
+            // operators, which follow the same exact-numeric-equality semantics as the
+            // CQL2/OData `=` filter operators elsewhere in this codebase (pushed down to
+            // SQL `=`, see Cql2Parser/ODataFilterParser) rather than a tolerance compare.
+            // A tolerance here would make identical-looking field values compare unequal
+            // to their own literal, which is the opposite of what "==" means to a caller.
             return ln == rn;
         }
 

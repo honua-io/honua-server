@@ -837,13 +837,17 @@ public sealed class Cql2Parser
         if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minY >= maxY ||
-            minX == maxX ||
+            Math.Abs(minX - maxX) < CoordinateEpsilon ||
             !IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
             !IsValidLatitude(minY) || !IsValidLatitude(maxY))
         {
             throw new ArgumentException("Invalid BBOX coordinates");
         }
     }
+
+    // Tolerance for comparing bbox longitude bounds; avoids exact floating-point
+    // equality checks when detecting a degenerate (zero-width) geographic bbox.
+    private const double CoordinateEpsilon = 1e-9;
 
     private static bool IsValidCoordinate(double coordinate)
         => !double.IsNaN(coordinate) &&

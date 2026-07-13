@@ -264,7 +264,8 @@ def _eval(node, fqn: str) -> bool:
         return any(_eval(c, fqn) for c in node[1])
     if kind == "and":
         return all(_eval(c, fqn) for c in node[1])
-    # clause
+    if kind != "clause":
+        raise ValueError(f"unknown node kind {kind!r}")
     _, prop, op, value = node
     if prop != "FullyQualifiedName":
         # Trait/DisplayName clauses don't constrain class-level claiming; treat

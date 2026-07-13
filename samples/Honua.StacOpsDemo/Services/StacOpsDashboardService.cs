@@ -143,7 +143,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         ConcurrentQueue<RequestLedgerEntry> ledger,
         CancellationToken cancellationToken)
     {
-        var concurrencyGate = new SemaphoreSlim(4);
+        using var concurrencyGate = new SemaphoreSlim(4);
         var tasks = collections.Select(async collection =>
         {
             await concurrencyGate.WaitAsync(cancellationToken).ConfigureAwait(false);

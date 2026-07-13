@@ -476,7 +476,7 @@ internal sealed partial class ExecutionJobReconciler(
             // On a nonterminal transition, treat a prior terminal observation's
             // step counters as stale (a Completed projection carries StepsCompleted==TotalSteps
             // even though the job is now Running/AwaitingExecution again).
-            if (!jobIsTerminal && existing?.CompletedAt.HasValue == true)
+            if (!jobIsTerminal && existing is { CompletedAt: not null })
             {
                 return (0, existing.TotalSteps);
             }
@@ -485,11 +485,11 @@ internal sealed partial class ExecutionJobReconciler(
         }
 
         var clampedPercent = Math.Clamp(percentComplete.Value, 0d, 100d);
-        var totalSteps = existing?.TotalSteps is > 0
-            ? existing.TotalSteps
+        var totalSteps = existing?.TotalSteps is int existingTotalSteps and > 0
+            ? existingTotalSteps
             : 100;
-        var stepsCompleted = (int)Math.Round(clampedPercent / 100d * totalSteps.Value, MidpointRounding.AwayFromZero);
-        stepsCompleted = Math.Clamp(stepsCompleted, 0, totalSteps.Value);
+        var stepsCompleted = (int)Math.Round(clampedPercent / 100d * totalSteps, MidpointRounding.AwayFromZero);
+        stepsCompleted = Math.Clamp(stepsCompleted, 0, totalSteps);
         return (stepsCompleted, totalSteps);
     }
 
