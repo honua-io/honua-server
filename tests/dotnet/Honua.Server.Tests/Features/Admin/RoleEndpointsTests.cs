@@ -83,7 +83,8 @@ public class RoleEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<RoleResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal("field-worker", result.Data.Name);
         Assert.False(result.Data.IsBuiltIn);
     }
@@ -100,7 +101,8 @@ public class RoleEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<RoleResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal("admin", result.Data.Name);
         Assert.True(result.Data.IsBuiltIn);
     }
@@ -169,7 +171,8 @@ public class RoleEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<PermissionGrantResponse[]>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.NotEmpty(result.Data);
     }
 
@@ -200,7 +203,8 @@ public class RoleEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<PermissionGrantResponse[]>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal(2, result.Data.Length);
     }
 }

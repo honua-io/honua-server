@@ -387,6 +387,8 @@ public sealed class PMTilesProxyServiceTests
         public Task<bool> CancelUploadAsync(string uploadId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<UploadProgress>>([]);
 
+        // Ownership transfer: matches the real IFileStorageService.DownloadAsync contract —
+        // the returned stream is owned and disposed by the caller, not by this stub.
         public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
             => Task.FromResult<Stream?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry)
                 ? new MemoryStream(entry.Bytes, writable: false)
@@ -453,6 +455,8 @@ public sealed class PMTilesProxyServiceTests
             return Task.FromResult(new byte[length]);
         }
 
+        // Ownership transfer: the returned stream is owned and disposed by the caller,
+        // matching the real range-read contract.
         public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
             => Task.FromResult<Stream>(new MemoryStream(new byte[length]));
 

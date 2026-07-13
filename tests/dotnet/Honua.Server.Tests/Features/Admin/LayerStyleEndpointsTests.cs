@@ -116,9 +116,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
             ChangeSummary = "Initial revision."
         };
 
+        using var content6 = JsonContent.Create(firstRequest, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
         var firstPutResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(firstRequest, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content6);
         firstPutResponse.Be200Ok();
         var firstPutPayload = await firstPutResponse.Content.ReadAsStringAsync();
         var firstPut = JsonSerializer.Deserialize(
@@ -154,9 +155,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
             MapLibreStyle = mapLibreStyle
         };
 
+        using var content5 = JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
         var updateResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content5);
 
         updateResponse.Be200Ok();
 
@@ -215,9 +217,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
             MapLibreStyle = invalidStyle
         };
 
+        using var content4 = JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
         var response = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content4);
 
         response.Be400BadRequest();
     }
@@ -242,9 +245,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
             MapLibreStyle = JsonSerializer.SerializeToElement(style)
         };
 
+        using var content3 = JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
         var response = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content3);
 
         response.Be400BadRequest();
     }
@@ -275,9 +279,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
             MapLibreStyle = JsonSerializer.SerializeToElement(style)
         };
 
+        using var content2 = JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
         var updateResponse = await adminClient.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content2);
 
         updateResponse.Be200Ok();
 
@@ -311,9 +316,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
             MapLibreStyle = JsonSerializer.SerializeToElement(style)
         };
 
+        using var content = JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest);
         var updateResponse = await adminClient.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style",
-            JsonContent.Create(request, LayerStyleJsonContext.Default.LayerStyleUpdateRequest));
+            content);
 
         updateResponse.Be200Ok();
 

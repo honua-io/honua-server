@@ -42,6 +42,8 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
         // Generated tilesets must land in a temp directory rather than the
         // server's default content-root-relative "scenes-generated" folder, so
         // an end-to-end ingest never leaks artifacts into the source tree.
+        // The second segment is a generated "honua-pcloud-it-{guid}" literal, so
+        // it can never be rooted and silently discard Path.GetTempPath().
         _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-pcloud-it-{Guid.NewGuid():N}");
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -143,6 +145,8 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
         // then tiles it inline exactly as for a natively-uploaded LAS. A fake
         // factory stands in for the out-of-tree PDAL worker so the dispatch path
         // is exercised end-to-end without a live PDAL install.
+        // Second segment is a generated relative literal, so it can never be
+        // rooted and silently discard Path.GetTempPath().
         var outputRoot = Path.Combine(Path.GetTempPath(), $"honua-pcloud-laz-{Guid.NewGuid():N}");
         var fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -192,6 +196,8 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
     {
         // A projected sourceEpsg on an (uncompressed) LAS upload also routes through
         // the worker for reprojection to geographic EPSG:4979 before tiling.
+        // Second segment is a generated relative literal, so it can never be
+        // rooted and silently discard Path.GetTempPath().
         var outputRoot = Path.Combine(Path.GetTempPath(), $"honua-pcloud-proj-{Guid.NewGuid():N}");
         var fakeFactory = new FakePointCloudDecompressorFactory(PointCloudSceneFixtures.ColoredGridGeographic());
         var fixture = new WebAppFixture()

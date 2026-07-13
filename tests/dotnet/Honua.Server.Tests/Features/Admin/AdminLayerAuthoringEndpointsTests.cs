@@ -41,9 +41,10 @@ public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
         }
         """);
 
+        using var content7 = JsonContent.Create(document, LayerAuthoringJsonContext.Default.JsonElement);
         var putResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/popup-info",
-            JsonContent.Create(document, LayerAuthoringJsonContext.Default.JsonElement));
+            content7);
         putResponse.Be200Ok();
 
         var put = await DeserializeDocumentAsync(putResponse);
@@ -70,9 +71,10 @@ public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
         var client = _fixture.CreateAdminClient();
         var invalidDocument = JsonSerializer.Deserialize<JsonElement>("\"not-an-object\"");
 
+        using var content6 = JsonContent.Create(invalidDocument, LayerAuthoringJsonContext.Default.JsonElement);
         var response = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/popup-info",
-            JsonContent.Create(invalidDocument, LayerAuthoringJsonContext.Default.JsonElement));
+            content6);
 
         response.Be400BadRequest();
     }
@@ -98,9 +100,10 @@ public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
         }
         """);
 
+        using var content5 = JsonContent.Create(document, LayerAuthoringJsonContext.Default.JsonElement);
         var putResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/drawing-info",
-            JsonContent.Create(document, LayerAuthoringJsonContext.Default.JsonElement));
+            content5);
         putResponse.Be200Ok();
 
         var getResponse = await client.GetAsync(
@@ -125,15 +128,17 @@ public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
         { "renderer": { "type": "simple" } }
         """);
 
+        using var content4 = JsonContent.Create(document, LayerAuthoringJsonContext.Default.JsonElement);
         var seedResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/drawing-info",
-            JsonContent.Create(document, LayerAuthoringJsonContext.Default.JsonElement));
+            content4);
         seedResponse.Be200Ok();
 
         var nullBody = JsonSerializer.Deserialize<JsonElement>("null");
+        using var content3 = JsonContent.Create(nullBody, LayerAuthoringJsonContext.Default.JsonElement);
         var clearResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/drawing-info",
-            JsonContent.Create(nullBody, LayerAuthoringJsonContext.Default.JsonElement));
+            content3);
         clearResponse.Be200Ok();
 
         var getResponse = await client.GetAsync(
@@ -173,9 +178,10 @@ public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
             ],
         };
 
+        using var content2 = JsonContent.Create(request, LayerAuthoringJsonContext.Default.LayerRelationshipUpdateRequest);
         var putResponse = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/relationships",
-            JsonContent.Create(request, LayerAuthoringJsonContext.Default.LayerRelationshipUpdateRequest));
+            content2);
         putResponse.Be200Ok();
 
         var put = await DeserializeRelationshipsAsync(putResponse);
@@ -219,9 +225,10 @@ public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
             ],
         };
 
+        using var content = JsonContent.Create(request, LayerAuthoringJsonContext.Default.LayerRelationshipUpdateRequest);
         var response = await client.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/relationships",
-            JsonContent.Create(request, LayerAuthoringJsonContext.Default.LayerRelationshipUpdateRequest));
+            content);
 
         response.Be400BadRequest();
     }

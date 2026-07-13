@@ -435,7 +435,7 @@ public sealed class OgcParameterValidatorTests
         ok.Should().BeTrue();
         start.Year.Should().Be(2020);
         end!.Value.Year.Should().Be(2020);
-        end.Value.Month.Should().Be(12);
+        end!.Value.Month.Should().Be(12);
     }
 
     [Fact]

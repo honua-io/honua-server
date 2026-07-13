@@ -132,7 +132,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": ["FeatureServer", "MapServer", "OgcFeatures", "OData"]
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
 
@@ -148,7 +148,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": []
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
 
@@ -169,7 +169,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
             defaultFormat = "png",
             defaultTransparent = true
         });
-        var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/mapserver", content);
 
@@ -185,7 +185,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "allowAnonymous": true
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/access-policy", content);
 
@@ -201,7 +201,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "startTimeField": "created_at"
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/timeinfo", content);
 
@@ -219,7 +219,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
@@ -243,7 +243,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
 
@@ -277,9 +277,12 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
-        await _client.PutAsync(
-            "/api/v1/admin/services/test/layers/0/metadata",
-            new StringContent(setBody, Encoding.UTF8, "application/json"));
+        using (var setContent = new StringContent(setBody, Encoding.UTF8, "application/json"))
+        {
+            await _client.PutAsync(
+                "/api/v1/admin/services/test/layers/0/metadata",
+                setContent);
+        }
 
         var clearBody = """
             {
@@ -290,9 +293,10 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
+        using var clearContent = new StringContent(clearBody, Encoding.UTF8, "application/json");
         var response = await _client.PutAsync(
             "/api/v1/admin/services/test/layers/0/metadata",
-            new StringContent(clearBody, Encoding.UTF8, "application/json"));
+            clearContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -317,7 +321,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
@@ -341,7 +345,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
@@ -365,7 +369,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               }
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/layers/1/metadata", content);
 
@@ -385,7 +389,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": ["MapServer", "OgcFeatures", "OData", "Grpc"]
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -404,7 +408,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": ["MapServer", "OgcFeatures", "OData", "Grpc"]
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -424,7 +428,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": ["MapServer", "OgcFeatures", "OData", "Grpc"]
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -444,7 +448,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": ["FeatureServer", "MapServer", "OgcFeatures", "Grpc"]
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -463,7 +467,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
               "enabledProtocols": ["FeatureServer", "MapServer", "OData", "Grpc"]
             }
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var updateResponse = await _client.PutAsync("/api/v1/admin/services/test/protocols", content);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);

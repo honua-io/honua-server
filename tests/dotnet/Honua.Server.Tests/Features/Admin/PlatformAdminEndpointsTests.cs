@@ -154,7 +154,7 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/license/upload")]
     public async Task UploadLicense_WhenAdminUploadDisabled_Returns400()
     {
-        var content = new StringContent("fake-license-data");
+        using var content = new StringContent("fake-license-data");
         var response = await _client.PostAsync("/api/v1/admin/license/upload", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -241,8 +241,8 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
                 CancellationToken.None
             ]) as Task<IResult>;
 
-        resultTask.Should().NotBeNull();
-        var result = await resultTask!;
+        Assert.NotNull(resultTask);
+        var result = await resultTask;
 
         var context = new DefaultHttpContext();
         context.RequestServices = new ServiceCollection()
@@ -453,19 +453,14 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
         var features = data.GetProperty("features");
 
         // Find an Enterprise-only feature - it should show upgrade message since default config is Pro
-        var hasEnterpriseFeature = false;
-        foreach (var feature in features.EnumerateArray())
-        {
-            if (feature.GetProperty("minimumEdition").GetString() == "Enterprise")
-            {
-                hasEnterpriseFeature = true;
-                feature.GetProperty("isEnabled").GetBoolean().Should().BeFalse();
-                feature.GetProperty("upgradeMessage").GetString().Should().Contain("Requires Enterprise");
-                break;
-            }
-        }
+        var enterpriseFeature = features.EnumerateArray()
+            .FirstOrDefault(feature => feature.GetProperty("minimumEdition").GetString() == "Enterprise");
 
-        hasEnterpriseFeature.Should().BeTrue("the feature catalog should contain Enterprise features");
+        enterpriseFeature.ValueKind.Should().NotBe(
+            JsonValueKind.Undefined,
+            "the feature catalog should contain Enterprise features");
+        enterpriseFeature.GetProperty("isEnabled").GetBoolean().Should().BeFalse();
+        enterpriseFeature.GetProperty("upgradeMessage").GetString().Should().Contain("Requires Enterprise");
     }
 
     private sealed class ThrowingHttpClientFactory(Exception exception) : IHttpClientFactory, IDisposable

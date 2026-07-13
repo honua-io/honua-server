@@ -122,7 +122,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/api/v1/admin/connections", content);
@@ -166,7 +166,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/api/v1/admin/connections", content);
@@ -203,7 +203,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _client.PostAsync("/api/v1/admin/connections", content);
@@ -232,7 +232,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/v1/admin/connections", content);
 
@@ -343,7 +343,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/v1/admin/connections/test", content);
 
@@ -396,7 +396,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             };
 
             var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+            using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
             // Act
             var response = await client.PostAsync("/api/v1/admin/connections/test", content);
@@ -431,7 +431,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var response = await _client.PostAsync("/api/v1/admin/connections/test", content);
 
@@ -479,7 +479,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(firstRequest, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var firstResponse = await _client.PostAsync("/api/v1/admin/connections", content);
         Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
@@ -532,7 +532,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             };
 
             var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+            using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
             var response = await client.PostAsync("/api/v1/admin/connections", content);
 
@@ -569,7 +569,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         // Act
         var createResponse = await _client.PostAsync("/api/v1/admin/connections", content);
@@ -613,7 +613,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(updateRequest, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync($"/api/v1/admin/connections/{created.ConnectionId}", content);
 
@@ -655,7 +655,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
         };
 
         var jsonContent = JsonSerializer.Serialize(updateRequest, _jsonOptions);
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         var response = await _client.PutAsync($"/api/v1/admin/connections/{created.ConnectionId}", content);
 
@@ -735,7 +735,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
                 SslMode = "Require"
             };
 
-            var content = new StringContent(
+            using var content = new StringContent(
                 JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
 
             // Act
@@ -790,7 +790,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
                 SslMode = "Require"
             };
 
-            var content = new StringContent(
+            using var content = new StringContent(
                 JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
 
             // Act
@@ -842,7 +842,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
                 SslMode = "Require"
             };
 
-            var content = new StringContent(
+            using var content = new StringContent(
                 JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
 
             // Act
@@ -895,7 +895,7 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
                 SslMode = "Require"
             };
 
-            var content = new StringContent(
+            using var content = new StringContent(
                 JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
 
             var createResponse = await client.PostAsync("/api/v1/admin/connections", content);

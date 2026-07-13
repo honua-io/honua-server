@@ -76,6 +76,8 @@ public class LicenseEndpointsTests : IAsyncLifetime
     public async Task GetLicenseStatus_WithSignedStartupLicense_ReturnsLicenseIdentityAndEntitlements()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Second segment is a fixed relative literal filename, so it can never be
+        // rooted and silently discard tempDirectory.FullName.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
@@ -144,6 +146,8 @@ public class LicenseEndpointsTests : IAsyncLifetime
     public async Task GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Second segment is a fixed relative literal filename, so it can never be
+        // rooted and silently discard tempDirectory.FullName.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
@@ -209,7 +213,7 @@ public class LicenseEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/license")]
     public async Task UploadLicense_WhenAdminUploadDisabled_ReturnsBadRequest()
     {
-        var licenseData = new StringContent("test-license-data", Encoding.UTF8, "application/octet-stream");
+        using var licenseData = new StringContent("test-license-data", Encoding.UTF8, "application/octet-stream");
         var response = await _client.PostAsync("/api/v1/admin/license", licenseData);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -224,7 +228,8 @@ public class LicenseEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/license")]
     public async Task UploadLicense_EmptyData_ReturnsBadRequest()
     {
-        var response = await _client.PostAsync("/api/v1/admin/license", new StringContent(""));
+        using var content = new StringContent("");
+        var response = await _client.PostAsync("/api/v1/admin/license", content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

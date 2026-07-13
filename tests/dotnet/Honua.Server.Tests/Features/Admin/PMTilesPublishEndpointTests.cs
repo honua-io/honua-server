@@ -52,9 +52,10 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
     public async Task StartJob_PublishWithoutLayerId_ReturnsBadRequest()
     {
+        using var content = new StringContent("""{"operation":"publish"}""", System.Text.Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/tile-operations/jobs",
-            new StringContent("""{"operation":"publish"}""", System.Text.Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -216,12 +217,10 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
 
     private static JsonElement GetPropertyCaseInsensitive(JsonElement element, string propertyName)
     {
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in element.EnumerateObject()
+            .Where(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value;
-            }
+            return property.Value;
         }
 
         throw new KeyNotFoundException($"Property '{propertyName}' was not found.");

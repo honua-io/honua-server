@@ -78,9 +78,10 @@ public sealed class SpatialAnalyticsPerformanceTests : IAsyncLifetime
 
         // Act — hit the REST endpoint and measure the full HTTP round-trip.
         var stopwatch = Stopwatch.StartNew();
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
         var content = await response.Content.ReadAsStringAsync();
         stopwatch.Stop();
 

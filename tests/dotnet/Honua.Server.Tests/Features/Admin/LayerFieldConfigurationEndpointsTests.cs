@@ -94,9 +94,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
 
         try
         {
+            using var content8 = JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest);
             var updateResponse = await adminClient.PutAsync(
                 $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
-                JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+                content8);
 
             updateResponse.Be200Ok();
             var update = await ReadFieldConfigurationResponseAsync(updateResponse);
@@ -145,9 +146,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
             var firstAttributes = queryDocument.RootElement.GetProperty("features")[0].GetProperty("attributes");
             firstAttributes.TryGetProperty("description", out _).Should().BeFalse();
 
+            using var content7 = JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest);
             var clearResponse = await adminClient.PutAsync(
                 $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
-                JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+                content7);
 
             clearResponse.Be200Ok();
             var clear = await ReadFieldConfigurationResponseAsync(clearResponse);
@@ -161,9 +163,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
         {
             if (!resetComplete)
             {
+                using var content6 = JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest);
                 _ = await adminClient.PutAsync(
                     $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
-                    JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+                    content6);
             }
         }
     }
@@ -193,9 +196,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
 
         try
         {
+            using var content5 = JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest);
             var updateResponse = await adminClient.PutAsync(
                 $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/filter",
-                JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest));
+                content5);
 
             var updatePayload = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response payload was: {updatePayload}");
@@ -224,9 +228,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
                 .Should()
                 .OnlyContain(category => category == "test");
 
+            using var content4 = JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest);
             var clearResponse = await adminClient.PutAsync(
                 $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/filter",
-                JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest));
+                content4);
 
             clearResponse.Be200Ok();
             var clear = await ReadFilterConfigurationResponseAsync(clearResponse);
@@ -237,9 +242,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
         {
             if (!resetComplete)
             {
+                using var content3 = JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest);
                 _ = await adminClient.PutAsync(
                     $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/filter",
-                    JsonContent.Create(clearRequest, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest));
+                    content3);
             }
         }
     }
@@ -259,9 +265,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
             }
         };
 
+        using var content2 = JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest);
         var response = await adminClient.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/filter",
-            JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFilterConfigurationUpdateRequest));
+            content2);
 
         response.Be400BadRequest();
     }
@@ -284,9 +291,10 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
             ]
         };
 
+        using var content = JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest);
         var response = await adminClient.PutAsync(
             $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/fields",
-            JsonContent.Create(request, LayerFieldConfigurationJsonContext.Default.LayerFieldConfigurationUpdateRequest));
+            content);
 
         response.Be400BadRequest();
     }

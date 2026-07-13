@@ -170,10 +170,10 @@ public sealed class GrpcConversionHelpersTests
 
         query.OrderBy.Should().NotBeNull();
         query.OrderBy!.Value.Should().HaveCount(2);
-        query.OrderBy.Value[0].Field.Should().Be("name");
-        query.OrderBy.Value[0].Ascending.Should().BeTrue();
-        query.OrderBy.Value[1].Field.Should().Be("population");
-        query.OrderBy.Value[1].Ascending.Should().BeFalse();
+        query.OrderBy!.Value[0].Field.Should().Be("name");
+        query.OrderBy!.Value[0].Ascending.Should().BeTrue();
+        query.OrderBy!.Value[1].Field.Should().Be("population");
+        query.OrderBy!.Value[1].Ascending.Should().BeFalse();
     }
 
     [UnitTest]
@@ -196,9 +196,9 @@ public sealed class GrpcConversionHelpersTests
 
         query.OutStatistics.Should().NotBeNull();
         query.OutStatistics!.Value.Should().HaveCount(1);
-        query.OutStatistics.Value[0].OnStatisticField.Should().Be("population");
-        query.OutStatistics.Value[0].StatisticType.Should().Be(StatisticType.Sum);
-        query.OutStatistics.Value[0].OutStatisticFieldName.Should().Be("total_pop");
+        query.OutStatistics!.Value[0].OnStatisticField.Should().Be("population");
+        query.OutStatistics!.Value[0].StatisticType.Should().Be(StatisticType.Sum);
+        query.OutStatistics!.Value[0].OutStatisticFieldName.Should().Be("total_pop");
         query.GroupByFields.Should().NotBeNull();
         query.GroupByFields!.Value.Should().ContainSingle().Which.Should().Be("state");
     }
@@ -676,8 +676,8 @@ public sealed class GrpcConversionHelpersTests
 
         query.SpatialFilter.Should().NotBeNull();
         query.SpatialFilter!.Value.SpatialRelationship.Should().Be(SpatialRelationship.Within);
-        query.SpatialFilter.Value.Srid.Should().Be(4326);
-        query.SpatialFilter.Value.Geometry.Should().NotBeEmpty();
+        query.SpatialFilter!.Value.Srid.Should().Be(4326);
+        query.SpatialFilter!.Value.Geometry.Should().NotBeEmpty();
     }
 
     [UnitTest]
@@ -755,7 +755,7 @@ public sealed class GrpcConversionHelpersTests
 
         // Round-trip: WKB should deserialize back to a MultiPolygon with 2 polygons
         var reader = new WKBReader();
-        var ntsGeom = reader.Read(query.SpatialFilter.Value.Geometry);
+        var ntsGeom = reader.Read(query.SpatialFilter!.Value.Geometry);
         ntsGeom.Should().BeOfType<MultiPolygon>();
         ((MultiPolygon)ntsGeom).NumGeometries.Should().Be(2);
     }
