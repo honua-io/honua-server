@@ -24,7 +24,8 @@ internal static partial class GdalScratch
 
         if (operationId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
             operationId.Contains(Path.DirectorySeparatorChar) ||
-            operationId.Contains(Path.AltDirectorySeparatorChar))
+            operationId.Contains(Path.AltDirectorySeparatorChar) ||
+            Path.IsPathRooted(operationId))
         {
             throw new InvalidOperationException("GDAL scratch operation id contains invalid path characters.");
         }
