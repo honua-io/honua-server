@@ -46,7 +46,21 @@ internal sealed class SqlServerConnectionFactory : ISqlServerConnectionFactory
                 "No SQL Server connection string is configured. Set 'SqlServer:ConnectionString' or attach a secure DataConnection to the service.");
         }
 
-        var connection = new SqlConnection(connectionString);
+        // `connectionString` is not guaranteed to have flowed through a builder that mapped
+        // Encrypt/TrustServerCertificate: ResolveConnectionStringAsync below can return an
+        // operator-supplied secret reference (ISecureConnectionResolver), a raw unencrypted
+        // DataConnection.ConnectionString, or static SqlServerOptions.ConnectionString, none of
+        // which is guaranteed to carry Encrypt=true. This is the live production query path for
+        // every SQL Server feature read, so re-parse and force TLS the same way
+        // SqlServerConnectionDriver.TestConnectionAsync does for the admin health-probe path
+        // (#3048): per the MVP deferrals, secure connections are "encrypted or secret references
+        // only" (never unencrypted).
+        var builder = new SqlConnectionStringBuilder(connectionString)
+        {
+            Encrypt = true
+        };
+
+        var connection = new SqlConnection(builder.ConnectionString);
         try
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
