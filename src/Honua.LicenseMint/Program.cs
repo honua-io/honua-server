@@ -312,6 +312,9 @@ internal static class CliRunner
         }
         catch (UnauthorizedAccessException)
         {
+            // Same rationale as above: chmod is defense in depth, not the only control.
+            // The process may lack permission to change file mode (e.g. non-owner); the
+            // written file itself still succeeded, so this is not treated as fatal.
         }
     }
 
