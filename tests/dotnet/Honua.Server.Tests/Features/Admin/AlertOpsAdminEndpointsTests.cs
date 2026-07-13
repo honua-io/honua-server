@@ -170,7 +170,7 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
 
         eventId.Should().NotBeNull();
         await dispatchStore.EnqueueAsync(eventId!.Value, ImmutableArray.Create(channel));
-        return eventId.Value;
+        return eventId!.Value;
     }
 
     private async Task SetDispatchStateAsync(long eventId, short status, int attempts)

@@ -70,7 +70,8 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(created.Key, json, StringComparison.Ordinal);
 
         var list = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyResponse[]>>(json, _jsonOptions);
-        Assert.NotNull(list?.Data);
+        Assert.NotNull(list);
+        Assert.NotNull(list.Data);
         var listed = Assert.Single(list.Data, key => key.Id == created.ApiKey.Id);
         Assert.Equal(created.ApiKey.KeyPrefix, listed.KeyPrefix);
         Assert.Equal("active", listed.Status);
@@ -111,7 +112,8 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
             await response.Content.ReadAsStringAsync(),
             _jsonOptions);
 
-        Assert.NotNull(rotated?.Data);
+        Assert.NotNull(rotated);
+        Assert.NotNull(rotated.Data);
         Assert.NotEqual(created.Key, rotated.Data.Key);
         Assert.Equal(created.ApiKey.Id, rotated.Data.ApiKey.Id);
         Assert.Equal("active", rotated.Data.ApiKey.Status);
@@ -148,7 +150,8 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
             await permissionsResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
 
-        Assert.NotNull(permissions?.Data);
+        Assert.NotNull(permissions);
+        Assert.NotNull(permissions.Data);
         Assert.Equal("expired", permissions.Data.Status);
         Assert.False(permissions.Data.CanAuthenticate);
         Assert.Equal("admin:read", Assert.Single(permissions.Data.Permissions));
@@ -301,7 +304,8 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
             await response.Content.ReadAsStringAsync(),
             _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         return result.Data;
     }
 

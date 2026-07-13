@@ -116,7 +116,7 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
 
             // The policy is listed via the admin API.
             var listed = await ListPoliciesAsync(adminClient);
-            listed.Should().Contain(p => p.PolicyId == policyId.Value);
+            listed.Should().Contain(p => p.PolicyId == policyId!.Value);
         }
         finally
         {
@@ -210,9 +210,10 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             ClaimType = "category",
         };
 
+        using var content3 = JsonContent.Create(request, RlsPolicyJsonContext.Default.CreateRlsPolicyRequest);
         var response = await anonymous.PostAsync(
             "/api/v1/admin/rls-policies",
-            JsonContent.Create(request, RlsPolicyJsonContext.Default.CreateRlsPolicyRequest));
+            content3);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
@@ -230,9 +231,10 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             Description = "RLS test: restrict by category claim",
         };
 
+        using var content2 = JsonContent.Create(request, RlsPolicyJsonContext.Default.CreateRlsPolicyRequest);
         var response = await adminClient.PostAsync(
             "/api/v1/admin/rls-policies",
-            JsonContent.Create(request, RlsPolicyJsonContext.Default.CreateRlsPolicyRequest));
+            content2);
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
@@ -313,7 +315,8 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, claimCategory);
 
         var body = new List<KeyValuePair<string, string>>(form) { new("f", "json") };
-        var response = await client.PostAsync(path, new FormUrlEncodedContent(body));
+        using var content = new FormUrlEncodedContent(body);
+        var response = await client.PostAsync(path, content);
         var payload = await response.Content.ReadAsStringAsync();
 
         if (response.StatusCode != HttpStatusCode.OK)

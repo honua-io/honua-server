@@ -154,7 +154,7 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/license/upload")]
     public async Task UploadLicense_WhenAdminUploadDisabled_Returns400()
     {
-        var content = new StringContent("fake-license-data");
+        using var content = new StringContent("fake-license-data");
         var response = await _client.PostAsync("/api/v1/admin/license/upload", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -241,8 +241,8 @@ public sealed class PlatformAdminEndpointsTests : IAsyncLifetime
                 CancellationToken.None
             ]) as Task<IResult>;
 
-        resultTask.Should().NotBeNull();
-        var result = await resultTask!;
+        Assert.NotNull(resultTask);
+        var result = await resultTask;
 
         var context = new DefaultHttpContext();
         context.RequestServices = new ServiceCollection()

@@ -489,7 +489,7 @@ public sealed class SldConversionTests
         var layer = conversion.Layers.First(l => l.Type == "fill");
         layer.Filter.Should().NotBeNull();
         layer.Filter!.Value.Items![0].StringValue.Should().Be("all");
-        layer.Filter.Value.Items.Should().HaveCount(3);
+        layer.Filter!.Value.Items.Should().HaveCount(3);
     }
 
     [UnitTest]

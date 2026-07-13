@@ -53,7 +53,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
     public async Task StartJob_ArchiveOperationWithoutLayer_ReturnsBadRequest()
     {
-        var content = new StringContent(
+        using var content = new StringContent(
             """{"operation":"archive"}""",
             System.Text.Encoding.UTF8,
             "application/json");

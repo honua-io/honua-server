@@ -47,7 +47,7 @@ public class CogTileResolverTests
 
         result.Should().NotBeNull();
         result!.Value.ContentType.Should().Be("image/jpeg");
-        result.Value.Data.Should().Equal(tileData);
+        result!.Value.Data.Should().Equal(tileData);
         await metadataReader.DidNotReceiveWithAnyArgs()
             .ReadMetadataAsync(default!, default!, default!, default);
     }

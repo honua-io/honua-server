@@ -48,9 +48,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content43 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content43);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -88,9 +89,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content42 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content42);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -124,9 +126,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content41 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content41);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -158,9 +161,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content40 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content40);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -178,9 +182,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content39 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content39);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -198,9 +203,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content38 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content38);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -225,9 +231,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content37 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content37);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -253,9 +260,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content36 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content36);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -277,9 +285,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content35 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content35);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -306,9 +315,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content34 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/0/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content34);
 
         await response.AssertGeoServicesErrorAsync(404);
     }
@@ -327,9 +337,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content33 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content33);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -362,9 +373,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content32 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content32);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -388,9 +400,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content31 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content31);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -439,9 +452,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content30 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content30);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -480,9 +494,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content29 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content29);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -501,9 +516,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content28 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content28);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -522,9 +538,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content27 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content27);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -543,9 +560,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content26 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content26);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -564,9 +582,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content25 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content25);
 
         await response.AssertGeoServicesErrorAsync(404);
     }
@@ -586,9 +605,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content24 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content24);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -620,9 +640,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content23 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content23);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -648,9 +669,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content22 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content22);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -678,9 +700,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content21 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content21);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -696,9 +719,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content20 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content20);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -717,9 +741,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content19 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content19);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -741,9 +766,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content18 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content18);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -767,9 +793,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content17 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content17);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -791,9 +818,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content16 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content16);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -826,9 +854,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content15 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content15);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -849,9 +878,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content14 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content14);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -870,9 +900,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content13 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content13);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -891,9 +922,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content12 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content12);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -912,9 +944,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content11 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/0/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content11);
 
         await response.AssertGeoServicesErrorAsync(404);
     }
@@ -942,9 +975,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -976,9 +1010,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content10 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content10);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -1006,9 +1041,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content9 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content9);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1045,9 +1081,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content8 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content8);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -1074,9 +1111,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content7 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content7);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1107,9 +1145,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content6 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content6);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1143,9 +1182,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content5 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content5);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1174,9 +1214,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content4 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content4);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1218,9 +1259,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content3 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryClusters",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content3);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -1264,9 +1306,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content2 = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content2);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

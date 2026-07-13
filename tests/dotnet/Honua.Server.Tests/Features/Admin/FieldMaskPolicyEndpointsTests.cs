@@ -113,7 +113,7 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
 
             // The policy is listed via the admin API.
             var listed = await ListPoliciesAsync(adminClient);
-            listed.Should().Contain(p => p.PolicyId == policyId.Value);
+            listed.Should().Contain(p => p.PolicyId == policyId!.Value);
         }
         finally
         {
@@ -138,9 +138,10 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
             Attribute = MaskedAttribute,
         };
 
+        using var content2 = JsonContent.Create(request, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest);
         var response = await anonymous.PostAsync(
             "/api/v1/admin/field-mask-policies",
-            JsonContent.Create(request, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest));
+            content2);
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
@@ -156,9 +157,10 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
             Description = "Field-mask test: hide description from the restricted role",
         };
 
+        using var content = JsonContent.Create(request, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest);
         var response = await adminClient.PostAsync(
             "/api/v1/admin/field-mask-policies",
-            JsonContent.Create(request, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest));
+            content);
 
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);

@@ -91,9 +91,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataReleaseJsonContext.Default.MetadataEnvironmentBindingsRequest);
 
+        using var content19 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/environment-bindings/query",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content19);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -144,9 +145,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
 
         foreach (var (path, body, expectedMessage) in cases)
         {
+            using var content18 = new StringContent(body, Encoding.UTF8, "application/json");
             var response = await _client.PostAsync(
                 path,
-                new StringContent(body, Encoding.UTF8, "application/json"));
+                content18);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var payload = await response.Content.ReadAsStringAsync();
@@ -170,9 +172,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
 
+        using var content17 = new StringContent(body, Encoding.UTF8, "application/json");
         var createResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content17);
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createPayload = await createResponse.Content.ReadAsStringAsync();
@@ -229,17 +232,19 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
 
+        using var content16 = new StringContent(firstBody, Encoding.UTF8, "application/json");
         var firstCreate = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(firstBody, Encoding.UTF8, "application/json"));
+            content16);
         firstCreate.StatusCode.Should().Be(HttpStatusCode.Created);
         var firstCreated = JsonSerializer.Deserialize(
             await firstCreate.Content.ReadAsStringAsync(),
             MetadataReleaseJsonContext.Default.MetadataReleasePackage)!;
 
+        using var content15 = new StringContent(secondBody, Encoding.UTF8, "application/json");
         var secondCreate = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(secondBody, Encoding.UTF8, "application/json"));
+            content15);
         secondCreate.StatusCode.Should().Be(HttpStatusCode.Created);
         var secondCreated = JsonSerializer.Deserialize(
             await secondCreate.Content.ReadAsStringAsync(),
@@ -312,9 +317,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
 
+        using var content14 = new StringContent(body, Encoding.UTF8, "application/json");
         var createResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content14);
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createPayload = await createResponse.Content.ReadAsStringAsync();
@@ -352,9 +358,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
 
+        using var content13 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content13);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var report = await ReadPrevalidationReportAsync(response);
@@ -378,9 +385,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 SemanticIds = ["res.parcels"],
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+        using var content12 = new StringContent(createBody, Encoding.UTF8, "application/json");
         var createResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(createBody, Encoding.UTF8, "application/json"));
+            content12);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = JsonSerializer.Deserialize(
             await createResponse.Content.ReadAsStringAsync(),
@@ -394,9 +402,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
 
+        using var content11 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content11);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var report = await ReadPrevalidationReportAsync(response);
@@ -430,9 +439,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
 
+        using var content10 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content10);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var report = await ReadPrevalidationReportAsync(response);
@@ -450,9 +460,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
     public async Task Prevalidate_WithInvalidRequestShape_ReturnsBadRequest()
     {
+        using var content9 = new StringContent("{\"targetEnvironment\":\"staging\"}", Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent("{\"targetEnvironment\":\"staging\"}", Encoding.UTF8, "application/json"));
+            content9);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var payload = await response.Content.ReadAsStringAsync();
@@ -464,12 +475,13 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
     public async Task Prevalidate_WithNullDataScripts_ReturnsBadRequest()
     {
+        using var content = new StringContent(
+            "{\"releasePackageId\":\"33333333-3333-3333-3333-333333333333\",\"targetEnvironment\":\"staging\",\"dataScripts\":null}",
+            Encoding.UTF8,
+            "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(
-                "{\"releasePackageId\":\"33333333-3333-3333-3333-333333333333\",\"targetEnvironment\":\"staging\",\"dataScripts\":null}",
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var payload = await response.Content.ReadAsStringAsync();
@@ -646,9 +658,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
 
         foreach (var (body, expectedMessage) in cases)
         {
+            using var content8 = new StringContent(body, Encoding.UTF8, "application/json");
             var response = await _client.PostAsync(
                 "/api/v1/admin/metadata/prevalidate",
-                new StringContent(body, Encoding.UTF8, "application/json"));
+                content8);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var payload = await response.Content.ReadAsStringAsync();
@@ -682,9 +695,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             }
             """;
 
+        using var content7 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content7);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var report = await ReadPrevalidationReportAsync(response);
@@ -704,9 +718,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
 
+        using var content6 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content6);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var report = await ReadPrevalidationReportAsync(response);
@@ -729,9 +744,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
 
+        using var content5 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await unauthorizedClient.PostAsync(
             "/api/v1/admin/metadata/prevalidate",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content5);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -750,12 +766,14 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
 
+        using var content4 = new StringContent(body, Encoding.UTF8, "application/json");
         var firstResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content4);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var secondResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content);
 
         firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -789,16 +807,17 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 SemanticIds = ["res.parcels"],
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var firstResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
             content);
 
         firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var content3 = new StringContent(body, Encoding.UTF8, "application/json");
         var secondResponse = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content3);
 
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var payload = await secondResponse.Content.ReadAsStringAsync();
@@ -819,9 +838,10 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             },
             MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
 
+        using var content2 = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/admin/metadata/release-packages",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content2);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestTimeout);
         var payload = await response.Content.ReadAsStringAsync();
