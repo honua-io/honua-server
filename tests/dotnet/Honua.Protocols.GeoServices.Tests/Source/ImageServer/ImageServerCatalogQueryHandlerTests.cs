@@ -82,9 +82,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Should().BeEmpty();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().BeEmpty();
         jsonResult.Value.ExceededTransferLimit.Should().BeFalse();
     }
 
@@ -97,9 +96,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Fields.Select(f => f.Name).Should().Contain([
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Fields.Select(f => f.Name).Should().Contain([
             "OBJECTID",
             "Name",
             "MinPS",
@@ -129,9 +127,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(1);
 
         var feature = jsonResult.Value.Features[0];
         feature.Attributes["OBJECTID"].Should().Be(100L);
@@ -159,10 +156,9 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await handler.QueryCatalogAsync(context, 1, EmptyValues(), CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
 
-        var feature = jsonResult!.Value!.Features[0];
+        var feature = jsonResult.Value!.Features[0];
         feature.Attributes.Should().NotContainKey("AcquisitionDate");
         feature.Attributes.Should().NotContainKey("PixelType");
         feature.Attributes.Should().ContainKey("OBJECTID");
@@ -190,9 +186,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features[0].Attributes.Should().NotContainKey("PixelType");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features[0].Attributes.Should().NotContainKey("PixelType");
         jsonResult.Value.Features[0].Attributes.Should().ContainKey("Name");
         jsonResult.Value.Fields.Select(f => f.Name).Should().NotContain("PixelType");
     }
@@ -230,9 +225,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features[0].Geometry.Should().BeNull();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features[0].Geometry.Should().BeNull();
     }
 
     [UnitTest]
@@ -254,9 +248,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogObjectIdsResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.ObjectIds.Should().Equal(100L, 200L);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogObjectIdsResponse>>().Which;
+        jsonResult.Value!.ObjectIds.Should().Equal(100L, 200L);
         jsonResult.Value.ObjectIdFieldName.Should().Be("OBJECTID");
     }
 
@@ -278,9 +271,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogCountResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Count.Should().Be(3);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogCountResponse>>().Which;
+        jsonResult.Value!.Count.Should().Be(3);
     }
 
     [UnitTest]
@@ -300,9 +292,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Extent.XMin.Should().Be(-10);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        jsonResult.Value!.Extent.XMin.Should().Be(-10);
         jsonResult.Value.Extent.YMin.Should().Be(-5);
         jsonResult.Value.Extent.XMax.Should().Be(10);
         jsonResult.Value.Extent.YMax.Should().Be(5);
@@ -327,9 +318,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([100L, 300L]);
     }
 
@@ -350,9 +340,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(1);
         jsonResult.Value.Features[0].Attributes["OBJECTID"].Should().Be(200L);
     }
 
@@ -374,9 +363,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Should().HaveCount(2);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(2);
         jsonResult.Value.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([200L, 300L]);
     }
@@ -398,9 +386,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(1);
         jsonResult.Value.Features[0].Attributes["OBJECTID"].Should().Be(200L);
     }
 
@@ -473,9 +460,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Should().HaveCount(2);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Should().HaveCount(2);
         jsonResult.Value.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([200L, 300L]);
         jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
@@ -514,9 +500,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        var feature = jsonResult!.Value!.Features[0];
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        var feature = jsonResult.Value!.Features[0];
         feature.Geometry.Should().NotBeNull();
         feature.Geometry!.SpatialReference.Wkid.Should().Be(3857);
         feature.Geometry.SpatialReference.LatestWkid.Should().Be(3857);
@@ -539,9 +524,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Extent.SpatialReference.Wkid.Should().Be(3857);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        jsonResult.Value!.Extent.SpatialReference.Wkid.Should().Be(3857);
         jsonResult.Value.Extent.SpatialReference.LatestWkid.Should().Be(3857);
     }
 
@@ -565,10 +549,9 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
-        jsonResult.Should().NotBeNull();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
         // Only the eastern raster should contribute - aggregate XMin must be 0, not -10.
-        jsonResult!.Value!.Extent.XMin.Should().Be(0);
+        jsonResult.Value!.Extent.XMin.Should().Be(0);
         jsonResult.Value.Extent.XMax.Should().Be(10);
     }
 
@@ -590,9 +573,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogExtentResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Extent.XMin.Should().Be(-10);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogExtentResponse>>().Which;
+        jsonResult.Value!.Extent.XMin.Should().Be(-10);
         jsonResult.Value.Extent.XMax.Should().Be(0);
     }
 
@@ -614,9 +596,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().ContainInOrder(100L, 200L, 300L);
     }
 
@@ -638,9 +619,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().ContainInOrder(300L, 200L, 100L);
     }
 
@@ -664,9 +644,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().ContainInOrder(100L, 200L, 300L);
     }
 
@@ -691,10 +670,9 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
         // Sorted desc => 400,300,200,100; offset 1, count 2 => 300,200.
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().ContainInOrder(300L, 200L);
         jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
     }
@@ -745,11 +723,10 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
 
         // OBJECTID is always retained alongside the requested fields.
-        jsonResult!.Value!.Fields.Select(f => f.Name)
+        jsonResult.Value!.Fields.Select(f => f.Name)
             .Should().BeEquivalentTo(["OBJECTID", "Name", "BandCount"]);
 
         var attributes = jsonResult.Value.Features[0].Attributes;
@@ -772,9 +749,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Fields.Should().HaveCount(15);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Fields.Should().HaveCount(15);
         jsonResult.Value.Features[0].Attributes.Should().ContainKey("PixelType");
     }
 
@@ -825,9 +801,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([200L]);
     }
 
@@ -850,9 +825,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([100L]);
     }
 
@@ -916,15 +890,18 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        var feature = jsonResult!.Value!.Features[0];
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        var feature = jsonResult.Value!.Features[0];
         feature.Geometry.Should().NotBeNull();
         // Reprojected rings carry the target SRID, not the native 3857.
         feature.Geometry!.SpatialReference.Wkid.Should().Be(4326);
-        // The rebuilt rectangle uses the transformed extent corners.
-        feature.Geometry.Rings[0].Should().Contain(r => r[0] == 1.0 && r[1] == 2.0);
-        feature.Geometry.Rings[0].Should().Contain(r => r[0] == 3.0 && r[1] == 4.0);
+        // The rebuilt rectangle uses the transformed extent corners. Compare with a tight
+        // tolerance rather than exact equality since these are floating-point coordinates.
+        const double CornerTolerance = 1e-9;
+        feature.Geometry.Rings[0].Should().Contain(
+            r => Math.Abs(r[0] - 1.0) < CornerTolerance && Math.Abs(r[1] - 2.0) < CornerTolerance);
+        feature.Geometry.Rings[0].Should().Contain(
+            r => Math.Abs(r[0] - 3.0) < CornerTolerance && Math.Abs(r[1] - 4.0) < CornerTolerance);
         jsonResult.Value.SpatialReference.Wkid.Should().Be(4326);
     }
 
@@ -956,9 +933,8 @@ public class ImageServerCatalogQueryHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
             .Should().BeEquivalentTo([100L]);
     }
 

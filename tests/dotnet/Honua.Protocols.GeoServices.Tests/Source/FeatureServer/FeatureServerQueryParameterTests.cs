@@ -532,9 +532,10 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             }
             """;
 
+        using var payloadContent = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query",
-            new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -554,9 +555,10 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             }
             """;
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query",
-            new StringContent(payload, Encoding.UTF8, "text/plain"));
+            payloadContent);
 
         await response.AssertGeoServicesErrorAsync(415, 500);
         var content = await response.Content.ReadAsStringAsync();

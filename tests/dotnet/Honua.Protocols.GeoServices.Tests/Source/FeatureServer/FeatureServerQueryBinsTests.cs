@@ -105,9 +105,10 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

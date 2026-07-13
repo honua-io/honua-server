@@ -571,9 +571,10 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{ServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "createReplica must succeed against the seeded mobile offline service");
@@ -601,9 +602,10 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{ServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "extractChanges must succeed against the seeded mobile offline replica");
@@ -664,9 +666,10 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{ServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "synchronizeReplica must succeed against the seeded mobile offline replica");

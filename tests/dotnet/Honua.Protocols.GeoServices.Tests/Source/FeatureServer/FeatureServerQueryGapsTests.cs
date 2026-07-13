@@ -124,8 +124,9 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
         }
 
         pointFeature.Should().NotBeNull("the seeded layer has point features");
-        var x = pointFeature!.Geometry!.X!.Value;
-        var y = pointFeature.Geometry.Y!.Value;
+        var confirmedPointFeature = pointFeature!;
+        var x = confirmedPointFeature.Geometry!.X!.Value;
+        var y = confirmedPointFeature.Geometry.Y!.Value;
         x.Should().Be(Math.Truncate(x), "quantized coordinates are integers");
         y.Should().Be(Math.Truncate(y), "quantized coordinates are integers");
     }

@@ -113,9 +113,10 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // Accept OK (h3-pg available), 501 (missing), or 503 (transient)
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
@@ -201,9 +202,10 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // Accept OK (h3-pg available), 501 (missing), or 503 (transient) — but NOT 400
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotImplemented, HttpStatusCode.ServiceUnavailable);
@@ -247,9 +249,10 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
                 f = "json"
             });
 
+            using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3",
-                new StringContent(payload, Encoding.UTF8, "application/json"));
+                payloadContent);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -299,9 +302,10 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
                 f = "json"
             });
 
+            using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3",
-                new StringContent(payload, Encoding.UTF8, "application/json"));
+                payloadContent);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -339,9 +343,10 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
                 f = "json"
             });
 
+            using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryH3",
-                new StringContent(payload, Encoding.UTF8, "application/json"));
+                payloadContent);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
@@ -467,13 +472,12 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
             H3AggregationQuery h3Query,
             CancellationToken cancellationToken = default)
         {
-            foreach (var summary in h3Query.SummaryDefinitions.GetValueOrDefault())
+            var incompleteHistogramSummaries = h3Query.SummaryDefinitions.GetValueOrDefault()
+                .Where(summary => summary.Kind == SpatialAggregationSummaryKind.Histogram &&
+                    (!summary.HistogramMin.HasValue || !summary.HistogramMax.HasValue));
+            if (incompleteHistogramSummaries.Any())
             {
-                if (summary.Kind == SpatialAggregationSummaryKind.Histogram &&
-                    (!summary.HistogramMin.HasValue || !summary.HistogramMax.HasValue))
-                {
-                    throw new InvalidOperationException("Histogram cell summaries must have finite bounds before query execution.");
-                }
+                throw new InvalidOperationException("Histogram cell summaries must have finite bounds before query execution.");
             }
 
             var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)

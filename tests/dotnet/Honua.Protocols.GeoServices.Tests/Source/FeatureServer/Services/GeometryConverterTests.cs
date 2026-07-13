@@ -458,10 +458,9 @@ public class GeometryConverterTests
         });
         var wkb = new WKBWriter().Write(cwPolygon);
 
-        var geoJson = _converter.ConvertWkbToGeoJson(wkb) as string;
+        var geoJson = _converter.ConvertWkbToGeoJson(wkb).Should().BeOfType<string>().Which;
 
-        geoJson.Should().NotBeNull();
-        var readBack = (Polygon)new GeoJsonReader().Read<Geometry>(geoJson!);
+        var readBack = (Polygon)new GeoJsonReader().Read<Geometry>(geoJson);
         NetTopologySuite.Algorithm.Orientation.IsCCW(readBack.ExteriorRing.CoordinateSequence)
             .Should().BeTrue();
     }

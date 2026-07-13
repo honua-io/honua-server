@@ -26,6 +26,8 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All three segments are compile-time relative literals (none rooted), so Path.Combine
+        // cannot silently drop earlier arguments here.
         _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
 
@@ -340,7 +342,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.LineLayerId}/applyEdits",
             content);
@@ -400,7 +402,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PolygonLayerId}/applyEdits",
             content);
@@ -448,7 +450,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/applyEdits",
             content);
@@ -493,7 +495,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.PointLayerId}/applyEdits",
             content);

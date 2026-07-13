@@ -71,9 +71,10 @@ public sealed class FeatureServerReturnZTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        using var jsonContent = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            jsonContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
