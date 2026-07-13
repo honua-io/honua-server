@@ -266,13 +266,9 @@ internal sealed partial class FeatureQueryBuilder
         var masked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields)
         {
-            foreach (var field in fields)
-            {
-                if (!string.IsNullOrWhiteSpace(field))
-                {
-                    masked.Add(field.Trim());
-                }
-            }
+            masked.UnionWith(fields
+                .Where(field => !string.IsNullOrWhiteSpace(field))
+                .Select(field => field.Trim()));
         }
 
         return masked;
