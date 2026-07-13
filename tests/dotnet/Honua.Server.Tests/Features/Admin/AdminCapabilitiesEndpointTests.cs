@@ -54,12 +54,15 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
         metadataSchemas[0].GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
         metadataSchemas[0].TryGetProperty("deprecated", out _).Should().BeTrue();
 
-        // features advertises the manifest workflow switches.
+        // features advertises the manifest workflow switches, and they must match the routes actually
+        // registered. Only the read-only export (GET .../gitops-manifest) survives the #1035 cutover;
+        // the write operations (apply/dry-run/prune) were removed and must advertise false so the
+        // handshake stays honest (honua-server#2807).
         var features = compatibility.GetProperty("features");
         features.GetProperty("metadataResources").GetBoolean().Should().BeTrue();
         features.GetProperty("manifestExport").GetBoolean().Should().BeTrue();
-        features.GetProperty("manifestApply").GetBoolean().Should().BeTrue();
-        features.GetProperty("manifestDryRun").GetBoolean().Should().BeTrue();
-        features.GetProperty("manifestPrune").GetBoolean().Should().BeTrue();
+        features.GetProperty("manifestApply").GetBoolean().Should().BeFalse();
+        features.GetProperty("manifestDryRun").GetBoolean().Should().BeFalse();
+        features.GetProperty("manifestPrune").GetBoolean().Should().BeFalse();
     }
 }
