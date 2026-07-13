@@ -30,14 +30,6 @@ internal static class GdalFieldName
             return false;
         }
 
-        foreach (var c in token)
-        {
-            if (!(char.IsAsciiLetterOrDigit(c) || c == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return token.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
     }
 }

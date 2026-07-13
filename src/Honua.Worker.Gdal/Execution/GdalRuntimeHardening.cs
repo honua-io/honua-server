@@ -71,15 +71,7 @@ internal static class GdalRuntimeHardening
     public static bool ArgumentsReferenceVsi(IReadOnlyList<string> arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        foreach (var arg in arguments)
-        {
-            if (arg is not null && arg.Contains("/vsi", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return arguments.Any(arg => arg is not null && arg.Contains("/vsi", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

@@ -176,12 +176,9 @@ internal sealed class GpWorkflowSource(IProcessCatalog? catalog, IReadOnlySet<st
         {
             // Seed default-valued parameters so the published node carries the process's declared
             // defaults; required-without-default parameters are left for the run-time caller to bind.
-            foreach (var parameter in definition.Parameters)
+            foreach (var parameter in definition.Parameters.Where(parameter => parameter.DefaultValue is not null))
             {
-                if (parameter.DefaultValue is not null)
-                {
-                    parameters[parameter.Name] = parameter.DefaultValue;
-                }
+                parameters[parameter.Name] = parameter.DefaultValue!;
             }
         }
 

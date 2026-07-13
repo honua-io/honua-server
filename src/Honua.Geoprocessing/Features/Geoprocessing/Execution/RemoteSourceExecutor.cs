@@ -184,6 +184,9 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         }
         catch (Exception ex)
         {
+            // Intentionally broad: any streaming-read failure must become a Failed job
+            // result rather than crash the worker; the full exception is logged and only
+            // the exception type name reaches the result.
             Log.SourceReadFailed(_logger, job.OperationId, _processId, ex);
             return JobExecutionResult.Failed($"{_processId} failed during read: {ex.GetType().Name}.");
         }
@@ -208,18 +211,9 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         return JobExecutionResult.Succeeded();
     }
 
-    private IDagFeatureSource? ResolveSource(IServiceProvider services)
-    {
-        foreach (var candidate in services.GetServices<IDagFeatureSource>())
-        {
-            if (string.Equals(candidate.SourceId, _processId, StringComparison.Ordinal))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
+    private IDagFeatureSource? ResolveSource(IServiceProvider services) =>
+        services.GetServices<IDagFeatureSource>()
+            .FirstOrDefault(candidate => string.Equals(candidate.SourceId, _processId, StringComparison.Ordinal));
 
     private async Task<DagSourceRequest> BuildRequestAsync(
         StepInputReader inputs,

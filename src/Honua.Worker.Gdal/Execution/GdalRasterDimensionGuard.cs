@@ -213,16 +213,9 @@ internal static class GdalRasterDimensionGuard
     private static bool IsFormatAllowed(RasterContainerFormat format, GdalWorkerOptions options)
     {
         var name = FormatName(format);
-        foreach (var allowed in options.AllowedRasterInputFormats)
-        {
-            if (!string.IsNullOrWhiteSpace(allowed)
-                && string.Equals(allowed.Trim(), name, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return options.AllowedRasterInputFormats.Any(allowed =>
+            !string.IsNullOrWhiteSpace(allowed)
+            && string.Equals(allowed.Trim(), name, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

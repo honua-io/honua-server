@@ -93,12 +93,10 @@ internal sealed partial class GdalRasterReclassifyJobExecutor(
 
         string? dataType = null;
         if (GdalJobInputReader.TryGetInput(parameters, "dataType", out var dataTypeRaw)
-            && !string.IsNullOrWhiteSpace(dataTypeRaw))
+            && !string.IsNullOrWhiteSpace(dataTypeRaw)
+            && !GdalCalcInputs.TryNormalizeDataType(dataTypeRaw, out dataType, out var dataTypeError))
         {
-            if (!GdalCalcInputs.TryNormalizeDataType(dataTypeRaw, out dataType, out var dataTypeError))
-            {
-                return JobExecutionResult.Failed($"Invalid reclassify inputs: {dataTypeError}");
-            }
+            return JobExecutionResult.Failed($"Invalid reclassify inputs: {dataTypeError}");
         }
 
         if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))

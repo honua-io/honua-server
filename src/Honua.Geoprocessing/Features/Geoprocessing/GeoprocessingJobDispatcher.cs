@@ -211,6 +211,8 @@ internal sealed class GeoprocessingJobDispatcher
         }
         catch (Exception ex)
         {
+            // Intentionally broad: the documented best-effort removal (see the XML doc
+            // above) — logged so the stale-claim reconciler's later fix-up is diagnosable.
             GeoprocessingServiceLog.QueueRemovalFailed(_logger, jobId, ex);
         }
     }

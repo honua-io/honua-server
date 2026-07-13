@@ -154,6 +154,9 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         }
         catch (Exception ex)
         {
+            // Intentionally broad: this is the job's top-level sink-load boundary — any
+            // failure must become a Failed job result (not a crashed worker), and the full
+            // exception is logged while only the exception type name reaches the result.
             Log.SinkLoadFailed(_logger, job.OperationId, ex);
             // The sink load is transactional, so a failure left the catalog table unchanged.
             return JobExecutionResult.Failed($"{HandledProcessId} load failed: {ex.GetType().Name}.");

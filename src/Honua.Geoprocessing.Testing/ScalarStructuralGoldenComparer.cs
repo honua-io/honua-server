@@ -119,12 +119,9 @@ public static class ScalarStructuralGoldenComparer
             CompareJson($"{path}.{property.Name}", actualValue, property.Value, tolerance, differences);
         }
 
-        foreach (var property in actual.EnumerateObject())
+        foreach (var property in actual.EnumerateObject().Where(property => !golden.TryGetProperty(property.Name, out _)))
         {
-            if (!golden.TryGetProperty(property.Name, out _))
-            {
-                differences.Add($"{path}.{property.Name}: unexpected in actual");
-            }
+            differences.Add($"{path}.{property.Name}: unexpected in actual");
         }
     }
 

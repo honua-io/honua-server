@@ -105,16 +105,14 @@ public static class GpScaffolder
         }
 
         var segments = processId.Split('.');
-        foreach (var segment in segments)
+        var invalidSegment = segments.FirstOrDefault(segment => !IsValidSegment(segment));
+        if (invalidSegment is not null)
         {
-            if (!IsValidSegment(segment))
-            {
-                error =
-                    $"invalid segment '{segment}' in process id '{processId}'. Each dot-separated "
-                    + "segment must start with a lowercase letter and contain only lowercase letters, "
-                    + "digits, and single internal hyphens (e.g. 'geometry.buffer', 'analytics.spatial-join').";
-                return false;
-            }
+            error =
+                $"invalid segment '{invalidSegment}' in process id '{processId}'. Each dot-separated "
+                + "segment must start with a lowercase letter and contain only lowercase letters, "
+                + "digits, and single internal hyphens (e.g. 'geometry.buffer', 'analytics.spatial-join').";
+            return false;
         }
 
         error = string.Empty;

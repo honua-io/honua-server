@@ -144,39 +144,26 @@ internal static class CustomCodeOwnerScopeCapture
 
     private static List<string> SnapshotRoles(ClaimsPrincipal principal)
     {
-        var roles = new List<string>();
-        foreach (var claim in principal.FindAll(ClaimTypes.Role))
-        {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-            {
-                roles.Add(claim.Value);
-            }
-        }
+        var roles = principal.FindAll(ClaimTypes.Role)
+            .Select(claim => claim.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
 
         // Also capture the configurable "roles" claim type the RBAC pipeline reads,
         // so a snapshot is faithful regardless of which claim type carried the role.
-        foreach (var claim in principal.FindAll("roles"))
+        foreach (var value in principal.FindAll("roles")
+            .Select(claim => claim.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value) && !roles.Contains(value)))
         {
-            if (!string.IsNullOrWhiteSpace(claim.Value) && !roles.Contains(claim.Value))
-            {
-                roles.Add(claim.Value);
-            }
+            roles.Add(value);
         }
 
         return roles;
     }
 
-    private static List<string> SnapshotGrants(ClaimsPrincipal principal)
-    {
-        var grants = new List<string>();
-        foreach (var claim in principal.FindAll(PermissionClaimType))
-        {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-            {
-                grants.Add(claim.Value);
-            }
-        }
-
-        return grants;
-    }
+    private static List<string> SnapshotGrants(ClaimsPrincipal principal) =>
+        principal.FindAll(PermissionClaimType)
+            .Select(claim => claim.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
 }

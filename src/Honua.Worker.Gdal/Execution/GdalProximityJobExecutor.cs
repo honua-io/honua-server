@@ -131,12 +131,10 @@ internal sealed partial class GdalProximityJobExecutor(
         }
 
         string? values = null;
-        if (GdalJobInputReader.TryGetInput(parameters, "values", out var valuesRaw) && !string.IsNullOrWhiteSpace(valuesRaw))
+        if (GdalJobInputReader.TryGetInput(parameters, "values", out var valuesRaw) && !string.IsNullOrWhiteSpace(valuesRaw)
+            && !TryNormalizeValues(valuesRaw, out values, out var valuesError))
         {
-            if (!TryNormalizeValues(valuesRaw, out values, out var valuesError))
-            {
-                return JobExecutionResult.Failed($"Invalid proximity inputs: {valuesError}");
-            }
+            return JobExecutionResult.Failed($"Invalid proximity inputs: {valuesError}");
         }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))

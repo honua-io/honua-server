@@ -106,12 +106,10 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
 
         string? dataType = null;
         if (GdalJobInputReader.TryGetInput(parameters, "dataType", out var dataTypeRaw)
-            && !string.IsNullOrWhiteSpace(dataTypeRaw))
+            && !string.IsNullOrWhiteSpace(dataTypeRaw)
+            && !GdalCalcInputs.TryNormalizeDataType(dataTypeRaw, out dataType, out var dataTypeError))
         {
-            if (!GdalCalcInputs.TryNormalizeDataType(dataTypeRaw, out dataType, out var dataTypeError))
-            {
-                return JobExecutionResult.Failed($"Invalid map-algebra inputs: {dataTypeError}");
-            }
+            return JobExecutionResult.Failed($"Invalid map-algebra inputs: {dataTypeError}");
         }
 
         if (!GdalNoData.TryReadExplicitNoData(parameters, out var explicitNoData, out var noDataError))

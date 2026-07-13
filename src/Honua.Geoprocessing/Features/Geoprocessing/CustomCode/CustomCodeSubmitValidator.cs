@@ -315,15 +315,7 @@ internal static partial class CustomCodeSubmitValidator
         }
 
         var segments = path.Split('/', '\\');
-        foreach (var segment in segments)
-        {
-            if (segment == "..")
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return !segments.Any(segment => segment == "..");
     }
 
     private static bool TryParseDeclaredScope(

@@ -109,12 +109,10 @@ internal sealed class ManagedSpatialJoinExecutor(
         var geometry = target.Geometry;
         if (geometry is not null && !geometry.IsEmpty)
         {
-            foreach (var candidate in index.Query(geometry.EnvelopeInternal))
+            foreach (var candidate in index.Query(geometry.EnvelopeInternal)
+                .Where(candidate => Matches(candidate.Geometry, geometry, predicate)))
             {
-                if (Matches(candidate.Geometry, geometry, predicate))
-                {
-                    accumulator.Add(candidate);
-                }
+                accumulator.Add(candidate);
             }
         }
 
@@ -185,6 +183,9 @@ internal sealed class ManagedSpatialJoinExecutor(
         }
 
         var specs = new List<StatSpec>();
+        // Not a .Select(...) candidate: each token goes through multi-step parsing with
+        // an explicit validation throw, which reads better as an imperative loop than a
+        // Select lambda with an embedded throw.
         foreach (var token in raw!.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var parts = token.Split(':', StringSplitOptions.TrimEntries);
@@ -294,12 +295,9 @@ internal sealed class ManagedSpatialJoinExecutor(
         public StatAccumulator(IReadOnlyList<StatSpec> stats)
         {
             _fields = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var spec in stats)
+            foreach (var spec in stats.Where(spec => spec.Kind != StatKind.Count && !string.IsNullOrWhiteSpace(spec.Field)))
             {
-                if (spec.Kind != StatKind.Count && !string.IsNullOrWhiteSpace(spec.Field))
-                {
-                    _fields.Add(spec.Field);
-                }
+                _fields.Add(spec.Field);
             }
         }
 
@@ -308,6 +306,9 @@ internal sealed class ManagedSpatialJoinExecutor(
         public void Add(IFeature joinFeature)
         {
             Count++;
+            // Not a .Where(...) candidate: TryReadNumeric's out value feeds four
+            // running-aggregate updates in the body, so filtering separately would mean
+            // parsing each value twice.
             foreach (var field in _fields)
             {
                 if (TryReadNumeric(joinFeature, field, out var numeric))
