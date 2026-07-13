@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -73,9 +74,8 @@ public class ImageServerAnalyzeHandlerTests
             Values(("rasterFunction", "{\"rasterFunction\":\"Identity\"}")),
             CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<AnalyzeResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.RasterFunction.Should().Be("Identity");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<AnalyzeResponse>>().Which;
+        jsonResult.Value!.RasterFunction.Should().Be("Identity");
     }
 
     [UnitTest]
@@ -134,9 +134,8 @@ public class ImageServerAnalyzeHandlerTests
             Values(("renderingRule", "{\"rasterFunction\":\"Stretch\",\"rasterFunctionArguments\":{\"StretchType\":3}}")),
             CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<AnalyzeResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.ChainDepth.Should().Be(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<AnalyzeResponse>>().Which;
+        jsonResult.Value!.ChainDepth.Should().Be(1);
         jsonResult.Value.ExecutedFunctions.Should().Equal("Stretch");
         jsonResult.Value.OutputPixelType.Should().Be("U8");
         jsonResult.Value.Status.Should().Be("success");
@@ -183,9 +182,8 @@ public class ImageServerAnalyzeHandlerTests
             Values(("renderingRule", chain)),
             CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<AnalyzeResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.ChainDepth.Should().Be(2);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<AnalyzeResponse>>().Which;
+        jsonResult.Value!.ChainDepth.Should().Be(2);
         jsonResult.Value.ExecutedFunctions.Should().Equal("Stretch", "Clip");
         jsonResult.Value.OutputPixelType.Should().Be("U8");
     }
@@ -202,9 +200,8 @@ public class ImageServerAnalyzeHandlerTests
             Values(("renderingRule", "{\"rasterFunction\":\"Identity\"}")),
             CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<AnalyzeResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.OutputPixelType.Should().Be("F32");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<AnalyzeResponse>>().Which;
+        jsonResult.Value!.OutputPixelType.Should().Be("F32");
     }
 
     [UnitTest]
@@ -212,12 +209,16 @@ public class ImageServerAnalyzeHandlerTests
     public async Task AnalyzeAsync_ExceedingMaxDepth_ReturnsBadRequest()
     {
 
-        // Build an Identity-over-Identity chain deeper than the limit (8).
-        var chain = "{\"rasterFunction\":\"Identity\"}";
+        // Build an Identity-over-Identity chain deeper than the limit (8) by wrapping the
+        // previous document in a StringBuilder rather than repeated string concatenation.
+        var chainBuilder = new StringBuilder("{\"rasterFunction\":\"Identity\"}");
         for (var i = 0; i < ImageServerRasterFunctionPlanner.MaxChainDepth + 1; i++)
         {
-            chain = "{\"rasterFunction\":\"Identity\",\"rasterFunctionArguments\":{\"Raster\":" + chain + "}}";
+            chainBuilder.Insert(0, "{\"rasterFunction\":\"Identity\",\"rasterFunctionArguments\":{\"Raster\":");
+            chainBuilder.Append("}}");
         }
+
+        var chain = chainBuilder.ToString();
 
         var context = CreateImageServerContext();
         var result = await _handler.AnalyzeAsync(
@@ -240,9 +241,8 @@ public class ImageServerAnalyzeHandlerTests
             Values(("renderingRule", "{\"rasterFunction\":\"Identity\",\"outputPixelType\":\"S16\"}")),
             CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<AnalyzeResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.OutputPixelType.Should().Be("S16");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<AnalyzeResponse>>().Which;
+        jsonResult.Value!.OutputPixelType.Should().Be("S16");
     }
 
     [UnitTest]

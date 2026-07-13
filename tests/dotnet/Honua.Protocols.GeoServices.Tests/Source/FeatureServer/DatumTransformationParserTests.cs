@@ -32,8 +32,9 @@ public sealed class DatumTransformationParserTests
         DatumTransformationParser.TryParse("1241", out var request, out var error).Should().BeTrue();
         error.Should().BeNull();
         request.Should().NotBeNull();
-        request!.Value.Wkid.Should().Be(1241);
-        request.Value.TransformForward.Should().BeTrue();
+        var requestValue = request!.Value;
+        requestValue.Wkid.Should().Be(1241);
+        requestValue.TransformForward.Should().BeTrue();
     }
 
     [UnitTest]
@@ -43,8 +44,9 @@ public sealed class DatumTransformationParserTests
 
         DatumTransformationParser.TryParse(json, out var request, out var error).Should().BeTrue();
         error.Should().BeNull();
-        request!.Value.Wkid.Should().Be(1241);
-        request.Value.TransformForward.Should().BeFalse();
+        var requestValue = request!.Value;
+        requestValue.Wkid.Should().Be(1241);
+        requestValue.TransformForward.Should().BeFalse();
     }
 
     [UnitTest]

@@ -59,9 +59,8 @@ public class ImageServerMultidimensionalInfoHandlerTests
 
         var result = await handler.GetMultidimensionalInfoAsync(context, 1);
 
-        var json = result as JsonHttpResult<MultidimensionalInfoResponse>;
-        json.Should().NotBeNull();
-        json!.Value!.MultidimensionalInfo.Variables.Should().BeEmpty();
+        var json = result.Should().BeOfType<JsonHttpResult<MultidimensionalInfoResponse>>().Which;
+        json.Value!.MultidimensionalInfo.Variables.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -76,9 +75,8 @@ public class ImageServerMultidimensionalInfoHandlerTests
 
         var result = await handler.GetMultidimensionalInfoAsync(context, 1);
 
-        var json = result as JsonHttpResult<MultidimensionalInfoResponse>;
-        json.Should().NotBeNull();
-        json!.Value!.MultidimensionalInfo.Variables.Should().BeEmpty();
+        var json = result.Should().BeOfType<JsonHttpResult<MultidimensionalInfoResponse>>().Which;
+        json.Value!.MultidimensionalInfo.Variables.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -93,10 +91,9 @@ public class ImageServerMultidimensionalInfoHandlerTests
 
         var result = await handler.GetMultidimensionalInfoAsync(context, 1);
 
-        var json = result as JsonHttpResult<MultidimensionalInfoResponse>;
-        json.Should().NotBeNull();
+        var json = result.Should().BeOfType<JsonHttpResult<MultidimensionalInfoResponse>>().Which;
 
-        var variables = json!.Value!.MultidimensionalInfo.Variables;
+        var variables = json.Value!.MultidimensionalInfo.Variables;
         variables.Should().ContainSingle();
 
         var variable = variables[0];

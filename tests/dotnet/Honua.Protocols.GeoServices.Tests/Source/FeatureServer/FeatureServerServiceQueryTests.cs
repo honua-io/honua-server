@@ -78,7 +78,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
     public async Task ServiceQuery_Post_ReturnsPerLayerResults()
     {
-        var form = new FormUrlEncodedContent(new[]
+        using var form = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json")
@@ -105,7 +105,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
     public async Task ServiceQuery_Post_WithLayerDefs_AppliesPerLayerWhere()
     {
-        var form = new FormUrlEncodedContent(new[]
+        using var form = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json"),
@@ -133,7 +133,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/queryDomains")]
     public async Task ServiceQueryDomains_Post_ReturnsDomains()
     {
-        var form = new FormUrlEncodedContent(new[]
+        using var form = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("f", "json")
         });

@@ -41,9 +41,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var createContentBody = new StringContent(createPayload, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+            createContentBody);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -54,8 +55,9 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         var repo = _fixture.GetService<IReplicaRepository>();
         var record = await repo.GetAsync(replicaId);
         record.Should().NotBeNull();
-        record!.Value.ReplicaName.Should().Be("DurabilityTest");
-        record.Value.ServiceId.Should().Be(WebAppFixture.TestServiceId);
+        var recordValue = record!.Value;
+        recordValue.ReplicaName.Should().Be("DurabilityTest");
+        recordValue.ServiceId.Should().Be(WebAppFixture.TestServiceId);
     }
 
     [IntegrationTest]
@@ -71,9 +73,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(extractPayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -103,9 +106,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(syncPayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(syncPayload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -139,9 +143,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent1 = new StringContent(syncPayload1, Encoding.UTF8, "application/json");
         var response1 = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(syncPayload1, Encoding.UTF8, "application/json"));
+            requestContent1);
         response1.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content1 = await response1.Content.ReadAsStringAsync();
@@ -161,9 +166,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent2 = new StringContent(syncPayload2, Encoding.UTF8, "application/json");
         var response2 = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(syncPayload2, Encoding.UTF8, "application/json"));
+            requestContent2);
         response2.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content2 = await response2.Content.ReadAsStringAsync();
@@ -187,9 +193,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var baselineContent = new StringContent(baselinePayload, Encoding.UTF8, "application/json");
         var baselineResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(baselinePayload, Encoding.UTF8, "application/json"));
+            baselineContent);
         baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var repo = _fixture.GetService<IReplicaRepository>();
@@ -244,9 +251,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var failedUploadContent = new StringContent(failedUploadPayload, Encoding.UTF8, "application/json");
         var failedUploadResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(failedUploadPayload, Encoding.UTF8, "application/json"));
+            failedUploadContent);
 
         await failedUploadResponse.AssertGeoServicesErrorAsync(400);
 
@@ -299,8 +307,9 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         var changeTracker = _fixture.GetService<IChangeTracker>();
         var gen1 = await changeTracker.GetCurrentGenerationAsync();
 
-        // Create a replica (which does not advance generation itself, but the test infra may have prior data)
-        var replicaId = await CreateReplicaAsync("MonotonicTest");
+        // Create a replica (which does not advance generation itself, but the test infra may have prior data).
+        // Only the side effect matters here, not the replica id.
+        await CreateReplicaAsync("MonotonicTest");
 
         var gen2 = await changeTracker.GetCurrentGenerationAsync();
         gen2.Should().BeGreaterThanOrEqualTo(gen1, "generation should be monotonically non-decreasing");
@@ -344,9 +353,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
                 f = "json"
             });
 
+            using var requestContent = new StringContent(extractPayload, Encoding.UTF8, "application/json");
             var response = await limitedFixture.Client.PostAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-                new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+                requestContent);
 
             // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -377,9 +387,10 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();

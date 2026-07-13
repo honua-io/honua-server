@@ -44,9 +44,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
                 f = "json"
             });
 
+            using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-                new StringContent(payload, Encoding.UTF8, "application/json"));
+                payloadContent);
 
             // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -70,9 +71,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -118,9 +120,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
                 f = "json"
             });
 
+            using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
             var response = await fixture.Client.PostAsync(
                 $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-                new StringContent(payload, Encoding.UTF8, "application/json"));
+                payloadContent);
 
             await response.AssertGeoServicesErrorAsync(402);
             var body = await response.Content.ReadAsStringAsync();
@@ -149,9 +152,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -176,9 +180,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await _fixture.Client.GetAsync(
@@ -217,9 +222,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -255,9 +261,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -277,9 +284,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -297,9 +305,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -320,9 +329,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -341,9 +351,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var createPayloadContent = new StringContent(createPayload, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+            createPayloadContent);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -357,9 +368,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var extractPayloadContent = new StringContent(extractPayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+            extractPayloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -389,9 +401,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -431,9 +444,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -460,9 +474,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -494,9 +509,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -525,9 +541,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -546,9 +563,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var createPayloadContent = new StringContent(createPayload, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+            createPayloadContent);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -563,9 +581,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var syncPayloadContent = new StringContent(syncPayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(syncPayload, Encoding.UTF8, "application/json"));
+            syncPayloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -585,9 +604,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     {
         var payload = JsonSerializer.Serialize(new { syncDirection = "download" });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -620,9 +640,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -641,9 +662,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var createPayloadContent = new StringContent(createPayload, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+            createPayloadContent);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
@@ -657,9 +679,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -679,9 +702,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -694,9 +718,10 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     {
         var payload = JsonSerializer.Serialize(new { f = "json" });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
