@@ -161,6 +161,42 @@ public sealed class ManagedBufferAggregateExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
     }
 
+    [UnitTest]
+    public async Task MetersOnGeographicSourceCrs_IsRejected()
+    {
+        // A linear buffer distance is meaningless in degree space; when the caller declares
+        // the input CRS as geographic (EPSG:4326) the executor must reject rather than emit a
+        // silently-wrong meters-as-degrees buffer (#2808).
+        var executor = new ManagedBufferAggregateExecutor(Options());
+        var (status, _) = await RunAsync(
+            executor,
+            ManagedBufferAggregateExecutor.HandledProcessId,
+            ("input", BuildUri(Feature(Point(0, 0)))),
+            ("distance", "1000"),
+            ("unit", "meters"),
+            ("sourceCrs", "4326"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task LinearBufferOnProjectedSourceCrs_IsAccepted()
+    {
+        // The same declared-CRS guard must NOT block a projected (metric) CRS such as Web
+        // Mercator, where a meters buffer is well-defined.
+        var executor = new ManagedBufferAggregateExecutor(Options());
+        var (status, uri) = await RunAsync(
+            executor,
+            ManagedBufferAggregateExecutor.HandledProcessId,
+            ("input", BuildUri(Feature(Point(0, 0)))),
+            ("distance", "1000"),
+            ("unit", "meters"),
+            ("sourceCrs", "EPSG:3857"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        ReadFeatures(uri!).Should().HaveCount(1);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

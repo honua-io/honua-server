@@ -168,6 +168,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         violations.AddRange(catalogViolations);
         warnings.AddRange(catalogWarnings);
 
+        // Surface the direct-submit execution reality (multi-step, sync-only/non-dispatchable
+        // process ids, ignored non-Geoprocess step kinds) so the read-only pre-flight reports
+        // the same limitations the submit path enforces rather than optimistically returning
+        // isExecutable=true for a plan that would be rejected or silently under-execute (#2806).
+        var (submitViolations, submitWarnings) = DirectSubmitPlanValidator.Evaluate(plan);
+        violations.AddRange(submitViolations);
+        warnings.AddRange(submitWarnings);
+
         foreach (var v in catalogViolations)
         {
             if (v.Code == "UNKNOWN_PROCESS")
@@ -209,11 +217,28 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ValidatePlanStructure(plan);
         EnsurePlanCatalogValid(plan);
 
+        // Prefer the plan's declared outputs; when absent, derive the artifact kinds from
+        // the catalog definitions of the plan's Geoprocess steps so the estimate reflects
+        // what the processes actually produce instead of an empty list.
+        var estimatedArtifacts = plan.Outputs.Count > 0
+            ? plan.Outputs
+            : DeriveArtifactKinds(plan);
+
+        var sideEffects = DeriveSideEffects(plan);
+
+        // No duration model exists yet, so do NOT fabricate estimatedDurationSeconds=0 as a
+        // fact (#2806). Flag the estimate as unavailable and disclose it in plain language via
+        // sideEffects so a caller does not read the placeholder 0 as an "instant" prediction.
+        sideEffects.Add(
+            "No duration estimate is available: the dry-run path does not model runtime cost, "
+            + "so estimatedDurationSeconds is a placeholder (0), not a prediction (durationEstimateAvailable=false).");
+
         var result = new DryRunResult
         {
             EstimatedDurationSeconds = 0,
-            EstimatedArtifacts = plan.Outputs,
-            SideEffects = []
+            DurationEstimateAvailable = false,
+            EstimatedArtifacts = estimatedArtifacts,
+            SideEffects = sideEffects
         };
 
         GeoprocessingServiceLog.DryRunCompleted(_logger, plan.PlanId, result.EstimatedDurationSeconds);
@@ -1096,6 +1121,69 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var first = violations[0];
         throw new GeoprocessingValidationException(
             $"Plan failed catalog validation: {first.Code} — {first.Message}");
+    }
+
+    /// <summary>
+    /// Derives the distinct artifact kinds the plan's Geoprocess steps produce from the
+    /// process catalog. Used by the dry-run path when the plan does not declare its own
+    /// <see cref="AnalysisPlan.Outputs"/> so the estimate reflects real process outputs.
+    /// </summary>
+    private List<ArtifactKind> DeriveArtifactKinds(AnalysisPlan plan)
+    {
+        var kinds = new List<ArtifactKind>();
+        foreach (var step in plan.Steps)
+        {
+            if (step.Kind != AnalysisPlanStepKind.Geoprocess || string.IsNullOrWhiteSpace(step.ProcessId))
+            {
+                continue;
+            }
+
+            if (_processCatalog.GetProcess(step.ProcessId) is not { } definition)
+            {
+                continue;
+            }
+
+            foreach (var kind in definition.OutputArtifactKinds)
+            {
+                if (!kinds.Contains(kind))
+                {
+                    kinds.Add(kind);
+                }
+            }
+        }
+
+        return kinds;
+    }
+
+    /// <summary>
+    /// Derives the observable side effects the plan would produce: durable writes from
+    /// mutating processes (<see cref="ProcessExecutionTier.Mutating"/>) and sink steps.
+    /// Read-only analytic plans return an empty set (before the no-estimate disclosure the
+    /// dry-run path appends).
+    /// </summary>
+    private List<string> DeriveSideEffects(AnalysisPlan plan)
+    {
+        var sideEffects = new List<string>();
+        foreach (var step in plan.Steps)
+        {
+            if (step.Kind != AnalysisPlanStepKind.Geoprocess || string.IsNullOrWhiteSpace(step.ProcessId))
+            {
+                continue;
+            }
+
+            if (_processCatalog.GetProcess(step.ProcessId) is { ExecutionTier: ProcessExecutionTier.Mutating })
+            {
+                sideEffects.Add(
+                    $"Step '{step.StepId}' runs mutating process '{step.ProcessId}', which writes durable state (requires elevated authorization/approval).");
+            }
+            else if (step.ProcessId.StartsWith("sink.", StringComparison.Ordinal))
+            {
+                sideEffects.Add(
+                    $"Step '{step.StepId}' runs sink process '{step.ProcessId}', which writes output to an external destination.");
+            }
+        }
+
+        return sideEffects;
     }
 
     private bool ContainsMutatingProcess(AnalysisPlan plan)

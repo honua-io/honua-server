@@ -158,6 +158,48 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_query_features")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_QueryFeatures_OutOfRangeBboxUnderGeographicSrid_WarnsAndFlagsZeroResults()
+    {
+        // A Web-Mercator-scale bbox under the geographic default bboxSrid=4326 silently
+        // matches nothing; the tool must warn about the likely CRS mismatch and flag the
+        // zero-result summary rather than returning an unexplained empty page (#2808).
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryResult<Feature>
+            {
+                TotalCount = 0,
+                HasMoreResults = false,
+                Items = []
+            });
+
+        var geometryService = Substitute.For<IGeometryService>();
+        geometryService.ConvertWktToWkb(Arg.Any<string>(), Arg.Any<int?>()).Returns(new byte[] { 0x01 });
+
+        var surface = BuildSurface();
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
+            ToolCall("query-crs-1", QueryFeaturesTool.ToolName, $$"""
+                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"bbox":[-20037508,-20037508,20037508,20037508]}
+                """),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("returnedCount").GetInt32().Should().Be(0);
+        var warnings = structured.GetProperty("warnings").EnumerateArray().Select(w => w.GetString()).ToArray();
+        warnings.Should().NotBeEmpty();
+        warnings.Should().Contain(w => w!.Contains("wrong CRS", StringComparison.Ordinal),
+            "the out-of-range bbox under a geographic bboxSrid must be flagged as a likely CRS mismatch");
+
+        StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public void Describe_QueryFeatures_AdvertisesPagingAndCountParameters()
     {
         var descriptor = new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance).Describe();
