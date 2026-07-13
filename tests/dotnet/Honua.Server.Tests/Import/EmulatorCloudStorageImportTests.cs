@@ -118,6 +118,7 @@ public sealed class EmulatorAwsS3CloudStorageImportTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Upload_MultiLayerFileGdbViaS3CloudStaging_FailsWithoutMergingLayers()
     {
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var fileGdbPath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
         File.Exists(fileGdbPath).Should().BeTrue("the FileGDB fixture must be copied to the test output");
 

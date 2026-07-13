@@ -279,14 +279,9 @@ public sealed class AwsS3UploadProgressTests : IAsyncLifetime
 
     private static string? ReadMetadataValue(JsonElement metadataElement, string key)
     {
-        foreach (var property in metadataElement.EnumerateObject())
-        {
-            if (string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
-            {
-                return property.Value.GetString();
-            }
-        }
-
-        return null;
+        return metadataElement.EnumerateObject()
+            .Where(property => string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
+            .Select(property => property.Value.GetString())
+            .FirstOrDefault();
     }
 }
