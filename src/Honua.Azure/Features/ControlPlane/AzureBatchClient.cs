@@ -435,6 +435,10 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
             await EnsureSuccessAsync(response, cleanupCancellation.Token).ConfigureAwait(false);
             Log.IncompleteJobCleanupSucceeded(_logger, jobId);
         }
+        // Intentionally generic: this is best-effort cleanup of a job that failed to
+        // create successfully. Any failure here (including cancellation from the
+        // dedicated cleanup timeout) is logged and swallowed rather than masking the
+        // original creation failure that triggered this cleanup attempt.
         catch (Exception ex)
         {
             Log.IncompleteJobCleanupFailed(_logger, jobId, ex.Message);
