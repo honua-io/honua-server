@@ -301,8 +301,9 @@ public sealed class StacFilterHelpersTests
         var filter = StacFilterHelpers.ParseDatetime("../2023-01-02T00:00:00Z", resource);
 
         filter.Should().NotBeNull();
-        filter!.Value.Start.Should().BeNull();
-        filter.Value.End.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
+        var value = filter!.Value;
+        value.Start.Should().BeNull();
+        value.End.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
     }
 
     [UnitTest]
@@ -317,8 +318,9 @@ public sealed class StacFilterHelpersTests
         var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z/..", resource);
 
         filter.Should().NotBeNull();
-        filter!.Value.Start.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
-        filter.Value.End.Should().BeNull();
+        var value = filter!.Value;
+        value.Start.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
+        value.End.Should().BeNull();
     }
 
     private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)

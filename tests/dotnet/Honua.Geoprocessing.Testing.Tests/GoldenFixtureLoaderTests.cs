@@ -18,7 +18,7 @@ public sealed class GoldenFixtureLoaderTests : IDisposable
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     private readonly string _scratch =
-        Path.Combine(Path.GetTempPath(), "honua-gp-loader-tests-" + Guid.NewGuid().ToString("N"));
+        Path.Join(Path.GetTempPath(), "honua-gp-loader-tests-" + Guid.NewGuid().ToString("N"));
 
     public GoldenFixtureLoaderTests() => Directory.CreateDirectory(_scratch);
 
@@ -33,15 +33,17 @@ public sealed class GoldenFixtureLoaderTests : IDisposable
         }
         catch (IOException)
         {
+            // Best-effort cleanup: a lingering file handle on the scratch directory must not
+            // fail test teardown.
         }
     }
 
     [UnitTest]
     public async Task Load_ManifestWithInlineInputs_RunsThroughSdk()
     {
-        var dir = Path.Combine(_scratch, "buffer");
+        var dir = Path.Join(_scratch, "buffer");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "fixture.json"),
+        File.WriteAllText(Path.Join(dir, "fixture.json"),
             $$"""
             {
               "id": "buffer-fixture",
@@ -53,7 +55,7 @@ public sealed class GoldenFixtureLoaderTests : IDisposable
             }
             """);
 
-        var fixture = GoldenFixtureLoader.Load(Path.Combine(dir, "fixture.json"));
+        var fixture = GoldenFixtureLoader.Load(Path.Join(dir, "fixture.json"));
         fixture.Id.Should().Be("buffer-fixture");
         fixture.ProcessId.Should().Be(GeometryBufferJobExecutor.HandledProcessId);
         fixture.Mode.Should().Be(GoldenComparisonMode.Geometry);
@@ -68,11 +70,11 @@ public sealed class GoldenFixtureLoaderTests : IDisposable
     [UnitTest]
     public void Load_ManifestWithInputFile_Base64EncodesContents()
     {
-        var dir = Path.Combine(_scratch, "convert");
+        var dir = Path.Join(_scratch, "convert");
         Directory.CreateDirectory(dir);
         var sourceText = "{\"type\":\"FeatureCollection\",\"features\":[]}";
-        File.WriteAllText(Path.Combine(dir, "input.geojson"), sourceText);
-        File.WriteAllText(Path.Combine(dir, "fixture.json"),
+        File.WriteAllText(Path.Join(dir, "input.geojson"), sourceText);
+        File.WriteAllText(Path.Join(dir, "fixture.json"),
             """
             {
               "id": "convert-fixture",
@@ -84,7 +86,7 @@ public sealed class GoldenFixtureLoaderTests : IDisposable
             }
             """);
 
-        var fixture = GoldenFixtureLoader.Load(Path.Combine(dir, "fixture.json"));
+        var fixture = GoldenFixtureLoader.Load(Path.Join(dir, "fixture.json"));
         fixture.Inputs.Should().ContainKey("source");
         Encoding.UTF8.GetString(Convert.FromBase64String(fixture.Inputs["source"])).Should().Be(sourceText);
         fixture.GoldenPath.Should().EndWith("golden.csv");
@@ -112,9 +114,9 @@ public sealed class GoldenFixtureLoaderTests : IDisposable
 
     private void WriteManifest(string id, string process)
     {
-        var dir = Path.Combine(_scratch, id);
+        var dir = Path.Join(_scratch, id);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "fixture.json"),
+        File.WriteAllText(Path.Join(dir, "fixture.json"),
             $$"""
             { "id": "{{id}}", "process": "{{process}}", "inputs": {}, "golden": "golden.json" }
             """);

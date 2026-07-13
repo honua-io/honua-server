@@ -25,7 +25,7 @@ public sealed class GdalMultidimCoverageExecutorTests
         IGdalCommandRunner runner,
         out string scratch)
     {
-        scratch = Path.Combine(Path.GetTempPath(), "honua-gdal-multidim-test");
+        scratch = Path.Join(Path.GetTempPath(), "honua-gdal-multidim-test");
         return new GdalMultidimCoverageMetadataJobExecutor(
             runner,
             GdalJobFactory.Options(scratch),
@@ -192,15 +192,15 @@ public sealed class GdalMultidimCoverageExecutorTests
     [UnitTest]
     public void VsiPath_LocalProvider_KeyUnderRoot_StaysUnderBucket()
     {
-        var root = Path.Combine(Path.GetTempPath(), "honua-vsi-root");
+        var root = Path.Join(Path.GetTempPath(), "honua-vsi-root");
         GdalVsiPath.Build(CloudStorageProvider.Local, root, "sub/dir/file.nc")
-            .Should().Be(Path.GetFullPath(Path.Combine(root, "sub", "dir", "file.nc")));
+            .Should().Be(Path.GetFullPath(Path.Join(root, "sub", "dir", "file.nc")));
     }
 
     [UnitTest]
     public void VsiPath_LocalProvider_ParentTraversal_IsRejected()
     {
-        var root = Path.Combine(Path.GetTempPath(), "honua-vsi-root");
+        var root = Path.Join(Path.GetTempPath(), "honua-vsi-root");
         var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, root, "../../etc/passwd");
         act.Should().Throw<InvalidOperationException>();
     }
@@ -208,7 +208,7 @@ public sealed class GdalMultidimCoverageExecutorTests
     [UnitTest]
     public void VsiPath_LocalProvider_EmbeddedTraversal_IsRejected()
     {
-        var root = Path.Combine(Path.GetTempPath(), "honua-vsi-root");
+        var root = Path.Join(Path.GetTempPath(), "honua-vsi-root");
         var act = () => GdalVsiPath.Build(CloudStorageProvider.Local, root, "sub/../../escape.nc");
         act.Should().Throw<InvalidOperationException>();
     }

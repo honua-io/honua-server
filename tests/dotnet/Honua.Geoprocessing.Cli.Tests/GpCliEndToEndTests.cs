@@ -159,7 +159,7 @@ public sealed class GpCliEndToEndTests
     [Fact]
     public async Task RunAsync_Run_WithOut_WritesArtifactBytesToFile()
     {
-        var outPath = Path.Combine(Path.GetTempPath(), $"gp-cli-out-{Guid.NewGuid():N}.bin");
+        var outPath = Path.Join(Path.GetTempPath(), $"gp-cli-out-{Guid.NewGuid():N}.bin");
         try
         {
             var (exit, stdout, _) = await InvokeAsync(
@@ -286,7 +286,7 @@ public sealed class GpCliEndToEndTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir.FullName, "samples", "gp");
+            var candidate = Path.Join(dir.FullName, "samples", "gp");
             if (Directory.Exists(candidate))
             {
                 return candidate;
