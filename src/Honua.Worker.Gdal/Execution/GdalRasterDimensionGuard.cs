@@ -673,6 +673,165 @@ internal static class GdalRasterDimensionGuard
         return false;
     }
 
+    // --- GeoTIFF ModelPixelScale reader ---------------------------------------
+    //
+    // Reads tag 33550 (ModelPixelScaleTag: scaleX, scaleY[, scaleZ] in CRS ground
+    // units per pixel) so the resample -tr output bound can derive the input's ground
+    // extent (declared dimensions × pixel scale). The three DOUBLEs are stored
+    // out-of-line (24 bytes > any inline value field), so the entry's value field holds
+    // an offset to the array. Any parse difficulty leaves the identity default in place.
+
+    private const int TagModelPixelScale = 33550;
+    private const int TypeDouble = 12; // 64-bit IEEE double
+
+    /// <summary>
+    /// Reads the GeoTIFF ModelPixelScale (ground units per pixel) for the input-extent
+    /// side of the resample <c>-tr</c> bound (#2793). Defaults <paramref name="scaleX"/> /
+    /// <paramref name="scaleY"/> to <c>1.0</c> — the identity geotransform GDAL assigns a
+    /// raster with no georeferencing — so a non-TIFF or un-georeferenced input yields an
+    /// extent measured in pixels, matching how <c>gdalwarp -tr</c> interprets a target
+    /// cell size against such a raster. Only the first two (X, Y) scales are read; a
+    /// non-positive or non-finite scale is ignored (identity kept for that axis).
+    /// </summary>
+    internal static void ReadGeoTiffPixelScale(ReadOnlySpan<byte> data, out double scaleX, out double scaleY)
+    {
+        scaleX = 1.0;
+        scaleY = 1.0;
+
+        if (ClassifyContainer(data) is not RasterContainerFormat.Tiff || data.Length < 8)
+        {
+            return;
+        }
+
+        var little = data[0] == 0x49; // "II" little-endian, else "MM" big-endian
+        try
+        {
+            var magic = ReadU16(data, 2, little);
+            switch (magic)
+            {
+                case 42:
+                    ReadClassicPixelScale(data, little, ref scaleX, ref scaleY);
+                    break;
+                case 43:
+                    ReadBigTiffPixelScale(data, little, ref scaleX, ref scaleY);
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException or OverflowException)
+        {
+            // Truncated / malformed header — keep the identity default; the dimension
+            // guard adjudicates the same bytes and GDAL opens them the same way.
+            scaleX = 1.0;
+            scaleY = 1.0;
+        }
+    }
+
+    private static void ReadClassicPixelScale(ReadOnlySpan<byte> data, bool little, ref double scaleX, ref double scaleY)
+    {
+        var ifdOffset = (long)ReadU32(data, 4, little);
+        if (ifdOffset <= 0 || ifdOffset + 2 > data.Length)
+        {
+            return;
+        }
+
+        int entryCount = ReadU16(data, (int)ifdOffset, little);
+        var entriesStart = ifdOffset + 2;
+        const int EntrySize = 12;
+        if (entriesStart + (long)entryCount * EntrySize > data.Length)
+        {
+            return;
+        }
+
+        for (var i = 0; i < entryCount; i++)
+        {
+            var b = (int)(entriesStart + i * EntrySize);
+            if (ReadU16(data, b, little) != TagModelPixelScale)
+            {
+                continue;
+            }
+            if (ReadU16(data, b + 2, little) != TypeDouble || ReadU32(data, b + 4, little) < 2)
+            {
+                return;
+            }
+            // 4-byte value field holds the offset to the out-of-line DOUBLE array.
+            var arrayOffset = (long)ReadU32(data, b + 8, little);
+            ReadScalePair(data, little, arrayOffset, ref scaleX, ref scaleY);
+            return;
+        }
+    }
+
+    private static void ReadBigTiffPixelScale(ReadOnlySpan<byte> data, bool little, ref double scaleX, ref double scaleY)
+    {
+        if (ReadU16(data, 4, little) != 8)
+        {
+            return;
+        }
+
+        var ifdOffset = (long)ReadU64(data, 8, little);
+        if (ifdOffset <= 0 || ifdOffset + 8 > data.Length)
+        {
+            return;
+        }
+
+        var entryCountRaw = ReadU64(data, (int)ifdOffset, little);
+        if (entryCountRaw > 4096)
+        {
+            return;
+        }
+
+        var entryCount = (int)entryCountRaw;
+        var entriesStart = ifdOffset + 8;
+        const int EntrySize = 20;
+        if (entriesStart + (long)entryCount * EntrySize > data.Length)
+        {
+            return;
+        }
+
+        for (var i = 0; i < entryCount; i++)
+        {
+            var b = (int)(entriesStart + i * EntrySize);
+            if (ReadU16(data, b, little) != TagModelPixelScale)
+            {
+                continue;
+            }
+            if (ReadU16(data, b + 2, little) != TypeDouble || ReadU64(data, b + 4, little) < 2)
+            {
+                return;
+            }
+            // 8-byte value field holds the offset to the out-of-line DOUBLE array.
+            var arrayOffset = (long)ReadU64(data, b + 12, little);
+            ReadScalePair(data, little, arrayOffset, ref scaleX, ref scaleY);
+            return;
+        }
+    }
+
+    private static void ReadScalePair(ReadOnlySpan<byte> data, bool little, long arrayOffset, ref double scaleX, ref double scaleY)
+    {
+        if (arrayOffset < 0 || arrayOffset + 16 > data.Length)
+        {
+            return;
+        }
+
+        var sx = ReadDouble(data, (int)arrayOffset, little);
+        var sy = ReadDouble(data, (int)arrayOffset + 8, little);
+        if (double.IsFinite(sx) && sx > 0d)
+        {
+            scaleX = sx;
+        }
+        if (double.IsFinite(sy) && sy > 0d)
+        {
+            scaleY = sy;
+        }
+    }
+
+    private static double ReadDouble(ReadOnlySpan<byte> data, int offset, bool little)
+    {
+        var slice = data.Slice(offset, 8);
+        return little
+            ? BinaryPrimitives.ReadDoubleLittleEndian(slice)
+            : BinaryPrimitives.ReadDoubleBigEndian(slice);
+    }
+
     private static ushort ReadU16(ReadOnlySpan<byte> data, int offset, bool little)
     {
         var slice = data.Slice(offset, 2);

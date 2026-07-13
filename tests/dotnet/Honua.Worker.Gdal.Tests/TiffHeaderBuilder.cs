@@ -18,9 +18,11 @@ internal static class TiffHeaderBuilder
     private const int TagImageLength = 257;
     private const int TagBitsPerSample = 258;
     private const int TagSamplesPerPixel = 277;
+    private const int TagModelPixelScale = 33550;
 
     private const int TypeShort = 3;
     private const int TypeLong = 4;
+    private const int TypeDouble = 12;
     private const int TypeLong8 = 16;
 
     /// <summary>Builds a classic (32-bit) TIFF header with a single IFD.</summary>
@@ -40,6 +42,41 @@ internal static class TiffHeaderBuilder
         WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, bits, littleEndian);
         WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, bands, littleEndian);
         WriteU32(bytes, 0, littleEndian); // next IFD = none
+
+        return bytes.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a classic (32-bit) TIFF header that ALSO carries a GeoTIFF ModelPixelScale
+    /// tag (33550: <paramref name="scaleX"/>, <paramref name="scaleY"/>, 0 as three
+    /// out-of-line DOUBLEs), so the resample -tr extent bound can derive ground extent =
+    /// declared dimensions × pixel scale.
+    /// </summary>
+    public static byte[] ClassicWithPixelScale(
+        long width, long height, double scaleX, double scaleY, int bands = 1, int bits = 8, bool littleEndian = true)
+    {
+        var bytes = new List<byte>();
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        WriteU16(bytes, 42, littleEndian);
+        WriteU32(bytes, 8, littleEndian); // first IFD at offset 8
+
+        // IFD @8: count(2) + entryCount*12 + nextIFD(4). The 3-double pixel-scale array is
+        // stored immediately after, so its offset is the byte length up to that point.
+        const int entryCount = 5;
+        long scaleArrayOffset = 8 + 2 + (entryCount * 12) + 4;
+
+        WriteU16(bytes, entryCount, littleEndian);
+        WriteClassicEntry(bytes, TagImageWidth, TypeLong, width, littleEndian);
+        WriteClassicEntry(bytes, TagImageLength, TypeLong, height, littleEndian);
+        WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, bits, littleEndian);
+        WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, bands, littleEndian);
+        WriteClassicScaleEntry(bytes, scaleArrayOffset, littleEndian);
+        WriteU32(bytes, 0, littleEndian); // next IFD = none
+
+        WriteDouble(bytes, scaleX, littleEndian);
+        WriteDouble(bytes, scaleY, littleEndian);
+        WriteDouble(bytes, 0d, littleEndian); // scaleZ
 
         return bytes.ToArray();
     }
@@ -185,6 +222,31 @@ internal static class TiffHeaderBuilder
             field.Add(0);
         }
         bytes.AddRange(field);
+    }
+
+    private static void WriteClassicScaleEntry(List<byte> bytes, long arrayOffset, bool little)
+    {
+        WriteU16(bytes, TagModelPixelScale, little);
+        WriteU16(bytes, TypeDouble, little);
+        WriteU32(bytes, 3, little); // count = 3 doubles (scaleX, scaleY, scaleZ)
+        WriteU32(bytes, arrayOffset, little); // 4-byte value field = offset to the array
+    }
+
+    private static void WriteDouble(List<byte> bytes, double value, bool little)
+    {
+        Span<byte> buf = stackalloc byte[8];
+        if (little)
+        {
+            System.Buffers.Binary.BinaryPrimitives.WriteDoubleLittleEndian(buf, value);
+        }
+        else
+        {
+            System.Buffers.Binary.BinaryPrimitives.WriteDoubleBigEndian(buf, value);
+        }
+        foreach (var b in buf)
+        {
+            bytes.Add(b);
+        }
     }
 
     private static void WriteScalarField(List<byte> field, int type, long value, bool little)
