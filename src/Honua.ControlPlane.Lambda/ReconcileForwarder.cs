@@ -73,15 +73,7 @@ internal sealed class ReconcileForwarderOptions
     }
 
     private static string? FirstNonEmpty(IReadOnlyDictionary<string, string?> env, params string[] keys)
-    {
-        foreach (var key in keys)
-        {
-            if (env.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return null;
-    }
+        => keys
+            .Select(key => env.TryGetValue(key, out var value) ? value : null)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 }
