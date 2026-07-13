@@ -134,7 +134,7 @@ internal sealed partial class StreamingFileImportService
             EventId = 7420,
             Level = LogLevel.Debug,
             Message = "Streaming CRS auto-detection failed for format {Format}; falling back to explicit source SRID or default")]
-        public static partial void CrsDetectionFailed(ILogger logger, Exception exception, string format);
+        public static partial void CrsDetectionFailed(ILogger logger, Exception exception, SupportedFileFormat format);
     }
 
     private static partial class ShapefileLog

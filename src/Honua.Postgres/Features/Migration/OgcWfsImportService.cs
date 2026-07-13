@@ -765,7 +765,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         foreach (var pair in overrides.Where(pair => !string.IsNullOrWhiteSpace(pair.Value)))
         {
-            pairs.Add(new KeyValuePair<string, string>(pair.Key, pair.Value));
+            // The Where clause above already excludes null/whitespace values, but the compiler
+            // can't propagate that narrowing across the LINQ lambda boundary back into this loop.
+            pairs.Add(new KeyValuePair<string, string>(pair.Key, pair.Value!));
         }
 
         return string.Join("&", pairs.Select(p =>

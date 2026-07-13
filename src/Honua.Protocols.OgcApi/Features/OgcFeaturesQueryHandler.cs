@@ -72,7 +72,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
-        using Activity? featureActivity = null;
+        Activity? featureActivity = null;
         var request = context.Request;
 
         try
@@ -541,6 +541,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
         }
+        finally
+        {
+            featureActivity?.Dispose();
+        }
     }
 
     /// <summary>
@@ -554,7 +558,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
-        using Activity? featureActivity = null;
+        Activity? featureActivity = null;
         var request = context.Request;
 
         try
@@ -788,6 +792,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
             OgcFeaturesLog.ItemQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
+        }
+        finally
+        {
+            featureActivity?.Dispose();
         }
     }
 
