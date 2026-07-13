@@ -155,12 +155,16 @@ internal sealed partial class RedisVersionLock : IVersionLock
             {
                 await _database.LockReleaseAsync(_key, _token).ConfigureAwait(false);
             }
-            catch (RedisException)
+            catch (RedisException ex)
             {
                 // Best-effort release; the lease will expire if the release cannot reach Redis.
+                Log.VersionLockReleaseError(_logger, _key, ex);
             }
             finally
             {
+                // _cts is disposed here (rather than via a 'using' at its declaration) because it
+                // must stay alive across the preceding awaits (CancelAsync, the renewal-loop join,
+                // and the release attempt above) before it is safe to dispose.
                 _cts.Dispose();
             }
         }
@@ -179,5 +183,11 @@ internal sealed partial class RedisVersionLock : IVersionLock
             Level = LogLevel.Warning,
             Message = "Version lock lease renewal failed for {LockKey}; retrying at the next renewal interval.")]
         public static partial void VersionLockRenewalError(ILogger logger, string lockKey, Exception exception);
+
+        [LoggerMessage(
+            EventId = 7112,
+            Level = LogLevel.Warning,
+            Message = "Version lock release failed for {LockKey}; the lease will expire on its own.")]
+        public static partial void VersionLockReleaseError(ILogger logger, string lockKey, Exception exception);
     }
 }

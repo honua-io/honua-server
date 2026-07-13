@@ -55,6 +55,8 @@ internal sealed class SplunkHecAuditSink : IAuditSink
 
         var requestUri = BuildRequestUri();
         var httpClient = _httpClientFactory.CreateClient(_httpClientName);
+        // Not a pure map: each iteration sends an HTTP request and can return early on the
+        // first transport/HTTP failure, so this doesn't reduce cleanly to a '.Select(...)'.
         foreach (var evt in events)
         {
             var payload = BuildEnvelope(evt);

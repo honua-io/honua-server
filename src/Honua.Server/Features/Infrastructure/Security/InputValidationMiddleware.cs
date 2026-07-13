@@ -148,6 +148,8 @@ internal sealed class InputValidationMiddleware
     private InputValidationResult ValidateRequest(HttpRequest request)
     {
         // Validate query parameters
+        // Not a pure filter: returns the first invalid ValidateParameter result immediately
+        // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
         foreach (var param in request.Query)
         {
             if (string.IsNullOrEmpty(param.Key))
@@ -161,6 +163,8 @@ internal sealed class InputValidationMiddleware
         // Validate form data if applicable
         if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null)
         {
+            // Not a pure filter: returns the first invalid ValidateParameter result immediately
+            // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
             foreach (var param in request.Form)
             {
                 if (string.IsNullOrEmpty(param.Key))
@@ -173,6 +177,8 @@ internal sealed class InputValidationMiddleware
         }
 
         // Validate headers for suspicious patterns
+        // Not a pure filter: returns the first invalid validation result immediately
+        // (short-circuiting the remaining headers), so this doesn't reduce to '.Where(...)'.
         foreach (var header in request.Headers)
         {
             if (string.IsNullOrEmpty(header.Key))
@@ -204,6 +210,8 @@ internal sealed class InputValidationMiddleware
         string headerName,
         Microsoft.Extensions.Primitives.StringValues values)
     {
+        // Not a pure filter: returns the first invalid result immediately (short-circuiting the
+        // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
         foreach (var value in values)
         {
             if (string.IsNullOrEmpty(value))
@@ -239,6 +247,8 @@ internal sealed class InputValidationMiddleware
         string name,
         Microsoft.Extensions.Primitives.StringValues values)
     {
+        // Not a pure filter: returns the first invalid result immediately (short-circuiting the
+        // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
         foreach (var value in values)
         {
             if (string.IsNullOrEmpty(value))
@@ -490,19 +500,19 @@ internal sealed class InputValidationMiddleware
 
     private static InputValidationResult ValidateHeaderValue(string headerName, Microsoft.Extensions.Primitives.StringValues values)
     {
+        // Not a pure filter: returns the first invalid result immediately (short-circuiting the
+        // remaining values across two distinct checks), so this doesn't reduce to '.Where(...)'.
         foreach (var value in values)
         {
             if (string.IsNullOrEmpty(value))
                 continue;
 
             // Validate IP address format for IP-related headers
-            if (headerName.Contains("IP", StringComparison.OrdinalIgnoreCase) ||
-                headerName.Contains("For", StringComparison.OrdinalIgnoreCase))
+            if ((headerName.Contains("IP", StringComparison.OrdinalIgnoreCase) ||
+                 headerName.Contains("For", StringComparison.OrdinalIgnoreCase))
+                && !IsValidIpAddressList(value))
             {
-                if (!IsValidIpAddressList(value))
-                {
-                    return InputValidationResult.Invalid($"Invalid IP address format in header '{headerName}'");
-                }
+                return InputValidationResult.Invalid($"Invalid IP address format in header '{headerName}'");
             }
 
             // Check for header injection attempts
@@ -566,16 +576,7 @@ internal sealed class InputValidationMiddleware
             return false;
 
         var ips = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var ip in ips)
-        {
-            var trimmedIp = ip.Trim();
-            if (!System.Net.IPAddress.TryParse(trimmedIp, out _))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return ips.All(ip => System.Net.IPAddress.TryParse(ip.Trim(), out _));
     }
 
     private static bool IsMultipartFormData(string? contentType)

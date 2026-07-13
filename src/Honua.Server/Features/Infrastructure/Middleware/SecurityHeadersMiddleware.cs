@@ -660,12 +660,9 @@ public static class SecurityHeadersMiddlewareExtensions
                 "X-Content-Type-Options", "Referrer-Policy", "X-XSS-Protection"
             };
 
-            foreach (var customHeader in options.CustomHeaders.Keys)
+            foreach (var customHeader in options.CustomHeaders.Keys.Where(securityHeaders.Contains))
             {
-                if (securityHeaders.Contains(customHeader))
-                {
-                    errors.Add($"Custom header '{customHeader}' conflicts with built-in security header");
-                }
+                errors.Add($"Custom header '{customHeader}' conflicts with built-in security header");
             }
         }
 

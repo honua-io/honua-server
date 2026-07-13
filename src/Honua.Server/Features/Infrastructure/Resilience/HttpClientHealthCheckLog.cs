@@ -19,4 +19,7 @@ internal static partial class HttpClientHealthCheckLog
 
     [LoggerMessage(Level = LogLevel.Error, Message = "HTTP health check for {ServiceType} failed with exception")]
     public static partial void Failed(ILogger logger, string serviceType, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Circuit breaker state check for {ServiceType} failed; continuing with health check")]
+    public static partial void CircuitBreakerStateCheckFailed(ILogger logger, string serviceType, Exception exception);
 }

@@ -88,12 +88,8 @@ internal sealed class LimitsEnforcementMiddleware(
             InfrastructureLog.RequestProcessingError(_logger, requestPath, ex.GetType().Name, ex.Message, ex);
             throw;
         }
-        finally
-        {
-            // Dispose timeout token source
-            linkedCts.Dispose();
-            timeoutCts.Dispose();
-        }
+        // linkedCts/timeoutCts are already disposed by their 'using' declarations above at method
+        // exit; no manual disposal is needed here.
     }
 
     /// <summary>
