@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Geoprocessing.Execution;
 
@@ -25,14 +26,6 @@ namespace Honua.Geoprocessing.Execution;
 internal static class ManagedReprojectFastPath
 {
     /// <summary>
-    /// The Web Mercator SRID and its common authority aliases. Reprojecting between
-    /// any two of these is a no-op datum-wise (same WGS 84 datum, same projection
-    /// math) and is served on the managed path.
-    /// </summary>
-    private static readonly HashSet<int> WebMercatorAliases =
-        new() { 3857, 900913, 102100, 102113, 3785 };
-
-    /// <summary>
     /// Returns <c>true</c> when reprojecting from <paramref name="fromSrid"/> to
     /// <paramref name="toSrid"/> is one of the managed in-memory fast paths: identity
     /// (same SRID), Web-Mercator-alias ↔ Web-Mercator-alias, or WGS 84 (4326) ↔ Web
@@ -45,17 +38,17 @@ internal static class ManagedReprojectFastPath
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (fromSrid == 4326 && WebMercatorAliases.Contains(toSrid))
+        if (fromSrid == 4326 && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        return WebMercatorAliases.Contains(fromSrid) && toSrid == 4326;
+        return SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && toSrid == 4326;
     }
 
     /// <summary>
@@ -75,7 +68,7 @@ internal static class ManagedReprojectFastPath
     /// </summary>
     public static bool IsPassthrough(int fromSrid, int toSrid)
         => fromSrid == toSrid
-            || (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid));
+            || (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid));
 
     /// <summary>
     /// Parses a positive-integer SRID step input. Returns <c>false</c> (with

@@ -652,6 +652,15 @@ internal static class GPServerEndpoints
                     });
                 }
 
+                // Normalize FeatureLayer ring winding to the right-hand rule at the egress point so
+                // the non-reprojected (and identity-SRID) paths emit the same winding the
+                // reprojected path already produces (#2745). Idempotent for already-normalized
+                // values and a no-op for non-GeoJSON artifacts.
+                if (artifact.Kind == ArtifactKind.FeatureLayer)
+                {
+                    value = GPServerOutputReprojection.NormalizeGeoJsonWinding(value) ?? value;
+                }
+
                 results.Add(new GPResultResponse
                 {
                     ParamName = paramName,
@@ -990,6 +999,13 @@ internal static class GPServerEndpoints
             if (outSrError is not null)
             {
                 return outSrError;
+            }
+
+            // Normalize FeatureLayer ring winding to the right-hand rule at the egress point so the
+            // non-reprojected (and identity-SRID) async paths match the reprojected path (#2745).
+            if (artifact.Kind == ArtifactKind.FeatureLayer)
+            {
+                value = GPServerOutputReprojection.NormalizeGeoJsonWinding(value) ?? value;
             }
 
             var response = new GPResultResponse

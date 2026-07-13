@@ -74,7 +74,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
             return JobExecutionResult.Failed($"Invalid rasterize inputs: {burnError}");
         }
 
-        if (!TryBuildGridArgs(parameters, out var gridArgs, out var gridError))
+        if (!TryBuildGridArgs(parameters, opts, out var gridArgs, out var gridError))
         {
             return JobExecutionResult.Failed($"Invalid rasterize inputs: {gridError}");
         }
@@ -178,6 +178,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
     /// </summary>
     private static bool TryBuildGridArgs(
         IReadOnlyDictionary<string, string> parameters,
+        GdalWorkerOptions options,
         out List<string> args,
         out string failure)
     {
@@ -214,6 +215,13 @@ internal sealed partial class GdalRasterizeJobExecutor(
                 || !int.TryParse(heightRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var height) || height < 1)
             {
                 failure = "'width' and 'height' must be positive integers";
+                return false;
+            }
+            // Bound the attacker-controlled OUTPUT grid before gdal_rasterize allocates
+            // a width×height output raster, closing the output-allocation OOM vector
+            // (#2782). Reuses the same caps the input dimension guard applies (#2766).
+            if (!GdalOutputGridGuard.TryAdmit(width, height, options, out failure))
+            {
                 return false;
             }
             args.Add("-ts");

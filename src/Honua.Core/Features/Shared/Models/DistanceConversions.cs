@@ -45,10 +45,13 @@ public static class DistanceConversions
         };
 
     /// <summary>
-    /// Determines if the specified SRID represents a geographic (latitude/longitude) coordinate system.
+    /// Determines whether the specified SRID is a geographic (latitude/longitude) CRS that is safe
+    /// to run a WGS 84 spheroid geodesic distance on. This is the narrow geodesic-safe allowlist
+    /// (<see cref="GeographicSridClassifier.IsGeodesicDistanceSafeSrid"/>), intentionally narrower
+    /// than the full geographic classification — see #2731/#2732.
     /// </summary>
     /// <param name="srid">The spatial reference identifier to check.</param>
-    /// <returns>True if the SRID is geographic, false if it's projected or unknown.</returns>
+    /// <returns>True if the SRID is on the geodesic-safe geographic allowlist; otherwise false.</returns>
     public static bool IsGeographicSrid(int srid) =>
-        Array.IndexOf(SpatialConstants.GeographicSrids, srid) >= 0;
+        GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 }

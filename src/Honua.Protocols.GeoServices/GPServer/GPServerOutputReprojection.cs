@@ -3,7 +3,9 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Rendering;
+using Honua.Core.Features.Shared.Models;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.IO;
@@ -29,8 +31,12 @@ internal static class GPServerOutputReprojection
 {
     private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
 
-    private static readonly HashSet<int> WebMercatorAliases =
-        new() { 3857, 900913, 102100, 102113, 3785 };
+    // GeoJsonWriter must not be shared across threads; a thread-static instance reuses one writer
+    // per thread instead of allocating one per served FeatureLayer artifact.
+    [ThreadStatic]
+    private static GeoJsonWriter? _geoJsonWriter;
+
+    private static GeoJsonWriter SharedWriter => _geoJsonWriter ??= new GeoJsonWriter();
 
     internal readonly record struct ReprojectionOutcome(
         bool Reprojected,
@@ -53,17 +59,17 @@ internal static class GPServerOutputReprojection
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (fromSrid == 4326 && WebMercatorAliases.Contains(toSrid))
+        if (fromSrid == 4326 && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
         {
             return true;
         }
 
-        if (WebMercatorAliases.Contains(fromSrid) && toSrid == 4326)
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && toSrid == 4326)
         {
             return true;
         }
@@ -144,6 +150,132 @@ internal static class GPServerOutputReprojection
         }
     }
 
+    /// <summary>
+    /// Normalizes polygon ring winding in a FeatureLayer GeoJSON <c>data:</c> URI value to the
+    /// RFC 7946 right-hand rule so the non-reprojected egress path (no <c>env:outSR</c>, or an
+    /// identity transform) emits the same winding the reprojected path already produces (#2745).
+    /// Handles both single <c>Feature</c> payloads (the deterministic <c>geometry.*</c> executors)
+    /// and <c>FeatureCollection</c> payloads (layer/overlay tools emitting through
+    /// <c>FeatureCollectionArtifact</c>). Non-GeoJSON values, malformed payloads, and geometries
+    /// that are already correctly wound are returned unchanged.
+    /// </summary>
+    /// <param name="value">The served artifact value (a base64 GeoJSON <c>data:</c> URI, or any other string).</param>
+    /// <returns>The value with normalized winding, or the original value when no change applies.</returns>
+    public static string? NormalizeGeoJsonWinding(string? value)
+    {
+        if (string.IsNullOrEmpty(value) ||
+            !value.StartsWith(GeoJsonDataUriPrefix, StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        string featureJson;
+        try
+        {
+            var base64 = value.AsSpan(GeoJsonDataUriPrefix.Length);
+            featureJson = Encoding.UTF8.GetString(Convert.FromBase64String(base64.ToString()));
+        }
+        catch (FormatException)
+        {
+            return value;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return value;
+            }
+
+            var geoJsonReader = new GeoJsonReader();
+            string rewritten;
+
+            // Check "geometry" before "features" so a Feature carrying a "features" foreign
+            // member is still treated as a single Feature.
+            if (root.TryGetProperty("geometry", out var geometryElement) &&
+                geometryElement.ValueKind == JsonValueKind.Object)
+            {
+                var geometryJson = TryNormalizeGeometryJson(geoJsonReader, geometryElement);
+                if (geometryJson is null)
+                {
+                    // Already correctly wound (or unparseable); keep the original bytes untouched.
+                    return value;
+                }
+
+                rewritten = SpliceGeometry(root, geometryJson);
+            }
+            else if (root.TryGetProperty("features", out var featuresElement) &&
+                     featuresElement.ValueKind == JsonValueKind.Array)
+            {
+                var normalizedGeometryJson = NormalizeFeatureGeometries(geoJsonReader, featuresElement);
+                if (normalizedGeometryJson is null)
+                {
+                    return value;
+                }
+
+                rewritten = SpliceFeatureCollection(root, normalizedGeometryJson);
+            }
+            else
+            {
+                return value;
+            }
+
+            return GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(rewritten));
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or NotSupportedException)
+        {
+            return value;
+        }
+    }
+
+    /// <summary>
+    /// Normalizes one GeoJSON geometry element to the right-hand rule. Returns the rewritten
+    /// geometry JSON, or <c>null</c> when the geometry is empty, unparseable, or already
+    /// correctly wound (so the caller preserves the original bytes).
+    /// </summary>
+    private static string? TryNormalizeGeometryJson(GeoJsonReader geoJsonReader, JsonElement geometryElement)
+    {
+        var geometry = geoJsonReader.Read<Geometry>(geometryElement.GetRawText());
+        if (geometry is null || geometry.IsEmpty)
+        {
+            return null;
+        }
+
+        var normalized = RingWindingNormalizer.NormalizeToRightHandRule(geometry);
+        return ReferenceEquals(normalized, geometry) ? null : SharedWriter.Write(normalized);
+    }
+
+    /// <summary>
+    /// Normalizes each <c>features[*].geometry</c> of a FeatureCollection. Returns a per-index
+    /// array of replacement geometry JSON (<c>null</c> entries keep the original feature), or
+    /// <c>null</c> when no feature needed rewinding.
+    /// </summary>
+    private static string?[]? NormalizeFeatureGeometries(GeoJsonReader geoJsonReader, JsonElement featuresElement)
+    {
+        string?[]? normalized = null;
+        var index = 0;
+        foreach (var feature in featuresElement.EnumerateArray())
+        {
+            if (feature.ValueKind == JsonValueKind.Object &&
+                feature.TryGetProperty("geometry", out var geometryElement) &&
+                geometryElement.ValueKind == JsonValueKind.Object)
+            {
+                var geometryJson = TryNormalizeGeometryJson(geoJsonReader, geometryElement);
+                if (geometryJson is not null)
+                {
+                    normalized ??= new string?[featuresElement.GetArrayLength()];
+                    normalized[index] = geometryJson;
+                }
+            }
+
+            index++;
+        }
+
+        return normalized;
+    }
+
     private static string ReprojectFeatureJson(string featureJson, int fromSrid, int toSrid)
     {
         using var doc = JsonDocument.Parse(featureJson);
@@ -165,25 +297,63 @@ internal static class GPServerOutputReprojection
 
         var reprojected =
             fromSrid == toSrid ||
-            (WebMercatorAliases.Contains(fromSrid) && WebMercatorAliases.Contains(toSrid))
+            (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
                 ? geometry.Copy()
                 : ReprojectInMemory(geometry, fromSrid, toSrid);
 
         reprojected.SRID = toSrid;
 
-        var geometryJson = new GeoJsonWriter().Write(reprojected);
+        var geometryJson = RingWindingNormalizer.WriteGeoJson(SharedWriter, reprojected);
+        return SpliceGeometry(root, geometryJson);
+    }
 
+    // Re-emits a GeoJSON Feature object, replacing its "geometry" member with pre-serialized
+    // geometry JSON and preserving all other members (id, properties, bbox, foreign members).
+    private static string SpliceGeometry(JsonElement root, string geometryJson)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            WriteObjectWithGeometry(writer, root, geometryJson);
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    // Re-emits a GeoJSON FeatureCollection object, replacing the "geometry" member of each
+    // feature whose index carries replacement JSON and preserving every other member verbatim.
+    private static string SpliceFeatureCollection(JsonElement root, string?[] normalizedGeometryJson)
+    {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             foreach (var property in root.EnumerateObject())
             {
-                if (string.Equals(property.Name, "geometry", StringComparison.Ordinal))
+                if (string.Equals(property.Name, "features", StringComparison.Ordinal) &&
+                    property.Value.ValueKind == JsonValueKind.Array)
                 {
-                    writer.WritePropertyName("geometry");
-                    using var geometryDoc = JsonDocument.Parse(geometryJson);
-                    geometryDoc.RootElement.WriteTo(writer);
+                    writer.WritePropertyName("features");
+                    writer.WriteStartArray();
+                    var index = 0;
+                    foreach (var feature in property.Value.EnumerateArray())
+                    {
+                        var geometryJson = index < normalizedGeometryJson.Length
+                            ? normalizedGeometryJson[index]
+                            : null;
+                        if (geometryJson is null)
+                        {
+                            feature.WriteTo(writer);
+                        }
+                        else
+                        {
+                            WriteObjectWithGeometry(writer, feature, geometryJson);
+                        }
+
+                        index++;
+                    }
+
+                    writer.WriteEndArray();
                 }
                 else
                 {
@@ -195,6 +365,28 @@ internal static class GPServerOutputReprojection
         }
 
         return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    // Writes one JSON object, replacing its "geometry" member with pre-serialized geometry JSON
+    // and preserving all other members (id, properties, bbox, foreign members).
+    private static void WriteObjectWithGeometry(Utf8JsonWriter writer, JsonElement obj, string geometryJson)
+    {
+        writer.WriteStartObject();
+        foreach (var property in obj.EnumerateObject())
+        {
+            if (string.Equals(property.Name, "geometry", StringComparison.Ordinal))
+            {
+                writer.WritePropertyName("geometry");
+                using var geometryDoc = JsonDocument.Parse(geometryJson);
+                geometryDoc.RootElement.WriteTo(writer);
+            }
+            else
+            {
+                property.WriteTo(writer);
+            }
+        }
+
+        writer.WriteEndObject();
     }
 
     private static Geometry ReprojectInMemory(Geometry source, int fromSrid, int toSrid)

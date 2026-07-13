@@ -477,12 +477,12 @@ public sealed class EsriTileCachePackageReader : ITileCachePackageReader
 
     private static string ResolveTileMatrixSet(int wkid) => wkid switch
     {
-        // Web Mercator family.
-        3857 or 102100 or 102113 or 900913 => "WebMercatorQuad",
         // Geographic WGS84.
         4326 => "WorldCRS84Quad",
-        // Default to Web Mercator: Esri basemap caches are overwhelmingly 3857 and
-        // unknown/missing WKIDs are far more likely Mercator than CRS84.
+        // Web Mercator family (3857 and its aliases) and unknown/missing WKIDs both map to
+        // WebMercatorQuad: Esri basemap caches are overwhelmingly 3857 and unknown WKIDs are far
+        // more likely Mercator than CRS84. The alias set is no longer enumerated here (#2732); the
+        // shared default already covers it.
         _ => "WebMercatorQuad"
     };
 

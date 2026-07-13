@@ -35,7 +35,9 @@ internal sealed record JsonProcessingState
 
 internal sealed record GeoJsonValidationResult(int FeatureCount, IReadOnlyList<ImportValidationIssue> Issues)
 {
-    public bool IsValid => Issues.Count == 0;
+    // Warning-severity issues (e.g. a geometry that will be repaired on import) are advisory and
+    // must not fail the file; only Error-severity issues make the document invalid (#2743).
+    public bool IsValid => !Issues.Any(issue => issue.Severity == ImportValidationSeverity.Error);
 }
 
 /// <summary>
@@ -511,6 +513,32 @@ internal sealed class StreamingGeoJsonReader
                 validationError,
                 featureIndex,
                 "geometry"));
+            return issues;
+        }
+
+        // Topology validity (self-intersection, ring orientation, hole placement) is reported as a
+        // NON-fatal, row-level warning rather than failing the whole file (#2743): the shared
+        // per-row validity gate at insertion time repairs (default) or rejects invalid geometry per
+        // ImportLimits.GeometryValidityMode. Only areal geometry can be topologically invalid, so
+        // points/lines skip the expensive IsValid topology-graph build. Accept mode stores geometry
+        // as-is, so nothing is flagged there.
+        if (geometry is not null
+            && _limits.GeometryValidityMode != Honua.Core.Configuration.ValidationMode.Accept
+            && geometry.OgcGeometryType is OgcGeometryType.Polygon
+                or OgcGeometryType.MultiPolygon
+                or OgcGeometryType.GeometryCollection
+            && !geometry.IsValid)
+        {
+            var action = _limits.GeometryValidityMode == Honua.Core.Configuration.ValidationMode.Strict
+                ? "rejected"
+                : "repaired";
+            issues.Add(ImportValidationIssue.Create(
+                ImportValidationErrorCodes.GeometryInvalidRepairable,
+                $"Geometry is topologically invalid and will be {action} on import "
+                + $"(mode={_limits.GeometryValidityMode}).",
+                featureIndex,
+                "geometry",
+                ImportValidationSeverity.Warning));
         }
 
         return issues;
@@ -647,11 +675,12 @@ internal sealed class StreamingGeoJsonReader
             return "Geometry contains invalid coordinates (NaN or Infinity).";
         }
 
-        if (!geometry.IsValid)
-        {
-            return "Geometry topology is invalid.";
-        }
-
+        // Topology validity (self-intersection, ring orientation, hole placement) is intentionally
+        // NOT rejected here. Previously an invalid ring failed the whole-file preflight, which is
+        // inconsistent with every other import reader and with the edit paths' shared repair
+        // pipeline. The shared per-row validity gate at insertion time (CreateWkb /
+        // ImportLimits.GeometryValidityMode, #2743) now repairs (default), rejects, or accepts
+        // invalid geometry per config — so a single bad ring no longer discards the entire file.
         return null;
     }
 
@@ -851,14 +880,26 @@ internal sealed class StreamingGeoJsonReader
             // Parse the header portion
             var headerJson = Encoding.UTF8.GetString(buffer.AsSpan(0, bytesRead));
 
-            // Look for CRS property in the beginning of the document
-            // The CRS is typically at the root level, so we can use simple string search
-            if (!headerJson.Contains("\"crs\"", StringComparison.OrdinalIgnoreCase))
+            // Locate the deprecated GeoJSON-2008 "crs" member. It is a root-level member that, in
+            // conforming documents, precedes the "features" array. Anchor the EPSG scan to the
+            // region that belongs to the crs member only: an unanchored scan of the whole 8 KB
+            // header can pick up an "EPSG:3857"-looking attribute string inside a feature and
+            // wrongly re-stamp the layer's CRS (#2743 rider).
+            var crsIndex = headerJson.IndexOf("\"crs\"", StringComparison.OrdinalIgnoreCase);
+            if (crsIndex < 0)
                 return null;
 
-            // Try to extract EPSG code from the CRS
+            // Bound the search at the "features" array (the crs member always precedes it in a
+            // conforming document); if it is not visible in the header window, scan to the end.
+            var featuresIndex = headerJson.IndexOf("\"features\"", crsIndex, StringComparison.OrdinalIgnoreCase);
+            var crsRegion = featuresIndex > crsIndex
+                ? headerJson[crsIndex..featuresIndex]
+                : headerJson[crsIndex..];
+
+            // Matches both the plain "EPSG:3857" form and the URN "urn:ogc:def:crs:EPSG::3857" form
+            // (the double colon is absorbed by the [:\s]* class).
             var epsgMatch = System.Text.RegularExpressions.Regex.Match(
-                headerJson,
+                crsRegion,
                 @"EPSG[:\s]*(\d+)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
