@@ -76,12 +76,9 @@ internal static class GeoServicesTemplateMapper
 
         // Per-field default values authored on the subtype overrides seed the rest of the
         // prototype, so the editing client starts a new feature with the subtype's defaults.
-        foreach (var pair in subtype.FieldOverrides)
+        foreach (var pair in subtype.FieldOverrides.Where(pair => pair.Value.DefaultValue is not null))
         {
-            if (pair.Value.DefaultValue is { } defaultValue)
-            {
-                attributes[pair.Key] = defaultValue.Clone();
-            }
+            attributes[pair.Key] = pair.Value.DefaultValue!.Value.Clone();
         }
 
         return attributes;
@@ -91,12 +88,11 @@ internal static class GeoServicesTemplateMapper
         IReadOnlyDictionary<string, MetadataV2SubtypeFieldOverride> overrides)
     {
         var domains = new Dictionary<string, GeoServicesFieldDomainInfo>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in overrides)
+        foreach (var (key, mapped) in overrides
+            .Select(pair => (pair.Key, Mapped: GeoServicesFieldDomainMapper.Map(pair.Value.Domain)))
+            .Where(pair => pair.Mapped is not null))
         {
-            if (GeoServicesFieldDomainMapper.Map(pair.Value.Domain) is { } mapped)
-            {
-                domains[pair.Key] = mapped;
-            }
+            domains[key] = mapped!;
         }
 
         return domains.Count == 0 ? null : domains;

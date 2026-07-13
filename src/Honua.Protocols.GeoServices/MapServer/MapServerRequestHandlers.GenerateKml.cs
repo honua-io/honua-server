@@ -798,6 +798,9 @@ internal static partial class MapServerEndpoints
         }
         catch
         {
+            // Intentional catch-all: a single feature's malformed/corrupt WKB should be skipped
+            // (caller treats a false return as "no geometry, continue") rather than aborting the
+            // whole KML export for the rest of the layer.
             return false;
         }
     }
@@ -977,12 +980,9 @@ internal static partial class MapServerEndpoints
     private static void WriteKmlMultiPoint(XmlWriter writer, MultiPoint multiPoint)
     {
         writer.WriteStartElement("MultiGeometry");
-        foreach (var point in multiPoint.Geometries.OfType<Point>())
+        foreach (var point in multiPoint.Geometries.OfType<Point>().Where(point => !point.IsEmpty))
         {
-            if (!point.IsEmpty)
-            {
-                WriteKmlPoint(writer, point);
-            }
+            WriteKmlPoint(writer, point);
         }
 
         writer.WriteEndElement();
@@ -991,12 +991,9 @@ internal static partial class MapServerEndpoints
     private static void WriteKmlMultiLineString(XmlWriter writer, MultiLineString multiLineString)
     {
         writer.WriteStartElement("MultiGeometry");
-        foreach (var lineString in multiLineString.Geometries.OfType<LineString>())
+        foreach (var lineString in multiLineString.Geometries.OfType<LineString>().Where(lineString => !lineString.IsEmpty))
         {
-            if (!lineString.IsEmpty)
-            {
-                WriteKmlLineString(writer, lineString);
-            }
+            WriteKmlLineString(writer, lineString);
         }
 
         writer.WriteEndElement();
@@ -1005,12 +1002,9 @@ internal static partial class MapServerEndpoints
     private static void WriteKmlMultiPolygon(XmlWriter writer, MultiPolygon multiPolygon)
     {
         writer.WriteStartElement("MultiGeometry");
-        foreach (var polygon in multiPolygon.Geometries.OfType<Polygon>())
+        foreach (var polygon in multiPolygon.Geometries.OfType<Polygon>().Where(polygon => !polygon.IsEmpty))
         {
-            if (!polygon.IsEmpty)
-            {
-                WriteKmlPolygon(writer, polygon);
-            }
+            WriteKmlPolygon(writer, polygon);
         }
 
         writer.WriteEndElement();
@@ -1019,12 +1013,9 @@ internal static partial class MapServerEndpoints
     private static void WriteKmlGeometryCollection(XmlWriter writer, GeometryCollection geometryCollection)
     {
         writer.WriteStartElement("MultiGeometry");
-        foreach (var childGeometry in geometryCollection.Geometries)
+        foreach (var childGeometry in geometryCollection.Geometries.Where(childGeometry => childGeometry is { IsEmpty: false }))
         {
-            if (childGeometry is { IsEmpty: false })
-            {
-                _ = TryWriteKmlGeometry(writer, childGeometry);
-            }
+            _ = TryWriteKmlGeometry(writer, childGeometry);
         }
 
         writer.WriteEndElement();

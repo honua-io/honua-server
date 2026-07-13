@@ -947,6 +947,9 @@ internal static partial class AttachmentEndpoints
 
     private static string? GetFirst(Dictionary<string, StringValues> values, params string[] keys)
     {
+        // Not rewritten as .Where(...): this is a first-match short-circuit over the
+        // Try-pattern (bool + out), not a pure filter — a LINQ equivalent would need an
+        // intermediate nullable projection and would be harder to read than the loop.
         foreach (var key in keys)
         {
             if (values.TryGetValue(key, out var raw) && !StringValues.IsNullOrEmpty(raw))

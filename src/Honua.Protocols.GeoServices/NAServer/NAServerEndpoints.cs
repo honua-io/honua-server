@@ -271,16 +271,13 @@ internal static class NAServerEndpoints
         // reject rather than dropping the barrier and returning an unsafe solve.
         if (barriers.Count > 0)
         {
-            foreach (var kind in barriers.Select(b => b.Kind).Distinct())
+            foreach (var kind in barriers.Select(b => b.Kind).Distinct().Where(kind => !capabilities.SupportedBarrierKinds.Contains(kind)))
             {
-                if (!capabilities.SupportedBarrierKinds.Contains(kind))
-                {
-                    return SetSpanErrorAndReturn(
-                        StandardErrorHelpers.CreateBadRequest(
-                            context,
-                            $"{kind} barriers are not supported by the configured routing provider."),
-                        "NAServer barrier kind unsupported by provider");
-                }
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"{kind} barriers are not supported by the configured routing provider."),
+                    "NAServer barrier kind unsupported by provider");
             }
         }
 

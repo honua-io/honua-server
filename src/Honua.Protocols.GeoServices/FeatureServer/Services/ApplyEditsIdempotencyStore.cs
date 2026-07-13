@@ -300,12 +300,9 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
 
     private void CleanupFallback(DateTimeOffset now)
     {
-        foreach (var pair in _fallback)
+        foreach (var pair in _fallback.Where(p => p.Value.ExpiresAt <= now))
         {
-            if (pair.Value.ExpiresAt <= now)
-            {
-                _fallback.TryRemove(pair.Key, out _);
-            }
+            _fallback.TryRemove(pair.Key, out _);
         }
 
         if (_fallback.Count <= MaxFallbackEntries)
@@ -368,13 +365,10 @@ internal static class ApplyEditsIdempotency
             return false;
         }
 
-        foreach (var ch in trimmed)
+        if (trimmed.Any(char.IsControl))
         {
-            if (char.IsControl(ch))
-            {
-                error = $"{HeaderName} header must not contain control characters.";
-                return false;
-            }
+            error = $"{HeaderName} header must not contain control characters.";
+            return false;
         }
 
         key = trimmed;

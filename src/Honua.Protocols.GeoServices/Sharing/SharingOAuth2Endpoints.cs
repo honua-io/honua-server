@@ -359,7 +359,6 @@ internal static class SharingOAuth2Endpoints
         string? redirectUri;
         string? clientId;
         string? refreshToken;
-        string? expiration;
         string? clientSecret;
         string? scope;
 
@@ -372,7 +371,6 @@ internal static class SharingOAuth2Endpoints
             redirectUri = ReadFirst(form["redirect_uri"]);
             clientId = ReadFirst(form["client_id"]);
             refreshToken = ReadFirst(form["refresh_token"]);
-            expiration = ReadFirst(form["expiration"]);
             clientSecret = ReadFirst(form["client_secret"]);
             scope = ReadFirst(form["scope"]);
         }
@@ -385,7 +383,6 @@ internal static class SharingOAuth2Endpoints
             redirectUri = ReadFirst(query["redirect_uri"]);
             clientId = ReadFirst(query["client_id"]);
             refreshToken = ReadFirst(query["refresh_token"]);
-            expiration = ReadFirst(query["expiration"]);
             clientSecret = ReadFirst(query["client_secret"]);
             scope = ReadFirst(query["scope"]);
         }

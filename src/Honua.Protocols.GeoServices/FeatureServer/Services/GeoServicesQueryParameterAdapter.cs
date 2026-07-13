@@ -104,13 +104,17 @@ internal sealed class GeoServicesQueryParameterAdapter(
             {
                 Filter = filter,
                 SpatialFilter = spatialFilter,
-                ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
+                // `hasObjectIds`/`hasObjectIdRequest` are both derived from
+                // `queryParams.ObjectIds is { Length: > 0 }` above, so ObjectIds is provably
+                // non-null in these true branches; the null-forgiving operator documents that
+                // instead of leaving a dead `?.` null-conditional.
+                ObjectIds = hasObjectIds ? queryParams.ObjectIds!.ToImmutableArray() : null,
                 OutFields = outFields,
                 Offset = queryParams.ResultOffset,
                 Limit = queryParams.ReturnIdsOnly
                     ? null
                     : hasObjectIdRequest
-                    ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
+                    ? queryParams.ResultRecordCount ?? queryParams.ObjectIds!.Length
                     : queryParams.ResultRecordCount ?? request.QueryLimits.DefaultRecordCount,
                 OrderBy = orderBy,
                 OutputCrs = request.OutputSrid.HasValue

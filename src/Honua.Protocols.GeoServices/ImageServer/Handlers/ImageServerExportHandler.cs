@@ -721,16 +721,12 @@ internal sealed class ImageServerExportHandler
     {
         error = null;
 
-        if (!string.IsNullOrWhiteSpace(noData))
+        if (!string.IsNullOrWhiteSpace(noData) &&
+            noData.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(token => !double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out _)))
         {
-            foreach (var token in noData.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
-                {
-                    error = "noData must be a number or a comma-separated list of per-band numbers.";
-                    return false;
-                }
-            }
+            error = "noData must be a number or a comma-separated list of per-band numbers.";
+            return false;
         }
 
         if (!string.IsNullOrWhiteSpace(noDataInterpretation) &&

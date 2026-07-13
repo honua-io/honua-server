@@ -462,18 +462,11 @@ internal sealed partial class FeatureServerQueryHandler
             return [];
         }
 
-        var values = new List<double>(result.Items.Length);
-        foreach (var feature in result.Items)
-        {
-            if (feature.Attributes.TryGetValue(classificationField, out var raw))
-            {
-                var value = ToDouble(raw);
-                if (value.HasValue)
-                {
-                    values.Add(value.Value);
-                }
-            }
-        }
+        var values = result.Items
+            .Select(feature => feature.Attributes.TryGetValue(classificationField, out var raw) ? ToDouble(raw) : null)
+            .Where(static value => value.HasValue)
+            .Select(static value => value!.Value)
+            .ToList();
 
         values.Sort();
         return [.. values];
@@ -561,6 +554,9 @@ internal sealed partial class FeatureServerQueryHandler
         raw.Add(max);
         raw.Sort();
 
+        // Not a Where(): the predicate compares each value against the last
+        // *accumulated* break (breaks[^1]), not a fixed condition over `raw`, so
+        // this is a stateful consecutive-dedup rather than a plain filter.
         var breaks = new List<double>(raw.Count);
         foreach (var value in raw)
         {
@@ -677,7 +673,9 @@ internal sealed partial class FeatureServerQueryHandler
             k = id;
         }
 
-        // Deduplicate ascending boundaries.
+        // Deduplicate ascending boundaries. Not a Where(): the predicate compares
+        // each value against the last *accumulated* result (result[^1]), a
+        // stateful consecutive-dedup rather than a filter over `breaks`.
         var result = new List<double>(breakCount);
         foreach (var value in breaks)
         {
@@ -783,13 +781,12 @@ internal sealed partial class FeatureServerQueryHandler
 
     private static bool TryResolveField(MetadataV2Resource resource, string fieldName, out MetadataV2FieldType fieldType)
     {
-        foreach (var field in resource.SchemaFields)
+        var match = resource.SchemaFields.FirstOrDefault(
+            field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
         {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                fieldType = field.Type;
-                return true;
-            }
+            fieldType = match.Type;
+            return true;
         }
 
         fieldType = MetadataV2FieldType.Unknown;

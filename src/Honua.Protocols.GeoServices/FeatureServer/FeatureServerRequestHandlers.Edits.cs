@@ -803,10 +803,9 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
-        foreach (var entry in attributes)
+        foreach (var entry in attributes.Where(e => string.Equals(e.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
-                FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
+            if (FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
             {
                 return objectId;
             }
@@ -1393,12 +1392,10 @@ internal static partial class FeatureServerEndpoints
             return (null, error);
         }
 
-        if (features == null && !string.Equals(primaryKey, fallbackKey, StringComparison.OrdinalIgnoreCase))
+        if (features == null && !string.Equals(primaryKey, fallbackKey, StringComparison.OrdinalIgnoreCase) &&
+            !TryParseGeoServicesFeatures(values, fallbackKey, out features, out error))
         {
-            if (!TryParseGeoServicesFeatures(values, fallbackKey, out features, out error))
-            {
-                return (null, error);
-            }
+            return (null, error);
         }
 
         if (assignToAdds)
@@ -1430,12 +1427,10 @@ internal static partial class FeatureServerEndpoints
             return (null, error);
         }
 
-        if (features == null && !string.Equals(primaryKey, fallbackKey, StringComparison.OrdinalIgnoreCase))
+        if (features == null && !string.Equals(primaryKey, fallbackKey, StringComparison.OrdinalIgnoreCase) &&
+            !TryParseGeoServicesFeatures(root, fallbackKey, out features, out error))
         {
-            if (!TryParseGeoServicesFeatures(root, fallbackKey, out features, out error))
-            {
-                return (null, error);
-            }
+            return (null, error);
         }
 
         if (assignToAdds)
@@ -1464,12 +1459,9 @@ internal static partial class FeatureServerEndpoints
             return (null, error);
         }
 
-        if (deletes == null)
+        if (deletes == null && !TryParseDeletes(values, "deletes", out deletes, out error))
         {
-            if (!TryParseDeletes(values, "deletes", out deletes, out error))
-            {
-                return (null, error);
-            }
+            return (null, error);
         }
 
         request.Deletes = deletes;
@@ -1805,14 +1797,9 @@ internal static partial class FeatureServerEndpoints
         var parsed = new object[tokens.Length];
         for (var i = 0; i < tokens.Length; i++)
         {
-            if (long.TryParse(tokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-            {
-                parsed[i] = id;
-            }
-            else
-            {
-                parsed[i] = tokens[i];
-            }
+            parsed[i] = long.TryParse(tokens[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
+                ? id
+                : tokens[i];
         }
 
         return parsed;
@@ -1820,15 +1807,7 @@ internal static partial class FeatureServerEndpoints
 
     private static bool HasEmptyDeleteToken(string value)
     {
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
     }
 
     private static bool TryParseBooleanElement(JsonElement element, out bool value)

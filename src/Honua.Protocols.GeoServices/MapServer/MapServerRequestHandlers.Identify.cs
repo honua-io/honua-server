@@ -1289,21 +1289,10 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        foreach (var token in idsPart.Split(',', StringSplitOptions.None))
-        {
-            var trimmed = token.Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return idsPart.Split(',', StringSplitOptions.None)
+            .Select(token => token.Trim())
+            .Where(trimmed => trimmed.Length > 0)
+            .Any(trimmed => !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
     }
 
     private static bool TryBuildIdentifySpatialFilter(
@@ -1509,17 +1498,9 @@ internal static partial class MapServerEndpoints
         out IdentifyLayerDescriptor? rightLayer,
         out string? error)
     {
-        rightLayer = null;
         error = null;
 
-        foreach (var candidate in publishedLayers)
-        {
-            if (candidate.PublicLayerId == join.RightMapLayerId)
-            {
-                rightLayer = candidate;
-                break;
-            }
-        }
+        rightLayer = publishedLayers.FirstOrDefault(candidate => candidate.PublicLayerId == join.RightMapLayerId);
 
         if (rightLayer is null)
         {

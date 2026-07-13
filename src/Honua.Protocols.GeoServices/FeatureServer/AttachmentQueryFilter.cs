@@ -118,17 +118,7 @@ internal readonly record struct AttachmentQueryFilter
         }
 
         var attachmentKeywords = attachment.Keywords.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var requested in Keywords)
-        {
-            foreach (var present in attachmentKeywords)
-            {
-                if (string.Equals(present, requested, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return Keywords.Any(requested =>
+            attachmentKeywords.Any(present => string.Equals(present, requested, StringComparison.OrdinalIgnoreCase)));
     }
 }

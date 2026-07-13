@@ -194,12 +194,9 @@ internal static class ImageServerGeometryHelpers
         {
             if (root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.Array)
             {
-                foreach (var part in element.EnumerateArray())
+                foreach (var part in element.EnumerateArray().Where(part => part.ValueKind == JsonValueKind.Array))
                 {
-                    if (part.ValueKind == JsonValueKind.Array)
-                    {
-                        AppendCoordinatePairs(part, result);
-                    }
+                    AppendCoordinatePairs(part, result);
                 }
             }
         }
@@ -209,19 +206,12 @@ internal static class ImageServerGeometryHelpers
 
     private static void AppendCoordinatePairs(JsonElement array, List<(double, double)> result)
     {
-        foreach (var pair in array.EnumerateArray())
-        {
-            if (pair.ValueKind == JsonValueKind.Array &&
-                pair.GetArrayLength() >= 2)
-            {
-                var x = pair[0];
-                var y = pair[1];
-                if (x.ValueKind == JsonValueKind.Number && y.ValueKind == JsonValueKind.Number)
-                {
-                    result.Add((x.GetDouble(), y.GetDouble()));
-                }
-            }
-        }
+        result.AddRange(array.EnumerateArray()
+            .Where(pair => pair.ValueKind == JsonValueKind.Array &&
+                pair.GetArrayLength() >= 2 &&
+                pair[0].ValueKind == JsonValueKind.Number &&
+                pair[1].ValueKind == JsonValueKind.Number)
+            .Select(pair => (pair[0].GetDouble(), pair[1].GetDouble())));
     }
 
     private static bool TryReadNumber(JsonElement element, string property, out double value)

@@ -266,12 +266,13 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             .GetSensorMetadataAsync(page.Rasters.Select(static r => r.Id).ToArray(), cancellationToken)
             .ConfigureAwait(false);
 
-        var projected = new List<(ImageServerCatalogItem Item, RasterInfo Source)>(page.Rasters.Count);
-        foreach (var raster in page.Rasters)
-        {
-            var sensor = sensorMetadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
-            projected.Add((ProjectRaster(raster, includeGeometry, sensor), raster));
-        }
+        var projected = page.Rasters
+            .Select(raster =>
+            {
+                var sensor = sensorMetadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
+                return (Item: ProjectRaster(raster, includeGeometry, sensor), Source: raster);
+            })
+            .ToList();
 
         return pushPaging
             ? await BuildPushdownPageAsync(query, page, projected, includeGeometry, cancellationToken)

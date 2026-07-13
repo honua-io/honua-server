@@ -42,16 +42,14 @@ internal static class ImageServerV2Lookups
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        foreach (var pub in snapshot.Graph.Publications)
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerId);
+        if (pub is null)
         {
-            if (pub.LayerIndex == layerId)
-            {
-                var resource = snapshot.ResolveResource(pub);
-                return Project(pub, resource);
-            }
+            return null;
         }
 
-        return null;
+        var resource = snapshot.ResolveResource(pub);
+        return Project(pub, resource);
     }
 
     private static ResolvedImageLayer Project(MetadataV2Publication publication, MetadataV2Resource? resource)

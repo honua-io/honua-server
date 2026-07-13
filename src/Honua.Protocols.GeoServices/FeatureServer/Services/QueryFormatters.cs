@@ -397,14 +397,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         // distinct results which intentionally carry only the requested outFields.
         if (!suppressObjectId)
         {
-            if (attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes))
-            {
-                filtered[objectIdFieldName] = FeatureAttributeValueNormalizer.Normalize(objectIdFromAttributes);
-            }
-            else
-            {
-                filtered[objectIdFieldName] = objectIdValue;
-            }
+            filtered[objectIdFieldName] = attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes)
+                ? FeatureAttributeValueNormalizer.Normalize(objectIdFromAttributes)
+                : objectIdValue;
         }
 
         foreach (string field in outFields)
