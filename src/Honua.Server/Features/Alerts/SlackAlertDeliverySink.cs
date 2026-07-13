@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class SlackAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertDeliveryOptions _options;
@@ -106,7 +106,10 @@ internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Slack alert delivery failed for event {DedupeKey}.", alertEvent.DedupeKey);
+            if (_logger is not null)
+            {
+                LogDeliveryFailed(_logger, alertEvent.DedupeKey, ex);
+            }
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -165,4 +168,7 @@ internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
             Timestamp = alertEvent.OccurredAt.ToUnixTimeSeconds()
         };
     }
+
+    [LoggerMessage(EventId = 9442, Level = LogLevel.Warning, Message = "Slack alert delivery failed for event {DedupeKey}.")]
+    private static partial void LogDeliveryFailed(ILogger logger, string dedupeKey, Exception exception);
 }

@@ -198,8 +198,9 @@ internal static class PrintingToolsRequestHandlers
         var (imageWidth, imageHeight) = ResolveOutputDimensions(webMap, template, dpi);
 
         // webMap.MapOptions is provably non-null here: extent above came from
-        // webMap.MapOptions?.Extent and extent is not null.
-        var extentSrid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions.SpatialReference);
+        // webMap.MapOptions?.Extent and extent is not null. The compiler can't carry that
+        // narrowing across statements, so the null-forgiving operator is safe.
+        var extentSrid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions!.SpatialReference);
 
         var renderExtent = new SkiaMapRenderer.RenderExtent(
             extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax);
@@ -603,8 +604,9 @@ internal static class PrintingToolsRequestHandlers
             extent.Xmin, extent.Ymin, extent.Xmax, extent.Ymax);
         var imageWidth = (int)(template.MapFrame.Width * dpi / 72f);
         // webMap.MapOptions is provably non-null here: extent above came from
-        // webMap.MapOptions?.Extent and extent is not null.
-        var srid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions.SpatialReference);
+        // webMap.MapOptions?.Extent and extent is not null. The compiler can't carry that
+        // narrowing across statements, so the null-forgiving operator is safe.
+        var srid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions!.SpatialReference);
 
         return CoordinateTransformer.CalculateScaleDenominator(renderExtent, imageWidth, dpi, srid);
     }
@@ -645,8 +647,9 @@ internal static class PrintingToolsRequestHandlers
         // fallback when the extent has no SR (see ResolveExtentSrid).  Without this
         // guard a WKT-only map-level SR silently defaults to EPSG:4326.
         // webMap.MapOptions is provably non-null here: extent above came from
-        // webMap.MapOptions?.Extent and extent is not null.
-        var mapSr = webMap.MapOptions.SpatialReference;
+        // webMap.MapOptions?.Extent and extent is not null. The compiler can't carry that
+        // narrowing across statements, so the null-forgiving operator is safe.
+        var mapSr = webMap.MapOptions!.SpatialReference;
         if (mapSr is not null && mapSr.Wkid is null && mapSr.LatestWkid is null && !string.IsNullOrWhiteSpace(mapSr.Wkt))
             return "Map-level spatial reference with only WKT is not supported for print requests. Provide wkid or latestWkid.";
 

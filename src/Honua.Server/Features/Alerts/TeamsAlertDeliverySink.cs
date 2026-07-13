@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertDeliveryOptions _options;
@@ -116,7 +116,10 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Microsoft Teams alert delivery failed for event {DedupeKey}.", alertEvent.DedupeKey);
+            if (_logger is not null)
+            {
+                LogDeliveryFailed(_logger, alertEvent.DedupeKey, ex);
+            }
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -168,4 +171,7 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
             Markdown = true
         };
     }
+
+    [LoggerMessage(EventId = 9443, Level = LogLevel.Warning, Message = "Microsoft Teams alert delivery failed for event {DedupeKey}.")]
+    private static partial void LogDeliveryFailed(ILogger logger, string dedupeKey, Exception exception);
 }

@@ -50,6 +50,8 @@ internal static class MapLibreStyleNormalizer
         "typeof"
     };
 
+    private static readonly string[] HueUnitSuffixes = ["deg", "grad", "rad", "turn"];
+
     public static bool TryNormalize(
         JsonElement style,
         StyleLayerDescriptor layer,
@@ -593,7 +595,7 @@ internal static class MapLibreStyleNormalizer
     private static string StripHueUnit(string component)
     {
         var trimmed = component.Trim();
-        var matchedUnit = new[] { "deg", "grad", "rad", "turn" }
+        var matchedUnit = HueUnitSuffixes
             .FirstOrDefault(unit => trimmed.EndsWith(unit, StringComparison.OrdinalIgnoreCase));
 
         return matchedUnit is not null ? trimmed[..^matchedUnit.Length] : trimmed;

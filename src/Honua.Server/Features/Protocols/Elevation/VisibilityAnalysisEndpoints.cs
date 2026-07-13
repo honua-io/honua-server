@@ -23,7 +23,7 @@ namespace Honua.Server.Features.Protocols.Elevation;
 /// build on the elevation profile sampler. Registered alongside the elevation
 /// API and gated through <see cref="LicenseGate"/>.
 /// </summary>
-internal static class VisibilityAnalysisEndpoints
+internal static partial class VisibilityAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string LineOfSightEntitlement = "analytics.line-of-sight";
@@ -108,7 +108,10 @@ internal static class VisibilityAnalysisEndpoints
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "Failed to parse line-of-sight analysis request body for dataset {DatasetId}.", datasetId);
+            if (logger is not null)
+            {
+                LogLineOfSightRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -231,7 +234,10 @@ internal static class VisibilityAnalysisEndpoints
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "Failed to parse viewshed analysis request body for dataset {DatasetId}.", datasetId);
+            if (logger is not null)
+            {
+                LogViewshedRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -473,4 +479,10 @@ internal static class VisibilityAnalysisEndpoints
         RasterMergeStrategy.Min => "min",
         _ => "newest"
     };
+
+    [LoggerMessage(EventId = 9452, Level = LogLevel.Warning, Message = "Failed to parse line-of-sight analysis request body for dataset {DatasetId}.")]
+    private static partial void LogLineOfSightRequestParseFailed(ILogger logger, string datasetId, Exception exception);
+
+    [LoggerMessage(EventId = 9453, Level = LogLevel.Warning, Message = "Failed to parse viewshed analysis request body for dataset {DatasetId}.")]
+    private static partial void LogViewshedRequestParseFailed(ILogger logger, string datasetId, Exception exception);
 }

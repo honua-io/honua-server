@@ -9,6 +9,8 @@ namespace Honua.Server.Features.Styling;
 
 internal static class StyleJsonUtilities
 {
+    private static readonly string[] HueUnitSuffixes = ["deg", "grad", "rad", "turn"];
+
     public static string Serialize(Dictionary<string, object?> payload)
         => JsonSerializer.Serialize(payload, StyleJsonContext.Default.DictionaryStringObject);
 
@@ -267,7 +269,7 @@ internal static class StyleJsonUtilities
         degrees = 0d;
 
         var trimmed = input.Trim();
-        var matchedUnit = new[] { "deg", "grad", "rad", "turn" }
+        var matchedUnit = HueUnitSuffixes
             .FirstOrDefault(candidate => trimmed.EndsWith(candidate, StringComparison.OrdinalIgnoreCase));
         var unit = matchedUnit ?? "deg";
         if (matchedUnit is not null)

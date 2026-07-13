@@ -196,9 +196,9 @@ internal static class MapLibreToGeoServicesConverter
                     fallbackImage,
                     metadata,
                     markerLayout,
-                    out var renderer))
+                    out var uniqueValueRenderer))
                 {
-                    drawingInfoJson = StyleJsonUtilities.Serialize(new Dictionary<string, object?> { ["renderer"] = renderer });
+                    drawingInfoJson = StyleJsonUtilities.Serialize(new Dictionary<string, object?> { ["renderer"] = uniqueValueRenderer });
                     return true;
                 }
 
@@ -1061,7 +1061,7 @@ internal static class MapLibreToGeoServicesConverter
 
         if (outlineLayer.HasValue && TryGetPaintProperty(outlineLayer.Value, out var outlinePaint) &&
             outlinePaint.TryGetProperty("line-color", out var colorElement)
-            && StyleJsonUtilities.TryParseMapLibreColor(colorElement, out var color))
+            && StyleJsonUtilities.TryParseMapLibreColor(colorElement, out var outlineColor))
         {
             var width = outlinePaint.TryGetProperty("line-width", out var widthElement)
                 && StyleParsingHelpers.TryGetDouble(widthElement, out var widthValue)
@@ -1075,10 +1075,10 @@ internal static class MapLibreToGeoServicesConverter
 
             if (outlineOpacity.HasValue)
             {
-                color = color.ApplyOpacity(outlineOpacity.Value);
+                outlineColor = outlineColor.ApplyOpacity(outlineOpacity.Value);
             }
 
-            return new OutlineStyle(color, width);
+            return new OutlineStyle(outlineColor, width);
         }
 
         if (paint.TryGetProperty("fill-outline-color", out var fillOutline)

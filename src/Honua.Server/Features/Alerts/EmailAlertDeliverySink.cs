@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
 {
     private readonly AlertDeliveryOptions _options;
     private readonly ILogger<EmailAlertDeliverySink>? _logger;
@@ -112,7 +112,10 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Email alert delivery failed for event {DedupeKey}.", alertEvent.DedupeKey);
+            if (_logger is not null)
+            {
+                LogDeliveryFailed(_logger, alertEvent.DedupeKey, ex);
+            }
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -156,4 +159,7 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
     /// <param name="Body">Plain-text email body.</param>
     /// <param name="RuleHeader">Value for the <c>X-Honua-Alert-Rule</c> header, or null to omit it (ops events).</param>
     internal readonly record struct EmailAlertContent(string Subject, string Body, string? RuleHeader);
+
+    [LoggerMessage(EventId = 9441, Level = LogLevel.Warning, Message = "Email alert delivery failed for event {DedupeKey}.")]
+    private static partial void LogDeliveryFailed(ILogger logger, string dedupeKey, Exception exception);
 }

@@ -35,7 +35,7 @@ namespace Honua.Server.Features.Protocols.Elevation;
 /// gate into the pipeline would lock out every caller whose permissions live on
 /// the layer rather than on a global role.
 /// </remarks>
-internal static class SceneAnalysisEndpoints
+internal static partial class SceneAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string SunShadowEntitlement = "analytics.sun-shadow";
@@ -110,7 +110,10 @@ internal static class SceneAnalysisEndpoints
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "Failed to parse sun/shadow analysis request body for dataset {DatasetId}.", datasetId);
+            if (logger is not null)
+            {
+                LogSunShadowRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -237,7 +240,10 @@ internal static class SceneAnalysisEndpoints
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "Failed to parse slice analysis request body for dataset {DatasetId}.", datasetId);
+            if (logger is not null)
+            {
+                LogSliceRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -494,4 +500,10 @@ internal static class SceneAnalysisEndpoints
         RasterMergeStrategy.Min => "min",
         _ => "newest"
     };
+
+    [LoggerMessage(EventId = 9450, Level = LogLevel.Warning, Message = "Failed to parse sun/shadow analysis request body for dataset {DatasetId}.")]
+    private static partial void LogSunShadowRequestParseFailed(ILogger logger, string datasetId, Exception exception);
+
+    [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Failed to parse slice analysis request body for dataset {DatasetId}.")]
+    private static partial void LogSliceRequestParseFailed(ILogger logger, string datasetId, Exception exception);
 }

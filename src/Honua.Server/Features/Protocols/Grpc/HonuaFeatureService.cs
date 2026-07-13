@@ -421,10 +421,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         foreach (var r in editResult.DeleteResults.Where(r => r.IsSuccess && r.ObjectId.HasValue))
         {
+            // The Where clause above already guarantees ObjectId.HasValue, but the compiler
+            // can't propagate that narrowing across the LINQ lambda boundary back into this loop.
             await _mutationEventService.PublishAsync(
                 context.GetHttpContext(),
                 layerId,
-                r.ObjectId.Value,
+                r.ObjectId!.Value,
                 "delete",
                 HonuaTelemetry.Protocols.Grpc,
                 CancellationToken.None,
