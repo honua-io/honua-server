@@ -176,7 +176,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan);
+        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _processCatalog);
         if (approvalGatedProcessId != null)
         {
             GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);
@@ -818,7 +818,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
     private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
     {
-        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan);
+        var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _processCatalog);
         if (approvalGatedProcessId != null)
         {
             GeoprocessingServiceLog.DestructivePlanDetected(_logger, plan.PlanId ?? "", approvalGatedProcessId);

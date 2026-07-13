@@ -3340,6 +3340,112 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
+    // Fail-closed, catalog-driven approval gate (ADR-0029, #2814)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_UnknownProcess_RequiresApprovalFailClosed()
+    {
+        // The core fail-closed invariant: a process the catalog does not recognize
+        // is approval-gated by default so a typo or a newly-registered mutating
+        // process can never silently execute unattended.
+        ProcessDestructiveClassifier.RequiresApproval("data-management.some-new-mutation", _catalog)
+            .Should().BeTrue();
+        ProcessDestructiveClassifier.RequiresApproval("totally.unknown", _catalog)
+            .Should().BeTrue();
+    }
+
+    [Theory]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    [InlineData("data-management.delete-features")]
+    [InlineData("data-management.calculate-field")]
+    [InlineData("import.dataset")]
+    [InlineData("sink.honua-layer")]
+    [InlineData("sink.external-postgis")]
+    [InlineData("sink.geojson-file")]
+    public void DestructiveClassifier_MutatingOrSinkProcess_RequiresApprovalFromCatalog(string processId)
+    {
+        // Every Mutating-tier process and every external sink is gated by metadata,
+        // not by a hand-curated denylist.
+        ProcessDestructiveClassifier.RequiresApproval(processId, _catalog).Should().BeTrue();
+    }
+
+    [Theory]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    [InlineData("data-management.copy-features")]
+    [InlineData("sink.quarantine")]
+    public void DestructiveClassifier_SafeMutatingProcess_IsNotApprovalGated(string processId)
+    {
+        // copy-features (new target, source untouched) and the internal quarantine
+        // dead-letter sink carry the Mutating tier but stay on the explicit SAFE
+        // allowlist, so they are not approval-gated.
+        ProcessDestructiveClassifier.RequiresApproval(processId, _catalog).Should().BeFalse();
+    }
+
+    [Theory]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    [InlineData("analytics.cluster")]
+    [InlineData("geometry.buffer")]
+    public void DestructiveClassifier_AnalyticProcess_IsNotApprovalGated(string processId)
+    {
+        ProcessDestructiveClassifier.RequiresApproval(processId, _catalog).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_PlanWithUnknownStep_IsApprovalGatedFailClosed()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "data-management.brand-new-mutation"
+                }
+            ]
+        };
+
+        ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _catalog)
+            .Should().Be("data-management.brand-new-mutation");
+        ProcessDestructiveClassifier.HasApprovalGatedStep(plan, _catalog).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void DestructiveClassifier_PlanWithAnalyticStep_IsNotApprovalGatedFromCatalog()
+    {
+        var plan = new AnalysisPlan
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster"
+                }
+            ]
+        };
+
+        ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _catalog).Should().BeNull();
+        ProcessDestructiveClassifier.HasApprovalGatedStep(plan, _catalog).Should().BeFalse();
+    }
+
+    // -----------------------------------------------------------------------
     // Integration: ValidatePlan RPC with catalog validation
     // -----------------------------------------------------------------------
 
