@@ -168,6 +168,10 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
             if (depth >= maxDepth)
                 continue;
 
+            // Not rewritten as .Where(...): each iteration performs several distinct
+            // filtering steps (null/blank skip, visited-set dedupe, lookup miss) that
+            // each mutate shared traversal state (visited, ordered, frontier) rather
+            // than purely filtering the sequence.
             foreach (var reference in current.Provenance)
             {
                 // The endpoint validates provenance on create/PUT, but defend

@@ -14,10 +14,12 @@ namespace Honua.Alerts;
 internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
 {
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<EmailAlertDeliverySink>? _logger;
 
-    public EmailAlertDeliverySink(IOptions<AlertDeliveryOptions> options)
+    public EmailAlertDeliverySink(IOptions<AlertDeliveryOptions> options, ILogger<EmailAlertDeliverySink>? logger = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger;
     }
 
     public AlertChannelType ChannelType => AlertChannelType.Email;
@@ -108,8 +110,9 @@ internal sealed class EmailAlertDeliverySink : IAlertDeliverySink
                 Error = $"SMTP error ({ex.StatusCode})."
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Email alert delivery failed for event {DedupeKey}.", alertEvent.DedupeKey);
             return new AlertDeliveryResult
             {
                 Succeeded = false,

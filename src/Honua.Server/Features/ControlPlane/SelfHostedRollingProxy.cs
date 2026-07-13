@@ -322,7 +322,9 @@ internal static class SelfHostedProxyConfig
 /// (loopback), which that guard exists to block for untrusted outbound calls. The URL is composed by the
 /// backend from validated numeric ports and never from client input.
 /// </summary>
-internal sealed class HttpLocalReplicaHealthProbe(IHttpClientFactory httpClientFactory) : ILocalReplicaHealthProbe
+internal sealed partial class HttpLocalReplicaHealthProbe(
+    IHttpClientFactory httpClientFactory,
+    ILogger<HttpLocalReplicaHealthProbe>? logger = null) : ILocalReplicaHealthProbe
 {
     private const int MinimumSamples = 1;
     private const int MaximumSamples = 20;
@@ -364,9 +366,13 @@ internal sealed class HttpLocalReplicaHealthProbe(IHttpClientFactory httpClientF
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 failures++;
+                if (logger is not null)
+                {
+                    Log.ProbeAttemptFailed(logger, url, ex.Message);
+                }
             }
         }
 
@@ -376,6 +382,13 @@ internal sealed class HttpLocalReplicaHealthProbe(IHttpClientFactory httpClientF
             Failures = failures,
             Detail = $"{failures} of {clampedSamples} replica health checks did not return {expectedStatusCode.ToString(CultureInfo.InvariantCulture)}."
         };
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(9333, LogLevel.Debug,
+            "Replica health probe attempt for {Url} failed: {Reason}")]
+        public static partial void ProbeAttemptFailed(ILogger logger, string url, string reason);
     }
 }
 
@@ -425,7 +438,7 @@ internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessConta
         arguments.Add($"{request.HostPort.ToString(CultureInfo.InvariantCulture)}:{request.ContainerPort.ToString(CultureInfo.InvariantCulture)}");
         arguments.Add(request.Image);
 
-        var (exitCode, stdout, stderr) = await RunProcessAsync(
+        var (exitCode, stdout, _) = await RunProcessAsync(
             request.Executable, arguments, throwIfStartFails: true, cancellationToken).ConfigureAwait(false);
         if (exitCode != 0)
         {
@@ -476,25 +489,17 @@ internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessConta
             return Array.Empty<ContainerSummary>();
         }
 
-        var results = new List<ContainerSummary>();
-        foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var columns = line.Split('\t');
-            if (columns.Length < 4)
-            {
-                continue;
-            }
-
-            results.Add(new ContainerSummary
+        return stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('\t'))
+            .Where(columns => columns.Length >= 4)
+            .Select(columns => new ContainerSummary
             {
                 Id = columns[0],
                 Name = columns[1],
                 Running = string.Equals(columns[2], "running", StringComparison.OrdinalIgnoreCase),
                 Labels = ParseLabels(columns[3])
-            });
-        }
-
-        return results;
+            })
+            .ToList();
     }
 
     private static Dictionary<string, string> ParseLabels(string raw)
@@ -589,9 +594,13 @@ internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessConta
         }
         catch (InvalidOperationException)
         {
+            // Best-effort: the process may have exited in the race between the
+            // HasExited check and Kill(), which is not an error for this cleanup path.
         }
         catch (System.ComponentModel.Win32Exception)
         {
+            // Best-effort: platform-specific failure to signal the process (e.g. it is
+            // already terminating); nothing actionable to do beyond letting exit proceed.
         }
     }
 

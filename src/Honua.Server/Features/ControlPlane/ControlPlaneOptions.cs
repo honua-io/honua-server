@@ -697,28 +697,13 @@ internal static class ControlPlaneTelemetryConnectionValidation
 
     private static bool IsValidHttpHeaderName(string value)
     {
-        foreach (var character in value)
-        {
-            if (!(char.IsAsciiLetterOrDigit(character) ||
-                  character is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-' or '.' or '^' or '_' or '`' or '|' or '~'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return value.All(character =>
+            char.IsAsciiLetterOrDigit(character) ||
+            character is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-' or '.' or '^' or '_' or '`' or '|' or '~');
     }
 
     private static bool ContainsInvalidHeaderValueCharacter(string value)
     {
-        foreach (var character in value)
-        {
-            if ((character < 0x20 && character != '\t') || character == 0x7f)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return value.Any(character => (character < 0x20 && character != '\t') || character == 0x7f);
     }
 }

@@ -47,29 +47,14 @@ internal static class CloudDemoCredentials
             return false;
         }
 
-        foreach (var authorization in authorizationValues)
-        {
-            if (authorization is not null &&
-                authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return authorizationValues.Any(authorization =>
+            authorization is not null &&
+            authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool ValuesContainToken(StringValues values, string expectedToken)
     {
-        foreach (var value in values)
-        {
-            if (FixedTimeEquals(value?.Trim(), expectedToken))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return values.Any(value => FixedTimeEquals(value?.Trim(), expectedToken));
     }
 
     private static bool FixedTimeEquals(string? providedToken, string expectedToken)
