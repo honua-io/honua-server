@@ -623,6 +623,9 @@ public static partial class Extensions
                     // Expected when cancellation is requested
                     break;
                 }
+                // Intentionally generic: this is a long-running background monitoring
+                // loop. A single failed iteration (e.g. transient GC-info read failure)
+                // must not kill the host's background service; log and keep polling.
                 catch (Exception ex)
                 {
                     MemoryMonitoringLog.MemoryMonitoringServiceFailed(_logger, ex);

@@ -88,6 +88,9 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
         {
             throw;
         }
+        // Intentionally generic: this is a connection-test probe (admin "test this
+        // connection" flow) that must report Unhealthy rather than throw for any
+        // driver/network/auth failure; the exception is logged via LogProbeFailed.
         catch (Exception ex)
         {
             LogProbeFailed(ex);
