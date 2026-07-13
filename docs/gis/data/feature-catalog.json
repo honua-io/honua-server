@@ -6304,6 +6304,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesRasterSurfaceProcesses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess"
       ],
       "proof_ledger_surface": "ogc-api-processes",
@@ -6319,6 +6320,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_FirstSliceVectorProcess_ReturnsConcreteInputsAndOutputs",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_InvalidId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_RasterSurfaceProcess_ReturnsDescription",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_ValidId_ReturnsDescription"
       ],
       "proof_ledger_surface": "ogc-api-processes",
@@ -15244,6 +15246,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanEmptySteps_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanMissingPlanId_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PreferRespondSync_Returns422WithOgcExceptionType",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_InvalidEnumValue_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeDocument_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeRaw_Returns501",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepMissingKind_Returns400",
@@ -15252,6 +15256,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownProcessId_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnsupportedArtifactKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_WithoutRespondAsync_DefaultsToAsync",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_RasterProcessDirect_CreatesSameJobAsPlanWrapped",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenCreateFails_DoesNotReturnCreated",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenQueuePersistenceFails_RollsBackCreatedJobUsingFreshVersionToken"
       ],
