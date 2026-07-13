@@ -341,9 +341,24 @@ internal sealed class WorkflowSchedulerBackgroundService(
 
     private static CachedCron CompileOrNull(WorkflowDefinition definition)
     {
+        // Callers only invoke this after confirming Trigger/CronExpression are present, but guard
+        // explicitly here too so the method is correct on its own rather than relying on a blind
+        // null-forgiving operator against an external invariant.
+        if (definition.Trigger is null || string.IsNullOrWhiteSpace(definition.Trigger.CronExpression))
+        {
+            return new CachedCron(
+                definition.Trigger?.CronExpression ?? string.Empty,
+                definition.Trigger?.TimeZone ?? TimeZoneInfo.Utc.Id,
+                null,
+                null,
+                null,
+                false,
+                null);
+        }
+
         try
         {
-            var expression = definition.Trigger!.CronExpression!;
+            var expression = definition.Trigger.CronExpression;
             var timeZoneId = definition.Trigger.TimeZone ?? TimeZoneInfo.Utc.Id;
             var timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
             var cron = CronExpression.Parse(expression);
