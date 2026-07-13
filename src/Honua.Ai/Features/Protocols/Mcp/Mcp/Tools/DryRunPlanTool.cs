@@ -35,7 +35,7 @@ internal sealed class DryRunPlanTool : IMcpTool
     {
         Name = ToolName,
         Title = "Dry-run plan",
-        Description = "Read-only pre-flight over the same analysis plan object as honua_validate_plan: returns estimatedDurationSeconds, estimatedArtifacts (artifact kinds), and sideEffects without executing. Prefer it to gauge a plan's cost and impact; prefer honua_validate_plan to check structural/policy validity. Neither executes the plan — honua_execute_plan does.",
+        Description = "Read-only pre-flight over the same analysis plan object as honua_validate_plan: returns estimatedDurationSeconds (null when estimateAvailable is false — no duration model is wired, so it is not a fabricated 0), estimatedArtifacts (artifact kinds), and sideEffects without executing. Prefer it to gauge a plan's cost and impact; prefer honua_validate_plan to check structural/policy validity. Neither executes the plan — honua_execute_plan does.",
         InputSchema = McpToolSchemas.PlanArgumentSchema,
         OutputSchema = McpToolOutputSchemas.DryRunOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Dry-run plan")
@@ -60,7 +60,12 @@ internal sealed class DryRunPlanTool : IMcpTool
 
         var output = new McpDryRunOutput
         {
-            EstimatedDurationSeconds = result.EstimatedDurationSeconds,
+            // Emit a real number only when the domain reports an estimate is available;
+            // otherwise null so the agent sees "no estimate" rather than a fabricated 0 (#2806).
+            EstimatedDurationSeconds = result.DurationEstimateAvailable
+                ? result.EstimatedDurationSeconds
+                : null,
+            EstimateAvailable = result.DurationEstimateAvailable,
             EstimatedArtifacts = result.EstimatedArtifacts.Select(a => a.ToString()).ToList(),
             SideEffects = result.SideEffects
         };

@@ -706,8 +706,22 @@ internal sealed class McpValidatePlanOutput
 /// </summary>
 internal sealed class McpDryRunOutput
 {
+    /// <summary>
+    /// Estimated wall-clock duration in seconds, or <c>null</c> when no estimate is available
+    /// (<see cref="EstimateAvailable"/> is <c>false</c>). Emitted as <c>null</c> rather than a
+    /// fabricated 0 so agents do not treat the field as a meaningless constant (#2806).
+    /// </summary>
+    // Force serialization even when null so the field stays present per the output schema
+    // (the MCP JSON context ignores nulls by default); null is the honest "no estimate" signal.
     [JsonPropertyName("estimatedDurationSeconds")]
-    public double EstimatedDurationSeconds { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public double? EstimatedDurationSeconds { get; set; }
+
+    /// <summary>
+    /// Whether <see cref="EstimatedDurationSeconds"/> carries a real estimate.
+    /// </summary>
+    [JsonPropertyName("estimateAvailable")]
+    public bool EstimateAvailable { get; set; }
 
     [JsonPropertyName("estimatedArtifacts")]
     public IReadOnlyList<string> EstimatedArtifacts { get; set; } = [];

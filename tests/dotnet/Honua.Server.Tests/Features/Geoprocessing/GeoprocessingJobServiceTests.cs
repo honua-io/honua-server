@@ -91,6 +91,101 @@ public sealed class GeoprocessingJobServiceTests
         result.IsExecutable.Should().BeTrue();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_MultiStepQueryThenGeoprocess_WarnsSingleStepLimitation()
+    {
+        // A natural "query features then buffer" plan is a valid DAG (workflow engine can run
+        // it), so it stays executable — but the old contract said nothing about the single-step
+        // direct path only running step 0. Validate must now surface that as warnings (#2806).
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-multi",
+            IntentId = "intent-multi",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "query",
+                    Kind = AnalysisPlanStepKind.QueryFeatures,
+                    ProcessId = null
+                },
+                new AnalysisPlanStep
+                {
+                    StepId = "buffer",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "geometry.buffer",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "AAAA",
+                        ["srid"] = "4326",
+                        ["distance"] = "100"
+                    }
+                }
+            ]
+        };
+
+        var result = _sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.Warnings.Should().Contain(w => w.Contains("position 1"));
+        result.Warnings.Should().Contain(w => w.Contains("QueryFeatures"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_SyncOnlyProcess_WarnsNoJobExecutor()
+    {
+        // analytics.cluster exists in the catalog (per CatalogExecutableConformanceTests it is a
+        // PROTOCOL-ONLY process) but has no job executor, so submitting it on the direct path
+        // queues a job that fails at runtime. When the dispatchable set is wired, validate must
+        // warn about that instead of silently passing it through (#2806). The plan stays a valid
+        // catalog entry (it runs on its synchronous surface), so isExecutable is unaffected here.
+        var sut = CreateServiceWithExecutors("geometry.buffer");
+
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-sync-only",
+            IntentId = "intent-sync-only",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "cluster",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.cluster",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "100",
+                        ["algorithm"] = "dbscan",
+                        ["eps"] = "100",
+                        ["minPoints"] = "5"
+                    }
+                }
+            ]
+        };
+
+        var result = sut.ValidatePlan(plan, CreatePrincipal());
+
+        result.Warnings.Should().Contain(w => w.Contains("no job executor"));
+    }
+
+    // -----------------------------------------------------------------------
+    // DryRunPlan
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void DryRunPlan_WithNoCostModel_ReportsNoDurationEstimateInsteadOfFabricatedZero()
+    {
+        var result = _sut.DryRunPlan(CreateValidPlan(), CreatePrincipal());
+
+        // The honest signal is "no estimate available", not a fabricated 0 (#2806).
+        result.DurationEstimateAvailable.Should().BeFalse();
+    }
+
     // -----------------------------------------------------------------------
     // SubmitJobAsync
     // -----------------------------------------------------------------------
@@ -3043,6 +3138,32 @@ public sealed class GeoprocessingJobServiceTests
 
     private static readonly IOptionsMonitor<GeoprocessingExecutorOptions> DefaultExecutorOptions =
         new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions());
+
+    // Builds a service whose dispatchable id set is exactly the supplied managed process ids,
+    // so ValidatePlan can distinguish dispatchable from sync-only catalog processes (#2806).
+    private GeoprocessingJobService CreateServiceWithExecutors(params string[] dispatchableProcessIds)
+        => new(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            processExecutors: [new FakeProcessExecutor(dispatchableProcessIds)]);
+
+    private sealed class FakeProcessExecutor(params string[] processIds) : IProcessExecutor
+    {
+        public IReadOnlySet<string> ProcessIds { get; } = processIds.ToHashSet(StringComparer.Ordinal);
+
+        public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
+
+        public Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job,
+            IJobExecutionContext context,
+            CancellationToken cancellationToken)
+            => throw new NotSupportedException("Dispatchability probe only; never executed.");
+    }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
