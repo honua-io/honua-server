@@ -204,7 +204,7 @@ public sealed class GeoprocessingLocalRunnerGdalTests
             var capture = new GlassBoxCapture();
             var decorator = new GlassBoxGdalCommandRunner(inner, capture);
 
-            var args = new[] { "-f", "CSV", Path.Combine(scratch, "out.csv"), Path.Combine(scratch, "in.geojson") };
+            var args = new[] { "-f", "CSV", Path.Join(scratch, "out.csv"), Path.Join(scratch, "in.geojson") };
             Directory.CreateDirectory(scratch);
             var result = await decorator.RunAsync("ogr2ogr", args, scratch, CancellationToken.None);
 
