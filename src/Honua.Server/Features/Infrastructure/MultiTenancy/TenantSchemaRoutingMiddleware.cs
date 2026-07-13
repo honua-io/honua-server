@@ -75,6 +75,10 @@ internal sealed class TenantSchemaRoutingMiddleware(
         {
             // Clear the AsyncLocal-backed schema we set so it never leaks onto a pooled thread
             // after the request completes. Only clear what this middleware assigned.
+            // The 'schemaContext is not null' check is redundant in practice (routed is only ever
+            // set true after that same null check above), but the compiler's nullable-flow analysis
+            // doesn't track that invariant across the intervening try/finally, so the check stays
+            // to keep this a genuine null-safe dereference rather than a null-forgiving one.
             if (routed && schemaContext is not null)
             {
                 schemaContext.CurrentSchema = null;

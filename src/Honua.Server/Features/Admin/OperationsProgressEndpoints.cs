@@ -410,15 +410,10 @@ internal static partial class OperationsProgressEndpoints
 
     private static void NormalizeCanonicalProperty(JsonObject operation, string propertyName, JsonNode? value)
     {
-        var duplicateKeys = new List<string>();
-
-        foreach (var property in operation)
-        {
-            if (string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                duplicateKeys.Add(property.Key);
-            }
-        }
+        var duplicateKeys = operation
+            .Where(property => string.Equals(property.Key, propertyName, StringComparison.OrdinalIgnoreCase))
+            .Select(property => property.Key)
+            .ToList();
 
         foreach (var duplicateKey in duplicateKeys)
         {

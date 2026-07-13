@@ -82,20 +82,14 @@ internal static class GitOpsWatchManifestPath
             return false;
         }
 
-        foreach (var c in path)
+        if (path.Any(char.IsControl))
         {
-            if (char.IsControl(c))
-            {
-                return false;
-            }
+            return false;
         }
 
-        foreach (var segment in path.Split('/'))
+        if (path.Split('/').Any(segment => segment is "." or ".."))
         {
-            if (segment is "." or "..")
-            {
-                return false;
-            }
+            return false;
         }
 
         return true;
@@ -103,14 +97,6 @@ internal static class GitOpsWatchManifestPath
 
     private static bool ContainsGlobSyntax(string path)
     {
-        foreach (var c in path)
-        {
-            if (c is '*' or '?' or '[' or ']' or '{' or '}')
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return path.Any(c => c is '*' or '?' or '[' or ']' or '{' or '}');
     }
 }

@@ -54,7 +54,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
     // Stored as UTC ticks and accessed via Interlocked so the renewal-timer thread and arbitrary
     // caller threads observe a consistent failure timestamp for the retry-backoff window.
     private long _lastRedisFailureTicks = DateTime.MinValue.Ticks;
-    private volatile bool _useRedis;
+    // Only ever assigned in the constructor (below), so this can be readonly instead of
+    // volatile; a readonly field is safely published once construction completes.
+    private readonly bool _useRedis;
 
     public RedisDistributedLeaderElection(
         string leaderKey,
@@ -268,6 +270,8 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
         catch (ObjectDisposedException) when (_disposed)
         {
+            // Expected race with Dispose(): the timer may already be disposed by a concurrent
+            // caller. Nothing to do since we are already tearing down.
         }
     }
 

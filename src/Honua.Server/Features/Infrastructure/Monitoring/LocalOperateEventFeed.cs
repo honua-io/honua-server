@@ -212,6 +212,8 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            // Not a pure map: mutates the outer `results` accumulator and breaks out of the inner
+            // loop once pageSize is reached, so this doesn't reduce cleanly to a '.Select(...)'.
             foreach (var item in page.Items)
             {
                 var value = MapAlertEvent(item);
@@ -278,6 +280,8 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            // Not a pure map: mutates the outer `results` accumulator and breaks out of the inner
+            // loop once pageSize is reached, so this doesn't reduce cleanly to a '.Select(...)'.
             foreach (var item in page.Items)
             {
                 var value = MapAuditRecord(item);

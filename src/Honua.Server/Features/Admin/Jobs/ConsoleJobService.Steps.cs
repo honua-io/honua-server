@@ -119,6 +119,8 @@ internal sealed partial class ConsoleJobService
             return null;
         }
 
+        // Not a simple filter: the first matching key's value is looked up, validated, and
+        // sanitized before being returned, so a LINQ Where/Select would not simplify this.
         foreach (var key in CommandMetadataKeys)
         {
             if (entry.Metadata.TryGetValue(key, out var command) && !string.IsNullOrWhiteSpace(command))

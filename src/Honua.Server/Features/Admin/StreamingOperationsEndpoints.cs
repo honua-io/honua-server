@@ -151,6 +151,7 @@ internal static class StreamingOperationsEndpoints
         }
         catch (OperationCanceledException) when (subscription.DisconnectToken.IsCancellationRequested || context.RequestAborted.IsCancellationRequested)
         {
+            // Expected: the subscription was disconnected or the client aborted the request.
         }
         finally
         {
@@ -167,9 +168,11 @@ internal static class StreamingOperationsEndpoints
                 }
                 catch (WebSocketException)
                 {
+                    // Best-effort close; the remote peer may have already reset the connection.
                 }
                 catch (ObjectDisposedException)
                 {
+                    // Best-effort close; the socket may already have been disposed concurrently.
                 }
             }
         }

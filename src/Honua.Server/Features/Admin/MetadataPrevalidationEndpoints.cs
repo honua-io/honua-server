@@ -210,12 +210,9 @@ internal static class MetadataPrevalidationEndpoints
             throw new ArgumentException($"Data script '{scriptId}' {collectionPath} must be an array.");
         }
 
-        foreach (var item in value.EnumerateArray())
+        if (value.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.Null))
         {
-            if (item.ValueKind == JsonValueKind.Null)
-            {
-                throw new ArgumentException($"Data script '{scriptId}' {collectionPath} cannot contain null entries.");
-            }
+            throw new ArgumentException($"Data script '{scriptId}' {collectionPath} cannot contain null entries.");
         }
 
         array = value;

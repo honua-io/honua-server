@@ -232,6 +232,10 @@ internal sealed partial class FeatureChangeRetryQueue(
         {
             if (renewalCts != null)
             {
+                // leaseCoordinator is disposed here rather than via a 'using' at its declaration
+                // because disposal must happen only after cancelling the renewal loop, awaiting
+                // its completion, and awaiting the async release below — an order a plain 'using'
+                // cannot express.
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
@@ -573,6 +577,8 @@ internal sealed partial class FeatureChangeRetryQueue(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Expected cancellation: the caller is tearing down (lease released or request
+            // completed), so the renewal loop simply stops.
         }
     }
 

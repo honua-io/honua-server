@@ -436,32 +436,18 @@ internal static class OpsObservabilityEndpoints
         CancellationToken cancellationToken)
     {
         var rules = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var snapshot in snapshots)
-        {
-            if (OpsAutonomyPolicyDefaults.IsValidRule(snapshot.Policy.Rule))
-            {
-                rules.Add(snapshot.Policy.Rule);
-            }
-        }
+        rules.UnionWith(snapshots
+            .Select(snapshot => snapshot.Policy.Rule)
+            .Where(OpsAutonomyPolicyDefaults.IsValidRule));
 
-        foreach (var configuredRule in options.Rules.Keys)
-        {
-            if (OpsAutonomyPolicyDefaults.IsValidRule(configuredRule))
-            {
-                rules.Add(configuredRule);
-            }
-        }
+        rules.UnionWith(options.Rules.Keys.Where(OpsAutonomyPolicyDefaults.IsValidRule));
 
         rules.UnionWith(OpsAutonomyPolicyDefaults.BuiltInAutoSafeRules);
         var activeFindings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var finding in activeFindings)
-        {
-            if (finding.RecommendedAction is { AutoSafe: true } &&
+        rules.UnionWith(activeFindings
+            .Where(finding => finding.RecommendedAction is { AutoSafe: true } &&
                 OpsAutonomyPolicyDefaults.IsValidRule(finding.Rule))
-            {
-                rules.Add(finding.Rule);
-            }
-        }
+            .Select(finding => finding.Rule));
 
         return rules.OrderBy(static rule => rule, StringComparer.Ordinal).ToArray();
     }

@@ -108,7 +108,9 @@ internal static partial class ComplianceAdminEndpoints
 
         if (!TryParseFormat(format, out var parsed))
         {
-            ComplianceAdminLog.UnsupportedReportFormat(logger, format ?? "<null>", actor);
+            // TryParseFormat only returns false when format is non-null/non-whitespace
+            // (it maps null/whitespace to the Pdf default and returns true).
+            ComplianceAdminLog.UnsupportedReportFormat(logger, format!, actor);
             return Results.BadRequest(ApiResponse<object>.Failure(
                 "Compliance report format must be 'pdf' or 'csv'."));
         }
