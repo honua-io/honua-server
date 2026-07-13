@@ -281,14 +281,15 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                 CancellationToken.None);
 
             using var client = fixture.CreateClient();
+            using var tokenRequestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("client_id", "etl-worker"),
+                new KeyValuePair<string, string>("client_secret", created.Key),
+            });
             using var response = await client.PostAsync(
                 "/sharing/rest/oauth2/token",
-                new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                    new KeyValuePair<string, string>("client_id", "etl-worker"),
-                    new KeyValuePair<string, string>("client_secret", created.Key),
-                }));
+                tokenRequestContent);
 
             // A valid secret authenticated (so it is not invalid_client); issuance was
             // reached and only the IP binding could not be resolved under TestServer.
@@ -320,14 +321,15 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         try
         {
             using var client = fixture.CreateClient();
+            using var tokenRequestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("client_id", "etl-worker"),
+                new KeyValuePair<string, string>("client_secret", "hnua_not-a-real-key"),
+            });
             using var response = await client.PostAsync(
                 "/sharing/rest/oauth2/token",
-                new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                    new KeyValuePair<string, string>("client_id", "etl-worker"),
-                    new KeyValuePair<string, string>("client_secret", "hnua_not-a-real-key"),
-                }));
+                tokenRequestContent);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var error = await ReadErrorAsync(response);
@@ -455,12 +457,13 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
             // Use the literal route path (not a const) so the endpoint-registry governance
             // scanner recognises this as a same-method (POST) HTTP request that backs
             // POST /sharing/rest/oauth2/introspect.
+            using var introspectRequestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("token", "00000000000000000000000000000000"),
+            });
             using var response = await client.PostAsync(
                 "/sharing/rest/oauth2/introspect",
-                new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("token", "00000000000000000000000000000000"),
-                }));
+                introspectRequestContent);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var json = await response.Content.ReadAsStringAsync();
@@ -482,12 +485,13 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         // never a silent discovery surface (RFC 7662 Â§4). The default fixture does not
         // enable it; the admin-authenticated request still 404s.
         using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var introspectRequestContent = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("token", "x"),
+        });
         using var response = await client.PostAsync(
             "/sharing/rest/oauth2/introspect",
-            new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("token", "x"),
-            }));
+            introspectRequestContent);
 
         await response.AssertGeoServicesErrorAsync(404);
     }
@@ -508,13 +512,14 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         try
         {
             using var client = fixture.CreateClient();
+            using var tokenRequestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "authorization_code"),
+                new KeyValuePair<string, string>("code", "x"),
+            });
             using var response = await client.PostAsync(
                 TokenEndpoint,
-                new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                    new KeyValuePair<string, string>("code", "x"),
-                }));
+                tokenRequestContent);
 
             await response.AssertGeoServicesErrorAsync(404);
         }
@@ -643,12 +648,13 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         try
         {
             using var client = fixture.CreateClient();
+            using var revokeRequestContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("token", "x"),
+            });
             using var response = await client.PostAsync(
                 "/sharing/rest/oauth2/revoke",
-                new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("token", "x"),
-                }));
+                revokeRequestContent);
 
             await response.AssertGeoServicesErrorAsync(404);
         }
@@ -660,7 +666,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
     private static async Task<HttpResponseMessage> PostRevokeAsync(HttpClient client, params (string Key, string Value)[] pairs)
     {
-        var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
+        using var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
         // Use the literal route path so the endpoint-registry governance scanner
         // recognises this as a same-method (POST) request backing POST
         // /sharing/rest/oauth2/revoke.
@@ -689,7 +695,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)
     {
-        var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
+        using var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
         // Use the literal route path (not the TokenEndpoint const) so the endpoint-registry
         // governance scanner recognises this as a same-method (POST) HTTP request that backs
         // POST /sharing/rest/oauth2/token.

@@ -81,7 +81,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     public async Task GenerateToken_WithFormCredentials_ReturnsTokenAndExpiry()
     {
         using var client = _fixture.CreateClient();
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("username", "admin"),
             new KeyValuePair<string, string>("password", AdminPassword),
@@ -421,7 +421,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)
     {
-        var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
+        using var content = new FormUrlEncodedContent(pairs.Select(p => new KeyValuePair<string, string>(p.Key, p.Value)));
         return await client.PostAsync(TokenEndpoint, content);
     }
 

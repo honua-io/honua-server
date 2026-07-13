@@ -139,16 +139,17 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         arcgisCode.Should().NotBeNullOrWhiteSpace();
 
         // 3. token: exchange the Honua authorization code (with PKCE) for an access token.
+        using var tokenRequestContent = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("grant_type", "authorization_code"),
+            new KeyValuePair<string, string>("code", arcgisCode),
+            new KeyValuePair<string, string>("redirect_uri", RedirectUri),
+            new KeyValuePair<string, string>("client_id", ClientId),
+            new KeyValuePair<string, string>("code_verifier", verifier),
+        });
         using var tokenResponse = await client.PostAsync(
             "/sharing/rest/oauth2/token",
-            new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("grant_type", "authorization_code"),
-                new KeyValuePair<string, string>("code", arcgisCode),
-                new KeyValuePair<string, string>("redirect_uri", RedirectUri),
-                new KeyValuePair<string, string>("client_id", ClientId),
-                new KeyValuePair<string, string>("code_verifier", verifier),
-            }));
+            tokenRequestContent);
 
         tokenResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await tokenResponse.Content.ReadAsStringAsync();
@@ -265,8 +266,10 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
                 return Task.FromResult(Json(tokenResponse));
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return Task.FromResult(NotFound());
         }
+
+        private static HttpResponseMessage NotFound() => new(HttpStatusCode.NotFound);
 
         private static HttpResponseMessage Json(string body)
             => new(HttpStatusCode.OK)

@@ -42,7 +42,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task")]
     public async Task ServiceInfo_ReturnsTaskMetadata()
     {
-        var response = await _client.GetAsync(
+        using var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -80,14 +80,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task Execute_MapOnly_ReturnsPngImage()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -111,7 +111,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     {
         var webMapJson = Uri.EscapeDataString(CreateMinimalWebMapJson());
 
-        var response = await _client.GetAsync(
+        using var response = await _client.GetAsync(
             $"/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute?Web_Map_as_JSON={webMapJson}&Format=PNG32&Layout_Template=MAP_ONLY");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -124,14 +124,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task Execute_PdfFormat_ReturnsPdfDocument()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PDF",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -162,7 +162,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task Execute_WithJsonResponseFormat_ReturnsUrlInJson()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
@@ -170,7 +170,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             ["f"] = "json"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -195,14 +195,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task Execute_MissingFormat_DefaultsToPng32OnCommunity()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             // Format intentionally omitted — should default to PNG32, not PDF
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -234,14 +234,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             exportOptions = new { dpi = 96 }
         });
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -270,14 +270,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             exportOptions = new { dpi = 96, outputSize = OversizedOutputSize }
         });
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -295,14 +295,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             exportOptions = new { dpi = 96, outputSize = DefaultOutputSize }
         });
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -320,14 +320,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             exportOptions = new { dpi = 96, outputSize = DefaultOutputSize }
         });
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
             content);
 
@@ -356,14 +356,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             exportOptions = new { dpi = 96, outputSize = DefaultOutputSize }
         });
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -394,14 +394,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
             exportOptions = new { dpi = 96, outputSize = DefaultOutputSize }
         });
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -413,13 +413,13 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute")]
     public async Task Execute_InvalidWebMapJson_ReturnsBadRequest()
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = "not-valid-json{{{",
             ["Format"] = "PNG32"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -432,13 +432,13 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task Execute_UnsupportedFormat_ReturnsBadRequest()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "TIFF"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -451,14 +451,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task Execute_InvalidTemplate_ReturnsBadRequest()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "NonExistentTemplate"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
             content);
 
@@ -473,14 +473,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     public async Task SubmitJob_ReturnsJobId()
     {
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var response = await _client.PostAsync(
+        using var response = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
             content);
 
@@ -503,7 +503,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     {
         var webMapJson = Uri.EscapeDataString(CreateMinimalWebMapJson());
 
-        var response = await _client.GetAsync(
+        using var response = await _client.GetAsync(
             $"/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob?Web_Map_as_JSON={webMapJson}&Format=PNG32&Layout_Template=MAP_ONLY");
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
@@ -523,7 +523,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute")]
     public async Task GetLayoutTemplatesInfo_ReturnsTemplateMetadata()
     {
-        var response = await _client.GetAsync(
+        using var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Get%20Layout%20Templates%20Info%20Task/execute");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -575,14 +575,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     {
         // First submit a job
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var submitResponse = await _client.PostAsync(
+        using var submitResponse = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
             content);
         var submitJson = await submitResponse.Content.ReadAsStringAsync();
@@ -590,7 +590,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
 
         // Query status
-        var statusResponse = await _client.GetAsync(
+        using var statusResponse = await _client.GetAsync(
             $"/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/{jobId}");
 
         statusResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -617,7 +617,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}")]
     public async Task JobStatus_InvalidJobId_ReturnsNotFound()
     {
-        var response = await _client.GetAsync(
+        using var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/nonexistent-job-id");
 
         await response.AssertGeoServicesErrorAsync(404);
@@ -632,14 +632,14 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     {
         // Submit a job
         var webMapJson = CreateMinimalWebMapJson();
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["Web_Map_as_JSON"] = webMapJson,
             ["Format"] = "PNG32",
             ["Layout_Template"] = "MAP_ONLY"
         });
 
-        var submitResponse = await _client.PostAsync(
+        using var submitResponse = await _client.PostAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
             content);
         var submitJson = await submitResponse.Content.ReadAsStringAsync();
@@ -647,7 +647,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
         var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
 
         // Immediately request result (job likely still processing)
-        var resultResponse = await _client.GetAsync(
+        using var resultResponse = await _client.GetAsync(
             $"/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/{jobId}/results/Output_File");
 
         // The job is either complete (single GP parameter object) or still processing
@@ -677,7 +677,7 @@ public sealed class PrintingToolsEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File")]
     public async Task JobResult_NonexistentJob_ReturnsNotFound()
     {
-        var response = await _client.GetAsync(
+        using var response = await _client.GetAsync(
             "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/does-not-exist/results/Output_File");
 
         await response.AssertGeoServicesErrorAsync(404);
