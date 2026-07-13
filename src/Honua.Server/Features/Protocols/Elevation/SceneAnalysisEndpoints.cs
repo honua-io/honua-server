@@ -108,8 +108,9 @@ internal static class SceneAnalysisEndpoints
                 SceneAnalysisJsonContext.Default.SunShadowRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "Failed to parse sun/shadow analysis request body for dataset {DatasetId}.", datasetId);
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -234,8 +235,9 @@ internal static class SceneAnalysisEndpoints
                 SceneAnalysisJsonContext.Default.SliceRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "Failed to parse slice analysis request body for dataset {DatasetId}.", datasetId);
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 

@@ -230,14 +230,7 @@ internal static class CogEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (publication.LayerIndex == layerId)
-            {
-                return true;
-            }
-        }
-        return false;
+        return snapshot.Graph.Publications.Any(publication => publication.LayerIndex == layerId);
     }
 
     private static CogRegistrationResponse ToResponse(CogRegistration reg) => new()

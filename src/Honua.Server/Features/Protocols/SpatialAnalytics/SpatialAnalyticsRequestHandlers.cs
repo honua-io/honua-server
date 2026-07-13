@@ -518,15 +518,14 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // Strip "_inputCount" from every row so MapRowToFeature does not surface
         // it as a feature property. Reuse the case-insensitive equality the
         // dictionary already provides instead of allocating a fresh comparer.
-        var trimmed = ImmutableArray.CreateBuilder<IReadOnlyDictionary<string, object?>>(rows.Length);
-        foreach (var row in rows)
-        {
-            var copy = new Dictionary<string, object?>(row);
-            copy.Remove("_inputCount");
-            trimmed.Add(copy);
-        }
-
-        rows = trimmed.MoveToImmutable();
+        rows = rows
+            .Select(row =>
+            {
+                var copy = new Dictionary<string, object?>(row);
+                copy.Remove("_inputCount");
+                return (IReadOnlyDictionary<string, object?>)copy;
+            })
+            .ToImmutableArray();
         return inputCount;
     }
 

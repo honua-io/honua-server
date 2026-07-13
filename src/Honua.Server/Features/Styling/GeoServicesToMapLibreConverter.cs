@@ -127,12 +127,9 @@ internal static class GeoServicesToMapLibreConverter
             return;
         }
 
-        foreach (var allowed in supported)
+        if (supported.Any(allowed => string.Equals(allowed, symbolType, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(allowed, symbolType, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         unsupported.Add(new UnsupportedSymbolizerInfo
@@ -163,17 +160,10 @@ internal static class GeoServicesToMapLibreConverter
             return;
         }
 
-        var hasLayoutHints = false;
-        foreach (var payload in payloads)
-        {
-            if (Math.Abs(payload.XOffset ?? 0d) > OffsetEqualityEpsilon
-                || Math.Abs(payload.YOffset ?? 0d) > OffsetEqualityEpsilon
-                || Math.Abs(payload.Angle ?? 0d) > OffsetEqualityEpsilon)
-            {
-                hasLayoutHints = true;
-                break;
-            }
-        }
+        var hasLayoutHints = payloads.Any(payload =>
+            Math.Abs(payload.XOffset ?? 0d) > OffsetEqualityEpsilon
+            || Math.Abs(payload.YOffset ?? 0d) > OffsetEqualityEpsilon
+            || Math.Abs(payload.Angle ?? 0d) > OffsetEqualityEpsilon);
 
         if (!hasLayoutHints)
         {
@@ -755,7 +745,7 @@ internal static class GeoServicesToMapLibreConverter
         var fallbackId = images[0].Id;
         if (defaultPayload is { } defaultPayloadForImage)
         {
-            fallbackId = BuildPictureMarkerId(layer.Id, index++);
+            fallbackId = BuildPictureMarkerId(layer.Id, index);
             images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
@@ -901,7 +891,7 @@ internal static class GeoServicesToMapLibreConverter
         var fallbackId = baseId;
         if (defaultPayload is { } defaultPayloadForImage)
         {
-            fallbackId = BuildPictureMarkerId(layer.Id, index++);
+            fallbackId = BuildPictureMarkerId(layer.Id, index);
             images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 

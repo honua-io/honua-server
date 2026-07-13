@@ -246,15 +246,10 @@ internal sealed class LayerStyleService : ILayerStyleService
         if (_metadataV2GraphProvider is not null)
         {
             var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layerId, out var binding) &&
-                string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
-            {
-                storageLayerId = layerId;
-            }
-            else
-            {
-                storageLayerId = snapshot.ResolveStorageLayerId(resource) ?? layerId;
-            }
+            storageLayerId = snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layerId, out var binding) &&
+                string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal)
+                ? layerId
+                : snapshot.ResolveStorageLayerId(resource) ?? layerId;
         }
 
         return StyleLayerDescriptor.FromResource(resource, storageLayerId);

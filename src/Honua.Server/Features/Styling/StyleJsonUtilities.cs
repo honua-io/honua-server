@@ -267,15 +267,12 @@ internal static class StyleJsonUtilities
         degrees = 0d;
 
         var trimmed = input.Trim();
-        var unit = "deg";
-        foreach (var candidate in new[] { "deg", "grad", "rad", "turn" })
+        var matchedUnit = new[] { "deg", "grad", "rad", "turn" }
+            .FirstOrDefault(candidate => trimmed.EndsWith(candidate, StringComparison.OrdinalIgnoreCase));
+        var unit = matchedUnit ?? "deg";
+        if (matchedUnit is not null)
         {
-            if (trimmed.EndsWith(candidate, StringComparison.OrdinalIgnoreCase))
-            {
-                unit = candidate;
-                trimmed = trimmed[..^candidate.Length].TrimEnd();
-                break;
-            }
+            trimmed = trimmed[..^matchedUnit.Length].TrimEnd();
         }
 
         if (!double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)

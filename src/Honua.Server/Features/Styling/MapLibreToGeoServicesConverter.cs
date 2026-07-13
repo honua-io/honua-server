@@ -205,19 +205,17 @@ internal static class MapLibreToGeoServicesConverter
                 return false;
             }
 
-            if (TryParseStepImageExpression(iconImage, out var stepField, out var baseImage, out var stepStops))
-            {
-                if (TryBuildPictureMarkerClassBreakRenderer(
+            if (TryParseStepImageExpression(iconImage, out var stepField, out var baseImage, out var stepStops) &&
+                TryBuildPictureMarkerClassBreakRenderer(
                     stepField,
                     baseImage,
                     stepStops,
                     metadata,
                     markerLayout,
                     out var renderer))
-                {
-                    drawingInfoJson = StyleJsonUtilities.Serialize(new Dictionary<string, object?> { ["renderer"] = renderer });
-                    return true;
-                }
+            {
+                drawingInfoJson = StyleJsonUtilities.Serialize(new Dictionary<string, object?> { ["renderer"] = renderer });
+                return true;
             }
         }
 
@@ -1061,28 +1059,26 @@ internal static class MapLibreToGeoServicesConverter
             return null;
         }
 
-        if (outlineLayer.HasValue && TryGetPaintProperty(outlineLayer.Value, out var outlinePaint))
+        if (outlineLayer.HasValue && TryGetPaintProperty(outlineLayer.Value, out var outlinePaint) &&
+            outlinePaint.TryGetProperty("line-color", out var colorElement)
+            && StyleJsonUtilities.TryParseMapLibreColor(colorElement, out var color))
         {
-            if (outlinePaint.TryGetProperty("line-color", out var colorElement)
-                && StyleJsonUtilities.TryParseMapLibreColor(colorElement, out var color))
+            var width = outlinePaint.TryGetProperty("line-width", out var widthElement)
+                && StyleParsingHelpers.TryGetDouble(widthElement, out var widthValue)
+                ? widthValue
+                : (double?)StyleDefaults.DefaultOutlineWidth;
+
+            var outlineOpacity = outlinePaint.TryGetProperty("line-opacity", out var opacityElement)
+                && StyleParsingHelpers.TryGetDouble(opacityElement, out var opacity)
+                ? (double?)opacity
+                : null;
+
+            if (outlineOpacity.HasValue)
             {
-                var width = outlinePaint.TryGetProperty("line-width", out var widthElement)
-                    && StyleParsingHelpers.TryGetDouble(widthElement, out var widthValue)
-                    ? widthValue
-                    : (double?)StyleDefaults.DefaultOutlineWidth;
-
-                var outlineOpacity = outlinePaint.TryGetProperty("line-opacity", out var opacityElement)
-                    && StyleParsingHelpers.TryGetDouble(opacityElement, out var opacity)
-                    ? (double?)opacity
-                    : null;
-
-                if (outlineOpacity.HasValue)
-                {
-                    color = color.ApplyOpacity(outlineOpacity.Value);
-                }
-
-                return new OutlineStyle(color, width);
+                color = color.ApplyOpacity(outlineOpacity.Value);
             }
+
+            return new OutlineStyle(color, width);
         }
 
         if (paint.TryGetProperty("fill-outline-color", out var fillOutline)
@@ -1101,12 +1097,10 @@ internal static class MapLibreToGeoServicesConverter
             return GetLineStyle(paint);
         }
 
-        if (geometryType is GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection)
+        if (geometryType is GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection &&
+            outlineLayer.HasValue && TryGetPaintProperty(outlineLayer.Value, out var outlinePaint))
         {
-            if (outlineLayer.HasValue && TryGetPaintProperty(outlineLayer.Value, out var outlinePaint))
-            {
-                return GetLineStyle(outlinePaint);
-            }
+            return GetLineStyle(outlinePaint);
         }
 
         return null;
