@@ -62,7 +62,19 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
     {
         try
         {
-            await using var connection = new SqlConnection(connectionString);
+            // `connectionString` is not guaranteed to have flowed through BuildConnectionString above:
+            // the admin secure-connection test/probe paths can source it from an operator-supplied secret
+            // reference instead (SecureConnectionEndpoints.HandleTestDraftConnection,
+            // SecureConnectionResolver.ResolveConnectionStringInternalAsync), which bypasses this driver's
+            // own Encrypt/TrustServerCertificate mapping entirely. Re-parse and force TLS so a secret-store
+            // value that omits or disables encryption can never open a plaintext TDS session; per the MVP
+            // deferrals, secure connections are "encrypted or secret references only" (never unencrypted).
+            var builder = new SqlConnectionStringBuilder(connectionString)
+            {
+                Encrypt = true
+            };
+
+            await using var connection = new SqlConnection(builder.ConnectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             await using var command = connection.CreateCommand();
