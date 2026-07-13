@@ -128,7 +128,8 @@ public static partial class GeoParquetFeatureWriter
         try
         {
             using var stream = new MemoryStream();
-            var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
+            using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder().StoreSchema();
+            using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
             using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
             {
                 if (recordBatch is not null)

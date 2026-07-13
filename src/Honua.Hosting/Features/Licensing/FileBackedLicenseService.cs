@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -554,7 +555,7 @@ internal sealed class FileBackedLicenseService :
             return CreateInvalidResult(LicenseValidationState.Malformed, payloadError, payload, envelope.KeyId);
         }
 
-        if (payload!.ExpiresAt.HasValue && payload.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
             return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId);
         }
@@ -571,7 +572,7 @@ internal sealed class FileBackedLicenseService :
     }
 
     private static bool TryValidatePayload(
-        SignedLicensePayload? payload,
+        [NotNullWhen(true)] SignedLicensePayload? payload,
         out HonuaEdition edition,
         out string reason)
     {
