@@ -125,9 +125,10 @@ public sealed class FeatureServerServiceRbacTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(401, 499);
     }
@@ -148,9 +149,10 @@ public sealed class FeatureServerServiceRbacTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(403);
     }
@@ -231,9 +233,10 @@ public sealed class FeatureServerServiceRbacTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(403);
     }
@@ -247,9 +250,10 @@ public sealed class FeatureServerServiceRbacTests
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = factory.CreateClient();
 
+        using var content = new StringContent("{", Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent("{", Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(401, 499);
     }
@@ -263,9 +267,10 @@ public sealed class FeatureServerServiceRbacTests
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
 
+        using var content = new StringContent("{", Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
-            new StringContent("{", Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(403);
     }
@@ -279,9 +284,10 @@ public sealed class FeatureServerServiceRbacTests
         using var factory = ServiceRbacTestFixture.CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
 
+        using var content = new StringContent("{", Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
-            new StringContent("{", Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(403);
     }
@@ -303,9 +309,10 @@ public sealed class FeatureServerServiceRbacTests
             layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
             f = "json"
         });
+        using var createContent = new StringContent(createPayload, Encoding.UTF8, "application/json");
         var createResponse = await adminClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+            createContent);
         await ServiceRbacTestFixture.AssertStatusAsync(createResponse, HttpStatusCode.OK);
 
         var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
@@ -318,9 +325,10 @@ public sealed class FeatureServerServiceRbacTests
             syncDirection = "download",
             f = "json"
         });
+        using var syncContent = new StringContent(syncPayload, Encoding.UTF8, "application/json");
         var syncResponse = await readerClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
-            new StringContent(syncPayload, Encoding.UTF8, "application/json"));
+            syncContent);
 
         await syncResponse.AssertGeoServicesErrorAsync(403);
     }
@@ -342,9 +350,10 @@ public sealed class FeatureServerServiceRbacTests
             layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
             f = "json"
         });
+        using var createContent = new StringContent(createPayload, Encoding.UTF8, "application/json");
         var createResponse = await adminClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent(createPayload, Encoding.UTF8, "application/json"));
+            createContent);
         await ServiceRbacTestFixture.AssertStatusAsync(createResponse, HttpStatusCode.OK);
 
         var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
@@ -356,9 +365,10 @@ public sealed class FeatureServerServiceRbacTests
             replicaID = replicaId,
             f = "json"
         });
+        using var unregisterContent = new StringContent(unregisterPayload, Encoding.UTF8, "application/json");
         var unregisterResponse = await readerClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
-            new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
+            unregisterContent);
 
         await unregisterResponse.AssertGeoServicesErrorAsync(403);
     }
@@ -519,9 +529,10 @@ public sealed class FeatureServerServiceAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -609,9 +620,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -634,9 +646,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -670,9 +683,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(extractPayload, Encoding.UTF8, "application/json");
         var response = await anonymousClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/extractChanges",
-            new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -706,9 +720,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(syncPayload, Encoding.UTF8, "application/json");
         var response = await anonymousClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
-            new StringContent(syncPayload, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -741,9 +756,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(unregisterPayload, Encoding.UTF8, "application/json");
         var response = await anonymousClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/unRegisterReplica",
-            new StringContent(unregisterPayload, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
@@ -761,9 +777,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             $"/rest/services/{serviceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -930,9 +947,10 @@ public sealed class ODataServiceRbacTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
@@ -967,9 +985,10 @@ public sealed class ODataServiceRbacTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
@@ -1116,9 +1135,10 @@ public sealed class ODataServiceAccessPolicyTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
@@ -1157,9 +1177,10 @@ public sealed class ODataServiceAccessPolicyTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 
@@ -1263,9 +1284,10 @@ public sealed class ODataServiceBoundaryTests
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await client.PostAsync(
             "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
 

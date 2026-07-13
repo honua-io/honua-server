@@ -75,7 +75,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task Authentication_WithoutApiKey_ShouldReturn401()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/config");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/config");
 
         // Act
         var response = await _client.SendAsync(request);
@@ -89,7 +89,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task Authentication_WithInvalidApiKey_ShouldReturn401()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/config");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/config");
         request.Headers.Add("X-API-Key", "invalid-key");
 
         // Act
@@ -106,7 +106,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         // The admin OpenAPI document is public documentation (the bundled
         // admin-api.json snapshot) and is intentionally anonymous (#1635);
         // the admin operations it documents remain authenticated.
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/openapi.json");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/openapi.json");
 
         var response = await _client.SendAsync(request);
 
@@ -118,7 +118,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task Authorization_PublicEndpoint_AllowsAnonymousAccess()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer?f=json");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer?f=json");
 
         // Act
         var response = await _client.SendAsync(request);
@@ -146,7 +146,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         // Act & Assert
         foreach (var maliciousInput in maliciousInputs)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer/1/query?where={Uri.EscapeDataString(maliciousInput)}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer/1/query?where={Uri.EscapeDataString(maliciousInput)}");
             request.Headers.Add("X-API-Key", AdminPassword);
 
             var response = await _client.SendAsync(request);
@@ -183,7 +183,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         // Act & Assert
         foreach (var payload in xssPayloads)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer/1/query?outFields={Uri.EscapeDataString(payload)}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/rest/services/test/FeatureServer/1/query?outFields={Uri.EscapeDataString(payload)}");
             request.Headers.Add("X-API-Key", AdminPassword);
 
             var response = await _client.SendAsync(request);
@@ -213,7 +213,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
             }
             """;
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
@@ -237,7 +237,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task SecurityHeaders_ShouldBePresent()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/ready");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/ready");
 
         // Act
         var response = await _client.SendAsync(request);
@@ -277,7 +277,9 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         var content = new MultipartFormDataContent();
         content.Add(new StringContent(maliciousContent), "file", "malicious.xml");
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/import/upload")
+        // content's ownership transfers to request via the Content property;
+        // disposing request disposes content transitively.
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/import/upload")
         {
             Content = content
         };
@@ -317,7 +319,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         // Act & Assert
         foreach (var maliciousPath in maliciousPaths)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"/api/files/{Uri.EscapeDataString(maliciousPath)}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/files/{Uri.EscapeDataString(maliciousPath)}");
             request.Headers.Add("X-API-Key", AdminPassword);
 
             var response = await _client.SendAsync(request);
@@ -344,7 +346,9 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         var largePayload = new string('A', 10 * 1024 * 1024); // 10MB
         var content = new StringContent(largePayload, Encoding.UTF8, "application/json");
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
+        // content's ownership transfers to request via the Content property;
+        // disposing request disposes content transitively.
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
         {
             Content = content
         };
@@ -363,20 +367,34 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     {
         // Arrange
         var sessionTasks = new List<Task<HttpResponseMessage>>();
+        // Requests must stay alive until every in-flight SendAsync completes, so they are
+        // tracked here and disposed only after Task.WhenAll (not per-iteration).
+        var requests = new List<HttpRequestMessage>();
 
-        // Act - Create multiple concurrent requests to an admin endpoint
-        for (int i = 0; i < 10; i++)
+        try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/config");
-            request.Headers.Add("X-API-Key", AdminPassword);
-            sessionTasks.Add(_client.SendAsync(request));
+            // Act - Create multiple concurrent requests to an admin endpoint
+            for (int i = 0; i < 10; i++)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/config");
+                request.Headers.Add("X-API-Key", AdminPassword);
+                requests.Add(request);
+                sessionTasks.Add(_client.SendAsync(request));
+            }
+
+            var responses = await Task.WhenAll(sessionTasks);
+
+            // Assert - Concurrent requests should not trigger server errors
+            responses.Should().NotContain(r => (int)r.StatusCode >= 500);
+            responses.Count(r => r.StatusCode == HttpStatusCode.OK).Should().BeGreaterThan(0);
         }
-
-        var responses = await Task.WhenAll(sessionTasks);
-
-        // Assert - Concurrent requests should not trigger server errors
-        responses.Should().NotContain(r => (int)r.StatusCode >= 500);
-        responses.Count(r => r.StatusCode == HttpStatusCode.OK).Should().BeGreaterThan(0);
+        finally
+        {
+            foreach (var request in requests)
+            {
+                request.Dispose();
+            }
+        }
     }
 
     [IntegrationTest]
@@ -384,7 +402,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task DataEncryption_SensitiveData_ShouldBeProtected()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/users");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/users");
         request.Headers.Add("X-API-Key", AdminPassword);
 
         // Act
@@ -421,7 +439,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
             }
             """;
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
@@ -442,7 +460,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task ErrorHandling_ShouldNotLeakInformation()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/nonexistent/FeatureServer/999/query");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/nonexistent/FeatureServer/999/query");
         request.Headers.Add("X-API-Key", AdminPassword);
 
         // Act
@@ -463,7 +481,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         // For local testing, we verify HSTS headers are present
 
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/ready");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz/ready");
 
         // Act
         var response = await _client.SendAsync(request);
@@ -492,17 +510,19 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         };
 
         // Act & Assert
-        foreach (var payload in malformedPayloads)
+        foreach (var request in malformedPayloads.Select(payload => new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/1/applyEdits")
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        }))
+        {
+            using (request)
             {
-                Content = new StringContent(payload, Encoding.UTF8, "application/json")
-            };
-            request.Headers.Add("X-API-Key", AdminPassword);
+                request.Headers.Add("X-API-Key", AdminPassword);
 
-            var response = await _client.SendAsync(request);
+                var response = await _client.SendAsync(request);
 
-            await response.AssertGeoServicesErrorAsync(400);
+                await response.AssertGeoServicesErrorAsync(400);
+            }
         }
     }
 }
