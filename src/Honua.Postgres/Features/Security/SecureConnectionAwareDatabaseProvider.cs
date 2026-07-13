@@ -281,6 +281,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
         catch (Exception ex)
         {
+            // Health probe: any failure means "unhealthy", not an exception the caller should handle.
             _logConnectionHealthTestFailure(_logger, _namedConnectionToUse, ex);
             return false;
         }
@@ -300,6 +301,8 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
         catch (Exception ex)
         {
+            // Best-effort discovery: log and degrade to "no available connections" rather than
+            // failing the caller over a resolver-side listing error.
             _logRetrieveConnectionsFailure(_logger, ex);
             return Array.Empty<string>();
         }

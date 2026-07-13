@@ -111,6 +111,8 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch (Exception ex)
                 {
+                    // Best-effort temp-zip cleanup; log and continue rather than failing the import
+                    // over a leftover temp file (the scratch directory cleanup on failure paths still runs).
                     ShapefileLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
@@ -216,6 +218,8 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch (Exception ex)
                 {
+                    // Best-effort temp-zip cleanup; log and continue rather than failing the import
+                    // over a leftover temp file (the scratch directory cleanup on failure paths still runs).
                     KmzLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
@@ -444,15 +448,10 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        foreach (var group in groups.Values)
-        {
-            if (group.Shp != null && group.Dbf != null)
-            {
-                return new ShapefileEntries(group.BaseName, group.Shp, group.Dbf, group.Shx, group.Prj, group.Cpg);
-            }
-        }
-
-        return null;
+        var match = groups.Values.FirstOrDefault(g => g.Shp != null && g.Dbf != null);
+        return match != null
+            ? new ShapefileEntries(match.BaseName, match.Shp!, match.Dbf!, match.Shx, match.Prj, match.Cpg)
+            : null;
     }
 
     private static string GetShapefileComponentGroupKey(ZipArchiveEntry entry, string baseName)

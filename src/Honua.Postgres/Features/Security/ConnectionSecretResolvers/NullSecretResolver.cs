@@ -98,6 +98,9 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
         }
         catch
         {
+            // CanResolve is a best-effort capability probe (Environment.GetEnvironmentVariable can only
+            // realistically throw under a locked-down security policy); treat any failure as "cannot
+            // resolve" rather than adding a logger dependency to this lightweight resolver.
             return false;
         }
     }

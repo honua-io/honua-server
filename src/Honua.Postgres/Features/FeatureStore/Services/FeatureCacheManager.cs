@@ -312,6 +312,8 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         }
         catch (Exception ex)
         {
+            // Best-effort catalog probe: on failure, log and assume "no layer catalog" rather than
+            // failing the caller — callers treat false as "fall back to non-catalog behavior".
             MonitoredFeatureStoreLog.LayerCatalogCheckFailed(_logger, ex);
             return false;
         }

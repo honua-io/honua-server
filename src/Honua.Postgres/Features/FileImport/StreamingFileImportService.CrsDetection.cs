@@ -43,8 +43,11 @@ internal sealed partial class StreamingFileImportService
                 _ => null
             };
         }
-        catch
+        catch (Exception ex)
         {
+            // Best-effort CRS auto-detection: on failure, log and return null so the caller falls back
+            // to an explicit source SRID or the format's default rather than failing the import.
+            ImportLog.CrsDetectionFailed(_logger, ex, format.ToString());
             return null;
         }
         finally

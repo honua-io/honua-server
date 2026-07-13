@@ -270,7 +270,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
             "SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM honua.sta_observation");
 
         var conditions = new List<string>();
-        if (query.DatastreamId is { } datastreamId)
+        if (query.DatastreamId.HasValue)
         {
             conditions.Add("datastream_id = @datastream_id");
         }

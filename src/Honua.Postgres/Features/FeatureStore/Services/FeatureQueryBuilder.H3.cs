@@ -146,7 +146,7 @@ internal sealed partial class FeatureQueryBuilder
                 // Apply max-cells limit to the kRing-expanded result
                 if (h3Query.MaxCells.HasValue && h3Query.MaxCells.Value > 0)
                 {
-                    var maxCellsParam = $"${paramIndex++}";
+                    var maxCellsParam = $"${paramIndex}";
                     parameters.Add(h3Query.MaxCells.Value);
                     sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxCellsParam}");
                 }
@@ -160,7 +160,7 @@ internal sealed partial class FeatureQueryBuilder
                 // Apply max-cells limit to prevent unbounded result sets at high resolutions
                 if (h3Query.MaxCells.HasValue && h3Query.MaxCells.Value > 0)
                 {
-                    var maxCellsParam = $"${paramIndex++}";
+                    var maxCellsParam = $"${paramIndex}";
                     parameters.Add(h3Query.MaxCells.Value);
                     sql.Append(CultureInfo.InvariantCulture, $" LIMIT {maxCellsParam}");
                 }
@@ -193,7 +193,6 @@ internal sealed partial class FeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
-            var paramIndex = 1;
             var parameters = new List<object>();
 
             var tileExtent = tileOptions.TileExtent > 0 ? tileOptions.TileExtent : 4096;
@@ -211,7 +210,7 @@ internal sealed partial class FeatureQueryBuilder
             parameters.Add(tileExtent);  // $6
             parameters.Add(tileOptions.TileBuffer); // $7
             parameters.Add(resolution);  // $8
-            paramIndex = 9;
+            var paramIndex = 9;
 
             var tileEnvelope = "ST_TileEnvelope($2, $3, $4)";
             var tileEnvelopeWithBuffer = "ST_Expand(ST_TileEnvelope($2, $3, $4), $5)";
@@ -284,7 +283,7 @@ internal sealed partial class FeatureQueryBuilder
             // Applied after GROUP BY so that counts per cell remain accurate.
             if (tileLimits.MaxFeaturesPerTile > 0)
             {
-                var limitParam = $"${paramIndex++}";
+                var limitParam = $"${paramIndex}";
                 parameters.Add(tileLimits.MaxFeaturesPerTile);
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }

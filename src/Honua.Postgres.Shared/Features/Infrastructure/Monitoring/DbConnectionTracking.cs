@@ -22,25 +22,21 @@ internal static class DbConnectionTracking
 
         void OnStateChange(object? sender, StateChangeEventArgs args)
         {
-            if (args.CurrentState is ConnectionState.Closed or ConnectionState.Broken)
+            if (args.CurrentState is ConnectionState.Closed or ConnectionState.Broken &&
+                Interlocked.Exchange(ref decremented, 1) == 0)
             {
-                if (Interlocked.Exchange(ref decremented, 1) == 0)
-                {
-                    tracker.Decrement();
-                    connection.StateChange -= OnStateChange;
-                }
+                tracker.Decrement();
+                connection.StateChange -= OnStateChange;
             }
         }
 
         connection.StateChange += OnStateChange;
 
-        if (connection.State is ConnectionState.Closed or ConnectionState.Broken)
+        if (connection.State is ConnectionState.Closed or ConnectionState.Broken &&
+            Interlocked.Exchange(ref decremented, 1) == 0)
         {
-            if (Interlocked.Exchange(ref decremented, 1) == 0)
-            {
-                tracker.Decrement();
-                connection.StateChange -= OnStateChange;
-            }
+            tracker.Decrement();
+            connection.StateChange -= OnStateChange;
         }
     }
 }

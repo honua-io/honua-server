@@ -2134,13 +2134,8 @@ internal sealed class PostgresRasterStore : IRasterStore
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
-        var tileClipExpr = "ST_Clip(raster, ST_Transform(tb.geom, ST_SRID(raster)))";
         var tileStats = await GetStatisticsAsync(layerId, rasterId, bands: null, cancellationToken: cancellationToken).ConfigureAwait(false);
         var tileStretchBounds = BuildAutoTileStretchBounds(tileStats);
-        if (tileStretchBounds is { Count: > 0 })
-        {
-            tileClipExpr = BuildStretchedRasterExpression(tileClipExpr, tileStretchBounds);
-        }
 
         // Prefer a persisted overview pyramid (#1836): if one was built at import time whose
         // resolution matches this tile's ground resolution, read it directly (it is already in
@@ -2176,10 +2171,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             // The persisted overview is already EPSG:3857, so ST_Transform is the identity and the
             // intersect uses 3857 directly. This reads the reduced pyramid level â€” no full-res scan.
+            var overviewResampleExpr = "ST_Resample(raster, tile_ref.rast)";
+            if (tileStretchBounds is { Count: > 0 })
+            {
+                overviewResampleExpr = BuildStretchedRasterExpression(overviewResampleExpr, tileStretchBounds);
+            }
+
             dynCommand.CommandText = $"""
                 {tileBoundsCte}
                 SELECT ST_AsGDALRaster(
-                    ST_Resample(raster, tile_ref.rast),
+                    {overviewResampleExpr},
                     '{effectiveTileFormat}'{tileCreationOptions}
                 ) AS data
                 FROM {_rasterOverviewsTable}, tile_bounds tb, tile_ref
@@ -2193,10 +2194,16 @@ internal sealed class PostgresRasterStore : IRasterStore
             // No persisted overview: reduce the source toward the tile's ground resolution at low
             // zoom (no-op at native/finer zoom) so wide tiles do not resample full-res pixels.
             var overviewSource = BuildOverviewSourceExpression(level);
+            var sourceResampleExpr = $"ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast)";
+            if (tileStretchBounds is { Count: > 0 })
+            {
+                sourceResampleExpr = BuildStretchedRasterExpression(sourceResampleExpr, tileStretchBounds);
+            }
+
             dynCommand.CommandText = $"""
                 {tileBoundsCte}
                 SELECT ST_AsGDALRaster(
-                    ST_Resample(ST_Transform({overviewSource}, 3857), tile_ref.rast),
+                    {sourceResampleExpr},
                     '{effectiveTileFormat}'{tileCreationOptions}
                 ) AS data
                 FROM {_rasterDataTable}, tile_bounds tb, tile_ref
@@ -2309,7 +2316,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster(rast, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({mosaicTileExpr}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;
@@ -3819,15 +3826,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             }
         }
 
+        // Keep only cells valid in every requested band so the covariance sample is complete.
         var pixels = new List<double[]>(pixelByCell.Count);
-        foreach (var accumulator in pixelByCell.Values)
-        {
-            // Keep only cells valid in every requested band so the covariance sample is complete.
-            if (accumulator.Filled == effectiveBands.Length)
-            {
-                pixels.Add(accumulator.Values);
-            }
-        }
+        pixels.AddRange(pixelByCell.Values
+            .Where(accumulator => accumulator.Filled == effectiveBands.Length)
+            .Select(accumulator => accumulator.Values));
 
         return new RasterBandVectorSet
         {
@@ -4101,20 +4104,16 @@ internal sealed class PostgresRasterStore : IRasterStore
             for (var i = 0; i < effectiveBands.Length; i++)
             {
                 var band = effectiveBands[i];
-                if (bandBuckets.TryGetValue(band, out var bucket) && bucket.Counts.Count > 0)
-                {
-                    results[i] = new RasterHistogram
+                results[i] = bandBuckets.TryGetValue(band, out var bucket) && bucket.Counts.Count > 0
+                    ? new RasterHistogram
                     {
                         Band = band,
                         BinCount = bucket.Counts.Count,
                         Min = bucket.Min,
                         Max = bucket.Max,
                         Counts = bucket.Counts.ToArray(),
-                    };
-                }
-                else
-                {
-                    results[i] = new RasterHistogram
+                    }
+                    : new RasterHistogram
                     {
                         Band = band,
                         BinCount = 0,
@@ -4122,7 +4121,6 @@ internal sealed class PostgresRasterStore : IRasterStore
                         Max = 0,
                         Counts = Array.Empty<long>(),
                     };
-                }
             }
 
             return results;

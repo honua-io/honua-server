@@ -1142,12 +1142,10 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         if (op is TemporalOperator.Contains or TemporalOperator.During or TemporalOperator.FinishedBy or
             TemporalOperator.Finishes or TemporalOperator.Meets or TemporalOperator.MetBy or
             TemporalOperator.OverlappedBy or TemporalOperator.Overlaps or TemporalOperator.StartedBy or
-            TemporalOperator.Starts)
+            TemporalOperator.Starts &&
+            !left.IsInterval && !right.IsInterval)
         {
-            if (!left.IsInterval && !right.IsInterval)
-            {
-                throw new ArgumentException($"Temporal operator {op} requires interval operands");
-            }
+            throw new ArgumentException($"Temporal operator {op} requires interval operands");
         }
     }
 

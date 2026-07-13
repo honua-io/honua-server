@@ -426,6 +426,8 @@ internal sealed partial class GeoservicesImportService
             return false;
         }
 
+        // Not rewritten as .Select(s => s.Compatibility.Code): the loop tracks first-seen vs.
+        // mismatch state across iterations, not a pure 1:1 projection.
         string? seen = null;
         foreach (var style in styles)
         {

@@ -81,6 +81,9 @@ internal static class GeoJsonPageReader
 
         if (root.TryGetProperty("links", out var links) && links.ValueKind == JsonValueKind.Array)
         {
+            // Not rewritten as .FirstOrDefault(...): JsonElement is a struct whose default() is
+            // JsonValueKind.Undefined, which would need its own explicit handling to distinguish
+            // "no match" from a genuine (impossible here) undefined array entry.
             foreach (var link in links.EnumerateArray())
             {
                 if (link.TryGetProperty("rel", out var rel)

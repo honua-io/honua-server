@@ -116,6 +116,8 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
         catch (Exception ex)
         {
+            // Map any encryption failure to a domain InvalidOperationException so callers never see
+            // raw cryptography-library exception details.
             _logEncryptionFailure(_logger, ex);
             throw new InvalidOperationException("Connection string encryption failed", ex);
         }
@@ -148,6 +150,8 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
         catch (Exception ex)
         {
+            // Any non-cryptographic failure (unexpected format, etc.) still maps to a domain
+            // InvalidOperationException rather than leaking internals.
             _logUnexpectedDecryptionError(_logger, ex);
             throw new InvalidOperationException("Connection string decryption failed", ex);
         }
@@ -197,6 +201,8 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
         }
         catch (Exception ex)
         {
+            // Self-test probe: any failure means encryption is not validated, not an exception the
+            // caller should handle — log and return false.
             _logValidationException(_logger, ex);
             return false;
         }
@@ -384,8 +390,10 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
             {
                 salt = Convert.FromBase64String(saltConfig);
             }
-            catch
+            catch (FormatException)
             {
+                // Narrowed to FormatException: Convert.FromBase64String only throws this (or
+                // ArgumentNullException, already precluded by the whitespace check above) on bad input.
                 throw new InvalidOperationException(
                     "Invalid salt format. Salt must be a valid base64 string.");
             }
