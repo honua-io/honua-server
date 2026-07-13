@@ -8,13 +8,13 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Events.Outbox;
-using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events.Outbox;
 
@@ -287,10 +287,11 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             .PublishStrictAsync(Arg.Any<FeatureChangeEventRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("downstream offline")));
 
-        var dispatcher = BuildDispatcher(repository, capability, publisher);
+        var metrics = TestTelemetry.CreateOutboxMetrics();
+        var dispatcher = BuildDispatcher(repository, capability, publisher, metrics: metrics);
 
-        using var failedListener = MeterSampleCollector.Subscribe("honua.outbox.failed_total");
-        using var deadLetteredListener = MeterSampleCollector.Subscribe("honua.outbox.dead_lettered_total");
+        using var failedListener = MeterSampleCollector.Subscribe(metrics.Meter, "honua.outbox.failed_total");
+        using var deadLetteredListener = MeterSampleCollector.Subscribe(metrics.Meter, "honua.outbox.dead_lettered_total");
 
         var dispatched = await dispatcher.ExecuteOnceAsync(CancellationToken.None);
 
@@ -326,10 +327,11 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         repository.Pending.Enqueue(entry);
 
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
-        var dispatcher = BuildDispatcher(repository, capability, publisher);
+        var metrics = TestTelemetry.CreateOutboxMetrics();
+        var dispatcher = BuildDispatcher(repository, capability, publisher, metrics: metrics);
 
-        using var failedListener = MeterSampleCollector.Subscribe("honua.outbox.failed_total");
-        using var deadLetteredListener = MeterSampleCollector.Subscribe("honua.outbox.dead_lettered_total");
+        using var failedListener = MeterSampleCollector.Subscribe(metrics.Meter, "honua.outbox.failed_total");
+        using var deadLetteredListener = MeterSampleCollector.Subscribe(metrics.Meter, "honua.outbox.dead_lettered_total");
 
         await dispatcher.ExecuteOnceAsync(CancellationToken.None);
 
@@ -497,7 +499,8 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         IFeatureChangeOutboxRepository? repository,
         IOutboxCapabilityProvider capability,
         IFeatureChangeEventPublisher publisher,
-        string? nodeId = null)
+        string? nodeId = null,
+        OutboxMetrics? metrics = null)
     {
         var services = new ServiceCollection();
         if (repository is not null)
@@ -507,12 +510,13 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         services.AddSingleton(publisher);
         var provider = services.BuildServiceProvider();
 
-        return BuildDispatcher(provider, capability);
+        return BuildDispatcher(provider, capability, metrics);
     }
 
     private static OutboxDispatcherBackgroundService BuildDispatcher(
         IServiceProvider services,
-        IOutboxCapabilityProvider capability)
+        IOutboxCapabilityProvider capability,
+        OutboxMetrics? metrics = null)
     {
         var options = Options.Create(new OutboxDispatcherOptions
         {
@@ -526,15 +530,17 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             services,
             capability,
             options,
+            metrics ?? TestTelemetry.CreateOutboxMetrics(),
             NullLogger<OutboxDispatcherBackgroundService>.Instance);
     }
 
     /// <summary>
-    /// Subscribes a <see cref="MeterListener"/> to a single named counter on the
-    /// shared Honua meter and accumulates the measurements observed during the
-    /// listener's lifetime. Tests use this to verify the dispatcher routes
-    /// terminal outcomes (Failed, DeadLettered, StaleClaim, Errored) onto the
-    /// expected counters rather than predicting from input shape.
+    /// Subscribes a <see cref="MeterListener"/> to a single named counter on a specific
+    /// meter instance and accumulates the measurements observed during the listener's
+    /// lifetime. Filtering by the exact meter instance (rather than the "Honua" name)
+    /// keeps parallel tests isolated from one another's instruments (#2802). Tests use
+    /// this to verify the dispatcher routes terminal outcomes (Failed, DeadLettered,
+    /// StaleClaim, Errored) onto the expected counters rather than predicting from input shape.
     /// </summary>
     private sealed class MeterSampleCollector : IDisposable
     {
@@ -543,13 +549,13 @@ public sealed class OutboxDispatcherBackgroundServiceTests
 
         public long Total => Interlocked.Read(ref _total);
 
-        private MeterSampleCollector(string instrumentName)
+        private MeterSampleCollector(Meter meter, string instrumentName)
         {
             _listener = new MeterListener
             {
                 InstrumentPublished = (instrument, l) =>
                 {
-                    if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    if (ReferenceEquals(instrument.Meter, meter)
                         && instrument.Name == instrumentName)
                     {
                         l.EnableMeasurementEvents(instrument);
@@ -561,7 +567,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             _listener.Start();
         }
 
-        public static MeterSampleCollector Subscribe(string instrumentName) => new(instrumentName);
+        public static MeterSampleCollector Subscribe(Meter meter, string instrumentName) => new(meter, instrumentName);
 
         public void Dispose() => _listener.Dispose();
     }

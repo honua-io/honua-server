@@ -24,18 +24,22 @@ internal readonly record struct PendingAlertDispatch(
 internal sealed partial class AlertDispatchWriter
 {
     private readonly IAlertOutboxWriter _outboxWriter;
+    private readonly AlertPipelineMetrics _metrics;
     private readonly ILogger<AlertDispatchWriter> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AlertDispatchWriter"/> class.
     /// </summary>
     /// <param name="outboxWriter">Atomic writer that appends each event and enqueues its dispatch in one transaction.</param>
+    /// <param name="metrics">Alert-pipeline metrics recorder.</param>
     /// <param name="logger">Logger for dispatch-persistence diagnostics.</param>
     public AlertDispatchWriter(
         IAlertOutboxWriter outboxWriter,
+        AlertPipelineMetrics metrics,
         ILogger<AlertDispatchWriter> logger)
     {
         _outboxWriter = outboxWriter ?? throw new ArgumentNullException(nameof(outboxWriter));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -66,11 +70,11 @@ internal sealed partial class AlertDispatchWriter
                 continue;
             }
 
-            AlertPipelineMetrics.RecordEventEmitted(pendingDispatch.AlertEvent.TriggerType);
+            _metrics.RecordEventEmitted(pendingDispatch.AlertEvent.TriggerType);
 
             foreach (var channel in pendingDispatch.Channels.Distinct())
             {
-                AlertPipelineMetrics.RecordDispatchEnqueued(channel);
+                _metrics.RecordDispatchEnqueued(channel);
             }
         }
     }

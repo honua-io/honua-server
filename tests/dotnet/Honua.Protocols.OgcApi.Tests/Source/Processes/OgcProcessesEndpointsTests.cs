@@ -212,6 +212,96 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_RasterSurfaceProcess_ReturnsDescription()
+    {
+        // #2698: raster/surface process ids are projected for direct discovery,
+        // exactly like the first-slice vector ids. surface.slope is a real registered
+        // ProcessDefinition (GdalSurfaceJobExecutor); it previously returned 404.
+        var response = await _fixture.Client.GetAsync("/ogc/processes/processes/surface.slope");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("id").GetString().Should().Be("surface.slope");
+        root.GetProperty("jobControlOptions").EnumerateArray()
+            .Select(e => e.GetString()).Should().Contain("async-execute");
+        // The GDAL slope tool emits a raster artifact, so the description advertises
+        // an outputRaster output.
+        root.GetProperty("outputs").TryGetProperty("outputRaster", out _).Should().BeTrue();
+        // Execute link is present so callers can drive direct execution.
+        root.GetProperty("links").EnumerateArray()
+            .Select(l => l.GetProperty("rel").GetString())
+            .Should().Contain("http://www.opengis.net/def/rel/ogc/1.0/execute");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes")]
+    public async Task ProcessList_IncludesRasterSurfaceProcesses()
+    {
+        // #2698: raster/surface ids appear in the process list alongside the
+        // first-slice vector ids so SDK clients can discover them for direct execution.
+        var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var ids = json.RootElement.GetProperty("processes").EnumerateArray()
+            .Select(p => p.GetProperty("id").GetString())
+            .ToArray();
+        ids.Should().Contain(["surface.slope", "surface.hillshade", "raster.clip", "raster.zonal-statistics"]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess()
+    {
+        // #2698: direct execution of a raster/surface id must reach the shared async
+        // submission pipeline (201 async, or 503 when Redis is unavailable in this
+        // test env) rather than 404 no-such-process. A single-step honua-geoprocessing
+        // plan wrapping surface.slope has always executed; the direct id now does too.
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"source":"AAAA","units":"degrees"}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().BeOneOf(
+            HttpStatusCode.Created,
+            HttpStatusCode.ServiceUnavailable,
+            HttpStatusCode.InternalServerError);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_RasterSurfaceProcess_InvalidEnumValue_Returns400()
+    {
+        // Parity with the vector path: the same shared catalog validation applies on
+        // the direct raster path, so a bad enum surfaces as 400 (not 404), proving the
+        // process is recognised and validated rather than rejected as unknown.
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"source":"AAAA","units":"radians"}}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("units");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_InvalidId_Returns404()
     {
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes/nonexistent");

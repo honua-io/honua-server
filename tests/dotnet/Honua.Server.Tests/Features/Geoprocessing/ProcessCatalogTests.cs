@@ -205,6 +205,77 @@ public sealed class ProcessCatalogTests
         definition!.ExecutionTier.Should().Be(ProcessExecutionTier.Analytic);
     }
 
+    // The set of built-ins that write durable state and therefore MUST carry
+    // ProcessExecutionTier.Mutating. This is the reviewed snapshot; the two invariant
+    // tests below make ExecutionTier a forced, auditable decision rather than a
+    // fail-open default that a future mutating built-in could silently omit (#2798).
+    private static readonly string[] ExpectedMutatingProcessIds =
+    [
+        "data-management.copy-features",
+        "data-management.delete-features",
+        "data-management.calculate-field",
+        "import.dataset",
+        "sink.geojson-file",
+        "sink.quarantine",
+        "sink.external-postgis",
+        "sink.honua-layer",
+    ];
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_MutatingExecutionTier_MatchesReviewedSnapshotExactly()
+    {
+        // Exact snapshot: any process newly marked Mutating (or a mutating built-in that
+        // regresses to Analytic) forces this list to be updated as a conscious decision,
+        // so the tier can never drift silently in either direction.
+        var actualMutating = _catalog.ListProcesses()
+            .Where(p => p.ExecutionTier == ProcessExecutionTier.Mutating)
+            .Select(p => p.ProcessId)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+
+        actualMutating.Should().BeEquivalentTo(
+            ExpectedMutatingProcessIds,
+            because: "durable side-effect processes must be classified Mutating and the reviewed "
+                + "snapshot must be updated deliberately when the mutating set changes");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_SinkAndImportCategories_AreAlwaysMutating()
+    {
+        // Structural guard on the two highest-risk categories: every sink/import process
+        // writes durable, caller-selected state, so a new one that forgets ExecutionTier
+        // (defaulting to Analytic) fails here instead of shipping a fail-open tool. The
+        // 'data-management' category is intentionally NOT included: data-management.append
+        // is a pure inline transform (both FeatureCollections are supplied as data URIs and
+        // it emits a new one), so it is deliberately Analytic while its siblings mutate the
+        // catalog.
+        var sinkAndImport = _catalog.ListProcesses()
+            .Where(p => p.Category is "sink" or "import")
+            .ToArray();
+
+        sinkAndImport.Should().NotBeEmpty();
+        sinkAndImport.Should().OnlyContain(
+            p => p.ExecutionTier == ProcessExecutionTier.Mutating,
+            because: "every sink/import built-in writes durable state and must not fail open to Analytic");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_DataManagementAppend_IsAnalyticByDesign()
+    {
+        // Pin the deliberate exception so a reader is not left wondering why the
+        // data-management category is excluded from the structural guard above.
+        var append = _catalog.GetProcess("data-management.append");
+
+        append.Should().NotBeNull();
+        append!.ExecutionTier.Should().Be(ProcessExecutionTier.Analytic);
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
