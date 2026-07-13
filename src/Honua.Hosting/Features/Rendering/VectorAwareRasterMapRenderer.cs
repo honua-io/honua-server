@@ -101,8 +101,8 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot is not null &&
-            snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) &&
+        var resource = snapshot is null ? null : ResolveResourceForLayer(snapshot, layerId, request);
+        if (resource is not null &&
             HasGeometry(resource))
         {
             var styleJson = await ResolveExplicitStyleJsonAsync(styleId, cancellationToken).ConfigureAwait(false);
@@ -138,8 +138,8 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         var geometryLayers = new List<(int LayerId, MetadataV2Resource Resource)>(layerIds.Length);
         foreach (var layerId in layerIds)
         {
-            if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) &&
-                HasGeometry(resource))
+            var resource = ResolveResourceForLayer(snapshot, layerId, request);
+            if (resource is not null && HasGeometry(resource))
             {
                 geometryLayers.Add((layerId, resource));
             }
@@ -263,6 +263,35 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     }
 
     private const int DefaultSrid = 4326;
+
+    /// <summary>
+    /// Resolves the resource for <paramref name="layerId"/>, preferring the handler-resolved
+    /// identity carried on <see cref="MapRenderRequest.ResolvedLayers"/> (looked up by
+    /// canonical resource id) so a colliding StorageLayerId does not re-resolve first-wins to
+    /// the wrong (e.g. raster) resource. Falls back to the first-wins storage-layer index when
+    /// no resolved identity is supplied (legacy callers) (#2799).
+    /// </summary>
+    private static MetadataV2Resource? ResolveResourceForLayer(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        MapRenderRequest request)
+    {
+        if (request.ResolvedLayers is { } resolved)
+        {
+            foreach (var entry in resolved)
+            {
+                if (entry.LayerId == layerId &&
+                    snapshot.Index.ResourcesById.TryGetValue(entry.ResourceId, out var byId))
+                {
+                    return byId;
+                }
+            }
+        }
+
+        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byLayer)
+            ? byLayer
+            : null;
+    }
 
     private static bool HasGeometry(MetadataV2Resource resource)
         => resource.ReadGeometryType() != MetadataV2GeometryType.None ||
