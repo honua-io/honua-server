@@ -377,15 +377,5 @@ public static partial class OgcMapsEndpoints
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)
-    {
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
 }

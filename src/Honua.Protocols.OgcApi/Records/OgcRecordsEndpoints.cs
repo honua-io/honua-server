@@ -706,13 +706,10 @@ internal static class OgcRecordsEndpoints
         }
 
         DateTimeOffset? end = start;
-        if (parts.Length == 2)
+        if (parts.Length == 2 && !TryParseDatePart(parts[1], out end))
         {
-            if (!TryParseDatePart(parts[1], out end))
-            {
-                error = "datetime end is not a valid RFC 3339 value.";
-                return false;
-            }
+            error = "datetime end is not a valid RFC 3339 value.";
+            return false;
         }
 
         filter = new DateTimeFilter(start, end);

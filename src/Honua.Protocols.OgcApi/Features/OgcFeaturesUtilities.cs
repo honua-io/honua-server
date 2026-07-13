@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -235,14 +236,7 @@ internal static class OgcFeaturesUtilities
         ArgumentNullException.ThrowIfNull(resource);
 
         var allowed = new HashSet<string>(AllowedQueryParameters.Items, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var field in resource.SchemaFields)
-        {
-            if (IsSimpleQueryableField(field))
-            {
-                allowed.Add(field.Name);
-            }
-        }
+        allowed.UnionWith(resource.SchemaFields.Where(IsSimpleQueryableField).Select(field => field.Name));
 
         var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
         var error = QueryParameterValidationHelpers.GetValidationError(

@@ -207,13 +207,13 @@ internal sealed partial class OgcFilterProcessor
                     .Select(static definition => definition.Srid)
                     .ToHashSet();
 
-                foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(filterExpression))
+                var unsupportedSrid = FilterGeometryCrsValidator.GetExplicitGeometrySrids(filterExpression)
+                    .Cast<int?>()
+                    .FirstOrDefault(srid => !supportedSrids.Contains(srid!.Value));
+                if (unsupportedSrid.HasValue)
                 {
-                    if (!supportedSrids.Contains(explicitGeometrySrid))
-                    {
-                        return FilterProcessingResult.Failure(
-                            $"{InvalidCqlFilterPrefix}: Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}' for this collection.");
-                    }
+                    return FilterProcessingResult.Failure(
+                        $"{InvalidCqlFilterPrefix}: Unsupported explicit geometry CRS 'EPSG:{unsupportedSrid}' for this collection.");
                 }
             }
 
@@ -539,16 +539,14 @@ internal sealed partial class OgcFilterProcessor
             return BboxParseResult.Failure("Bounding box minimum X must be less than or equal to maximum X for projected CRS.");
         }
 
-        if (crsDefinition.IsGeographic)
+        // Validate ALL longitude bounds independently before interpreting a reversed-X
+        // (minX > maxX) bbox as an antimeridian crossing. Otherwise an out-of-range west
+        // longitude (e.g. minX > 180) would slip through as a "crossing" and build a
+        // degenerate envelope returning zero features instead of a 400.
+        if (crsDefinition.IsGeographic &&
+            (minX < -180 || minX > 180 || maxX < -180 || maxX > 180 || minY < -90 || maxY > 90))
         {
-            // Validate ALL longitude bounds independently before interpreting a reversed-X
-            // (minX > maxX) bbox as an antimeridian crossing. Otherwise an out-of-range west
-            // longitude (e.g. minX > 180) would slip through as a "crossing" and build a
-            // degenerate envelope returning zero features instead of a 400.
-            if (minX < -180 || minX > 180 || maxX < -180 || maxX > 180 || minY < -90 || maxY > 90)
-            {
-                return BboxParseResult.Failure("Bounding box coordinates are out of valid range.");
-            }
+            return BboxParseResult.Failure("Bounding box coordinates are out of valid range.");
         }
 
         var bbox = new BoundingBox(minX, minY, maxX, maxY);

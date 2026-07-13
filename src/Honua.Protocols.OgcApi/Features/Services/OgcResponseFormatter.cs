@@ -167,6 +167,9 @@ internal static class OgcResponseFormatter
         }
         catch
         {
+            // Best-effort HTML stats/nav-link enhancement over an already-serialized JSON
+            // payload; if the shape is unexpected, omit the fragment rather than fail the
+            // HTML response for what is a purely cosmetic feature.
             return string.Empty;
         }
     }
@@ -504,22 +507,23 @@ internal static class OgcResponseFormatter
         return $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos>{coordinatesJson}</gml:pos></gml:Point>";
     }
 
+    /// <summary>
+    /// Extracts "x y" GML posList tokens from a JSON coordinate ring, skipping any
+    /// coordinate tuple with fewer than 2 ordinates.
+    /// </summary>
+    private static List<string> ExtractGmlCoordinatePairs(JsonElement ring)
+        => ring.EnumerateArray()
+            .Select(coord => coord.EnumerateArray().ToArray())
+            .Where(coordArray => coordArray.Length >= 2)
+            .Select(coordArray => $"{coordArray[0].GetDouble()} {coordArray[1].GetDouble()}")
+            .ToList();
+
     private static string BuildGmlLineString(string coordinatesJson, string indent, string srsName)
     {
         try
         {
             using var document = JsonDocument.Parse(coordinatesJson);
-            var coordinates = new List<string>();
-            foreach (var coord in document.RootElement.EnumerateArray())
-            {
-                var coordArray = coord.EnumerateArray().ToArray();
-                if (coordArray.Length >= 2)
-                {
-                    var x = coordArray[0].GetDouble();
-                    var y = coordArray[1].GetDouble();
-                    coordinates.Add($"{x} {y}");
-                }
-            }
+            var coordinates = ExtractGmlCoordinatePairs(document.RootElement);
 
             if (coordinates.Count > 0)
             {
@@ -548,17 +552,7 @@ internal static class OgcResponseFormatter
 
                 // Exterior ring
                 var exteriorRing = rings[0];
-                var coordinates = new List<string>();
-                foreach (var coord in exteriorRing.EnumerateArray())
-                {
-                    var coordArray = coord.EnumerateArray().ToArray();
-                    if (coordArray.Length >= 2)
-                    {
-                        var x = coordArray[0].GetDouble();
-                        var y = coordArray[1].GetDouble();
-                        coordinates.Add($"{x} {y}");
-                    }
-                }
+                var coordinates = ExtractGmlCoordinatePairs(exteriorRing);
 
                 if (coordinates.Count > 0)
                 {
@@ -574,17 +568,7 @@ internal static class OgcResponseFormatter
                 for (int i = 1; i < rings.Length; i++)
                 {
                     var interiorRing = rings[i];
-                    var interiorCoordinates = new List<string>();
-                    foreach (var coord in interiorRing.EnumerateArray())
-                    {
-                        var coordArray = coord.EnumerateArray().ToArray();
-                        if (coordArray.Length >= 2)
-                        {
-                            var x = coordArray[0].GetDouble();
-                            var y = coordArray[1].GetDouble();
-                            interiorCoordinates.Add($"{x} {y}");
-                        }
-                    }
+                    var interiorCoordinates = ExtractGmlCoordinatePairs(interiorRing);
 
                     if (interiorCoordinates.Count > 0)
                     {
@@ -658,17 +642,7 @@ internal static class OgcResponseFormatter
 
                 foreach (var lineString in lineStrings)
                 {
-                    var coordinates = new List<string>();
-                    foreach (var coord in lineString.EnumerateArray())
-                    {
-                        var coordArray = coord.EnumerateArray().ToArray();
-                        if (coordArray.Length >= 2)
-                        {
-                            var x = coordArray[0].GetDouble();
-                            var y = coordArray[1].GetDouble();
-                            coordinates.Add($"{x} {y}");
-                        }
-                    }
+                    var coordinates = ExtractGmlCoordinatePairs(lineString);
 
                     if (coordinates.Count > 0)
                     {
@@ -712,17 +686,7 @@ internal static class OgcResponseFormatter
 
                         // Exterior ring
                         var exteriorRing = rings[0];
-                        var coordinates = new List<string>();
-                        foreach (var coord in exteriorRing.EnumerateArray())
-                        {
-                            var coordArray = coord.EnumerateArray().ToArray();
-                            if (coordArray.Length >= 2)
-                            {
-                                var x = coordArray[0].GetDouble();
-                                var y = coordArray[1].GetDouble();
-                                coordinates.Add($"{x} {y}");
-                            }
-                        }
+                        var coordinates = ExtractGmlCoordinatePairs(exteriorRing);
 
                         if (coordinates.Count > 0)
                         {
@@ -738,17 +702,7 @@ internal static class OgcResponseFormatter
                         for (int i = 1; i < rings.Length; i++)
                         {
                             var interiorRing = rings[i];
-                            var interiorCoordinates = new List<string>();
-                            foreach (var coord in interiorRing.EnumerateArray())
-                            {
-                                var coordArray = coord.EnumerateArray().ToArray();
-                                if (coordArray.Length >= 2)
-                                {
-                                    var x = coordArray[0].GetDouble();
-                                    var y = coordArray[1].GetDouble();
-                                    interiorCoordinates.Add($"{x} {y}");
-                                }
-                            }
+                            var interiorCoordinates = ExtractGmlCoordinatePairs(interiorRing);
 
                             if (interiorCoordinates.Count > 0)
                             {
@@ -1000,14 +954,10 @@ internal static class OgcResponseFormatter
         foreach (var feature in features)
         {
             var row = new List<string> { feature.Id?.ToString() ?? "" };
-
-            foreach (var fieldName in fieldNames)
-            {
-                var value = feature.Properties?.TryGetValue(fieldName, out var fieldValue) == true
+            row.AddRange(fieldNames.Select(fieldName =>
+                feature.Properties?.TryGetValue(fieldName, out var fieldValue) == true
                     ? fieldValue?.ToString() ?? ""
-                    : "";
-                row.Add(value);
-            }
+                    : ""));
 
             var geometryValue = BuildCsvGeometryValue(feature.Geometry);
             row.Add(geometryValue);

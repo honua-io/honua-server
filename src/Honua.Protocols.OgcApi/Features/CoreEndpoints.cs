@@ -49,7 +49,7 @@ internal static class CoreEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var landing = endpoints.MapGet("/ogc/features", HandleGetLandingPage)
+        endpoints.MapGet("/ogc/features", HandleGetLandingPage)
             .WithDisplayName("OGC API Features Landing Page")
             .WithName("OgcLandingPage")
             .WithSummary("Get OGC API Features landing page")
@@ -60,7 +60,7 @@ internal static class CoreEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
-        var conformance = endpoints.MapGet("/ogc/features/conformance", HandleGetConformance)
+        endpoints.MapGet("/ogc/features/conformance", HandleGetConformance)
             .WithDisplayName("OGC API Features Conformance")
             .WithName("OgcConformance")
             .WithSummary("Get OGC API Features conformance declaration")
@@ -71,7 +71,7 @@ internal static class CoreEndpoints
             .Produces<string>(200, MediaTypes.Html)
             .Produces(404);
 
-        var openApi = endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
+        endpoints.MapGet("/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Features OpenAPI Specification")
             .WithName("OpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")
@@ -82,7 +82,7 @@ internal static class CoreEndpoints
             .Produces(404);
 
         // OGC clients commonly expect the API definition at /ogc/features/api
-        var apiAlias = endpoints.MapGet("/ogc/features/api", HandleGetOpenApiSpec)
+        endpoints.MapGet("/ogc/features/api", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Features API Definition")
             .WithName("OgcApiDefinition")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Features")

@@ -195,8 +195,6 @@ internal static class ProcessEndpoints
         // both respond-async and respond-sync can be checked against the same
         // header values.
         var hasPreferHeader = context.Request.Headers.TryGetValue("Prefer", out var preferValues);
-        var preferAsync = hasPreferHeader
-            && preferValues.Any(v => v != null && v.Contains("respond-async", StringComparison.OrdinalIgnoreCase));
         var preferSync = hasPreferHeader
             && preferValues.Any(v => v != null && v.Contains("respond-sync", StringComparison.OrdinalIgnoreCase));
 
@@ -856,14 +854,12 @@ internal static class ProcessEndpoints
         string? alternatePropertyName,
         out string? value)
     {
-        if (element.TryGetProperty(propertyName, out var property)
-            || (alternatePropertyName != null && element.TryGetProperty(alternatePropertyName, out property)))
+        if ((element.TryGetProperty(propertyName, out var property)
+                || (alternatePropertyName != null && element.TryGetProperty(alternatePropertyName, out property)))
+            && property.ValueKind == JsonValueKind.String)
         {
-            if (property.ValueKind == JsonValueKind.String)
-            {
-                value = property.GetString();
-                return true;
-            }
+            value = property.GetString();
+            return true;
         }
 
         value = null;

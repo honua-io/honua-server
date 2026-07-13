@@ -13,7 +13,7 @@ internal static class CoreEndpoints
 {
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var landing = endpoints.MapGet("/ogc/tiles", HandleGetLandingPage)
+        endpoints.MapGet("/ogc/tiles", HandleGetLandingPage)
             .WithDisplayName("OGC API Tiles Landing Page")
             .WithName("OgcTilesLandingPage")
             .WithSummary("Get OGC API Tiles landing page")
@@ -23,7 +23,7 @@ internal static class CoreEndpoints
             .Produces<LandingPage>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var conformance = endpoints.MapGet("/ogc/tiles/conformance", HandleGetConformance)
+        endpoints.MapGet("/ogc/tiles/conformance", HandleGetConformance)
             .WithDisplayName("OGC API Tiles Conformance")
             .WithName("OgcTilesConformance")
             .WithSummary("Get OGC API Tiles conformance declaration")
@@ -33,7 +33,7 @@ internal static class CoreEndpoints
             .Produces<ConformanceDeclaration>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var openApi = endpoints.MapGet("/ogc/tiles/openapi.json", HandleGetOpenApiSpec)
+        endpoints.MapGet("/ogc/tiles/openapi.json", HandleGetOpenApiSpec)
             .WithDisplayName("OGC API Tiles OpenAPI Specification")
             .WithName("OgcTilesOpenApiSpec")
             .WithSummary("Get OpenAPI 3.0 specification for OGC API Tiles")
