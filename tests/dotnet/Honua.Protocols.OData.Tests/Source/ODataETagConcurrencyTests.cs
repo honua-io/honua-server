@@ -65,7 +65,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
         etag.Should().NotBeNullOrWhiteSpace();
 
         // Second request with If-None-Match using the ETag
-        var request = new HttpRequestMessage(HttpMethod.Get,
+        using var request = new HttpRequestMessage(HttpMethod.Get,
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
         request.Headers.TryAddWithoutValidation("If-None-Match", etag);
 
@@ -78,7 +78,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task GetFeature_WithNonMatchingIfNoneMatch_Returns200()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get,
+        using var request = new HttpRequestMessage(HttpMethod.Get,
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
         request.Headers.TryAddWithoutValidation("If-None-Match", "\"non-matching-etag\"");
 
@@ -99,7 +99,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
         var etag = firstDoc.RootElement.GetProperty("@odata.etag").GetString();
 
         // Second request with matching If-Match
-        var request = new HttpRequestMessage(HttpMethod.Get,
+        using var request = new HttpRequestMessage(HttpMethod.Get,
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
         request.Headers.TryAddWithoutValidation("If-Match", etag);
 
@@ -112,7 +112,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task GetFeature_WithNonMatchingIfMatch_Returns412PreconditionFailed()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get,
+        using var request = new HttpRequestMessage(HttpMethod.Get,
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
         request.Headers.TryAddWithoutValidation("If-Match", "\"stale-etag-value\"");
 
@@ -125,7 +125,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
     [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task GetFeature_WithIfMatchWildcard_Returns200()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get,
+        using var request = new HttpRequestMessage(HttpMethod.Get,
             $"/odata/Features(LayerId={TestLayerId},ObjectId=1)");
         request.Headers.TryAddWithoutValidation("If-Match", "*");
 
@@ -153,7 +153,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
             Attributes = new Dictionary<string, object?> { ["name"] = "Updated ETag City" }
         };
         var json = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var patchMessage = new HttpRequestMessage(new HttpMethod("PATCH"),
+        using var patchMessage = new HttpRequestMessage(new HttpMethod("PATCH"),
             $"/odata/Features(LayerId={TestLayerId},ObjectId={existingId})")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
@@ -180,7 +180,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
             Attributes = new Dictionary<string, object?> { ["name"] = "Minimal Updated" }
         };
         var json = JsonSerializer.Serialize(updateRequest, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"),
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"),
             $"/odata/Features(LayerId={TestLayerId},ObjectId={existingId})")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
@@ -204,7 +204,7 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
             Attributes = new Dictionary<string, object?> { ["name"] = "Minimal Created City" }
         };
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(HttpMethod.Post,
+        using var message = new HttpRequestMessage(HttpMethod.Post,
             $"/odata/Layers({TestLayerId})/Features")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
@@ -228,9 +228,10 @@ public sealed class ODataETagConcurrencyTests : IAsyncLifetime
             Attributes = new Dictionary<string, object?> { ["name"] = "Location Header City" }
         };
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull("POST 201 should include Location header");

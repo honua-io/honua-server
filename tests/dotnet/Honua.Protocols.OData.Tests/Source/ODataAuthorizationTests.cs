@@ -47,9 +47,8 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/Layers(0)/Features",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/Layers(0)/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -59,9 +58,8 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
     [Endpoint("POST /odata/Layers({layerId})/Features")]
     public async Task CreateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation()
     {
-        var response = await _fixture.Client.PostAsync(
-            "/odata/Layers(0)/Features",
-            new StringContent("{", Encoding.UTF8, "application/json"));
+        using var content = new StringContent("{", Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/Layers(0)/Features", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -80,7 +78,7 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(request, ODataJsonContext.Default.ODataFeatureRequest);
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), "/odata/Features(LayerId=0,ObjectId=1)")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), "/odata/Features(LayerId=0,ObjectId=1)")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
@@ -95,7 +93,7 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
     [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     public async Task UpdateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation()
     {
-        var message = new HttpRequestMessage(new HttpMethod("PATCH"), "/odata/Features(LayerId=0,ObjectId=1)")
+        using var message = new HttpRequestMessage(new HttpMethod("PATCH"), "/odata/Features(LayerId=0,ObjectId=1)")
         {
             Content = new StringContent("{", Encoding.UTF8, "application/json")
         };
