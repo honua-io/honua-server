@@ -88,6 +88,9 @@ public sealed class EntrypointLoader
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: constructor activation can throw any user-authored
+            // exception type (including TargetInvocationException) and every failure must
+            // surface as a well-defined EntrypointException, not crash the harness process.
             throw new EntrypointException($"failed to activate '{typeName}': {ex.Message}");
         }
     }

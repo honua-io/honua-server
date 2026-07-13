@@ -29,6 +29,9 @@ internal static class PluginDependencyResolver
             byId[registration.Id] = registration.Manifest;
         }
 
+        // Not a candidate for .Select(r => r.Manifest): this loop validates and throws per
+        // registration rather than projecting a new sequence, so a LINQ projection would not
+        // improve clarity here.
         foreach (var registration in registrations)
         {
             var manifest = registration.Manifest;

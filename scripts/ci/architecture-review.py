@@ -274,9 +274,6 @@ def analyze_with_openai(context: str, api_key: str, is_test: bool) -> str:
 
         analysis_result = response.choices[0].message.content or ""
 
-        # Extract assessment level for workflow
-        assessment = extract_assessment_level(analysis_result)
-
         return analysis_result
 
     except Exception as e:
@@ -294,8 +291,6 @@ Please configure OPENAI_API_KEY in repository secrets and ensure OpenAI credits 
 
 def extract_assessment_level(analysis_text: str) -> str:
     """Extract the overall assessment level from analysis"""
-    import re
-
     # Look for "Overall Assessment:" line
     match = re.search(r'Overall Assessment:\s*([A-Z_]+)', analysis_text)
     if match:

@@ -131,6 +131,8 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 throw;
             }
+            // Intentional catch-all: this is a per-provider attempt inside the failover loop;
+            // the exception is already logged with full detail below and failover to the next provider continues.
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -243,6 +245,8 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 throw;
             }
+            // Intentional catch-all: this is a per-provider attempt inside the failover loop;
+            // the exception is already logged with full detail below and failover to the next provider continues.
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -357,6 +361,8 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 throw;
             }
+            // Intentional catch-all: this is a per-provider attempt inside the failover loop;
+            // the exception is already logged with full detail below and failover to the next provider continues.
             catch (Exception ex)
             {
                 stopwatch.Stop();
@@ -489,6 +495,8 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             {
                 throw;
             }
+            // Intentional catch-all: this is a per-provider attempt inside the failover loop;
+            // the exception is already logged with full detail below and failover to the next provider continues.
             catch (Exception ex)
             {
                 stopwatch.Stop();

@@ -281,7 +281,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
             NumberMatched: numberMatched,
             SampleCount: sampleItems.Length,
             HasItemsLink: detailDocument.Links?.Any(static link =>
-                string.Equals(link.Rel, "items", StringComparison.OrdinalIgnoreCase)) == true,
+                string.Equals(link.Rel, "items", StringComparison.OrdinalIgnoreCase)) ?? false,
             SupportsPaging: nextPage?.Document != null ||
                 (itemsDocument?.NumberMatched ?? itemsDocument?.NumberReturned ?? 0) > (itemsDocument?.NumberReturned ?? 0),
             MissingDatetimeCount: missingDatetimeCount,
@@ -1373,6 +1373,8 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         }
         catch
         {
+            // Intentional catch-all: any non-UTF8/invalid byte sequence should render as a
+            // placeholder for the request ledger rather than throw out of the demo UI.
             return "<binary>";
         }
     }
@@ -1427,17 +1429,9 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
     }
 
     private static string GetExtensionKeyFromUri(string extensionUri)
-    {
-        foreach (var descriptor in KnownExtensions)
-        {
-            if (extensionUri.Contains(descriptor.UriMarker, StringComparison.OrdinalIgnoreCase))
-            {
-                return descriptor.Key;
-            }
-        }
-
-        return extensionUri;
-    }
+        => KnownExtensions.FirstOrDefault(descriptor =>
+            extensionUri.Contains(descriptor.UriMarker, StringComparison.OrdinalIgnoreCase))?.Key
+           ?? extensionUri;
 
     private static string GetExtensionKeyFromPrefix(string prefix)
         => KnownExtensionsByKey.ContainsKey(prefix) ? prefix : prefix;

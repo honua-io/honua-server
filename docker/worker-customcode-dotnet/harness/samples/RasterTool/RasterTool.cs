@@ -37,6 +37,9 @@ public sealed class RasterTool : IGeoprocessingTool
     // sensible local epsilon for "denominator is effectively zero".
     private const float DenominatorEpsilon = 1e-6f;
 
+    // Intentionally static and mutated from an instance method: GDAL driver
+    // registration is process-global (native/unmanaged state), not per-tool-instance,
+    // so the guard must be shared across every RasterTool instance in the process.
     private static int _initialized;
 
     /// <inheritdoc />

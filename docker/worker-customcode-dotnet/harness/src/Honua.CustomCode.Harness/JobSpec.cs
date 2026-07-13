@@ -386,15 +386,7 @@ public sealed class JobSpec
             return false;
         }
 
-        foreach (var segment in path.Split('/', '\\'))
-        {
-            if (segment == "..")
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return !path.Split('/', '\\').Any(segment => segment == "..");
     }
 
     private static bool StartsWithAny(string value, params string[] prefixes)
