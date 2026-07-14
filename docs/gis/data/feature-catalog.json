@@ -7470,6 +7470,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-id-imageserver-computetiepoints",
+      "route": "/rest/services/{id}/ImageServer/computeTiePoints",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_NoControlPoints_ReturnsNotImplemented",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-id-imageserver-conf-json",
       "route": "/rest/services/{id}/ImageServer/conf.json",
       "method": "GET",
@@ -9124,6 +9138,19 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-computetiepoints",
+      "route": "/rest/services/{serviceId}/ImageServer/computeTiePoints",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -15800,6 +15827,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-id-imageserver-computetiepoints",
+      "route": "/rest/services/{id}/ImageServer/computeTiePoints",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-id-imageserver-estimateexporttilessize",
       "route": "/rest/services/{id}/ImageServer/estimateExportTilesSize",
       "method": "POST",
@@ -16992,6 +17032,19 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-rest-services-serviceid-imageserver-computetiepoints",
+      "route": "/rest/services/{serviceId}/ImageServer/computeTiePoints",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"

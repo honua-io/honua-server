@@ -115,4 +115,101 @@ public class ImageServerSensorModelTests
         ImageServerSensorModel.TryReadRpc(null).Should().BeNull();
         ImageServerSensorModel.TryReadRpc(new RasterSensorMetadata { RasterDataId = 1 }).Should().BeNull();
     }
+
+    [UnitTest]
+    public void ReadControlPoints_WithPairedPoints_ParsesImageAndReferenceCoordinates()
+    {
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """
+            {
+              "controlPoints": [
+                { "imagePoint": { "x": 512.0, "y": 384.0 },
+                  "referencePoint": { "x": -117.161, "y": 32.716, "z": 104.2, "spatialReference": { "wkid": 4326 } } },
+                { "sourcePoint": { "x": 1024.0, "y": 768.0 },
+                  "targetPoint": { "x": -117.155, "y": 32.720 } }
+              ]
+            }
+            """,
+        };
+
+        var points = ImageServerSensorModel.ReadControlPoints(metadata, defaultReferenceSrid: 3857);
+
+        points.Should().HaveCount(2);
+
+        points[0].ImageX.Should().Be(512.0);
+        points[0].ImageY.Should().Be(384.0);
+        points[0].ReferenceX.Should().Be(-117.161);
+        points[0].ReferenceY.Should().Be(32.716);
+        points[0].ReferenceZ.Should().Be(104.2);
+        points[0].ReferenceSrid.Should().Be(4326);
+
+        // sourcePoint/targetPoint aliases parse; missing SR falls back to the default (raster) SRID.
+        points[1].ImageX.Should().Be(1024.0);
+        points[1].ReferenceZ.Should().BeNull();
+        points[1].ReferenceSrid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    public void ReadControlPoints_WithTiePointsAndGcpsAliases_ParsesArray()
+    {
+        var tiePoints = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """
+            { "tiePoints": [ { "imagePoint": { "x": 1, "y": 2 }, "referencePoint": { "x": 3, "y": 4 } } ] }
+            """,
+        };
+        var gcps = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """
+            { "gcps": [ { "imagePoint": { "x": 1, "y": 2 }, "referencePoint": { "x": 3, "y": 4 } } ] }
+            """,
+        };
+
+        ImageServerSensorModel.ReadControlPoints(tiePoints).Should().HaveCount(1);
+        ImageServerSensorModel.ReadControlPoints(gcps).Should().HaveCount(1);
+    }
+
+    [UnitTest]
+    public void ReadControlPoints_SkipsEntriesMissingEitherPointOrCoordinates()
+    {
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """
+            {
+              "controlPoints": [
+                { "imagePoint": { "x": 1, "y": 2 } },
+                { "referencePoint": { "x": 3, "y": 4 } },
+                { "imagePoint": { "x": 5 }, "referencePoint": { "x": 6, "y": 7 } },
+                { "imagePoint": { "x": 8, "y": 9 }, "referencePoint": { "x": 10, "y": 11 } }
+              ]
+            }
+            """,
+        };
+
+        var points = ImageServerSensorModel.ReadControlPoints(metadata);
+        points.Should().HaveCount(1);
+        points[0].ImageX.Should().Be(8);
+    }
+
+    [UnitTest]
+    public void ReadControlPoints_WithNoMetadataOrControlPoints_ReturnsEmpty()
+    {
+        ImageServerSensorModel.ReadControlPoints(null).Should().BeEmpty();
+        ImageServerSensorModel.ReadControlPoints(new RasterSensorMetadata { RasterDataId = 1 }).Should().BeEmpty();
+        ImageServerSensorModel.ReadControlPoints(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"offNadirAngle": 5}""",
+        }).Should().BeEmpty();
+        ImageServerSensorModel.ReadControlPoints(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = "{not-json",
+        }).Should().BeEmpty();
+    }
 }

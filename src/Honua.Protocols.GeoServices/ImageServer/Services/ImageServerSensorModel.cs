@@ -113,6 +113,129 @@ internal static class ImageServerSensorModel
         }
     }
 
+    /// <summary>
+    /// Reads pre-registered photogrammetric control points (ground control points / tie points)
+    /// from the exterior-orientation payload. Control points live under a <c>controlPoints</c>
+    /// array (aliases <c>tiePoints</c>, <c>gcps</c>); each entry pairs an <c>imagePoint</c>
+    /// (aliases <c>sourcePoint</c>) in pixel space with a <c>referencePoint</c> (aliases
+    /// <c>targetPoint</c>, <c>groundPoint</c>) in ground/map space. See ADR-0064 for the schema.
+    /// Entries missing either point or with non-numeric coordinates are skipped defensively.
+    /// Returns an empty list when the payload is missing, malformed, or carries no valid pairs —
+    /// callers treat that as "no control points modeled" and return an honest 501 rather than
+    /// fabricating tie points (automatic feature matching is out of scope, ADR-0064).
+    /// </summary>
+    /// <param name="metadata">The raster's sensor metadata, or <c>null</c>.</param>
+    /// <param name="defaultReferenceSrid">
+    /// Fallback SRID applied to reference points that carry no explicit spatial reference
+    /// (typically the raster SRID).
+    /// </param>
+    /// <returns>The parsed control points; empty when none are modeled.</returns>
+    public static IReadOnlyList<PhotogrammetricControlPoint> ReadControlPoints(
+        RasterSensorMetadata? metadata,
+        int? defaultReferenceSrid = null)
+    {
+        if (metadata?.ExteriorOrientationJson is not { Length: > 0 } json)
+        {
+            return Array.Empty<PhotogrammetricControlPoint>();
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !TryGetArray(root, out var array, "controlPoints", "tiePoints", "gcps"))
+            {
+                return Array.Empty<PhotogrammetricControlPoint>();
+            }
+
+            var points = new List<PhotogrammetricControlPoint>(array.GetArrayLength());
+            foreach (var element in array.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object ||
+                    !TryGetObject(element, out var imageElement, "imagePoint", "sourcePoint") ||
+                    !TryGetObject(element, out var referenceElement, "referencePoint", "targetPoint", "groundPoint"))
+                {
+                    continue;
+                }
+
+                if (!TryGetDouble(imageElement, "x", out var imageX) ||
+                    !TryGetDouble(imageElement, "y", out var imageY) ||
+                    !TryGetDouble(referenceElement, "x", out var referenceX) ||
+                    !TryGetDouble(referenceElement, "y", out var referenceY))
+                {
+                    continue;
+                }
+
+                double? referenceZ = TryGetDouble(referenceElement, "z", out var z) ? z : null;
+                var referenceSrid = ReadWkid(referenceElement) ?? defaultReferenceSrid;
+                var imageSrid = ReadWkid(imageElement);
+
+                points.Add(new PhotogrammetricControlPoint(
+                    imageX, imageY, imageSrid,
+                    referenceX, referenceY, referenceZ, referenceSrid));
+            }
+
+            return points;
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<PhotogrammetricControlPoint>();
+        }
+    }
+
+    private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out array) && array.ValueKind == JsonValueKind.Array)
+            {
+                return true;
+            }
+        }
+
+        array = default;
+        return false;
+    }
+
+    private static bool TryGetObject(JsonElement root, out JsonElement value, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out value) && value.ValueKind == JsonValueKind.Object)
+            {
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static int? ReadWkid(JsonElement element)
+    {
+        if (!element.TryGetProperty("spatialReference", out var sr) || sr.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (sr.TryGetProperty("latestWkid", out var latest) &&
+            latest.ValueKind == JsonValueKind.Number &&
+            latest.TryGetInt32(out var latestWkid))
+        {
+            return latestWkid;
+        }
+
+        if (sr.TryGetProperty("wkid", out var wkid) &&
+            wkid.ValueKind == JsonValueKind.Number &&
+            wkid.TryGetInt32(out var wkidValue))
+        {
+            return wkidValue;
+        }
+
+        return null;
+    }
+
     private static bool TryReadAny(JsonElement root, out double value, params string[] names)
     {
         // Not rewritten as .Where(...): this is a first-match short-circuit over the
@@ -150,6 +273,28 @@ internal static class ImageServerSensorModel
         }
     }
 }
+
+/// <summary>
+/// A pre-registered photogrammetric control point pairing an image (pixel-space) location with
+/// a reference (ground/map-space) location, parsed from the raster's exterior-orientation
+/// payload (ADR-0064). Backs the honest <c>computeTiePoints</c> pass-through: these are stored
+/// control points, never values derived by feature matching.
+/// </summary>
+/// <param name="ImageX">Image sample/column coordinate (pixel space).</param>
+/// <param name="ImageY">Image line/row coordinate (pixel space).</param>
+/// <param name="ImageSrid">Optional spatial reference of the image point; normally none (pixel space).</param>
+/// <param name="ReferenceX">Reference/ground X coordinate.</param>
+/// <param name="ReferenceY">Reference/ground Y coordinate.</param>
+/// <param name="ReferenceZ">Optional reference/ground Z (elevation) coordinate.</param>
+/// <param name="ReferenceSrid">Spatial reference of the reference point (defaults to the raster SRID).</param>
+internal readonly record struct PhotogrammetricControlPoint(
+    double ImageX,
+    double ImageY,
+    int? ImageSrid,
+    double ReferenceX,
+    double ReferenceY,
+    double? ReferenceZ,
+    int? ReferenceSrid);
 
 /// <summary>
 /// First-order RPC image↔ground model expressed through the standard RPC offset/scale
