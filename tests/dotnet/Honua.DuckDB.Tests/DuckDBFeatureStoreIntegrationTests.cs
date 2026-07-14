@@ -98,8 +98,12 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     public Task DisposeAsync()
     {
         _spatialBootstrap?.Dispose();
-        try { File.Delete(_dbPath); } catch { /* best effort cleanup */ }
-        try { File.Delete(_dbPath + ".wal"); } catch { /* best effort cleanup */ }
+
+        // Intentional catch-all: best-effort deletion of the per-test scratch DuckDB
+        // files; a failed cleanup (e.g. the file is still locked) must not fail teardown.
+        try { File.Delete(_dbPath); } catch { }
+
+        try { File.Delete(_dbPath + ".wal"); } catch { }
         return Task.CompletedTask;
     }
 
