@@ -42,7 +42,7 @@
     "outputs": ["FeatureLayer"]
   },
   "expectedOutcome": {
-    "isExecutable": true,
+    "isExecutable": false,
     "directSubmitExecutable": false,
     "requiresApproval": false,
     "estimatedArtifactKinds": ["FeatureLayer"],

@@ -1236,10 +1236,11 @@ sql:
           CONSTRAINT investigation_links_valid_resource CHECK (length(resource_id) > 0)
       );
   - "CREATE INDEX IF NOT EXISTS idx_investigation_links_investigation ON honua.investigation_links(investigation_id, link_id);"
-  # Persisted ops-health rollup store (#2553). Mirrors migration
-  # 077_CreateOpsHealthRollup.sql so the migration-skipping integration fixture has the tables;
-  # PostgresOpsHealthRollupStore persists per-replica serving-latency + vitals rollups here and the
-  # history endpoint / live-snapshot cluster aggregation read them back.
+  # Persisted ops-health rollup store (#2553). Mirrors migrations
+  # 077_CreateOpsHealthRollup.sql and 085_AddOpsHealthLatencyDistribution.sql so the
+  # migration-skipping integration fixture has the tables; PostgresOpsHealthRollupStore persists
+  # per-replica serving-latency + vitals rollups here and the history endpoint / live-snapshot
+  # cluster aggregation read them back.
   - |
       CREATE TABLE IF NOT EXISTS honua.ops_health_rollup_latency (
           replica_id     TEXT             NOT NULL,
@@ -1252,6 +1253,7 @@ sql:
           p95_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
           p99_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
           max_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
+          distribution   JSONB            NULL,
           updated_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
           CONSTRAINT ops_health_rollup_latency_pk PRIMARY KEY (replica_id, tier, bucket_start, protocol),
           CONSTRAINT ops_health_rollup_latency_valid_tier CHECK (tier IN (0, 1, 2))

@@ -49,7 +49,7 @@
     "outputs": ["Map", "Report"]
   },
   "expectedOutcome": {
-    "isExecutable": true,
+    "isExecutable": false,
     "directSubmitExecutable": false,
     "requiresApproval": false,
     "estimatedArtifactKinds": ["Map", "Report"],

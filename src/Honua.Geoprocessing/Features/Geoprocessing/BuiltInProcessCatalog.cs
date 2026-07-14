@@ -326,7 +326,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles. The chosen unit is converted to meters and applied as planar CRS units; geographic (degree) inputs are unsupported (a meters-as-degrees buffer is meaningless) — project to a metric CRS first. No geodesic conversion is performed.", ProcessParameterValueType.Text, defaultValue: "meters"),
                 Param("dissolve", "Dissolve", "Dissolve buffered geometries per group (true) or emit one buffered feature per input (false). Defaults to true.", ProcessParameterValueType.Flag, defaultValue: "true"),
                 Param("groupByFields", "Group By Fields", "Comma-separated attribute names used to group dissolved buffers; one feature is emitted per group. When empty, all inputs dissolve into a single feature.", ProcessParameterValueType.Text),
-                Param("sourceCrs", "Source CRS", "Optional EPSG code / identifier (e.g. 3857 or EPSG:3857) declaring the CRS of the input geometries. When supplied and geographic (e.g. 4326), a non-zero linear buffer is rejected because a meters-as-degrees buffer is meaningless — reproject to a projected/metric CRS first.", ProcessParameterValueType.Text),
+                Param("sourceCrs", "Source CRS", "Optional EPSG code / identifier (e.g. 3857, also written as EPSG:3857) declaring the CRS of the input geometries. When supplied and geographic (e.g. 4326), a non-zero linear buffer is rejected because a meters-as-degrees buffer is meaningless — reproject to a projected/metric CRS first.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1634,7 +1634,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true),
-                Param("targetSrs", "Target CRS", "Target spatial reference as an EPSG code (e.g. 'EPSG:3857' or '3857').", ProcessParameterValueType.Srid, required: true),
+                Param("targetSrs", "Target CRS", "Target spatial reference as an EPSG code (e.g. 'EPSG:3857', also written as '3857').", ProcessParameterValueType.Srid, required: true),
                 Param("sourceSrs", "Source CRS", "Optional source spatial reference override when the raster lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
