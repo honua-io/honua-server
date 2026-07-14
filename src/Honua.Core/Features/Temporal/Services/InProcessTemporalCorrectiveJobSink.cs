@@ -130,6 +130,9 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
                 },
                 OperationStatus.Processing).ConfigureAwait(false);
         }
+        // Intentionally broad: this is the top-level handler for a background corrective job run;
+        // any failure from the work delegate must be recorded as a Failed transition rather than
+        // crash the job runner.
         catch (Exception ex)
         {
             LogCorrectiveJobFailed(jobId, operationName, ex);
@@ -181,6 +184,8 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
                 LogCorrectiveJobStatusConflict(jobId, operationName, progress.Status, expectedStatus, result.Outcome);
             }
         }
+        // Intentionally broad: this is a best-effort progress write; the corrective job itself must
+        // keep running even if the progress store is unavailable or rejects the write.
         catch (Exception ex)
         {
             LogCorrectiveJobProgressWriteFailed(jobId, operationName, ex);

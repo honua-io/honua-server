@@ -75,10 +75,11 @@ internal sealed partial class GeoservicesImportService
             {
                 throw;
             }
+            // Intentionally broad: per-batch failure; log, record a warning for the import result,
+            // and skip just this batch of parent features rather than aborting the whole
+            // attachment copy.
             catch (Exception ex)
             {
-                // Per-batch failure: log, record a warning for the import result, and skip just this
-                // batch of parent features rather than aborting the whole attachment copy.
                 Log.AttachmentQueryBatchFailed(_logger, request.LayerId, batch.Length, ex);
                 warnings.Add(
                     $"Attachment metadata query failed for {batch.Length} parent features; "
@@ -161,10 +162,10 @@ internal sealed partial class GeoservicesImportService
                     {
                         throw;
                     }
+                    // Intentionally broad: per-attachment failure; log and count it as failed,
+                    // letting the rest of the batch's attachments continue copying.
                     catch (Exception ex)
                     {
-                        // Per-attachment failure: log and count it as failed, letting the rest of the
-                        // batch's attachments continue copying.
                         failedAttachments++;
                         Log.AttachmentCopyFailed(
                             _logger,

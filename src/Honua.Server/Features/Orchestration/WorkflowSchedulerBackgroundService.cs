@@ -57,6 +57,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background loop; a single failed
+            // tick must not kill the host — log and keep polling.
             catch (Exception ex)
             {
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
@@ -155,6 +157,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 {
                     throw;
                 }
+                // Intentional catch-all: advancing the durable cursor here is best-effort;
+                // leaving PendingCursorAt set means the next tick will simply retry the advance.
                 catch (Exception ex)
                 {
                     OrchestrationLog.SchedulerTickFailed(logger, ex);
@@ -226,6 +230,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 {
                     throw;
                 }
+                // Intentional catch-all: the pending-cursor write is best-effort here; a failure
+                // just means the cursor advance is retried (or reconciled) on a later tick.
                 catch (Exception ex)
                 {
                     OrchestrationLog.SchedulerTickFailed(logger, ex);
@@ -247,6 +253,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 {
                     throw;
                 }
+                // Intentional catch-all: same best-effort pending-cursor write as the success
+                // path above; a failure here is retried on a later tick.
                 catch (Exception pendingEx)
                 {
                     OrchestrationLog.SchedulerTickFailed(logger, pendingEx);
@@ -294,6 +302,9 @@ internal sealed class WorkflowSchedulerBackgroundService(
             {
                 throw;
             }
+            // Intentional catch-all: advancing the durable cursor here is best-effort; the
+            // in-memory cursor already moved above, and a failed durable advance is retried
+            // (or reconciled from PendingCursorAt) on a later tick.
             catch (Exception ex)
             {
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
@@ -353,6 +364,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 null);
         }
 
+        // Trigger and its CronExpression are guaranteed non-null/non-whitespace past the guard
+        // above, so no null-conditional/coalescing is needed for them below.
         try
         {
             var expression = definition.Trigger.CronExpression;
@@ -361,6 +374,10 @@ internal sealed class WorkflowSchedulerBackgroundService(
             var cron = CronExpression.Parse(expression);
             return new CachedCron(expression, timeZoneId, cron, timeZone, null, false, null);
         }
+        // Intentional catch-all: TimeZoneInfo.FindSystemTimeZoneById and CronExpression.Parse
+        // can throw several distinct exception types (invalid id, invalid expression, platform
+        // ICU/timezone-db lookup failures); any of them means the schedule is unusable and
+        // must fall back to the invalid-cron sentinel below rather than crash the tick loop.
         catch (Exception)
         {
             // Not logged here: this is a static helper with no logger access. The caller
@@ -369,8 +386,8 @@ internal sealed class WorkflowSchedulerBackgroundService(
             // by CachedCron.InvalidLogged so a persistently-invalid cron expression doesn't
             // spam the log on every tick.
             return new CachedCron(
-                definition.Trigger?.CronExpression ?? string.Empty,
-                definition.Trigger?.TimeZone ?? TimeZoneInfo.Utc.Id,
+                definition.Trigger.CronExpression,
+                definition.Trigger.TimeZone ?? TimeZoneInfo.Utc.Id,
                 null,
                 null,
                 null,

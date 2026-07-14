@@ -119,6 +119,9 @@ internal sealed class ImageServerAnalyzeHandler
         {
             throw;
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             ImageServerLog.AnalyzeFailed(_logger, ex, layerId);

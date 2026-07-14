@@ -172,6 +172,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
 
             return new OptionsValidationResult(metadata.SectionName, optionsType.Name, validationResult, metadata.IsRequired);
         }
+        // Intentional broad catch: this is a per-section startup validation step; one
+        // section's unexpected failure must be recorded as a validation error and the
+        // remaining sections must still be validated rather than aborting startup.
         catch (Exception ex)
         {
             ConfigurationValidatorLog.ValidateConfigurationSectionFailed(_logger, metadata.SectionName, optionsType.Name, ex);
@@ -188,6 +191,9 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         {
             return registration.GetConfiguredOptions(_serviceProvider);
         }
+        // Intentional broad catch: this is a per-section startup validation step; a
+        // failure resolving one options instance must be recorded and treated as
+        // "unbound" so the remaining sections still validate rather than aborting.
         catch (Exception ex)
         {
             ConfigurationValidatorLog.ResolveConfigurationInstanceFailed(_logger, registration.Metadata.OptionsType.Name, ex);

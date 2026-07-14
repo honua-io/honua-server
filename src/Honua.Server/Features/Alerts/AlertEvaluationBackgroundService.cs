@@ -135,6 +135,9 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 }
                 catch (Exception ex)
                 {
+                    // Intentionally generic: this is a long-running background evaluation
+                    // loop. A single failed iteration must not kill the host's background
+                    // service; log, back off, and keep polling.
                     LogLoopFailed(_logger, ex);
                     await Task.Delay(_options.Evaluation.IdleDelay, stoppingToken).ConfigureAwait(false);
                 }

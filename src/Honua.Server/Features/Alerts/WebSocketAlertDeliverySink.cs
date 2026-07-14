@@ -38,9 +38,11 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
             {
                 // Individual subscriber was disconnected; skip.
             }
-            catch
+            catch (Exception)
             {
-                // Individual subscriber failures do not block other subscribers.
+                // Intentional broad catch: this is a per-subscriber attempt inside the
+                // broadcast fan-out loop; one subscriber's handler failure must not block
+                // delivery to the other subscribers.
             }
         }
     }
@@ -53,6 +55,9 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         ArgumentNullException.ThrowIfNull(handler);
 
         var id = Guid.NewGuid();
+        // Not scoped with `using`: ownership of this CancellationTokenSource transfers to
+        // the stored SubscriptionEntry, which outlives this method. It is disposed by
+        // RemoveSubscriber/DisconnectSubscriber on unsubscribe or by Dispose() at shutdown.
         var entry = new SubscriptionEntry(handler, new CancellationTokenSource(), DateTimeOffset.UtcNow, options?.ClientLabel);
         _subscribers.TryAdd(id, entry);
         return new Subscription(this, id, entry.Cts.Token);
@@ -162,6 +167,9 @@ internal sealed class WebSocketAlertDeliverySink : IAlertDeliverySink
         }
         catch (Exception)
         {
+            // Intentional catch-all: this is the delivery-sink boundary for a single alert
+            // dispatch attempt; the failure is mapped to a retryable delivery result below
+            // rather than propagating and failing the whole dispatch batch.
             return new AlertDeliveryResult
             {
                 Succeeded = false,

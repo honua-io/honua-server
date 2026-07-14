@@ -441,6 +441,10 @@ internal sealed partial class OgcFeaturesGeometryServices
             var simplified = NetTopologySuite.Simplify.TopologyPreservingSimplifier.Simplify(geometry, tolerance);
             return simplified ?? geometry;
         }
+        // Intentionally generic: NTS simplification can throw a range of topology/argument
+        // exceptions depending on the input geometry's shape. Simplification is an optional
+        // optimization, so any failure here degrades to the original, unsimplified geometry
+        // rather than failing the request.
         catch (Exception ex)
         {
             Log.GeometrySimplificationFailed(_logger, tolerance, ex);
@@ -462,6 +466,9 @@ internal sealed partial class OgcFeaturesGeometryServices
         {
             return geometry.IsValid;
         }
+        // Intentionally generic: NTS topology validation can throw a range of exceptions for
+        // malformed or degenerate geometries. Any failure here means the geometry cannot be
+        // proven valid, so it is treated as invalid rather than propagating the exception.
         catch (Exception ex)
         {
             Log.TopologyValidationFailed(_logger, ex);
@@ -536,6 +543,9 @@ internal sealed partial class OgcFeaturesGeometryServices
                 polygon.GeometryChanged();
                 return true;
             case GeometryCollection geometryCollection:
+                // Not rewritten with .Where()/.Any(): the predicate is an awaited recursive async
+                // call, which synchronous LINQ over IEnumerable cannot express, so the explicit
+                // foreach + early return is the clearest form here.
                 foreach (Geometry child in geometryCollection.Geometries)
                 {
                     if (!await TryTransformGeometryAsync(child, fromSrid, toSrid, cancellationToken).ConfigureAwait(false))

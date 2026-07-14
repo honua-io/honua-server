@@ -161,6 +161,9 @@ internal static class GeoServicesFieldConventions
             return;
         }
 
+        // Not rewritten as .Where(...): the loop mutates the shared attributes dictionary
+        // in place (attributes[fieldName] = epochMs) rather than filtering into a new
+        // sequence, and the condition threads a Try-pattern out-var into that mutation.
         foreach (var fieldName in dateFieldNames)
         {
             if (attributes.TryGetValue(fieldName, out var dateValue)

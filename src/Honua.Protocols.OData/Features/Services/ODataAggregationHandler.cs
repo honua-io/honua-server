@@ -550,13 +550,10 @@ internal sealed class ODataAggregationHandler
             return values;
         }
 
-        foreach (var value in features.Select(f => GetFieldValue(f, field)))
-        {
-            if (value != null)
-            {
-                values.Add(GetNumericValue(value));
-            }
-        }
+        values.AddRange(features
+            .Select(f => GetFieldValue(f, field))
+            .Where(value => value != null)
+            .Select(GetNumericValue));
 
         return values;
     }

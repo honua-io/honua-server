@@ -109,8 +109,9 @@ internal sealed class DeployPreflightProbe(
         }
         catch (Exception ex)
         {
-            // The client only sees the generic degraded message; log the underlying
-            // failure so operators can diagnose why coordinated deploys are blocked.
+            // Intentional broad catch: migration planning failure must not fail the whole
+            // preflight probe. The client only sees the generic degraded message; log the
+            // underlying failure so operators can diagnose why coordinated deploys are blocked.
             DeployPreflightProbeLog.MigrationPlanningFailed(logger, ex);
 
             return new DeployPreflightMigrationSnapshot

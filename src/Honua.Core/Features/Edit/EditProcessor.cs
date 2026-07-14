@@ -299,9 +299,8 @@ public sealed class EditProcessor : IEditProcessor
             }
 
             // Validate individual edit requests
-            foreach (var editRequest in transaction.EditRequests)
+            foreach (var editValidation in transaction.EditRequests.Select(editRequest => ValidateEdit(editRequest, resource)))
             {
-                var editValidation = ValidateEdit(editRequest, resource);
                 if (!editValidation.IsValid)
                 {
                     return TransactionValidationResult.Failure(
@@ -646,27 +645,22 @@ public sealed class EditProcessor : IEditProcessor
 
         if (editRequest.Updates is { IsDefaultOrEmpty: false } updates)
         {
-            foreach (var update in updates)
+            foreach (var update in updates.Where(u =>
+                u.ObjectId is not null && u.Constraints?.ExpectedStateToken is { Length: > 0 }))
             {
-                if (update.ObjectId is { } objectId &&
-                    update.Constraints?.ExpectedStateToken is { Length: > 0 } token)
-                {
-                    Register(ref byObjectId, objectId, token);
-                }
+                Register(ref byObjectId, update.ObjectId!.Value, update.Constraints!.Value.ExpectedStateToken!);
             }
         }
 
         if (editRequest.Operations is { IsDefaultOrEmpty: false } operations)
         {
-            foreach (var operation in operations)
+            foreach (var operation in operations.Where(o =>
+                o.Type == EditOperationType.Update &&
+                o.Feature?.ObjectId is not null &&
+                o.Feature?.Constraints?.ExpectedStateToken is { Length: > 0 }))
             {
-                if (operation.Type == EditOperationType.Update &&
-                    operation.Feature is { } feature &&
-                    feature.ObjectId is { } objectId &&
-                    feature.Constraints?.ExpectedStateToken is { Length: > 0 } token)
-                {
-                    Register(ref byObjectId, objectId, token);
-                }
+                var feature = operation.Feature!.Value;
+                Register(ref byObjectId, feature.ObjectId!.Value, feature.Constraints!.Value.ExpectedStateToken!);
             }
         }
 

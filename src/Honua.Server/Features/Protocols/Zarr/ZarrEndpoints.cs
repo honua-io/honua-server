@@ -373,6 +373,9 @@ internal static class ZarrEndpoints
             ZarrLog.MetadataScanFailed(logger, ex, id);
             return TypedResults.BadRequest(ex.Message);
         }
+        // Intentional broad catch: this is the request-handling boundary for the Zarr metadata scan
+        // endpoint (after the more specific InvalidDataException/InvalidOperationException cases
+        // above); the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             ZarrLog.MetadataScanFailed(logger, ex, id);

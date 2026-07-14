@@ -105,22 +105,13 @@ internal static class ImageServerMosaicHelpers
 
     internal static long?[]? CreateTimeExtent(IEnumerable<RasterInfo> rasters)
     {
-        DateTimeOffset? min = null;
-        DateTimeOffset? max = null;
-
-        foreach (var raster in rasters)
-        {
-            var timestamp = raster.AcquisitionDate ?? raster.CreatedAt;
-            min = min.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(Math.Min(min.Value.ToUnixTimeMilliseconds(), timestamp.ToUnixTimeMilliseconds())) : timestamp;
-            max = max.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(Math.Max(max.Value.ToUnixTimeMilliseconds(), timestamp.ToUnixTimeMilliseconds())) : timestamp;
-        }
-
-        if (!min.HasValue || !max.HasValue)
+        var timestamps = rasters.Select(raster => raster.AcquisitionDate ?? raster.CreatedAt).ToArray();
+        if (timestamps.Length == 0)
         {
             return null;
         }
 
-        return [min.Value.ToUnixTimeMilliseconds(), max.Value.ToUnixTimeMilliseconds()];
+        return [timestamps.Min().ToUnixTimeMilliseconds(), timestamps.Max().ToUnixTimeMilliseconds()];
     }
 
 }

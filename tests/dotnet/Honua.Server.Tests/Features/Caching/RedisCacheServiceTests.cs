@@ -391,6 +391,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         writeMetadataField.Should().NotBeNull();
 
         var writeMetadata = writeMetadataField!.GetValue(cache) as System.Collections.IDictionary;
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         writeMetadata.Should().NotBeNull();
         if (writeMetadata is null)
         {
@@ -479,6 +480,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         keyLocksField.Should().NotBeNull();
 
         var keyLocks = keyLocksField!.GetValue(_cacheService) as ConcurrentDictionary<string, SemaphoreSlim>;
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         keyLocks.Should().NotBeNull();
         if (keyLocks is null)
         {
@@ -516,6 +518,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         fallbackCacheField.Should().NotBeNull();
 
         var fallbackCache = fallbackCacheField!.GetValue(cacheService) as System.Collections.IEnumerable;
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         fallbackCache.Should().NotBeNull();
         if (fallbackCache is null)
         {
@@ -534,6 +537,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         writeMetadataField.Should().NotBeNull();
 
         var writeMetadata = writeMetadataField!.GetValue(cacheService) as System.Collections.IDictionary;
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         writeMetadata.Should().NotBeNull();
         if (writeMetadata is null)
         {

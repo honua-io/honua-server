@@ -110,6 +110,9 @@ internal static class OgcTemporalFilterParser
             return true;
         }
 
+        // judgment call: TryResolveTemporalTypeLabel both filters (skips non-temporal field
+        // types) and binds the extracted `inferredType` used below; a .Where() would have to
+        // re-resolve the type, so the guard-clause form here is clearer.
         foreach (var field in resource.SchemaFields)
         {
             if (TryResolveTemporalTypeLabel(field.Type, out var inferredType))

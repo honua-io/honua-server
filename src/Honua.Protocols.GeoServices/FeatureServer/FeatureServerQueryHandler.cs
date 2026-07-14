@@ -379,6 +379,8 @@ internal sealed partial class FeatureServerQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             return (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter));
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -1269,6 +1271,9 @@ internal sealed partial class FeatureServerQueryHandler(
 
             return StandardErrorHelpers.CreateNotImplemented(context, ParquetRuntimeUnavailableException.CapabilityMessage);
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 (or the already-started
+        // streaming result) rather than crash the request.
         catch (Exception ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -2653,9 +2658,8 @@ internal sealed partial class FeatureServerQueryHandler(
         var terms = HavingConjunctionRegex().Split(having);
         var parsed = new List<HavingCondition>();
 
-        foreach (var rawTerm in terms)
+        foreach (var term in terms.Select(rawTerm => rawTerm.Trim()))
         {
-            var term = rawTerm.Trim();
             if (term.Length == 0)
             {
                 error = "having must contain one or more 'AGG(field) <op> value' conditions.";

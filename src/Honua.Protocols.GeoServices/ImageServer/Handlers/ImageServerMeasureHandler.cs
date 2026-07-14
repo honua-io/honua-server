@@ -167,6 +167,9 @@ internal sealed class ImageServerMeasureHandler
         {
             throw;
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             ImageServerLog.MeasureFailed(_logger, ex, layerId);
@@ -516,7 +519,9 @@ internal sealed class ImageServerMeasureHandler
         var heightMeters = Math.Abs(topValue - baseValue);
         var (height, unit) = ConvertLinear(heightMeters, linearUnit);
 
-        var sensorName = sensor?.SensorName ?? "Unknown";
+        // sensor is guaranteed non-null here: demSource (= sensor?.DemSource) passed the
+        // IsNullOrWhiteSpace check above, which is only possible when sensor is non-null.
+        var sensorName = sensor!.SensorName ?? "Unknown";
         var response = new ImageServerMeasureResponse
         {
             Name = raster.Name,

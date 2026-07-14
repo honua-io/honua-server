@@ -363,6 +363,8 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         WebApp.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await WebApp.InitializeAsync();
         _adminClient = WebApp.CreateAdminClient();
@@ -439,12 +441,16 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
         // --results-directory and the new upload-ci-evidence step both
         // pick the file up.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        // "Honua.sln" is a literal relative segment appended after the walked-up
+        // directory root, so it can never be rooted and drop directory.FullName.
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
         var root = directory?.FullName ?? AppContext.BaseDirectory;
+        // "tests" and "TestResults" are literal relative segments; neither can be
+        // rooted and drop the resolved repo root.
         return Path.Combine(root, "tests", "TestResults");
     }
 }

@@ -469,22 +469,16 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         IOrderedEnumerable<(ImageServerCatalogItem Item, RasterInfo Source)>? ordered = null;
         foreach (var term in orderBy)
         {
-            var localTerm = term;
             object? KeySelector((ImageServerCatalogItem Item, RasterInfo Source) entry)
-                => ImageServerCatalogFields.TryResolve(localTerm.Field, entry.Item, out var value) ? value : null;
+                => ImageServerCatalogFields.TryResolve(term.Field, entry.Item, out var value) ? value : null;
 
-            if (ordered is null)
-            {
-                ordered = localTerm.Descending
+            ordered = ordered is null
+                ? (term.Descending
                     ? projected.OrderByDescending(KeySelector, FieldValueComparer.Instance)
-                    : projected.OrderBy(KeySelector, FieldValueComparer.Instance);
-            }
-            else
-            {
-                ordered = localTerm.Descending
+                    : projected.OrderBy(KeySelector, FieldValueComparer.Instance))
+                : (term.Descending
                     ? ordered.ThenByDescending(KeySelector, FieldValueComparer.Instance)
-                    : ordered.ThenBy(KeySelector, FieldValueComparer.Instance);
-            }
+                    : ordered.ThenBy(KeySelector, FieldValueComparer.Instance));
         }
 
         return ordered is null ? projected : ordered.ToList();

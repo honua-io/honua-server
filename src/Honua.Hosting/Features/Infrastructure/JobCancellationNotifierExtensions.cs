@@ -27,7 +27,7 @@ internal static class JobCancellationNotifierExtensions
         // Every notifier must be signaled (side effect), so the predicate itself is the
         // cancellation call; Where() here filters to the notifiers that owned the transition
         // while still visiting all of them during enumeration.
-        foreach (var notifier in cancellationNotifiers.Where(n => n.Cancel(jobId)))
+        foreach (var _ in cancellationNotifiers.Where(n => n.Cancel(jobId)))
         {
             workerOwnsTerminalState = true;
         }

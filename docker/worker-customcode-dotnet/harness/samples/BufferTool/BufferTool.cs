@@ -74,6 +74,8 @@ public sealed class BufferTool : IGeoprocessingTool
             properties = new { source_wkt = wkt, distance },
         };
 
+        // False positive: outName was already validated by ArtifactNames.IsSimpleFileName
+        // above, so it is never rooted/absolute.
         var outPath = Path.Combine(context.WorkDirectory, outName);
         File.WriteAllText(outPath, JsonSerializer.Serialize(feature));
         context.Progress.Report(90.0, "writing output");

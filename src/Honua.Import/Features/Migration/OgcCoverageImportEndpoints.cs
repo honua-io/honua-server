@@ -55,6 +55,8 @@ internal static partial class OgcCoverageImportEndpoints
         {
             throw;
         }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);

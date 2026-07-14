@@ -308,6 +308,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         // where the layer's date fields are known).
         if (dateFieldNames.Count > 0)
         {
+            // Not rewritten as .Where: the filter condition and the loop-body assignment both
+            // depend on the same TryConvertToEpochMilliseconds `out` value (epochMs), which a
+            // Where lambda cannot hand back to the loop body without recomputing the conversion.
             foreach (var fieldName in dateFieldNames)
             {
                 if (attributes.TryGetValue(fieldName, out var dateValue)
@@ -402,13 +405,11 @@ internal sealed class QueryFormatter : IQueryFormatter
                 : objectIdValue;
         }
 
-        foreach (string field in outFields)
+        foreach (string field in outFields.Where(field =>
+            attributes.ContainsKey(field)
+            && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields)))
         {
-            if (attributes.TryGetValue(field, out object? fieldValue)
-                && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields))
-            {
-                filtered[field] = FeatureAttributeValueNormalizer.Normalize(fieldValue);
-            }
+            filtered[field] = FeatureAttributeValueNormalizer.Normalize(attributes[field]);
         }
 
         return filtered;

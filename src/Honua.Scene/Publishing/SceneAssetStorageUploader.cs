@@ -54,6 +54,9 @@ internal static class SceneAssetStorageUploader
         foreach (var relativePath in relativePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // Safe: relativePath comes from EnumerateRelativePaths below, which derives
+            // it via Path.GetRelativePath from files Directory.EnumerateFiles already
+            // found under sourceDirectory — it can never be rooted or escape the tree.
             var absolute = Path.Combine(sourceDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
             await using var content = new FileStream(
                 absolute, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);

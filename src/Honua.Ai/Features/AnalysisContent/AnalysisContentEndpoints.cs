@@ -231,6 +231,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.create", ex);
@@ -252,6 +255,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.get", ex);
@@ -305,6 +311,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.list", ex);
@@ -339,6 +348,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.estimate", ex);
@@ -379,6 +391,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.version.get", ex);
@@ -414,6 +429,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.version.create", ex);
@@ -441,6 +459,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.preview", ex);
@@ -469,6 +490,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.run", ex);
@@ -501,6 +525,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.rerun", ex);
@@ -534,6 +561,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.artifact.get", ex);
@@ -556,6 +586,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.job.logs", ex);
@@ -580,6 +613,9 @@ internal static partial class AnalysisContentEndpoints
         {
             return problem;
         }
+        // Intentionally generic: this is the endpoint's top-level failure boundary;
+        // specific domain exceptions are already mapped above, so anything else becomes
+        // an opaque 500 rather than leaking internals to the client.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.job.failure", ex);

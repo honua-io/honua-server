@@ -102,6 +102,10 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Second segment of each call is a fixed relative literal, or built from
+            // format.Extension which is only ever a fixed literal drawn from the
+            // Formats allowlist above (never user-supplied), so neither can be rooted
+            // and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.tif");
             var outputPath = Path.Combine(workspace, $"output.{format.Extension}");
             // Bound the DECLARED pixel footprint before invoking GDAL so a

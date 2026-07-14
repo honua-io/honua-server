@@ -90,7 +90,7 @@ internal static class ArcGisRestOutboundGuard
             throw new ArgumentException(DisallowedNetworkAddressMessage);
         }
 
-        foreach (var address in addresses.Where(IsPrivateOrReservedAddressCore))
+        if (addresses.Any(IsPrivateOrReservedAddressCore))
         {
             throw new ArgumentException(DisallowedNetworkAddressMessage);
         }

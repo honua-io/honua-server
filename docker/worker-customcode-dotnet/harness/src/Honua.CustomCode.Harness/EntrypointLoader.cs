@@ -97,6 +97,8 @@ public sealed class EntrypointLoader
 
     private static Assembly LoadFromDirectory(string buildOutputDirectory, string assemblyName)
     {
+        // False positive: every caller validates assemblyName via IsSimpleAssemblyName
+        // (see Load, above) before reaching here, so it is never rooted/escaping.
         var path = Path.Combine(buildOutputDirectory, assemblyName + ".dll");
         if (!File.Exists(path))
         {
@@ -140,6 +142,8 @@ public sealed class EntrypointLoader
             // Fall back to a sibling DLL in the build output (deps copied next to the tool).
             if (assemblyName.Name is { } name && IsSimpleAssemblyName(name))
             {
+                // False positive: the IsSimpleAssemblyName guard immediately above rejects
+                // any rooted/escaping name before it reaches this combine.
                 var candidate = Path.Combine(_probeDirectory, name + ".dll");
                 if (File.Exists(candidate))
                 {

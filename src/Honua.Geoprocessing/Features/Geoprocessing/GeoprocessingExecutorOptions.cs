@@ -30,6 +30,8 @@ internal sealed class GeoprocessingExecutorOptions
     /// Caller-supplied sink paths are always resolved relative to this directory;
     /// absolute paths and traversal outside the root are rejected.
     /// </summary>
+    // Second segment is a fixed relative literal, so it can never be
+    // rooted and silently discard Path.GetTempPath().
     public string OutputRootDirectory { get; set; } =
         Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs");
 
@@ -40,6 +42,8 @@ internal sealed class GeoprocessingExecutorOptions
     /// rejected with a job failure to prevent path-traversal attacks (BH3-027).
     /// Defaults to the same staging directory used by the upload pipeline.
     /// </summary>
+    // Second segment is a fixed relative literal, so it can never be
+    // rooted and silently discard Path.GetTempPath().
     public string ImportStagingDirectory { get; set; } =
         Path.Combine(Path.GetTempPath(), "honua-import-staging");
 

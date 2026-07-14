@@ -207,6 +207,8 @@ internal static class AdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             AdminLog.TableDiscoveryFailed(logger, ex, id);
 
             await ProblemDetailsHelpers.CreateAdminProblem(

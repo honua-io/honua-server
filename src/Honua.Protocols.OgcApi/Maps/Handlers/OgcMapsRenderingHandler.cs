@@ -152,6 +152,8 @@ internal sealed class OgcMapsRenderingHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcMapsLog.CollectionMapRenderFailed(_logger, ex, layerId);
@@ -383,6 +385,8 @@ internal sealed class OgcMapsRenderingHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcMapsLog.DatasetMapRenderFailed(_logger, ex, resolvedLayerCount);
@@ -512,6 +516,8 @@ internal sealed class OgcMapsRenderingHandler
                 detail: "Styled map rendering is not available for this collection type.",
                 statusCode: StatusCodes.Status501NotImplemented);
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcMapsLog.StyledMapRenderFailed(_logger, ex, layerId, styleId);
@@ -1020,6 +1026,10 @@ internal sealed class OgcMapsRenderingHandler
                 Width = width,
                 Height = height,
                 Format = format.Value,
+                // request.Transparent is guaranteed non-null (and true) here: the guard above
+                // already rejects any request where the "transparent" query parameter was
+                // explicitly supplied, so the only way to reach this point is with the
+                // property still holding its record-default value of true.
                 Transparent = request.Transparent ?? true,
                 BackgroundColor = request.BackgroundColor,
                 DateTime = datetimeTo,

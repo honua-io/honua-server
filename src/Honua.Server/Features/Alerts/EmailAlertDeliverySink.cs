@@ -110,6 +110,11 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
                 Error = $"SMTP error ({ex.StatusCode})."
             };
         }
+        // Intentional catch-all: this is a per-channel delivery attempt (one alert dispatch
+        // item). Beyond the specific SMTP exceptions handled above, message construction and
+        // the SMTP client can still fail in other ways (e.g. malformed address/credentials
+        // configuration); any such failure must be reported as a retryable delivery result
+        // rather than throwing out of the alert dispatch pipeline.
         catch (Exception ex)
         {
             if (_logger is not null)

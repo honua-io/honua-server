@@ -261,7 +261,10 @@ internal sealed class ODataQueryParameterAdapter(
                 }
             }
 
-            var resolvedField = schemaFields.TryGetValue(field, out var v2Field) ? v2Field.Name : field;
+            // v2Field is guaranteed non-null when TryGetValue returns true (the ternary
+            // condition), so the null-forgiving operator here is safe; the `v2Field?.Type`
+            // access below is a separate, already-null-safe access to the same variable.
+            var resolvedField = schemaFields.TryGetValue(field, out var v2Field) ? v2Field!.Name : field;
             // Pass the schema-declared field type so the SQL builder emits a typed cast
             // ($orderby=population desc on an integer column must sort numerically, not
             // lexically — otherwise "20" < "3" via the default TEXT-based attribute path).

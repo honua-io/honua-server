@@ -547,12 +547,11 @@ internal static class McpEndpointExtensions
             }
 
             // Strip any q-value/parameters after ';' and trim whitespace.
-            foreach (var token in value.Split(',').Select(media => media.Split(';', 2)[0].Trim()))
+            if (value.Split(',')
+                .Select(media => media.Split(';', 2)[0].Trim())
+                .Any(token => token.Equals(EventStreamMimeType, StringComparison.OrdinalIgnoreCase)))
             {
-                if (token.Equals(EventStreamMimeType, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                return true;
             }
         }
 

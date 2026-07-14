@@ -161,13 +161,14 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
             // acquires its own gate slot.
             return await _defaultProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally broad: fail closed on any resolution error. Opening the default database
+        // instead of the operator-designated secure database would silently read/write the wrong
+        // store and defeat the security control, so every failure maps to the same sanitized
+        // ServiceUnavailableException.
         catch (Exception ex)
         {
             _logSecureConnectionResolutionFailed(_logger, _namedConnectionToUse, ex);
 
-            // Fail closed: opening the default database instead of the
-            // operator-designated secure database would silently read/write
-            // the wrong store and defeat the security control.
             throw new ServiceUnavailableException(
                 "The configured secure database connection could not be resolved.");
         }
@@ -279,9 +280,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         {
             return await _secureResolver.TestConnectionHealthAsync(_namedConnectionToUse, cancellationToken);
         }
+        // Intentionally generic: this is a connection-health probe, so any failure means
+        // "unhealthy" rather than an exception the caller should handle.
         catch (Exception ex)
         {
-            // Health probe: any failure means "unhealthy", not an exception the caller should handle.
             _logConnectionHealthTestFailure(_logger, _namedConnectionToUse, ex);
             return false;
         }
@@ -299,10 +301,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
             var connections = await _secureResolver.GetAvailableConnectionsAsync(cancellationToken);
             return connections.ToArray();
         }
+        // Intentionally generic: best-effort discovery; log and degrade to "no available
+        // connections" rather than failing the caller over a resolver-side listing error.
         catch (Exception ex)
         {
-            // Best-effort discovery: log and degrade to "no available connections" rather than
-            // failing the caller over a resolver-side listing error.
             _logRetrieveConnectionsFailure(_logger, ex);
             return Array.Empty<string>();
         }

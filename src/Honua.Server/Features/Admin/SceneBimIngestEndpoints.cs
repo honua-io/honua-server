@@ -181,6 +181,9 @@ internal static partial class SceneBimIngestEndpoints
         {
             return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
+        // Intentional catch-all request-handling boundary: this is the CityGML/BIM
+        // ingest endpoint; the failure is logged and mapped to a generic error
+        // response below.
         catch (Exception ex)
         {
             SceneBimIngestLog.IngestFailed(logger, ex);
@@ -254,6 +257,9 @@ internal static partial class SceneBimIngestEndpoints
         {
             await invalidator.InvalidateSceneAsync(sceneId, cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: cache invalidation is a best-effort side effect
+        // of the ingest; a failure here must not fail the ingest request that
+        // already succeeded.
         catch (Exception ex)
         {
             SceneBimIngestLog.CacheInvalidationFailed(logger, sceneId, ex);

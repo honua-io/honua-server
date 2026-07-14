@@ -504,6 +504,9 @@ internal static class LayerValidationHelpers
 
         MetadataV2Service? chosen = null;
         var chosenIsPreferredType = false;
+        // Not converted to `.Where(...)`: beyond the early-continue filters, the loop folds
+        // into a running "best candidate so far" accumulator (chosen/chosenIsPreferredType)
+        // across iterations, which a filter+project chain cannot express.
         foreach (var pub in snapshot.Graph.Publications)
         {
             if (pub.LayerIndex != layerId) continue;
@@ -736,6 +739,11 @@ internal static class LayerValidationHelpers
 
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         MetadataV2Publication? canonical = null;
+        // Not converted to `.FirstOrDefault(...)`: the predicate needs two intermediate
+        // values computed per candidate (the resolved resource and the resolved service),
+        // reused across the equality and visibility checks — inlining them into a single
+        // LINQ predicate would duplicate the lookups or require a less readable local
+        // function.
         foreach (var pub in snapshot.Graph.Publications)
         {
             if (!pub.IsPrimary) continue;

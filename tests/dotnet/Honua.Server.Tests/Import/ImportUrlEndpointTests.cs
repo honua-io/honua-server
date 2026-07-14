@@ -115,6 +115,7 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
             request.RequestUri.Should().NotBeNull();
             request.RequestUri!.ToString().Should().Be(expectedUrl);
 
+            // Ownership transfers to the HttpClient pipeline, which disposes the response.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, contentType)

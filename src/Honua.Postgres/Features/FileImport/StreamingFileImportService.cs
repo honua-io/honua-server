@@ -67,6 +67,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             ".shp", ".dbf", ".shx", ".prj", ".cpg"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    // Safe: the second Path.Combine argument in each of these is a compile-time relative literal,
+    // never caller-supplied input, so it cannot silently discard Path.GetTempPath().
     private static readonly string _shapefileScratchRoot = Path.Combine(Path.GetTempPath(), "honua-shapefile");
     private static readonly string _geoPackageScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geopackage");
     private static readonly string _kmzScratchRoot = Path.Combine(Path.GetTempPath(), "honua-kmz");
@@ -666,6 +668,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings);
             return result;
         }
+        // Intentionally broad: this is the top-level import job handler — any unexpected failure
+        // not already covered by a specific catch above must still surface as a Failed
+        // ImportResult instead of crashing the request/job, and the message is a generic
+        // client-safe fallback so no provider internals leak.
         catch (Exception ex)
         {
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);

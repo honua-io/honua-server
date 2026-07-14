@@ -174,6 +174,10 @@ internal sealed class DeployTelemetrySignalEvaluator(
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: a telemetry-backend failure must not fail the deploy
+            // evaluation outright; it is mapped to a bounded wait-for-more-telemetry decision
+            // below so a transient backend outage never silently promotes past an unverified
+            // rollback gate.
             DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
             return new DeployTelemetryDecision
             {

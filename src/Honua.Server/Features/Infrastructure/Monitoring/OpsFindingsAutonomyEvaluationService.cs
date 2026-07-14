@@ -36,6 +36,9 @@ internal sealed partial class OpsFindingsAutonomyEvaluationService(
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background evaluation loop. A
+            // single failed iteration (e.g. a transient lease/store failure) must not kill
+            // the host's background service; log and keep polling on the next delay.
             catch (Exception ex)
             {
                 Log.EvaluationLoopFailed(logger, ex);

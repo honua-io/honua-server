@@ -145,6 +145,9 @@ internal static class PublishedRouteEndpoints
         {
             throw;
         }
+        // Intentional broad catch: this is the request-handling boundary for the published-artifact
+        // read endpoint (after the more specific ContentPublicationException case above); the
+        // failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "published.read", ex);

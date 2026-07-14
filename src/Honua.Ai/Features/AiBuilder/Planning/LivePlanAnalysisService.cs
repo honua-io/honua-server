@@ -93,12 +93,12 @@ internal sealed class LivePlanAnalysisService : IPlanAnalysisService
             // Caller-driven cancellation is not a planner failure; let it surface.
             throw;
         }
+        // Intentionally generic: a provider transport/parse failure (e.g. the Anthropic
+        // Messages API returning an error, a timeout, or malformed JSON) must not crash the
+        // MCP tool. Surface it as a structured rejection so the SDK/console can
+        // present it like any other non-success planner turn.
         catch (Exception exception)
         {
-            // A provider transport/parse failure (e.g. the Anthropic Messages API
-            // returning an error, a timeout, or malformed JSON) must not crash the
-            // MCP tool. Surface it as a structured rejection so the SDK/console can
-            // present it like any other non-success planner turn.
             LivePlanAnalysisLog.ProviderFailed(_logger, exception);
             activity?.SetTag("planner.status", "error");
             return new McpPlanAnalysisOutput

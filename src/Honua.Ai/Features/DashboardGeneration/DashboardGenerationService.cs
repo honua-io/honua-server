@@ -299,6 +299,9 @@ public sealed class DashboardGenerationService : IDashboardGenerationService
             GenerationProviderLog.ProviderResponseParseFailed(_logger, providerId, ex);
             return ErrorProposal("Bedrock response could not be parsed.");
         }
+        // Intentionally generic: this is a provider-boundary call to the Bedrock SDK, which
+        // surfaces transport/auth/throttling failures beyond the specific types already handled
+        // above; map any remaining failure to a generic proposal error instead of crashing the caller.
         catch (Exception ex)
         {
             GenerationProviderLog.ProviderRequestFailed(_logger, providerId, ex);

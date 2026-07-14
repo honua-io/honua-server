@@ -213,6 +213,8 @@ internal static class CogEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the COG metadata
+        // scan endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             CogLog.MetadataScanFailed(logger, ex, id);

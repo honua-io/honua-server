@@ -145,7 +145,7 @@ public sealed class MigrationRunCheckpointStoreTests
             }
             catch
             {
-                // best effort cleanup
+                // Intentional broad catch: best-effort temp directory cleanup during test teardown.
             }
         }
     }

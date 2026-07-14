@@ -134,6 +134,9 @@ internal sealed partial class FeatureChangeRetryQueue(
 
     public async Task ProcessQueuedAsync(string pendingId, CancellationToken cancellationToken = default)
     {
+        // Not scoped with `using`: disposal must happen only after cancelling the renewal
+        // loop, awaiting its completion, and awaiting the async lease release — see the
+        // `finally` block below, which performs that ordered teardown explicitly.
         var leaseCoordinator = await TryAcquireClaimLeaseAsync(pendingId).ConfigureAwait(false);
         if (_redisDb != null && leaseCoordinator == null)
         {
@@ -533,6 +536,10 @@ internal sealed partial class FeatureChangeRetryQueue(
             }
             catch (Exception ex)
             {
+                // Intentionally generic: this is a fire-and-forget scheduled-retry background
+                // task (Task.Run with no awaiter). An unhandled exception here would become an
+                // unobserved task exception instead of failing anything visible; log and let
+                // the pending entry age out for the next retry pass.
                 LogRetrySchedulingFailed(_logger, pendingId, ex);
             }
             finally

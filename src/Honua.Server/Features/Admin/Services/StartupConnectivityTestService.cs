@@ -84,6 +84,9 @@ internal sealed class StartupConnectivityTestService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the top-level startup connectivity
+            // orchestrator; any unexpected failure must be captured in the result
+            // rather than crashing application startup.
             ConnectivityTestLog.TestingFailed(_logger, ex.Message, ex);
             result.EndTime = DateTimeOffset.UtcNow;
             result.Duration = stopwatch.Elapsed;
@@ -124,6 +127,8 @@ internal sealed class StartupConnectivityTestService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is a per-item loop where one test's
+            // failure must not abort the rest of the connectivity test run.
             secretProviderTest.Success = false;
             secretProviderTest.Error = SanitizeConnectivityError(ex, "Secret provider test failed");
         }
@@ -153,6 +158,8 @@ internal sealed class StartupConnectivityTestService
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: per-item loop over secret references; one
+                // reference's failure must not abort the rest of the connectivity test run.
                 test.Success = false;
                 test.Error = SanitizeConnectivityError(ex, "Secret reference test failed");
             }
@@ -213,6 +220,9 @@ internal sealed class StartupConnectivityTestService
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: per-item loop over configured database
+                // connections; one connection's failure must not abort the rest of
+                // the connectivity test run.
                 test.Success = false;
                 test.Error = SanitizeConnectivityError(ex, "Database connectivity test failed");
             }
@@ -256,6 +266,9 @@ internal sealed class StartupConnectivityTestService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort single connectivity probe against
+            // a caller-supplied connection string; any failure is reported back as a
+            // failed test result rather than propagating.
             test.Success = false;
             test.Error = SanitizeConnectivityError(ex, "Database connection failed");
         }
@@ -303,6 +316,9 @@ internal sealed class StartupConnectivityTestService
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: per-item loop over configured external
+                // service URLs; one service's failure must not abort the rest of
+                // the connectivity test run.
                 test.Success = false;
                 test.Error = SanitizeConnectivityError(ex, "External service connectivity test failed");
             }
@@ -359,6 +375,9 @@ internal sealed class StartupConnectivityTestService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort single connectivity probe; any
+            // failure is reported back as a failed test result rather than
+            // propagating and aborting the rest of the connectivity test run.
             test.Success = false;
             test.Error = SanitizeConnectivityError(ex, "Cache connectivity test failed");
         }
@@ -405,6 +424,9 @@ internal sealed class StartupConnectivityTestService
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: best-effort single connectivity probe; any
+                // failure is reported back as a failed test result rather than
+                // propagating and aborting the rest of the connectivity test run.
                 test.Success = false;
                 test.Error = SanitizeConnectivityError(ex, "Cloud storage configuration test failed");
             }

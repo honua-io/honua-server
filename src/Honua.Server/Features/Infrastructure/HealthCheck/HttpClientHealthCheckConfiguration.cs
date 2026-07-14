@@ -169,6 +169,8 @@ internal sealed class CircuitBreakerHealthCheck : IHealthCheck
                 // state tracking or use a library that provides better observability
                 circuitBreakerStates[$"{serviceType}_policy"] = "configured";
             }
+            // Intentional catch-all: this is a per-service check inside the health-check loop; one
+            // service's policy lookup failure must not abort reporting on the rest.
             catch (Exception ex)
             {
                 circuitBreakerStates[$"{serviceType}_error"] = ex.Message;

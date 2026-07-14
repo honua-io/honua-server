@@ -62,6 +62,8 @@ internal sealed class TemporaryFileCleanupService : BackgroundService
                 // Expected when cancellation is requested
                 break;
             }
+            // Intentional: this is a long-running background cleanup loop; one pass failing
+            // must not kill the host — log, back off, and let the while loop retry.
             catch (Exception ex)
             {
                 TemporaryFileCleanupLog.CleanupFailed(_logger, ex);

@@ -146,8 +146,8 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
         }
         catch (Exception ex)
         {
-            // CanResolve is a best-effort capability probe, not a resolve attempt: any failure means
-            // "cannot resolve", not an exception the caller should handle.
+            // Intentionally generic: CanResolve is a best-effort capability probe, not a resolve
+            // attempt — any failure means "cannot resolve", not an exception the caller should handle.
             _logCanResolveError(_logger, secretKey, ex);
             return false;
         }

@@ -987,13 +987,10 @@ internal sealed class ImageServerWmtsHandler(
 
     private static bool TryGetQueryValue(IQueryCollection query, string name, out string value)
     {
-        foreach (var pair in query)
+        foreach (var pair in query.Where(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
-            {
-                value = pair.Value.ToString();
-                return true;
-            }
+            value = pair.Value.ToString();
+            return true;
         }
 
         value = string.Empty;

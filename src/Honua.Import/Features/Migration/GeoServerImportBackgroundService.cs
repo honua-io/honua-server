@@ -294,6 +294,9 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
 
             Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
         }
+        // Intentionally generic: this is a background import job's top-level boundary; any
+        // unhandled failure from the import pipeline must be recorded as a failed job rather
+        // than crashing the host.
         catch (Exception ex)
         {
             stopwatch.Stop();

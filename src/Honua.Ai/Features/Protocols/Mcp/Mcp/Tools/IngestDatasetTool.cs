@@ -291,10 +291,11 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 {
                     throw;
                 }
+                // Intentionally generic: this is a per-row best-effort geocode call during a bulk
+                // CSV import; a provider blow-up marks this row as not geocoded (surfaced as a
+                // per-row issue) instead of failing the whole import.
                 catch (Exception)
                 {
-                    // A provider blow-up marks this row as not geocoded (surfaced as a
-                    // per-row issue) instead of failing the whole import.
                     return null;
                 }
             }

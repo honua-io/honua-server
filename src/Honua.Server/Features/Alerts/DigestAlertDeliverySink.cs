@@ -70,6 +70,8 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background digest-flush loop. A single
+            // failed iteration must not kill the host's background service; log and keep polling.
             catch (Exception ex)
             {
                 LogLoopFailed(_logger, ex);
@@ -203,6 +205,9 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
         {
             throw;
         }
+        // Intentional broad catch: this is a best-effort webhook delivery attempt; any failure
+        // (network, DNS, TLS, unexpected exception) marks the batch failed for retry rather than
+        // crashing the background flush loop.
         catch (Exception ex)
         {
             await MarkBatchFailedAsync(batchItems, dispatchStore, now, retryable: true, ex.Message, cancellationToken).ConfigureAwait(false);

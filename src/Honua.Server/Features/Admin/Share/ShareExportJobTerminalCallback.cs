@@ -83,10 +83,11 @@ internal sealed class ShareExportJobTerminalCallback(
 
             await store.UpdateRunAsync(reconciled, cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: this is a best-effort reconcile; a failure here must not
+        // block the job's terminal transition. The run stays at its prior status until a
+        // later terminal notification succeeds.
         catch (Exception ex)
         {
-            // Best-effort: a failed reconcile must not block the job's terminal transition. The run
-            // stays at its prior status until a later terminal notification succeeds.
             ShareAdminLog.ExportRunReconcileFailed(logger, runId, exportId, status.Value, job.OperationId, ex);
         }
     }

@@ -712,6 +712,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
             return true;
         }
+        // Intentional: this is a health-probe boundary; a probe failure must resolve to a
+        // health verdict (fallback-availability) rather than throw out of the health check.
         catch (Exception ex)
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
@@ -1072,6 +1074,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     GetRedisStorageKey(prefixedKey)).ConfigureAwait(false);
                 return;
             }
+            // Intentional: the key index is a best-effort optimization for pattern-based
+            // removal (RemoveByPatternAsync); a failure to add to it must not fail the
+            // write that triggered it, so it is logged and dropped.
             catch (Exception ex)
             {
                 RedisCacheIndexLog.RedisIndexTrackFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
@@ -1099,6 +1104,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     GetRedisStorageKey(prefixedKey)).ConfigureAwait(false);
                 return;
             }
+            // Intentional: the key index is a best-effort optimization for pattern-based
+            // removal; a failure to remove a stale entry from it must not fail the
+            // caller, so it is logged and dropped (the entry itself is still removed).
             catch (Exception ex)
             {
                 RedisCacheIndexLog.RedisIndexRemoveFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
