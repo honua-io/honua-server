@@ -656,33 +656,13 @@ public static class MigrationCostPerformanceEvidenceBuilder
         return hasValue ? sum : null;
     }
 
+    // Nullable overloads of Enumerable.Max ignore null elements and return null for an
+    // empty or all-null sequence, so this is exactly equivalent to the prior manual loop.
     private static long? MaxLong(IEnumerable<MigrationCostPerformanceMetrics> metrics, Func<MigrationCostPerformanceMetrics, long?> selector)
-    {
-        long? max = null;
-        foreach (var value in metrics.Select(selector))
-        {
-            if (value != null && (max == null || value > max))
-            {
-                max = value;
-            }
-        }
-
-        return max;
-    }
+        => metrics.Select(selector).Max();
 
     private static double? MaxDouble(IEnumerable<MigrationCostPerformanceMetrics> metrics, Func<MigrationCostPerformanceMetrics, double?> selector)
-    {
-        double? max = null;
-        foreach (var value in metrics.Select(selector))
-        {
-            if (value != null && (max == null || value > max))
-            {
-                max = value;
-            }
-        }
-
-        return max;
-    }
+        => metrics.Select(selector).Max();
 
     private static double? SumDouble(IEnumerable<MigrationCostPerformanceMetrics> metrics, Func<MigrationCostPerformanceMetrics, double?> selector)
     {

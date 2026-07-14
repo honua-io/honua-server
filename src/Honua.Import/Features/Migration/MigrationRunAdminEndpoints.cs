@@ -117,6 +117,8 @@ internal static partial class MigrationRunAdminEndpoints
         {
             throw;
         }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestBodyReadFailed(GetLogger(context), "RecordMigrationRunStarted", ex);
@@ -292,6 +294,8 @@ internal static partial class MigrationRunAdminEndpoints
         {
             throw;
         }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestBodyReadFailedForRun(GetLogger(context), "RecordMigrationRunCompleted", runId, ex);
@@ -367,6 +371,8 @@ internal static partial class MigrationRunAdminEndpoints
         {
             throw;
         }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestBodyReadFailedForRun(GetLogger(context), "RecordMigrationRunScorecard", runId, ex);
@@ -442,6 +448,8 @@ internal static partial class MigrationRunAdminEndpoints
             {
                 throw;
             }
+            // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+            // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
             catch (Exception ex)
             {
                 Log.RequestBodyReadFailedForRun(GetLogger(context), "CancelMigrationRun", runId, ex);

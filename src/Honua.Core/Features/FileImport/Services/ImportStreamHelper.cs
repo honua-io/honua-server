@@ -24,6 +24,9 @@ internal static class ImportStreamHelper
     /// </summary>
     internal static async Task<FileStream> SpillToSeekableTempAsync(Stream source, CancellationToken cancellationToken)
     {
+        // Path.Combine's second argument is a server-generated file name built solely from a
+        // fresh Guid.NewGuid(), so it can never be rooted/absolute; Path.Combine cannot silently
+        // drop the temp directory here.
         var tempFile = new FileStream(
             Path.Combine(Path.GetTempPath(), $"honua-import-{Guid.NewGuid():N}.tmp"),
             new FileStreamOptions

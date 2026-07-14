@@ -68,14 +68,9 @@ public static class OpsHealthRollupAggregation
             maxP99 = Math.Max(maxP99, point.P99Ms);
             maxMs = Math.Max(maxMs, point.MaxMs);
 
-            if (point.Distribution is { } distribution)
-            {
-                mergedDistribution = mergedDistribution?.Merge(distribution);
-            }
-            else
-            {
-                mergedDistribution = null;
-            }
+            mergedDistribution = point.Distribution is { } distribution
+                ? mergedDistribution?.Merge(distribution)
+                : null;
         }
 
         if (mergedDistribution is not null && mergedDistribution.TotalCount > 0)

@@ -84,6 +84,12 @@ internal static partial class GeoservicesImportEndpoints
                 GeoservicesImportApiJsonContext.Default.GeoservicesDiscoverRequest,
                 cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
@@ -184,6 +190,9 @@ internal static partial class GeoservicesImportEndpoints
                 "Failed to connect to ArcGIS service.",
                 StatusCodes.Status502BadGateway);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific transport,
+        // credential, and cancellation cases above; any remaining unexpected failure maps
+        // to a generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
@@ -215,6 +224,12 @@ internal static partial class GeoservicesImportEndpoints
                 GeoservicesImportApiJsonContext.Default.GeoservicesStartImportRequest,
                 cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
@@ -372,6 +387,9 @@ internal static partial class GeoservicesImportEndpoints
                 "Distributed import queue is temporarily unavailable. Retry when Redis is healthy.",
                 StatusCodes.Status503ServiceUnavailable);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // coordination-unavailable case above; any remaining unexpected failure rolls back
+        // the queued state and maps to a generic 500 rather than leaking exception details.
         catch (Exception ex)
         {
             await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
@@ -397,9 +415,10 @@ internal static partial class GeoservicesImportEndpoints
                 jobId,
                 CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentionally generic: best-effort rollback of queued job state after a failure;
+        // any error here is swallowed because the state will still expire via TTL.
         catch
         {
-            // Best-effort rollback; state will expire via TTL.
         }
     }
 
