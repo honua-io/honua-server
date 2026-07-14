@@ -98,7 +98,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSetsList>;
         Assert.NotNull(okResult);
-        okResult.Value!.Tilesets.Should().HaveCount(2);
+        okResult!.Value!.Tilesets.Should().HaveCount(2);
     }
 
     [UnitTest]
@@ -151,7 +151,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSetsList>;
         Assert.NotNull(okResult);
-        okResult.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
+        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
         foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
@@ -172,7 +172,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSetsList>;
         Assert.NotNull(okResult);
-        okResult.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
+        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
         foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
@@ -193,7 +193,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSetsList>;
         Assert.NotNull(okResult);
-        foreach (var tileSet in okResult.Value!.Tilesets)
+        foreach (var tileSet in okResult!.Value!.Tilesets)
         {
             tileSet.Links.Should().Contain(link =>
                 link.Rel == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
@@ -211,7 +211,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSet>;
         Assert.NotNull(okResult);
-        okResult.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        okResult!.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
         okResult.Value.Links.Should().Contain(link => link.Rel == "self");
         okResult.Value.Links.Should().Contain(link => link.Rel == "item");
     }
@@ -226,7 +226,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSet>;
         Assert.NotNull(okResult);
-        okResult.Value!.Links.Should().ContainSingle(link =>
+        okResult!.Value!.Links.Should().ContainSingle(link =>
             link.Rel == "item" &&
             link.Templated == true);
     }
@@ -248,7 +248,7 @@ public class OgcMapsTileSetHandlerTests
 
         var okResult = result as Ok<TileSet>;
         Assert.NotNull(okResult);
-        okResult.Value!.Links.Should().NotContain(link => link.Rel == "item");
+        okResult!.Value!.Links.Should().NotContain(link => link.Rel == "item");
         okResult.Value.Links.Should().NotContain(link =>
             link.Href.Contains("/ogc/tiles/", StringComparison.OrdinalIgnoreCase));
     }

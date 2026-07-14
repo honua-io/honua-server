@@ -75,12 +75,11 @@ public sealed class MapsuiWmsClientCompatibilityTests : IClassFixture<WebAppFixt
             return layer.Name;
         }
 
-        foreach (var name in (layer.ChildLayers ?? []).Select(GetFirstAdvertisedLayerName))
+        foreach (var name in (layer.ChildLayers ?? [])
+                     .Select(GetFirstAdvertisedLayerName)
+                     .Where(name => !string.IsNullOrWhiteSpace(name)))
         {
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                return name;
-            }
+            return name;
         }
 
         throw new InvalidOperationException("Mapsui did not discover an advertised WMS layer name.");

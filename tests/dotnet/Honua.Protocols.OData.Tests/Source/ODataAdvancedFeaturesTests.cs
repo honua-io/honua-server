@@ -34,6 +34,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
@@ -668,6 +670,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     public async Task Batch_WithNonAtomicCreate_PublishesSingleMutationEvent()
     {
         var publisher = new RecordingFeatureChangeEventPublisher();
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .UseSeed(Path.Combine("tests", "seed", "odata.yaml"))
             .ReplaceService<IFeatureChangeEventPublisher>(publisher);
@@ -1383,15 +1387,10 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         feature.TryGetProperty("Landmarks", out var landmarks).Should().BeTrue();
         landmarks.ValueKind.Should().Be(JsonValueKind.Array);
 
-        var landmarkNames = new List<string>();
-        foreach (var attributes in landmarks.EnumerateArray().Select(ODataTestHelpers.ParseAttributes))
-        {
-            var name = attributes.GetProperty("name").GetString();
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                landmarkNames.Add(name);
-            }
-        }
+        var landmarkNames = landmarks.EnumerateArray()
+            .Select(e => ODataTestHelpers.ParseAttributes(e).GetProperty("name").GetString())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList();
 
         landmarkNames.Should().Contain("Golden Gate Bridge");
         landmarkNames.Should().Contain("Coit Tower");
