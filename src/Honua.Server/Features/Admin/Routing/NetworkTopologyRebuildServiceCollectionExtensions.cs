@@ -33,15 +33,22 @@ internal static class NetworkTopologyRebuildServiceCollectionExtensions
         }
 
         services.AddSingleton<IJobExecutor, NetworkTopologyRebuildJobExecutor>();
+
+        // NetworkTopologyRebuildSubmissionService depends on IServiceProvider (always
+        // resolvable) rather than IExecutionJobStore directly, resolving the job store lazily
+        // per-call and failing with a clean 503 when it is absent. It is always safe to
+        // register: on a Redis-less profile the route stays mapped but returns 503 instead of
+        // an app-wide ValidateOnBuild failure at startup (secondary-provider-dormant-startup).
         services.TryAddScoped<NetworkTopologyRebuildSubmissionService>();
-        services.TryAddScoped<NetworkTopologyRebuildReconciler>();
 
         if (services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
-            // The reconciler needs the durable job store to distinguish an orphaned attempt
-            // (owning job already terminal) from one merely awaiting worker takeover. Without
-            // AddJobOrchestration having run first (Redis-gated), there is no job store to
-            // reconcile against, so the background service would have nothing to do.
+            // NetworkTopologyRebuildReconciler takes IExecutionJobStore directly (it needs the
+            // durable job store to distinguish an orphaned attempt, owning job already
+            // terminal, from one merely awaiting worker takeover), so it is only registered
+            // once AddJobOrchestration has already provided that dependency — otherwise
+            // ValidateOnBuild would fail every Redis-less startup for a service nothing calls.
+            services.TryAddScoped<NetworkTopologyRebuildReconciler>();
             services.AddHostedService<NetworkTopologyRebuildReconcilerBackgroundService>();
         }
 

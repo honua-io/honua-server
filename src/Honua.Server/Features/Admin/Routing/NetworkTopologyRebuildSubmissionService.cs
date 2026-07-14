@@ -5,6 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Routing;
 
@@ -17,6 +18,13 @@ namespace Honua.Server.Features.Admin.Routing;
 internal sealed record NetworkTopologyRebuildSubmissionResult(string OperationId, long Generation, long Attempt);
 
 /// <summary>
+/// Thrown when a rebuild is submitted but the shared durable job infrastructure (Redis-backed
+/// <see cref="IExecutionJobStore"/>) is not configured in this deployment profile. Callers map
+/// this to HTTP 503 rather than letting a raw DI-resolution failure reach the client.
+/// </summary>
+internal sealed class NetworkTopologyRebuildUnavailableException(string message) : Exception(message);
+
+/// <summary>
 /// Submits an isolated shadow-topology rebuild as a durable
 /// <see cref="ExecutionJobKind.NetworkTopologyRebuild"/> execution job (#2718). Creates the
 /// rebuild attempt (atomically transitioning the generation <c>dirty</c> -&gt; <c>building</c>)
@@ -24,11 +32,19 @@ internal sealed record NetworkTopologyRebuildSubmissionResult(string OperationId
 /// created still leaves a durably observable <c>building</c> attempt an operator can inspect
 /// or retry rather than a silently lost state transition.
 /// </summary>
+/// <remarks>
+/// Depends on <see cref="IServiceProvider"/> rather than <see cref="IExecutionJobStore"/>
+/// directly and resolves it lazily inside <see cref="SubmitAsync"/> (mirrors
+/// <c>ConsoleJobService.RequireJobStore</c>). <see cref="IExecutionJobStore"/> is only
+/// registered when Redis-backed job orchestration is configured (<c>AddJobOrchestration</c>);
+/// a hard constructor dependency would fail ASP.NET Core's <c>ValidateOnBuild</c> service-
+/// provider validation on every Redis-less startup, breaking the app for an unrelated reason
+/// (secondary-provider-dormant-startup pitfall) instead of staying dormant until invoked.
+/// </remarks>
 internal sealed partial class NetworkTopologyRebuildSubmissionService
 {
     private readonly INetworkTopologyRebuildStore _rebuildStore;
-    private readonly IExecutionJobStore _jobStore;
-    private readonly IJobQueue? _jobQueue;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<NetworkTopologyRebuildSubmissionService> _logger;
 
     /// <summary>
@@ -36,14 +52,12 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
     /// </summary>
     public NetworkTopologyRebuildSubmissionService(
         INetworkTopologyRebuildStore rebuildStore,
-        IExecutionJobStore jobStore,
-        ILogger<NetworkTopologyRebuildSubmissionService> logger,
-        IJobQueue? jobQueue = null)
+        IServiceProvider serviceProvider,
+        ILogger<NetworkTopologyRebuildSubmissionService> logger)
     {
         _rebuildStore = rebuildStore ?? throw new ArgumentNullException(nameof(rebuildStore));
-        _jobStore = jobStore ?? throw new ArgumentNullException(nameof(jobStore));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _jobQueue = jobQueue;
     }
 
     /// <summary>
@@ -61,6 +75,10 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(datasetId);
+
+        var jobStore = _serviceProvider.GetService<IExecutionJobStore>()
+            ?? throw new NetworkTopologyRebuildUnavailableException(
+                "Topology rebuild requires durable job orchestration (Redis) to be configured on this deployment.");
 
         var operationId = $"topology-rebuild-{Guid.NewGuid():N}";
         var attempt = await _rebuildStore.CreateAttemptAsync(
@@ -82,7 +100,7 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
             Spec = spec,
         };
 
-        var created = await _jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!created)
         {
             // Extremely unlikely (GUID collision); the attempt is left in `building` for an
@@ -91,9 +109,10 @@ internal sealed partial class NetworkTopologyRebuildSubmissionService
             throw new InvalidOperationException($"Failed to create topology-rebuild execution job '{operationId}'.");
         }
 
-        if (_jobQueue is not null)
+        var jobQueue = _serviceProvider.GetService<IJobQueue>();
+        if (jobQueue is not null)
         {
-            await _jobQueue.EnqueueAsync(operationId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await jobQueue.EnqueueAsync(operationId, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         Log.RebuildSubmitted(_logger, operationId, datasetId, generation, attempt.Attempt);

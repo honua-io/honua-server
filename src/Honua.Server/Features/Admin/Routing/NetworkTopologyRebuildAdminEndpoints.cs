@@ -53,7 +53,8 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
             .Produces<NetworkTopologyRebuildSubmissionDto>(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         _ = group.MapGet("/{attempt:long}", HandleGetRebuildAttempt)
             .WithName("GetNetworkTopologyRebuildAttempt")
@@ -115,6 +116,10 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
                 ? StatusCodes.Status404NotFound
                 : StatusCodes.Status409Conflict;
             return ProblemDetailsHelpers.CreateAdminProblem(context, status, ex.Message);
+        }
+        catch (NetworkTopologyRebuildUnavailableException ex)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status503ServiceUnavailable, ex.Message);
         }
         catch (Exception ex)
         {
