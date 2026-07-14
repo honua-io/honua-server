@@ -152,6 +152,9 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 request.FileStream.Position = 0;
             }
 
+            // Path.Combine's second argument is a server-generated file name built from a
+            // Guid.NewGuid() job id and a fresh Guid.NewGuid() suffix, so it can never be
+            // rooted/absolute; Path.Combine cannot silently drop the temp directory here.
             tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
             try
             {

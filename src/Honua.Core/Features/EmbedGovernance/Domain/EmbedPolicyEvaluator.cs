@@ -144,9 +144,8 @@ public static class EmbedPolicyEvaluator
 
         var host = HostOf(normalized);
 
-        foreach (var entry in allowed)
+        foreach (var candidate in allowed.Select(static entry => entry.Trim()))
         {
-            var candidate = entry.Trim();
             if (candidate.Length == 0)
             {
                 continue;

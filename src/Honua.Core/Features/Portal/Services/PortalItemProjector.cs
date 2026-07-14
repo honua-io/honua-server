@@ -298,6 +298,10 @@ public sealed class PortalItemProjector : IPortalItemProjector
     {
         var spatial = resource?.Spatial;
         var bbox = spatial?.Bbox;
+        // `spatial is null` is logically implied by `bbox is null` here (bbox comes from
+        // `spatial?.Bbox`), but the explicit check is kept so the compiler's nullable-flow
+        // analysis narrows `spatial` to non-null below — dropping it would reintroduce a
+        // possible-null-dereference warning on `spatial.SpatialReference` further down.
         if (bbox is null || spatial is null)
         {
             return (Array.Empty<IReadOnlyList<double>>(), null);

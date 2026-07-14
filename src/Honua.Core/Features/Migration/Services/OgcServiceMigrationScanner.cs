@@ -1650,6 +1650,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
     private static string? TryReadNestedString(JsonElement element, params string[] path)
     {
         var current = element;
+
+        // Not rewritten with LINQ Where: this is a short-circuiting fold that walks nested
+        // JSON properties, reassigning `current` at each step and returning null the moment a
+        // segment is missing. It is not a filter over `path` - every segment participates in
+        // navigation, not selection.
         foreach (var segment in path)
         {
             if (!current.TryGetProperty(segment, out current))
@@ -1781,15 +1786,9 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
-        if (!allowUnsafeLocalUrls)
+        if (!allowUnsafeLocalUrls && addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
         {
-            foreach (var address in addresses)
-            {
-                if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
-                {
-                    throw new HttpRequestException(DisallowedNetworkAddressMessage);
-                }
-            }
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
@@ -1811,6 +1810,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // Intentionally not `using var socket = ...`: on success the socket's ownership
+            // transfers to the returned NetworkStream (ownsSocket: true). A `using`
+            // declaration would dispose the socket during the `return` unwind, before the
+            // caller ever sees the stream, closing the connection out from under it. The
+            // `connected` flag makes disposal conditional on transfer *not* having happened.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 

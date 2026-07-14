@@ -386,12 +386,9 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
                 continue;
             }
 
-            foreach (var key in feature.Attributes.Keys)
+            foreach (var key in feature.Attributes.Keys.Where(static k => !string.IsNullOrWhiteSpace(k)))
             {
-                if (!string.IsNullOrWhiteSpace(key))
-                {
-                    targetFields.Add(key.Trim());
-                }
+                targetFields.Add(key.Trim());
             }
         }
 

@@ -89,6 +89,8 @@ internal static class TileCachePackageEndpoints
 
         // Stream the request body to a bounded temp file so the ZIP archive can be
         // read with random access without buffering the whole package in memory.
+        // The second segment is a server-generated "honua-tpk-{guid}.tmp" name (not
+        // derived from the caller-supplied fileName), so it can never be rooted/absolute.
         var tempPath = Path.Combine(Path.GetTempPath(), $"honua-tpk-{Guid.NewGuid():N}.tmp");
         try
         {
