@@ -293,6 +293,48 @@ public sealed class EvalRunner
             var response = await client.DryRunPlanAsync(request, headers, cancellationToken: cancellationToken);
             stopwatch.Stop();
 
+            if (!response.Valid || response.Result is null)
+            {
+                // A rejected dry-run is the correct, expected outcome for a scenario that
+                // itself declares IsExecutable=false (e.g. a multi-step DAG that
+                // DirectSubmitPlanValidator now rejects via the shared ValidatePlan gate
+                // both DryRunPlan calls internally — see HonuaProcessService.DryRunPlan).
+                // Only treat the rejection as a failure when the scenario expected the
+                // plan to be executable; otherwise this is a matched rejection, mirroring
+                // RunValidatePlanAsync's comparison against the same expectation.
+                if (!scenario.ExpectedOutcome.IsExecutable)
+                {
+                    return (new EvalStageOutcome
+                    {
+                        Stage = EvalStageKind.DryRun,
+                        Status = EvalStageStatus.Passed,
+                        ElapsedMs = stopwatch.ElapsedMilliseconds
+                    }, response);
+                }
+
+                return (new EvalStageOutcome
+                {
+                    Stage = EvalStageKind.DryRun,
+                    Status = EvalStageStatus.Failed,
+                    Reason = "plan-not-executable",
+                    Detail = string.Join(" ", response.Issues.Select(i => i.Message)),
+                    ElapsedMs = stopwatch.ElapsedMilliseconds
+                }, response);
+            }
+
+            if (!scenario.ExpectedOutcome.IsExecutable)
+            {
+                // The scenario expected rejection but the plan was unexpectedly accepted.
+                return (new EvalStageOutcome
+                {
+                    Stage = EvalStageKind.DryRun,
+                    Status = EvalStageStatus.Failed,
+                    Reason = "unexpected-executable",
+                    Detail = "Expected IsExecutable=false but DryRunPlan returned Valid=true with a result.",
+                    ElapsedMs = stopwatch.ElapsedMilliseconds
+                }, response);
+            }
+
             var expected = scenario.ExpectedOutcome.EstimatedArtifactKinds;
             var mapped = response.Result.EstimatedArtifacts
                 .Select(k => (Proto: k.ArtifactClass, Domain: EvalProtoMap.ToDomainArtifactKind(k.ArtifactClass)))
