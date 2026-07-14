@@ -89,6 +89,65 @@ public sealed class ImageServerExportTilesJobEndpointTests
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("POST /rest/services/{id}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    public async Task ExportTiles_CancelAndResult_NumericLayer()
+    {
+        var fixture = await CreateDurableFixtureAsync();
+        try
+        {
+            var jobId = await SubmitCompactJobAsync(fixture, $"/rest/services/{TestLayerId}/ImageServer/exportTiles");
+
+            var cancel = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/jobs/{jobId}/cancel", content: null);
+            var cancelBody = await cancel.Content.ReadAsStringAsync();
+            cancelBody.Should().Contain("esriJobCancelled");
+
+            // A cancelled (non-succeeded) job has no result package; the route surfaces the sanitized
+            // precondition rather than a URL.
+            var result = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/jobs/{jobId}/results/out_service_url");
+            var resultBody = await result.Content.ReadAsStringAsync();
+            resultBody.Should().NotContain("out_service_url\":{\"value");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url")]
+    public async Task ExportTiles_SubmitStatusCancelResult_ByService()
+    {
+        var fixture = await CreateDurableFixtureAsync();
+        var serviceId = WebAppFixture.TestServiceId;
+        try
+        {
+            var jobId = await SubmitCompactJobAsync(fixture, $"/rest/services/{serviceId}/ImageServer/exportTiles");
+
+            var status = await fixture.Client.GetAsync($"/rest/services/{serviceId}/ImageServer/jobs/{jobId}");
+            (await status.Content.ReadAsStringAsync()).Should().Contain(jobId);
+
+            var cancel = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel", content: null);
+            (await cancel.Content.ReadAsStringAsync()).Should().Contain("esriJobCancelled");
+
+            var result = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url");
+            (await result.Content.ReadAsStringAsync()).Should().NotContain("out_service_url\":{\"value");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/jobs/{jobId}")]
     public async Task JobStatus_UnknownJob_ReturnsSanitizedNotFound()
     {
@@ -105,6 +164,18 @@ public sealed class ImageServerExportTilesJobEndpointTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async Task<string> SubmitCompactJobAsync(WebAppFixture fixture, string exportTilesPath)
+    {
+        var submit = await fixture.Client.GetAsync(
+            $"{exportTilesPath}?f=json&storageFormatType=esriMapCacheStorageModeCompactV2" +
+            "&exportExtent=-180,-85,180,85&exportExtentSR=4326&levels=0,1&format=png&maxTiles=1000");
+        var body = await submit.Content.ReadAsStringAsync();
+        var submitted = JsonSerializer.Deserialize(body, ImageServerJsonContext.Default.ImageServerExportTilesJobSubmitResponse);
+        submitted.Should().NotBeNull($"submit response was: {body}");
+        submitted!.JobStatus.Should().Be("esriJobSubmitted");
+        return submitted.JobId;
     }
 
     private static async Task<WebAppFixture> CreateDurableFixtureAsync()
