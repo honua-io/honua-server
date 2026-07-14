@@ -527,8 +527,8 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
         catch (Exception ex)
         {
-            // Fail closed: reject unvalidated SRIDs to prevent data corruption.
-            // PostGIS would reject invalid SRIDs later anyway, but by then the
+            // Intentionally broad: fail closed and reject unvalidated SRIDs to prevent data
+            // corruption. PostGIS would reject invalid SRIDs later anyway, but by then the
             // geometry data may already be stored with the wrong SRID.
             CrsLog.SridValidationFailed(_logger, ex, srid);
             return false;
@@ -564,7 +564,9 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         }
         catch (Exception ex)
         {
-            // If we can't query PostGIS, return null
+            // Intentionally generic: any failure querying spatial_ref_sys (connection, timeout,
+            // malformed WKT) should fall through to "no match" rather than propagate, so the
+            // import can continue down the remaining SRID-detection fallbacks.
             CrsLog.SridDetectionByWktFailed(_logger, ex);
             return null;
         }

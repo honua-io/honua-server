@@ -45,10 +45,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 string.Equals(t.Schema, schema, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(t.Table, table, StringComparison.OrdinalIgnoreCase));
         }
+        // Intentionally broad: map any catalog/connection failure to the shared
+        // LayerPublishingException so callers get a stable domain error instead of a raw
+        // provider/connection-string exception.
         catch (Exception ex)
         {
-            // Map any catalog/connection failure to the shared LayerPublishingException so callers get
-            // a stable domain error instead of a raw provider/connection-string exception.
             Log.TableDiscoveryFailed(_logger, ex);
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Unknown,
