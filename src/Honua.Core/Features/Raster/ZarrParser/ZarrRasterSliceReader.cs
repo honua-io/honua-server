@@ -91,8 +91,8 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 activity: activity);
         }
 
-        var bounds = request.Bounds ?? metadata.Extent;
-        if (!Intersects(bounds, metadata.Extent))
+        var requestedBounds = request.Bounds ?? metadata.Extent;
+        if (!Intersects(requestedBounds, metadata.Extent))
         {
             return Finish(
                 ZarrRasterSliceReadStatus.OutsideCoverage,
@@ -101,14 +101,13 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 activity: activity);
         }
 
-        if (!Contains(metadata.Extent, bounds))
-        {
-            return Finish(
-                ZarrRasterSliceReadStatus.InvalidSelection,
-                request.Selections.Count,
-                error: "Native Zarr slice export requires bounds fully contained by the coverage extent.",
-                activity: activity);
-        }
+        // Clamp an over-extent trim to the intersection with the coverage extent instead
+        // of requiring full containment. This matches the plain IRasterStore GetCoverage
+        // path (over-extent trims answer the intersection, exercised by CITE) and lets a
+        // client that echoes the DescribeCoverage-advertised extent — which can round a
+        // hair outside the Zarr metadata extent — read the intersection rather than 404.
+        // Only an empty intersection (guarded above) surfaces InvalidSubsetting.
+        var bounds = Clamp(requestedBounds, metadata.Extent);
 
         if (!TryResolveSelections(
                 metadata,
@@ -367,9 +366,17 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         => left.XMin < right.XMax && left.XMax > right.XMin &&
            left.YMin < right.YMax && left.YMax > right.YMin;
 
-    private static bool Contains(RasterExtent outer, RasterExtent inner)
-        => inner.XMin >= outer.XMin && inner.XMax <= outer.XMax &&
-           inner.YMin >= outer.YMin && inner.YMax <= outer.YMax;
+    // Intersect the requested bounds with the coverage extent. Callers guarantee a
+    // non-empty overlap (via Intersects), so the clamped envelope keeps positive width
+    // and height.
+    private static RasterExtent Clamp(RasterExtent bounds, RasterExtent extent)
+        => bounds with
+        {
+            XMin = Math.Max(bounds.XMin, extent.XMin),
+            YMin = Math.Max(bounds.YMin, extent.YMin),
+            XMax = Math.Min(bounds.XMax, extent.XMax),
+            YMax = Math.Min(bounds.YMax, extent.YMax),
+        };
 
     private static double? TryConvertFillValue(object? fillValue)
     {

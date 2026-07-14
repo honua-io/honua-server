@@ -243,6 +243,17 @@ internal sealed class WorkflowPackageService(
             throw new WorkflowPackageValidationException(eligibility);
         }
 
+        // #2798: evaluate the mutating-process execution tier against the REQUESTING
+        // principal at publication creation. Scheduled (cron/event) runs of this
+        // publication later execute under a synthesized orchestrator principal that
+        // bypasses the operator evaluator, so authoring time is the only point where a
+        // real operator faces the ExecuteMutatingProcess gate for those runs. Manual
+        // run paths are additionally gated at run creation / job submission.
+        var compiledPlan = await CompileAnalysisPlanAsync(packageVersion, cancellationToken).ConfigureAwait(false);
+        await geoprocessingJobService
+            .EnsurePlanExecutionTierAuthorizedAsync(compiledPlan, principal, cancellationToken)
+            .ConfigureAwait(false);
+
         var publicationId = string.IsNullOrWhiteSpace(request.PublicationId)
             ? $"wfp-{Guid.NewGuid():N}"
             : request.PublicationId.Trim();

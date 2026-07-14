@@ -304,12 +304,20 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
         },
         new EsriConstructCapabilityDescriptor
         {
+            // Projected through OGC API Processes for direct process-id discovery
+            // and execution (#2698). CanServe drives the GP lane's
+            // IsProjectedThroughOgcApiProcesses verdict; the raster/surface family
+            // is now callable directly at /ogc/processes/processes/{id} exactly as a
+            // single-step honua-geoprocessing plan wrapper already invoked it — the
+            // shared async job/tier/RBAC pipeline is unchanged. The automation tier
+            // stays Assisted because full-fidelity execution still requires the
+            // out-of-process GDAL worker (validation-only in the lean image).
             ConstructKey = Keys.GpRasterSurface,
             AutomationStatus = MigrationFidelityAutomationStatuses.Assisted,
             Code = ImportCompatibilityCodes.ManualReview,
-            Reason = "Heavyweight raster/surface family; native-profile execution routed to the GDAL worker image, validation-only in the lean image.",
+            Reason = "Heavyweight raster/surface family projected through OGC API Processes for direct execution; native-profile execution routed to the GDAL worker image, validation-only in the lean image.",
             CanTransform = false,
-            CanServe = false,
+            CanServe = true,
             RequiresCheck = false
         },
         new EsriConstructCapabilityDescriptor

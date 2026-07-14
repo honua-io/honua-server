@@ -13,6 +13,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -57,7 +58,7 @@ public sealed class AlertPipelineTests
         evaluator.EvaluateAsync(Arg.Any<AlertChange>(), Arg.Any<Feature?>(), rule, zone, Arg.Any<AlertStateSnapshot?>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new AlertEvaluationResult());
 
-        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
@@ -121,7 +122,7 @@ public sealed class AlertPipelineTests
         evaluator.EvaluateAsync(Arg.Any<AlertChange>(), Arg.Any<Feature?>(), rule, zone, Arg.Any<AlertStateSnapshot?>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(new AlertEvaluationResult());
 
-        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
@@ -195,7 +196,7 @@ public sealed class AlertPipelineTests
                 UpdatedState = CreateState(ruleTwo.RuleId, ruleTwo.LayerId, change.ObjectId, change.Generation)
             });
 
-        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,
@@ -253,7 +254,7 @@ public sealed class AlertPipelineTests
                 new AlertEvaluationResult { UpdatedState = CreateState(rule.RuleId, rule.LayerId, 100, 1) },
                 new AlertEvaluationResult { UpdatedState = CreateState(rule.RuleId, rule.LayerId, 101, 2) });
 
-        var dispatchWriter = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
+        var dispatchWriter = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
         var sut = new AlertPipeline(
             changeReader,
             ruleRepository,

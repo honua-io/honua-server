@@ -416,7 +416,8 @@ public class ImageServerIdentifyHandlerTests
             F = "json",
         };
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 
     [UnitTest]
@@ -491,13 +492,10 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
 
         var result = await _handler.IdentifyAsync(context, 1, request);
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-        context.Response.Body.Position = 0;
-        using var json = await JsonDocument.ParseAsync(context.Response.Body);
-        json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
-            .Should().Be(StatusCodes.Status500InternalServerError);
+        // #2795: an unavailable multidimensional reader is NotImplemented (501); GeoServices passes it
+        // through as body error.code 501 (pass-through) rather than collapsing to 500. Consolidated onto
+        // the shared GeoServicesErrorAssertions helper (asserts transport 200 + body code).
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 
     [UnitTest]

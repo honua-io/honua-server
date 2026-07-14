@@ -11,6 +11,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -128,7 +129,7 @@ public sealed class OpsNotificationServiceTests
         AlertSeverity minSeverity = AlertSeverity.Info,
         int circuitThreshold = 5)
     {
-        var writer = new AlertDispatchWriter(outbox, NullLogger<AlertDispatchWriter>.Instance);
+        var writer = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
         editionPolicy = Substitute.For<IAlertEditionPolicy>();
         editionPolicy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
 
@@ -148,6 +149,6 @@ public sealed class OpsNotificationServiceTests
         });
 
         breaker = new AlertChannelCircuitBreaker(options);
-        return new OpsNotificationService(writer, editionPolicy, breaker, options, NullLogger<OpsNotificationService>.Instance);
+        return new OpsNotificationService(writer, editionPolicy, breaker, options, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<OpsNotificationService>.Instance);
     }
 }

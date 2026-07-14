@@ -161,6 +161,12 @@ public static partial class Extensions
             }
         });
 
+        // Ensure IMeterFactory is available in DI so metrics classes can create their
+        // instruments on a factory-owned "Honua" meter instead of a process-global static
+        // Meter (#2802). Idempotent (TryAdd-based); the hosting builder usually registers it
+        // already, but AddMetrics guarantees it for every host and test factory.
+        builder.Services.AddMetrics();
+
         var otelBuilder = builder.Services.AddOpenTelemetry();
 
         otelBuilder.WithMetrics(metrics =>

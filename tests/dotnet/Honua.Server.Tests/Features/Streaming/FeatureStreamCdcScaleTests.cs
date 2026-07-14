@@ -10,6 +10,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -39,7 +40,7 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
         _store = new InMemoryFeatureChangeEventStore(storeOptions, null);
 
         var streamOptions = Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = TotalEdits + 256 });
-        _sessionManager = new FeatureStreamSessionManager(streamOptions, NullLogger<FeatureStreamSessionManager>.Instance);
+        _sessionManager = new FeatureStreamSessionManager(streamOptions, NullLogger<FeatureStreamSessionManager>.Instance, TestTelemetry.CreateFeatureStreamMetrics());
 
         _publisher = new FeatureStreamPublisher(
             _store,

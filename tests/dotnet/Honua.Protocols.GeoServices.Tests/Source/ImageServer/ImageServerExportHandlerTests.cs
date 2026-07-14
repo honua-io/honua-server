@@ -278,7 +278,8 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":1,\"BandIndexes\":[0,1]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -325,7 +326,8 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"ExtractBand\",\"rasterFunctionArguments\":{\"BandNames\":[\"Red\"]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
@@ -587,7 +589,8 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(pixelType: "U8");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }

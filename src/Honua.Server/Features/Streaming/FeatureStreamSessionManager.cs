@@ -33,6 +33,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly object _clusterBroadcastLock = new();
     private readonly IOptions<FeatureStreamOptions> _options;
     private readonly ILogger<FeatureStreamSessionManager> _logger;
+    private readonly FeatureStreamMetrics _metrics;
     private readonly IConnectionMultiplexer? _redis;
     private ISubscriber? _subscriber;
     private readonly Timer? _clusterBroadcastRecoveryTimer;
@@ -51,10 +52,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public FeatureStreamSessionManager(
         IOptions<FeatureStreamOptions> options,
         ILogger<FeatureStreamSessionManager> logger,
+        FeatureStreamMetrics metrics,
         IConnectionMultiplexer? redis = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _redis = redis;
 
         if (_redis is null)
@@ -124,9 +127,17 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// for the session count, best-effort for the backlog depth.
     /// </summary>
     private void UpdateGaugeSnapshot()
-        => FeatureStreamMetrics.RecordGaugeSnapshot(
+        => _metrics.RecordGaugeSnapshot(
             Volatile.Read(ref _activeSessionCount),
             Volatile.Read(ref _clusterBroadcastBacklogCount));
+
+    /// <summary>
+    /// Records durable-replay events delivered to a reconnecting client for the given transport.
+    /// The replay helpers funnel through the session manager so all feature-stream metrics share
+    /// the manager's owned <see cref="FeatureStreamMetrics"/> instance.
+    /// </summary>
+    public void RecordReplayEventsDelivered(string transport, long count)
+        => _metrics.RecordReplayEventsDelivered(transport, count);
 
     /// <summary>
     /// Creates a new session and returns its channel reader for the transport loop.
@@ -155,7 +166,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         var opts = _options.Value;
         if (!TryReserveSessionSlot(opts.MaxConcurrentSessions))
         {
-            FeatureStreamMetrics.RecordSessionRejected();
+            _metrics.RecordSessionRejected();
             return null;
         }
 
@@ -176,7 +187,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         FeatureStreamLog.SessionCreated(_logger, id, transport);
-        FeatureStreamMetrics.RecordSessionOpened(transport);
+        _metrics.RecordSessionOpened(transport);
         UpdateGaugeSnapshot();
         return new FeatureStreamSession(id, channel.Reader, this, cts.Token);
     }
@@ -248,10 +259,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
         ReleaseSessionSlot();
         FeatureStreamLog.SessionRemoved(_logger, sessionId, reason);
-        FeatureStreamMetrics.RecordSessionClosed(entry.Transport, reason);
+        _metrics.RecordSessionClosed(entry.Transport, reason);
         if (reason == FeatureStreamDisconnectReason.SlowConsumer)
         {
-            FeatureStreamMetrics.RecordSlowConsumerDrop(entry.Transport);
+            _metrics.RecordSlowConsumerDrop(entry.Transport);
         }
 
         UpdateGaugeSnapshot();
@@ -353,7 +364,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             _clusterBroadcastBacklogCount--;
             _clusterBroadcastBacklogDropped++;
-            FeatureStreamMetrics.RecordClusterBroadcastDropped();
+            _metrics.RecordClusterBroadcastDropped();
             if (!_clusterBroadcastBacklogDropLogged)
             {
                 _clusterBroadcastBacklogDropLogged = true;
@@ -603,7 +614,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        FeatureStreamMetrics.RecordHeartbeatsSent(sent);
+        _metrics.RecordHeartbeatsSent(sent);
     }
 
     /// <summary>

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Rendering;
 using Honua.Ai.Grounding;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -146,6 +147,16 @@ internal static class McpErrorMapper
         },
 
         GroundingException groundingEx => MapGrounding(groundingEx),
+
+        RasterRenderingUnavailableException renderEx => new McpJsonRpcError
+        {
+            Code = JsonRpcServerError,
+            Message = renderEx.Message,
+            Data = new McpErrorData
+            {
+                Code = Codes.FailedPrecondition
+            }
+        },
 
         InvalidOperationException => new McpJsonRpcError
         {

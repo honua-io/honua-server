@@ -24,6 +24,7 @@ internal sealed partial class OpsNotificationService
     private readonly IAlertEditionPolicy _editionPolicy;
     private readonly AlertChannelCircuitBreaker _circuitBreaker;
     private readonly AlertOptions _options;
+    private readonly AlertPipelineMetrics _metrics;
     private readonly ILogger<OpsNotificationService> _logger;
 
     public OpsNotificationService(
@@ -31,12 +32,14 @@ internal sealed partial class OpsNotificationService
         IAlertEditionPolicy editionPolicy,
         AlertChannelCircuitBreaker circuitBreaker,
         IOptions<AlertOptions> options,
+        AlertPipelineMetrics metrics,
         ILogger<OpsNotificationService> logger)
     {
         _dispatchWriter = dispatchWriter ?? throw new ArgumentNullException(nameof(dispatchWriter));
         _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -54,13 +57,13 @@ internal sealed partial class OpsNotificationService
         var ops = _options.Ops;
         if (!ops.Enabled)
         {
-            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "disabled");
+            _metrics.RecordOpsNotification(notification.Source, notification.Severity, "disabled");
             return;
         }
 
         if ((int)notification.Severity < (int)ops.MinSeverity)
         {
-            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "below_min_severity");
+            _metrics.RecordOpsNotification(notification.Source, notification.Severity, "below_min_severity");
             LogBelowMinSeverity(_logger, notification.Source, notification.Severity, ops.MinSeverity);
             return;
         }
@@ -73,12 +76,12 @@ internal sealed partial class OpsNotificationService
 
         if (channels.IsDefaultOrEmpty)
         {
-            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "persisted_no_channel");
+            _metrics.RecordOpsNotification(notification.Source, notification.Severity, "persisted_no_channel");
             LogPersistedWithoutChannel(_logger, notification.Source, notification.Severity, notification.DedupeIdentifier);
         }
         else
         {
-            AlertPipelineMetrics.RecordOpsNotification(notification.Source, notification.Severity, "enqueued");
+            _metrics.RecordOpsNotification(notification.Source, notification.Severity, "enqueued");
             LogEnqueued(_logger, notification.Source, notification.Severity, channels.Length, notification.DedupeIdentifier);
         }
     }

@@ -321,6 +321,7 @@ internal static class McpToolHelpers
         GeoprocessingApprovalRequiredException => "ApprovalRequired",
         GeoprocessingNotFoundException => "UnknownDataset",
         GeoprocessingPreconditionFailedException => "PreconditionFailed",
+        Honua.Infrastructure.Rendering.RasterRenderingUnavailableException => "PreconditionFailed",
         GeoprocessingStoreUnavailableException => "ExecutionFailed",
         GeoprocessingIdempotencyConflictException => "Conflict",
         _ when jsonRpcError.Data?.Code == McpErrorMapper.Codes.NotFound => "UnknownDataset",
