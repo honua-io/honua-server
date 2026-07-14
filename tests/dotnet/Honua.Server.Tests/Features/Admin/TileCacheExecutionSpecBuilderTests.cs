@@ -103,6 +103,64 @@ public sealed class TileCacheExecutionSpecBuilderTests
     }
 
     [UnitTest]
+    public void BuildThenTryParse_RoundTrips_GenerationId()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "seed",
+            LayerId = 3,
+            TileMatrixSetId = "WebMercatorQuad",
+            GenerationId = "gen-abc-123"
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+        spec.Parameters[TileCacheJobParameterKeys.GenerationId].Should().Be("gen-abc-123");
+
+        var parsed = TileCacheExecutionSpecBuilder.TryParse(
+            spec.Parameters, out var decoded, out _, out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.GenerationId.Should().Be("gen-abc-123");
+    }
+
+    [UnitTest]
+    public void TryParse_SpecWithoutGenerationId_ParsesWithNullGeneration()
+    {
+        // Back-compat: a spec produced before the generation-id field existed must still parse,
+        // leaving GenerationId null so the worker anchors it to the operation id.
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [TileCacheJobParameterKeys.Operation] = "seed",
+            [TileCacheJobParameterKeys.LayerId] = "5",
+            [TileCacheJobParameterKeys.TileMatrixSetId] = "WebMercatorQuad"
+        };
+
+        var parsed = TileCacheExecutionSpecBuilder.TryParse(
+            parameters, out var decoded, out _, out var error);
+
+        parsed.Should().BeTrue();
+        error.Should().BeEmpty();
+        decoded.GenerationId.Should().BeNull();
+        decoded.LayerId.Should().Be(5);
+    }
+
+    [UnitTest]
+    public void Build_WithoutGenerationId_OmitsParameter()
+    {
+        var request = new TileOperationStartRequest
+        {
+            Operation = "warm",
+            LayerId = 1,
+            TileMatrixSetId = "WebMercatorQuad"
+        };
+
+        var spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, new TileCacheBatchOptions());
+
+        spec.Parameters.ContainsKey(TileCacheJobParameterKeys.GenerationId).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void TryParse_MissingOperation_Fails()
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
