@@ -463,6 +463,8 @@ public sealed class OgcApiFeaturesImportServiceTests
     {
         public ConcurrentBag<Uri> RequestUris { get; } = new();
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUris.Add(request.RequestUri!);
@@ -538,6 +540,8 @@ public sealed class OgcApiFeaturesImportServiceTests
 
         public List<Uri> ItemsRequests { get; } = new();
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUris.Add(request.RequestUri!);
@@ -606,6 +610,8 @@ public sealed class OgcApiFeaturesImportServiceTests
             _numberMatchedJsonFragment = numberMatchedJsonFragment;
         }
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
@@ -652,6 +658,8 @@ public sealed class OgcApiFeaturesImportServiceTests
 
     private sealed class MixedFeaturesHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
@@ -702,6 +710,8 @@ public sealed class OgcApiFeaturesImportServiceTests
 
     private sealed class CyclicItemsHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             // Every items page advertises a self-pointing next link, simulating a buggy upstream.

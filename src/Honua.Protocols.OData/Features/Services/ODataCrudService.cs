@@ -116,6 +116,8 @@ internal sealed partial class ODataCrudService
 
             return ODataCrudResult<Dictionary<string, object?>>.Success(response, etag);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.GetFeatureFailed) and mapped to an OData-format error result.
         catch (Exception ex)
         {
             Log.GetFeatureFailed(_logger, layerId, objectId, ex);
@@ -218,6 +220,8 @@ internal sealed partial class ODataCrudService
             Log.CreateFeatureFailed(_logger, layerId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.BadRequest("Invalid request data.");
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.CreateFeatureFailed) and mapped to an OData-format error result.
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
@@ -395,6 +399,8 @@ internal sealed partial class ODataCrudService
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.BadRequest("Invalid request data.");
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.UpdateFeatureFailed) and mapped to an OData-format error result.
         catch (Exception ex)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
@@ -491,6 +497,8 @@ internal sealed partial class ODataCrudService
 
             return ODataCrudResult<object>.NoContent(existingFeature.Value);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.DeleteFeatureFailed) and mapped to an OData-format error result.
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(_logger, layerId, objectId, ex);

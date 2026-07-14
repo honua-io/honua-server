@@ -188,6 +188,8 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
         }
         catch
         {
+            // Any failure to launch/query the container runtime just means Docker is unavailable
+            // here; callers use this as a skip-gate, not an assertion.
             return false;
         }
     }
@@ -205,6 +207,7 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
                 RUN mkdir -p /www && printf '%s' '{marker}' > /www/index.html
                 ENTRYPOINT ["httpd", "-f", "-p", "{ReplicaContainerPort.ToString(System.Globalization.CultureInfo.InvariantCulture)}", "-h", "/www"]
                 """;
+            // "Dockerfile" is a fixed relative literal, so Path.Combine cannot drop contextDir here.
             await File.WriteAllTextAsync(Path.Combine(contextDir, "Dockerfile"), dockerfile).ConfigureAwait(false);
 
             var (exitCode, _, stderr) = await RunProcessAsync(

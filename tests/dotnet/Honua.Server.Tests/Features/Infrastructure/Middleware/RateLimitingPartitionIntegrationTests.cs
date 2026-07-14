@@ -68,7 +68,7 @@ public sealed class RateLimitingPartitionIntegrationTests
 
         // Requests 1-5 are allowed; the 6th exceeds the endpoint's own 5/min bucket.
         lastResponse!.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        lastResponse.Headers.TryGetValues("Retry-After", out var retryAfter).Should().BeTrue(
+        lastResponse!.Headers.TryGetValues("Retry-After", out var retryAfter).Should().BeTrue(
             "a 429 must advise clients when to retry (#355 contract preserved)");
         int.Parse(retryAfter!.Single(), System.Globalization.CultureInfo.InvariantCulture)
             .Should().BeGreaterThanOrEqualTo(0);

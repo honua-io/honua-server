@@ -237,13 +237,8 @@ internal static partial class FeatureServerEndpoints
 
     private static MetadataV2FieldType ResolveSchemaFieldType(MetadataV2Resource resource, string fieldName)
     {
-        foreach (var field in resource.SchemaFields)
-        {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return field.Type;
-            }
-        }
-        return MetadataV2FieldType.DateTime;
+        var match = resource.SchemaFields.FirstOrDefault(
+            field => string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        return match?.Type ?? MetadataV2FieldType.DateTime;
     }
 }

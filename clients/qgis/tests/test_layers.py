@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import unquote
 
 from honua_qgis.auth import CollectionEntry, HonuaConnection, WmsLayerEntry
 from honua_qgis.layers import build_wfs_uri, build_wms_uri, display_label

@@ -36,7 +36,7 @@ public sealed class GroundingServiceTests
     private readonly IGroundingAuthorizationFilter _authorizationFilter = Substitute.For<IGroundingAuthorizationFilter>();
     private readonly IMetadataV2GraphProvider _metadataGraphProvider;
     private readonly GroundingOptions _options = new();
-    private MetadataV2GraphSnapshot _metadataSnapshot = CreateSnapshot();
+    private readonly MetadataV2GraphSnapshot _metadataSnapshot = CreateSnapshot();
     private Exception? _metadataGraphException;
 
     private static readonly ClaimsPrincipal Principal = new(new ClaimsIdentity(

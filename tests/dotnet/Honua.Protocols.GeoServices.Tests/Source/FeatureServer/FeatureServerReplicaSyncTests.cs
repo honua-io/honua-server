@@ -102,9 +102,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(400);
 
@@ -133,9 +134,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         // A subsequent extractChanges (download delta) must not return the client's own just-applied
         // edit, because the upload advanced the replica's sync cursor past it.
         var extractPayload = JsonSerializer.Serialize(new { replicaID = replicaId, f = "json" });
+        using var extractContent = new StringContent(extractPayload, Encoding.UTF8, "application/json");
         var extractResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(extractPayload, Encoding.UTF8, "application/json"));
+            extractContent);
         extractResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var extractDoc = JsonDocument.Parse(await extractResponse.Content.ReadAsStringAsync());
@@ -194,17 +196,18 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         var conflictRepo = _fixture.GetService<IReplicaConflictRepository>();
         var record = await conflictRepo.GetAsync(conflictId!);
         record.Should().NotBeNull();
-        record!.Value.ReplicaId.Should().Be(replicaId);
-        record.Value.ObjectId.Should().Be(objectId);
-        record.Value.Status.Should().Be(ReplicaConflictStatus.Pending);
+        var recordValue = record!.Value;
+        recordValue.ReplicaId.Should().Be(replicaId);
+        recordValue.ObjectId.Should().Be(objectId);
+        recordValue.Status.Should().Be(ReplicaConflictStatus.Pending);
 
         // The record now carries the client (uploaded) and pre-apply server state snapshots (#1287),
         // so the conflict-review detail API can compute the field-level comparison. The server snapshot
         // must be the pre-conflict value, not the just-applied client value (last-write-wins).
-        record.Value.ClientStateJson.Should().NotBeNullOrWhiteSpace();
-        record.Value.ServerStateJson.Should().NotBeNullOrWhiteSpace();
-        using (var clientState = JsonDocument.Parse(record.Value.ClientStateJson!))
-        using (var serverState = JsonDocument.Parse(record.Value.ServerStateJson!))
+        recordValue.ClientStateJson.Should().NotBeNullOrWhiteSpace();
+        recordValue.ServerStateJson.Should().NotBeNullOrWhiteSpace();
+        using (var clientState = JsonDocument.Parse(recordValue.ClientStateJson!))
+        using (var serverState = JsonDocument.Parse(recordValue.ServerStateJson!))
         {
             clientState.RootElement.GetProperty("attributes").GetProperty("name").GetString()
                 .Should().Be("client-wins");
@@ -263,11 +266,12 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         var conflictRepo = _fixture.GetService<IReplicaConflictRepository>();
         var record = await conflictRepo.GetAsync(conflictId!);
         record.Should().NotBeNull();
-        record!.Value.ConflictType.Should().Be(ReplicaConflictType.Geometry);
+        var recordValue = record!.Value;
+        recordValue.ConflictType.Should().Be(ReplicaConflictType.Geometry);
 
         // Both captured states carry geometry so the review API can render the comparison.
-        using var clientState = JsonDocument.Parse(record.Value.ClientStateJson!);
-        using var serverState = JsonDocument.Parse(record.Value.ServerStateJson!);
+        using var clientState = JsonDocument.Parse(recordValue.ClientStateJson!);
+        using var serverState = JsonDocument.Parse(recordValue.ServerStateJson!);
         clientState.RootElement.TryGetProperty("geometry", out _).Should().BeTrue();
         serverState.RootElement.TryGetProperty("geometry", out _).Should().BeTrue();
     }
@@ -420,9 +424,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             edits,
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = doc.RootElement;
@@ -474,9 +479,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             edits,
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
 
         // The sync is rejected because an edit failed and the batch rolled back.
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -553,9 +559,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
@@ -570,9 +577,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             replicaServerGen,
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
@@ -581,9 +589,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     private async Task UnregisterReplicaAsync(string replicaId)
     {
         var payload = JsonSerializer.Serialize(new { replicaID = replicaId, f = "json" });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/unRegisterReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -610,9 +619,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             f = "json"
         });
 
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -622,9 +632,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     private async Task SynchronizeDownloadAsync(string replicaId)
     {
         var payload = JsonSerializer.Serialize(new { replicaID = replicaId, syncDirection = "download", f = "json" });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -637,9 +648,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             edits = editsJson,
             f = "json"
         });
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -653,9 +665,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             adds = new[] { new { attributes = new { name } } },
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -672,9 +685,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             adds = new[] { new { attributes = new { name }, geometry = new { x, y } } },
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -698,9 +712,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             },
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -717,9 +732,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             },
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -764,9 +780,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -793,8 +810,9 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         var replicaId = createRoot.GetProperty("replicaID").GetString()!;
         var baseServerGen = createRoot.GetProperty("serverGen").GetInt64();
 
-        // Server-side feature committed BEFORE the client's upload window starts.
-        var priorObjectId = await AddFeatureAsync("prior-server-edit");
+        // Server-side feature committed BEFORE the client's upload window starts. Only the
+        // side effect (a committed feature prior to the window) matters here, not its id.
+        await AddFeatureAsync("prior-server-edit");
 
         // Establish a baseline download so the replica cursor is at the current generation.
         await SynchronizeDownloadWithResponseAsync(replicaId, baseServerGen);
@@ -815,9 +833,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             edits,
             f = "json"
         });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

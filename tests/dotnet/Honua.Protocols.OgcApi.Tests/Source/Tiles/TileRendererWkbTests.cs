@@ -140,6 +140,9 @@ public sealed class TileRendererWkbTests
         WriteInt32(wkb, ref offset, 4, littleEndian);
         WriteInt32(wkb, ref offset, points.Length, littleEndian);
 
+        // Not rewritten as .Select(...): each iteration both maps the point to WKB bytes
+        // and mutates the running `offset` used to place it in `wkb`, so a LINQ projection
+        // would still need a side-effecting accumulator and would read less clearly.
         foreach (var point in points)
         {
             var pointWkb = BuildPointWkb(point.X, point.Y, littleEndian);

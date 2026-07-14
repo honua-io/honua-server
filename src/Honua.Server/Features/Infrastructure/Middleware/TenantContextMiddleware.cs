@@ -183,15 +183,8 @@ internal sealed class TenantContextMiddleware(
             return false;
         }
 
-        foreach (var role in _options.MultiTenantAdminRoles)
-        {
-            if (!string.IsNullOrWhiteSpace(role) && principal.IsInRole(role))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return _options.MultiTenantAdminRoles.Any(
+            role => !string.IsNullOrWhiteSpace(role) && principal.IsInRole(role));
     }
 
     private static string? GetPrincipalIdentifier(ClaimsPrincipal? principal)

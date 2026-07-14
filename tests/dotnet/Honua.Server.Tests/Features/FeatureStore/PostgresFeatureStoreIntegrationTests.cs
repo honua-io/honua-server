@@ -441,6 +441,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         result.Items.Should().AllSatisfy(f =>
         {
             var category = f.Attributes["category"]?.ToString();
+            category.Should().NotBeNullOrEmpty();
             category.Should().BeOneOf("retail", "commercial");
             Convert.ToInt32(f.Attributes["value"], CultureInfo.InvariantCulture).Should().BeGreaterOrEqualTo(500);
             Convert.ToBoolean(f.Attributes["active"], CultureInfo.InvariantCulture).Should().BeTrue();
@@ -693,7 +694,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             FeatureEditBatch.Create(
                 rollbackOnFailure: true,
                 operations: ImmutableArray.Create(
-                    FeatureEditOperation.Delete(existingFeature.Value.Id),
+                    FeatureEditOperation.Delete(existingFeature!.Value.Id),
                     FeatureEditOperation.Update(updatedFeature))),
             CancellationToken.None);
 

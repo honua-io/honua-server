@@ -156,11 +156,11 @@ public sealed class FeatureServerPluginValidationTests : IAsyncLifetime
             Geometry = new GeoServicesGeometry { X = -122.4194, Y = 37.7749 }
         };
 
-    private Task<HttpResponseMessage> PostApplyEditsAsync(ApplyEditsRequest request)
+    private async Task<HttpResponseMessage> PostApplyEditsAsync(ApplyEditsRequest request)
     {
         var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-        return _fixture.Client.PostAsync(
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        return await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", content);
     }
 

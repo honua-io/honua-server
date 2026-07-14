@@ -364,8 +364,12 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
             return true;
         }
 
-        // New API versions
-        if (context.ApiVersion?.StartsWith("v1.", StringComparison.OrdinalIgnoreCase) == false &&
+        // New API versions: anything past v1 (e.g. "v2.x") or explicitly tagged beta.
+        // (Was previously `&&`, which required BOTH "not v1" AND "beta" — since a
+        // beta-prefixed version can never also start with "v1.", that made the check
+        // effectively identical to the beta-only clause and silently never flagged
+        // non-beta post-v1 API versions such as "v2.0" as a new code path.)
+        if (context.ApiVersion?.StartsWith("v1.", StringComparison.OrdinalIgnoreCase) == false ||
             context.ApiVersion?.StartsWith("beta", StringComparison.OrdinalIgnoreCase) == true)
         {
             return true;

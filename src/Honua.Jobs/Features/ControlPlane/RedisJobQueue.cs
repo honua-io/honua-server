@@ -429,9 +429,9 @@ internal sealed partial class RedisJobQueue(
 
     private static DateTimeOffset? GetVisibleAfter(HashEntry[] meta)
     {
-        foreach (var entry in meta)
+        foreach (var entry in meta.Where(e => e.Name == "visibleAfter"))
         {
-            if (entry.Name == "visibleAfter" && long.TryParse(entry.Value.ToString(), out var ms))
+            if (long.TryParse(entry.Value.ToString(), out var ms))
             {
                 return DateTimeOffset.FromUnixTimeMilliseconds(ms);
             }

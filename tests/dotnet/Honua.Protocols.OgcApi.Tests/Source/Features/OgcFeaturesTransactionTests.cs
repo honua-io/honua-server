@@ -49,9 +49,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         };
 
         var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var content = new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson);
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items",
-            new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -85,9 +86,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         };
 
         var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var content = new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson);
         var response = await _fixture.Client.PutAsync(
             $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
-            new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -103,9 +105,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
+        using var content = new StringContent("""{"type":"Feature","properties":{"name":"bad type"},"geometry":null}""", Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items",
-            new StringContent("""{"type":"Feature","properties":{"name":"bad type"},"geometry":null}""", Encoding.UTF8, "text/plain"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
@@ -117,9 +120,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
     {
         var existingId = await _fixture.InsertFeatureAsync(TestLayerId, "Original");
 
+        using var content = new StringContent("""{"type":"Feature","properties":{"name":"bad type"},"geometry":null}""", Encoding.UTF8, "text/plain");
         var response = await _fixture.Client.PutAsync(
             $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
-            new StringContent("""{"type":"Feature","properties":{"name":"bad type"},"geometry":null}""", Encoding.UTF8, "text/plain"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
     }
@@ -145,9 +149,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
             }
         };
 
+        using var content = new StringContent(JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature), Encoding.UTF8, MediaTypes.GeoJson);
         var response = await _fixture.Client.PutAsync(
             $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
-            new StringContent(JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature), Encoding.UTF8, MediaTypes.GeoJson));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -220,9 +225,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         };
 
         var createJson = JsonSerializer.Serialize(createFeature, OgcJsonContext.Default.GeoJsonFeature);
+        using var createContent = new StringContent(createJson, Encoding.UTF8, MediaTypes.GeoJson);
         var createResponse = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items",
-            new StringContent(createJson, Encoding.UTF8, MediaTypes.GeoJson));
+            createContent);
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
@@ -369,9 +375,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         };
 
         var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var content = new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson);
         var response = await fixture.Client.PostAsync(
             $"/ogc/features/collections/{TestLayerId}/items",
-            new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
@@ -419,9 +426,10 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
         };
 
         var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var content = new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson);
         var response = await fixture.Client.PutAsync(
             $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
-            new StringContent(json, Encoding.UTF8, MediaTypes.GeoJson));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -516,12 +524,13 @@ public sealed class OgcFeaturesTransactionTests : IClassFixture<OgcFeaturesTrans
             }
         };
 
+        using var updateContent = new StringContent(
+            JsonSerializer.Serialize(updated, OgcJsonContext.Default.GeoJsonFeature),
+            Encoding.UTF8,
+            MediaTypes.GeoJson);
         var putResponse = await _fixture.Client.PutAsync(
             $"/ogc/features/collections/{TestLayerId}/items/{existingId}",
-            new StringContent(
-                JsonSerializer.Serialize(updated, OgcJsonContext.Default.GeoJsonFeature),
-                Encoding.UTF8,
-                MediaTypes.GeoJson));
+            updateContent);
         putResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // DELETE with the now-stale ETag.  OGC API Features Part 4 §7.3 requires 412.

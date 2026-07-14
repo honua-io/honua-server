@@ -349,6 +349,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             }
             catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
             {
+                // Expected: the renewal loop observes the cancellation we just requested above.
             }
 
             await _runStore.ReleaseLeaseAsync(runId, _ownerId, CancellationToken.None).ConfigureAwait(false);
@@ -941,30 +942,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     }
 
     private static bool HasBindingFrom(WorkflowStepDefinition stepDefinition, string upstreamStepId)
-    {
-        foreach (var binding in stepDefinition.InputBindings)
-        {
-            if (string.Equals(binding.SourceStepId, upstreamStepId, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => stepDefinition.InputBindings.Any(binding => string.Equals(binding.SourceStepId, upstreamStepId, StringComparison.Ordinal));
 
     private static bool HasDownstreamBindingFromStep(WorkflowDefinition definition, string upstreamStepId)
-    {
-        foreach (var step in definition.Steps)
-        {
-            if (HasBindingFrom(step, upstreamStepId))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => definition.Steps.Any(step => HasBindingFrom(step, upstreamStepId));
 
     private static string ResolveUpstreamPolicy(
         IReadOnlyDictionary<string, WorkflowStepDefinition> definitionById,

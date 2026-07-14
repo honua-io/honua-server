@@ -500,12 +500,11 @@ internal static class StandardErrorResponseFormatter
 
         foreach (var segment in value.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            foreach (var type in GeoServicesServiceTypes)
+            var match = GeoServicesServiceTypes.FirstOrDefault(
+                type => string.Equals(segment, type, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
             {
-                if (string.Equals(segment, type, StringComparison.OrdinalIgnoreCase))
-                {
-                    return type;
-                }
+                return match;
             }
         }
 
@@ -531,12 +530,9 @@ internal static class StandardErrorResponseFormatter
         // or mixed segments are identifiers (layer/feature ids) and would explode
         // metric cardinality, so they collapse to "unknown".
         var last = segments[^1];
-        foreach (var ch in last)
+        if (last.Any(ch => !char.IsLetter(ch)))
         {
-            if (!char.IsLetter(ch))
-            {
-                return "unknown";
-            }
+            return "unknown";
         }
 
         return last.ToLowerInvariant();

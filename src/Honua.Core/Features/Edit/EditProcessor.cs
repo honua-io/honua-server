@@ -328,6 +328,9 @@ public sealed class EditProcessor : IEditProcessor
 
             return TransactionValidationResult.Success(warnings.Count > 0 ? warnings : null);
         }
+        // Intentional top-level boundary: this validation entry point must never throw into the
+        // caller. Any unexpected failure is logged with full detail and reported through the
+        // normal validation-failure result (sanitized message only) rather than propagating.
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
@@ -506,12 +509,9 @@ public sealed class EditProcessor : IEditProcessor
         ImmutableArray<long> deletes,
         MetadataV2Resource resource)
     {
-        foreach (var objectId in deletes)
+        if (deletes.Any(objectId => objectId <= 0))
         {
-            if (objectId <= 0)
-            {
-                return EditValidationResult.Failure("Invalid Object ID for delete operation");
-            }
+            return EditValidationResult.Failure("Invalid Object ID for delete operation");
         }
 
         return EditValidationResult.Success();
@@ -638,12 +638,9 @@ public sealed class EditProcessor : IEditProcessor
 
         if (editRequest.Preconditions is { IsDefaultOrEmpty: false } requestPreconditions)
         {
-            foreach (var precondition in requestPreconditions)
+            foreach (var precondition in requestPreconditions.Where(p => !string.IsNullOrEmpty(p.ExpectedStateToken)))
             {
-                if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
-                {
-                    Register(ref byObjectId, precondition.ObjectId, precondition.ExpectedStateToken);
-                }
+                Register(ref byObjectId, precondition.ObjectId, precondition.ExpectedStateToken);
             }
         }
 
@@ -856,15 +853,7 @@ public sealed class EditProcessor : IEditProcessor
 
             // Check presence using case-insensitive comparison regardless of the dictionary's
             // own key comparer (attributes may arrive from different protocol paths).
-            var present = false;
-            foreach (var key in attributes.Keys)
-            {
-                if (string.Equals(key, field.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    present = true;
-                    break;
-                }
-            }
+            var present = attributes.Keys.Any(key => string.Equals(key, field.Name, StringComparison.OrdinalIgnoreCase));
 
             if (!present)
             {

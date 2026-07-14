@@ -152,6 +152,9 @@ internal sealed class WorkspaceResource : IMcpResource
 
     private static string? ResolveResultsUri(Workspace workspace)
     {
+        // Not rewritten as .Where(...)/.Select(...): the match test itself is
+        // the out-param lookup (TryGetMetadataValue) whose result is what gets
+        // returned, so a LINQ filter would need the same out-var capture.
         foreach (var artifact in workspace.Artifacts)
         {
             if (TryGetMetadataValue(artifact.Metadata, "resultPackageId", out var resultPackageId)
@@ -177,14 +180,14 @@ internal sealed class WorkspaceResource : IMcpResource
             return true;
         }
 
-        foreach (var pair in metadata)
+        var match = metadata.FirstOrDefault(pair =>
+            string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(pair.Value));
+
+        if (match.Key is not null)
         {
-            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(pair.Value))
-            {
-                value = pair.Value;
-                return true;
-            }
+            value = match.Value;
+            return true;
         }
 
         value = string.Empty;

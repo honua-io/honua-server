@@ -32,12 +32,9 @@ public sealed class AuditResidencyGuard
         _allowedRegions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (allowedRegions is not null)
         {
-            foreach (var region in allowedRegions)
+            foreach (var region in allowedRegions.Where(region => !string.IsNullOrWhiteSpace(region)))
             {
-                if (!string.IsNullOrWhiteSpace(region))
-                {
-                    _allowedRegions.Add(region.Trim());
-                }
+                _allowedRegions.Add(region.Trim());
             }
         }
     }

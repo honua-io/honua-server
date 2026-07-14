@@ -389,7 +389,7 @@ public sealed class ControlPlaneOptionsValidatorTests
     [UnitTest]
     public void Validate_WithExistingKubernetesBearerTokenPath_Succeeds()
     {
-        var tempFile = Path.Combine(Path.GetTempPath(), $"bearer-token-{Guid.NewGuid():N}.txt");
+        var tempFile = Path.Join(Path.GetTempPath(), $"bearer-token-{Guid.NewGuid():N}.txt");
         File.WriteAllText(tempFile, "test-token");
         try
         {
@@ -419,7 +419,7 @@ public sealed class ControlPlaneOptionsValidatorTests
         // An empty CA bundle silently falls back to OS trust at runtime
         // (KubernetesJobClient swallows ImportFromPemFile failures) which fails only
         // later as private-CA TLS errors. Options validation must refuse to start.
-        var tempFile = Path.Combine(Path.GetTempPath(), $"ca-bundle-empty-{Guid.NewGuid():N}.pem");
+        var tempFile = Path.Join(Path.GetTempPath(), $"ca-bundle-empty-{Guid.NewGuid():N}.pem");
         File.WriteAllText(tempFile, string.Empty);
         try
         {
@@ -449,7 +449,7 @@ public sealed class ControlPlaneOptionsValidatorTests
     [UnitTest]
     public void Validate_WithMalformedKubernetesCaBundleFile_ReturnsFailure()
     {
-        var tempFile = Path.Combine(Path.GetTempPath(), $"ca-bundle-bad-{Guid.NewGuid():N}.pem");
+        var tempFile = Path.Join(Path.GetTempPath(), $"ca-bundle-bad-{Guid.NewGuid():N}.pem");
         File.WriteAllText(
             tempFile,
             "-----BEGIN CERTIFICATE-----\nnot-a-real-base64-encoded-cert\n-----END CERTIFICATE-----\n");
@@ -482,7 +482,7 @@ public sealed class ControlPlaneOptionsValidatorTests
     [UnitTest]
     public void Validate_WithValidKubernetesCaBundleFile_Succeeds()
     {
-        var tempFile = Path.Combine(Path.GetTempPath(), $"ca-bundle-ok-{Guid.NewGuid():N}.pem");
+        var tempFile = Path.Join(Path.GetTempPath(), $"ca-bundle-ok-{Guid.NewGuid():N}.pem");
         File.WriteAllText(tempFile, CreateSelfSignedCaPem());
         try
         {

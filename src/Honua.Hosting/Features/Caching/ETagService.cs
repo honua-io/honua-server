@@ -124,15 +124,11 @@ internal sealed class ETagService : IETagService
         // Parse multiple ETags (comma-separated)
         var etags = ifNoneMatch.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        // If-None-Match uses weak comparison for GET/HEAD.
         var current = ParseETag(currentETag);
-        foreach (var etag in etags)
+        if (etags.Select(ParseETag).Any(candidate => string.Equals(candidate.Value, current.Value, StringComparison.Ordinal)))
         {
-            // If-None-Match uses weak comparison for GET/HEAD.
-            var candidate = ParseETag(etag);
-            if (string.Equals(candidate.Value, current.Value, StringComparison.Ordinal))
-            {
-                return false; // ETag matches, resource not modified
-            }
+            return false; // ETag matches, resource not modified
         }
 
         return true; // No matching ETag found, resource is modified
@@ -162,20 +158,12 @@ internal sealed class ETagService : IETagService
         // Parse multiple ETags (comma-separated)
         var etags = ifMatch.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        // If-Match requires strong comparison; weak tags never match.
         var current = ParseETag(currentETag);
-        foreach (var etag in etags)
+        if (!current.IsWeak &&
+            etags.Select(ParseETag).Any(candidate => !candidate.IsWeak && string.Equals(candidate.Value, current.Value, StringComparison.Ordinal)))
         {
-            // If-Match requires strong comparison; weak tags never match.
-            var candidate = ParseETag(etag);
-            if (candidate.IsWeak || current.IsWeak)
-            {
-                continue;
-            }
-
-            if (string.Equals(candidate.Value, current.Value, StringComparison.Ordinal))
-            {
-                return true; // ETag matches, precondition passes
-            }
+            return true; // ETag matches, precondition passes
         }
 
         return false; // No matching ETag found, precondition fails

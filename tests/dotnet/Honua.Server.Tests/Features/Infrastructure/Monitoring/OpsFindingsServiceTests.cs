@@ -678,10 +678,12 @@ public sealed class OpsFindingsServiceTests
             OpsActionExecutionPayloads.TuneBoundedAdmission(10),
         };
 
-        foreach (var payload in registeredActions)
+        foreach (var action in registeredActions.Select(payload =>
         {
             using var document = System.Text.Json.JsonDocument.Parse(payload);
-            var action = document.RootElement.GetProperty("action").GetString();
+            return document.RootElement.GetProperty("action").GetString();
+        }))
+        {
             Assert.NotNull(action);
             Assert.True(
                 OpsActionCatalog.IsRegistered(action!),

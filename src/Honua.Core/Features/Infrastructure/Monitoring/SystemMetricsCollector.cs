@@ -198,7 +198,9 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
                 return Math.Clamp(usage, 0.0, 100.0);
             }
         }
-        catch
+        // Narrowed to the exceptions Process.TotalProcessorTime can realistically throw (the
+        // process has exited, or the platform/sandbox denies access to process timing info).
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or PlatformNotSupportedException)
         {
             return 0.0; // Fallback if CPU usage cannot be determined
         }
@@ -218,7 +220,11 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
 
             return Math.Min((double)usedMemory / availableMemory * 100.0, 100.0);
         }
-        catch
+        // Intentional broad catch: this is a best-effort metrics computation feeding the
+        // periodic system snapshot (see GatherMetrics, which already logs macro failures); a
+        // defensive fallback here keeps one odd arithmetic/runtime result from losing the whole
+        // snapshot.
+        catch (Exception)
         {
             return 0.0;
         }
@@ -231,7 +237,9 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
             var gcInfo = GC.GetGCMemoryInfo();
             return gcInfo.TotalAvailableMemoryBytes / (1024.0 * 1024.0);
         }
-        catch
+        // Intentional broad catch: best-effort GC runtime query for the periodic metrics
+        // snapshot; a transient failure here should degrade to 0 rather than lose the snapshot.
+        catch (Exception)
         {
             return 0.0;
         }
@@ -248,7 +256,10 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
                 Gen2 = GC.CollectionCount(2)
             };
         }
-        catch
+        // Intentional broad catch: best-effort GC runtime query for the periodic metrics
+        // snapshot; a transient failure here should degrade to defaults rather than lose the
+        // snapshot.
+        catch (Exception)
         {
             return new GcCollectionInfo();
         }

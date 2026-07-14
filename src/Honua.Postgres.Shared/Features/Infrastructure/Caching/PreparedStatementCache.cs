@@ -380,6 +380,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             }
             catch (Exception ex)
             {
+                // Statement preparation is a best-effort optimization: on failure, log and fall back
+                // to unprepared execution rather than failing the caller's query.
                 PreparedStatementCacheLog.PrepareFailed(_logger, statementHash, ex);
                 return null;
             }
@@ -533,8 +535,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
             _prepareSupported = !builder.Multiplexing;
         }
-        catch
+        catch (Exception ex)
         {
+            // Malformed/unparseable connection string: default to "unsupported" so callers safely fall
+            // back to unprepared execution, but log it since this otherwise hides a real config problem.
+            PreparedStatementCacheLog.PreparationSupportDetectionFailed(_logger, ex);
             _prepareSupported = false;
         }
 
@@ -966,6 +971,8 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         }
         catch (Exception ex)
         {
+            // Runs on a background timer callback with no caller to observe a thrown exception;
+            // logging and continuing preserves the next scheduled cleanup tick.
             PreparedStatementCacheLog.CleanupFailed(_logger, ex);
         }
     }
@@ -1077,4 +1084,10 @@ internal static partial class PreparedStatementCacheLog
         Level = LogLevel.Warning,
         Message = "Failed to analyze query plan for statement: {StatementName}")]
     public static partial void PlanAnalysisFailed(ILogger logger, string statementName, Exception exception);
+
+    [LoggerMessage(
+        EventId = 8715,
+        Level = LogLevel.Debug,
+        Message = "Failed to parse connection string to detect multiplexing; assuming statement preparation is unsupported.")]
+    public static partial void PreparationSupportDetectionFailed(ILogger logger, Exception exception);
 }

@@ -75,7 +75,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
         var logger = NullLogger<InMemoryImportJobService>.Instance;
         using var jobService = new InMemoryImportJobService(importService, performanceMonitor, logger);
 
-        var tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-local-import-{Guid.NewGuid():N}.geojson");
+        var tempFilePath = Path.Join(Path.GetTempPath(), $"honua-local-import-{Guid.NewGuid():N}.geojson");
         await File.WriteAllTextAsync(tempFilePath, "{\"type\":\"FeatureCollection\",\"features\":[]}");
 
         var request = new ImportRequest
@@ -115,7 +115,9 @@ public sealed class InMemoryImportJobServiceCleanupTests
         var field = typeof(InMemoryImportJobService)
             .GetField("MaxCompletedJobs", BindingFlags.NonPublic | BindingFlags.Static);
         field.Should().NotBeNull();
-        return (int)(field?.GetRawConstantValue() ?? 0);
+        // The preceding assertion already fails the test if reflection can't find the
+        // field, so a non-null dereference here is guaranteed.
+        return (int)field!.GetRawConstantValue()!;
     }
 
     private static int GetJobCount(InMemoryImportJobService jobService)
@@ -123,11 +125,11 @@ public sealed class InMemoryImportJobServiceCleanupTests
         var field = typeof(InMemoryImportJobService)
             .GetField("_jobs", BindingFlags.NonPublic | BindingFlags.Instance);
         field.Should().NotBeNull();
-        var jobs = field?.GetValue(jobService);
+        var jobs = field!.GetValue(jobService);
         jobs.Should().NotBeNull();
-        var countProperty = jobs?.GetType().GetProperty("Count");
+        var countProperty = jobs!.GetType().GetProperty("Count");
         countProperty.Should().NotBeNull();
-        return (int)(countProperty?.GetValue(jobs) ?? 0);
+        return (int)countProperty!.GetValue(jobs)!;
     }
 
     private static async Task TriggerCleanupAsync(InMemoryImportJobService jobService)
@@ -136,7 +138,7 @@ public sealed class InMemoryImportJobServiceCleanupTests
         var cleanupMethod = type.GetMethod("CleanupCompletedJobs", BindingFlags.NonPublic | BindingFlags.Instance);
         cleanupMethod.Should().NotBeNull();
 
-        cleanupMethod?.Invoke(jobService, [DateTimeOffset.UtcNow]);
+        cleanupMethod!.Invoke(jobService, [DateTimeOffset.UtcNow]);
         await Task.CompletedTask;
     }
 

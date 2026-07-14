@@ -114,8 +114,8 @@ public class BoundingBoxAntimeridianTests
 
         intersection.Should().NotBeNull();
         intersection!.Value.IsAntimeridianCrossing.Should().BeTrue();
-        intersection.Value.MinX.Should().Be(175);
-        intersection.Value.MaxX.Should().Be(-175);
+        intersection!.Value.MinX.Should().Be(175);
+        intersection!.Value.MaxX.Should().Be(-175);
     }
 
     [UnitTest]

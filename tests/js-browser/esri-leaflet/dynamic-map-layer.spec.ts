@@ -82,7 +82,6 @@ test.describe('DynamicMapLayer — MapServer Consumption', () => {
         // Identify at the center of the map (San Francisco area)
         const map = (window as any).__map;
         const center = map.getCenter();
-        const bounds = map.getBounds();
 
         layer.identify()
           .at(center)

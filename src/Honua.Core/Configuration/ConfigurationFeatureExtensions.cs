@@ -29,9 +29,8 @@ public static class ConfigurationFeatureExtensions
             $"Features:{normalized}"
         };
 
-        foreach (var key in candidateKeys)
+        foreach (var rawValue in candidateKeys.Select(key => configuration[key]))
         {
-            var rawValue = configuration[key];
             if (string.IsNullOrWhiteSpace(rawValue))
             {
                 continue;

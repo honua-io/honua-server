@@ -82,15 +82,7 @@ internal static class WorkflowBindingResolver
             return index >= 0 && index < artifacts.Count ? artifacts[index] : null;
         }
 
-        foreach (var artifact in artifacts)
-        {
-            if (string.Equals(artifact.Label, target, StringComparison.OrdinalIgnoreCase))
-            {
-                return artifact;
-            }
-        }
-
-        return null;
+        return artifacts.FirstOrDefault(artifact => string.Equals(artifact.Label, target, StringComparison.OrdinalIgnoreCase));
     }
 
     public static AnalysisPlan ApplyBindings(AnalysisPlan plan, IReadOnlyDictionary<string, string> resolvedValues)

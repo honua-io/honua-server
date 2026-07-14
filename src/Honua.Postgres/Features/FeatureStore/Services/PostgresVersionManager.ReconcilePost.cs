@@ -190,6 +190,8 @@ internal sealed partial class PostgresVersionManager
         // version; it takes the same lock (#1553).
         await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
 
+        // Not rewritten as .Where(...).Count(): each resolution requires a sequential
+        // awaited DB call, which plain synchronous LINQ cannot express.
         var resolved = 0;
         foreach (var resolution in resolutions)
         {
@@ -214,7 +216,8 @@ internal sealed partial class PostgresVersionManager
         activity?.SetTag("honua.version.id", versionId.ToString());
         activity?.SetTag("honua.version.service", _lockScope);
 
-        var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
+        // Only used to verify the version exists (throws below); the loaded record itself is unused here.
+        _ = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
 
         // Post is refused while pending (unresolved) conflicts remain for the version; the caller must
@@ -949,6 +952,8 @@ internal sealed partial class PostgresVersionManager
         var changed = new HashSet<string>(StringComparer.Ordinal);
         foreach (var key in baseFields.Keys.Union(targetFields.Keys, StringComparer.Ordinal))
         {
+            // hasBase/hasTarget are independent lookups (added/removed/changed keys are all possible
+            // since key is drawn from the union of both key sets); not a tautology despite the analyzer note.
             var hasBase = baseFields.TryGetValue(key, out var baseValue);
             var hasTarget = targetFields.TryGetValue(key, out var targetValue);
             if (hasBase != hasTarget || (hasBase && hasTarget && !ElementsEqual(baseValue, targetValue)))

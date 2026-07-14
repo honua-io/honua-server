@@ -151,8 +151,6 @@ public sealed class FeatureStreamCdcScaleTests : IDisposable
             }
         }
 
-        var publishDuration = overallSw.Elapsed;
-
         // Wait for all consumers to finish.
         var allDone = Task.WhenAll(consumerTasks);
         await Task.WhenAny(allDone, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false);

@@ -95,6 +95,8 @@ internal static partial class AttachmentHandler
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             var featureId = featureIds.Count > 0 ? featureIds[0] : 0;
@@ -132,6 +134,8 @@ internal static partial class AttachmentHandler
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
@@ -239,6 +243,8 @@ internal static partial class AttachmentHandler
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
@@ -369,6 +375,8 @@ internal static partial class AttachmentHandler
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
@@ -418,6 +426,8 @@ internal static partial class AttachmentHandler
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             LogDeleteAttachmentsError(logger, layerId, featureId, ex);
@@ -470,6 +480,8 @@ internal static partial class AttachmentHandler
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
+        // 500 rather than letting an unmapped provider/store exception crash the request.
         catch (Exception ex)
         {
             LogDownloadAttachmentError(logger, layerId, featureId, attachmentId, ex);

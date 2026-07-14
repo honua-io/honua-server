@@ -292,12 +292,9 @@ internal sealed class PublishedOperationTool : IMcpTool
             writer.WriteEndObject();
 
             writer.WriteStartArray("required");
-            foreach (var parameter in parameters)
+            foreach (var parameter in parameters.Where(parameter => parameter.Required))
             {
-                if (parameter.Required)
-                {
-                    writer.WriteStringValue(parameter.Name);
-                }
+                writer.WriteStringValue(parameter.Name);
             }
 
             writer.WriteEndArray();

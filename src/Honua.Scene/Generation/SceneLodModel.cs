@@ -89,9 +89,8 @@ public sealed class SceneTileTree
     private static int ComputeMaxDepth(SceneTileNode node)
     {
         var max = node.Depth;
-        foreach (var child in node.Children)
+        foreach (var childMax in node.Children.Select(ComputeMaxDepth))
         {
-            var childMax = ComputeMaxDepth(child);
             if (childMax > max)
             {
                 max = childMax;

@@ -47,9 +47,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             attrs.GetProperty("name").GetString()!.Length.Should().Be(5);
         }
     }
@@ -67,9 +66,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             attrs.GetProperty("name").GetString()!.Length.Should().BeGreaterThan(12);
         }
     }
@@ -87,9 +85,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             attrs.GetProperty("name").GetString().Should().StartWith("San");
         }
     }
@@ -141,9 +138,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().HaveCountGreaterThan(1);
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             attrs.GetProperty("state").GetString().Should().Be("California");
         }
     }
@@ -182,9 +178,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             var rating = attrs.GetProperty("rating").GetDouble();
             Math.Round(rating, MidpointRounding.AwayFromZero).Should().Be(5);
         }
@@ -203,9 +198,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             var rating = attrs.GetProperty("rating").GetDouble();
             Math.Floor(rating).Should().Be(3);
         }
@@ -224,9 +218,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             var rating = attrs.GetProperty("rating").GetDouble();
             Math.Ceiling(rating).Should().Be(4);
         }
@@ -246,9 +239,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             var rating = attrs.GetProperty("rating").GetDouble();
             Math.Abs(rating).Should().BeGreaterThan(4);
         }
@@ -396,9 +388,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             var name = attrs.GetProperty("name").GetString()!;
             name.Should().Contain("City");
             name.Length.Should().BeGreaterThan(10);
@@ -418,9 +409,8 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
         features.Should().NotBeEmpty();
-        foreach (var f in features)
+        foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
-            var attrs = ODataTestHelpers.ParseAttributes(f);
             var area = attrs.GetProperty("area_sq_km").GetDouble();
             Math.Floor(area).Should().BeGreaterThan(1000);
         }

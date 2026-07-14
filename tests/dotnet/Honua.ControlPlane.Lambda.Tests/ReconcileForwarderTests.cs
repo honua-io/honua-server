@@ -19,8 +19,9 @@ public sealed class ReconcileForwarderTests
     public async Task ReconcileBatchEventAsync_PostsProviderIdAndTokenHeader()
     {
         var handler = new RecordingHandler();
+        using var httpClient = new HttpClient(handler);
         var forwarder = new ReconcileForwarder(
-            new HttpClient(handler),
+            httpClient,
             new ReconcileForwarderOptions { BaseAddress = "http://127.0.0.1:8080", EventToken = "secret-token" });
 
         await forwarder.ReconcileBatchEventAsync("batch-job-abc", CancellationToken.None);
@@ -37,8 +38,9 @@ public sealed class ReconcileForwarderTests
     public async Task ReconcileBatchEventAsync_BlankProviderId_DoesNotPost()
     {
         var handler = new RecordingHandler();
+        using var httpClient = new HttpClient(handler);
         var forwarder = new ReconcileForwarder(
-            new HttpClient(handler),
+            httpClient,
             new ReconcileForwarderOptions { BaseAddress = "http://127.0.0.1:8080" });
 
         await forwarder.ReconcileBatchEventAsync(" ", CancellationToken.None);
@@ -50,8 +52,9 @@ public sealed class ReconcileForwarderTests
     public async Task RunBackstopAsync_PostsToBackstopRoute()
     {
         var handler = new RecordingHandler();
+        using var httpClient = new HttpClient(handler);
         var forwarder = new ReconcileForwarder(
-            new HttpClient(handler),
+            httpClient,
             new ReconcileForwarderOptions { BaseAddress = "http://127.0.0.1:8080" });
 
         await forwarder.RunBackstopAsync(CancellationToken.None);
@@ -89,6 +92,7 @@ public sealed class ReconcileForwarderTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             LastRequest = request;
+            // Ownership transfers to the HttpClient pipeline/caller, which disposes it after reading the response.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }

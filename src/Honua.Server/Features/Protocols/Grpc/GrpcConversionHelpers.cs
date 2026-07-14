@@ -352,12 +352,9 @@ internal static class GrpcConversionHelpers
                 StringComparer.OrdinalIgnoreCase);
 
         var featureId = feature.Id;
-        if (featureId <= 0 && requireId)
+        if (featureId <= 0 && requireId && TryResolveFeatureIdFromAttributes(attributes, out var attributeObjectId))
         {
-            if (TryResolveFeatureIdFromAttributes(attributes, out var attributeObjectId))
-            {
-                featureId = attributeObjectId;
-            }
+            featureId = attributeObjectId;
         }
 
         if (requireId && featureId <= 0)

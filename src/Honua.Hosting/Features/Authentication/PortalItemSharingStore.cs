@@ -122,12 +122,9 @@ internal sealed class InMemoryPortalItemSharingStore : IPortalItemSharingStore
             (_, existing) =>
             {
                 var groups = new List<string>(existing.GroupIds);
-                foreach (var group in NormalizeGroups(request.GroupIds))
+                foreach (var group in NormalizeGroups(request.GroupIds).Where(group => !groups.Contains(group, StringComparer.OrdinalIgnoreCase)))
                 {
-                    if (!groups.Contains(group, StringComparer.OrdinalIgnoreCase))
-                    {
-                        groups.Add(group);
-                    }
+                    groups.Add(group);
                 }
 
                 return existing with

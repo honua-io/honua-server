@@ -763,9 +763,8 @@ internal sealed class PbfQueryFormatter
     {
         var hasZ = false;
         var hasM = false;
-        foreach (var feature in features)
+        foreach (var wkb in features.Select(static feature => feature.Geometry))
         {
-            var wkb = feature.Geometry;
             if (wkb is not { Length: >= 5 })
             {
                 continue;

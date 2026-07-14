@@ -100,7 +100,8 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<UserListResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.All(result.Data.Users, u => Assert.Equal("oidc", u.ProvisioningSource));
     }
 
@@ -114,7 +115,8 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<UserResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal("user-1", result.Data.UserId);
         Assert.Equal("Test User One", result.Data.DisplayName);
     }
@@ -138,7 +140,8 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<UserResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Contains("admin", result.Data.Roles);
         Assert.Contains("editor", result.Data.Roles);
     }
@@ -177,7 +180,8 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<EffectivePermissionsResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal("user-1", result.Data.UserId);
         Assert.NotNull(result.Data.Permissions);
     }

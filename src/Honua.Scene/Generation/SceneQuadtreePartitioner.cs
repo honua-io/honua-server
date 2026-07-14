@@ -314,8 +314,8 @@ public static class SceneQuadtreePartitioner
         var first = vertices[0];
         var last = vertices[count - 1];
         if (count > 2
-            && first.Longitude == last.Longitude
-            && first.Latitude == last.Latitude)
+            && SceneVertexCoordinates.DegreesEqual(first.Longitude, last.Longitude)
+            && SceneVertexCoordinates.DegreesEqual(first.Latitude, last.Latitude))
         {
             count--;
         }

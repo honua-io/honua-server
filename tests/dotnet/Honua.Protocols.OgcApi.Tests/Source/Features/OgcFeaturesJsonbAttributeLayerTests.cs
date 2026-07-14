@@ -141,12 +141,9 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
         features.GetArrayLength().Should().Be(expectedCount,
             $"only the requested layer's rows must be returned by {requestUri}");
 
-        foreach (var feature in features.EnumerateArray())
+        foreach (var properties in features.EnumerateArray().Select(feature =>
+            feature.TryGetProperty("properties", out var props) ? props : feature.GetProperty("attributes")))
         {
-            var properties = feature.TryGetProperty("properties", out var props)
-                ? props
-                : feature.GetProperty("attributes");
-
             properties.TryGetProperty(presentField, out _).Should().BeTrue(
                 $"every returned feature must belong to the requested layer (has '{presentField}')");
             properties.TryGetProperty(absentField, out _).Should().BeFalse(

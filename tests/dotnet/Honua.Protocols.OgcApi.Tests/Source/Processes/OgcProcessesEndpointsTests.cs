@@ -322,7 +322,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     public async Task Execute_WithoutRespondAsync_DefaultsToAsync()
     {
         var body = """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures"}]}}}""";
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/honua-geoprocessing/execution", content);
 
@@ -388,7 +388,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     public async Task Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId()
     {
         var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/geometry.buffer/execution", content);
 
@@ -758,12 +758,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_DuplicateStepIds_Returns400()
     {
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"dup","kind":"queryFeatures"},{"stepId":"dup","kind":"queryFeatures"}]}}}""",
+            Encoding.UTF8,
+            "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/honua-geoprocessing/execution",
-            new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"dup","kind":"queryFeatures"},{"stepId":"dup","kind":"queryFeatures"}]}}}""",
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -775,12 +776,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_UnknownDependsOn_Returns400()
     {
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures","dependsOn":["missing-step"]}]}}}""",
+            Encoding.UTF8,
+            "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/honua-geoprocessing/execution",
-            new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures","dependsOn":["missing-step"]}]}}}""",
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -792,12 +794,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_CyclicDependsOn_Returns400()
     {
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures","dependsOn":["s2"]},{"stepId":"s2","kind":"queryFeatures","dependsOn":["s1"]}]}}}""",
+            Encoding.UTF8,
+            "application/json");
         var response = await _fixture.Client.PostAsync(
             "/ogc/processes/processes/honua-geoprocessing/execution",
-            new StringContent(
-                """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"queryFeatures","dependsOn":["s2"]},{"stepId":"s2","kind":"queryFeatures","dependsOn":["s1"]}]}}}""",
-                Encoding.UTF8,
-                "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

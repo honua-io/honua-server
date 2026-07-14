@@ -97,8 +97,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetsAsync(1);
 
         var okResult = result as Ok<TileSetsList>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Tilesets.Should().HaveCount(2);
+        Assert.NotNull(okResult);
+        okResult.Value!.Tilesets.Should().HaveCount(2);
     }
 
     [UnitTest]
@@ -150,8 +150,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         var okResult = result as Ok<TileSetsList>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
+        Assert.NotNull(okResult);
+        okResult.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
         foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
@@ -171,8 +171,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         var okResult = result as Ok<TileSetsList>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
+        Assert.NotNull(okResult);
+        okResult.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
         foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
@@ -192,8 +192,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         var okResult = result as Ok<TileSetsList>;
-        okResult.Should().NotBeNull();
-        foreach (var tileSet in okResult!.Value!.Tilesets)
+        Assert.NotNull(okResult);
+        foreach (var tileSet in okResult.Value!.Tilesets)
         {
             tileSet.Links.Should().Contain(link =>
                 link.Rel == "http://www.opengis.net/def/rel/ogc/1.0/tiling-scheme",
@@ -210,8 +210,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad");
 
         var okResult = result as Ok<TileSet>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        Assert.NotNull(okResult);
+        okResult.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
         okResult.Value.Links.Should().Contain(link => link.Rel == "self");
         okResult.Value.Links.Should().Contain(link => link.Rel == "item");
     }
@@ -225,8 +225,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad");
 
         var okResult = result as Ok<TileSet>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Links.Should().ContainSingle(link =>
+        Assert.NotNull(okResult);
+        okResult.Value!.Links.Should().ContainSingle(link =>
             link.Rel == "item" &&
             link.Templated == true);
     }
@@ -247,8 +247,8 @@ public class OgcMapsTileSetHandlerTests
         var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad", context: CreateOgcMapsContext());
 
         var okResult = result as Ok<TileSet>;
-        okResult.Should().NotBeNull();
-        okResult!.Value!.Links.Should().NotContain(link => link.Rel == "item");
+        Assert.NotNull(okResult);
+        okResult.Value!.Links.Should().NotContain(link => link.Rel == "item");
         okResult.Value.Links.Should().NotContain(link =>
             link.Href.Contains("/ogc/tiles/", StringComparison.OrdinalIgnoreCase));
     }
@@ -304,6 +304,9 @@ public class OgcMapsTileSetHandlerTests
         var protocols = mapsEnabled
             ? new[] { OgcApiMapsProtocol, OgcApiTilesProtocol }
             : new[] { OgcApiTilesProtocol };
+        // Each arm is independently matched against the tri-state `bool?` input
+        // (true / false / null); none is a tautology despite the earlier `true`
+        // arm having already been checked and failed by the time `false` is tested.
         var policy = allowAnonymous switch
         {
             true => PublicPolicy(),

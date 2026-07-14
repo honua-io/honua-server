@@ -82,10 +82,9 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
         WorkflowGenerationLog.GenerationRequested(_logger, _providerId, model);
 
         var stopwatch = Stopwatch.StartNew();
-        IChatClient? client = null;
         try
         {
-            client = _chatClientFactory.Create(
+            using var client = _chatClientFactory.Create(
                 model,
                 options.Region,
                 string.IsNullOrWhiteSpace(options.ApiKey) ? null : options.ApiKey);
@@ -195,10 +194,6 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
         {
             WorkflowGenerationLog.GenerationFailed(_logger, _providerId, ex.Message);
             return WorkflowGenerationProposal.Error("Provider request failed.", _providerId, model);
-        }
-        finally
-        {
-            client?.Dispose();
         }
     }
 

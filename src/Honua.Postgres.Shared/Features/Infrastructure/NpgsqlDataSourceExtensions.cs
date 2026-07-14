@@ -51,12 +51,9 @@ internal static class NpgsqlDataSourceExtensions
         finally
         {
             // Return all connections to the pool
-            foreach (var connection in connections)
+            foreach (var connection in connections.Where(connection => connection != null))
             {
-                if (connection != null)
-                {
-                    await connection.DisposeAsync();
-                }
+                await connection.DisposeAsync();
             }
         }
     }

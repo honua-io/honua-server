@@ -483,9 +483,9 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
 
         var exceptions = _recentExceptions.ToArray();
 
-        if (minSeverity.HasValue)
+        if (minSeverity is { } minSeverityValue)
         {
-            exceptions = exceptions.Where(e => e.Classification.Severity >= minSeverity.Value).ToArray();
+            exceptions = exceptions.Where(e => e.Classification.Severity >= minSeverityValue).ToArray();
         }
 
         return exceptions
@@ -695,16 +695,11 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
     {
         if (_disposed) return;
 
-        var expiredKeys = new List<string>();
         var cutoff = DateTime.UtcNow.Subtract(_options.RateLimitWindow.Add(TimeSpan.FromMinutes(5)));
-
-        foreach (var kvp in _rateLimiters)
-        {
-            if (kvp.Value.WindowStart < cutoff)
-            {
-                expiredKeys.Add(kvp.Key);
-            }
-        }
+        var expiredKeys = _rateLimiters
+            .Where(kvp => kvp.Value.WindowStart < cutoff)
+            .Select(kvp => kvp.Key)
+            .ToList();
 
         foreach (var key in expiredKeys)
         {

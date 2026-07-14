@@ -719,13 +719,11 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
         }
 
         int? srid = null;
-        if (geometry.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object)
+        if (geometry.TryGetProperty("spatialReference", out var sr) && sr.ValueKind == JsonValueKind.Object &&
+            ((sr.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number && latest.TryGetInt32(out var latestWkid))
+                || (sr.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number && wkid.TryGetInt32(out latestWkid))))
         {
-            if ((sr.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number && latest.TryGetInt32(out var latestWkid))
-                || (sr.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number && wkid.TryGetInt32(out latestWkid)))
-            {
-                srid = latestWkid;
-            }
+            srid = latestWkid;
         }
 
         NetTopologySuite.Geometries.Geometry? nts = null;

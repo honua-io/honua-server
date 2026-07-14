@@ -168,7 +168,12 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var replica = ToReplicaState(record.Value);
+        // Snapshot the resolved value once: the record is a nullable struct, and reading
+        // it back through `record.Value` inside the closure below defeats the null guard
+        // above from a static-analysis standpoint even though it is provably non-null here.
+        var replicaRecord = record.Value;
+
+        var replica = ToReplicaState(replicaRecord);
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
@@ -176,15 +181,15 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var layerServerGens = record.Value.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
+        var layerServerGens = replicaRecord.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
             ? System.Text.Json.JsonSerializer.Serialize(
-                record.Value.LayerIds
+                replicaRecord.LayerIds
                     .Distinct()
                     .Select(id => new ReplicaInfoLayerServerGeneration
                     {
                         Id = id,
-                        ServerGen = record.Value.LastSyncGeneration,
-                        ServerSibGen = record.Value.LastSyncGeneration
+                        ServerGen = replicaRecord.LastSyncGeneration,
+                        ServerSibGen = replicaRecord.LastSyncGeneration
                     })
                     .ToArray(),
                 FeatureServerJsonContext.Default.ReplicaInfoLayerServerGenerationArray)
@@ -192,15 +197,15 @@ internal static partial class FeatureServerEndpoints
 
         var response = new ReplicaInfoResponse
         {
-            ReplicaName = record.Value.ReplicaName,
-            ReplicaId = record.Value.ReplicaId,
-            SyncModel = record.Value.SyncModel,
-            ReplicaServerGen = record.Value.SyncModel.Equals("perReplica", StringComparison.OrdinalIgnoreCase)
-                ? record.Value.LastSyncGeneration
+            ReplicaName = replicaRecord.ReplicaName,
+            ReplicaId = replicaRecord.ReplicaId,
+            SyncModel = replicaRecord.SyncModel,
+            ReplicaServerGen = replicaRecord.SyncModel.Equals("perReplica", StringComparison.OrdinalIgnoreCase)
+                ? replicaRecord.LastSyncGeneration
                 : null,
             LayerServerGens = layerServerGens,
-            CreationDate = record.Value.CreatedAt.ToUnixTimeMilliseconds(),
-            LastSyncDate = record.Value.LastSyncTime.ToUnixTimeMilliseconds(),
+            CreationDate = replicaRecord.CreatedAt.ToUnixTimeMilliseconds(),
+            LastSyncDate = replicaRecord.LastSyncTime.ToUnixTimeMilliseconds(),
             Layers = replicaLayers.Select(layer => new ReplicaInfoLayer
             {
                 Id = layer.PublicLayerId
@@ -1074,12 +1079,10 @@ internal static partial class FeatureServerEndpoints
                     // wire hint matches the durable conflict record the review API returns (#1287).
                     if (conflicts is not null && refinedTypes.Count > 0)
                     {
-                        foreach (var wireConflict in conflicts)
+                        foreach (var wireConflict in conflicts.Where(
+                            c => refinedTypes.ContainsKey((c.LayerId, c.ObjectId))))
                         {
-                            if (refinedTypes.TryGetValue((wireConflict.LayerId, wireConflict.ObjectId), out var refined))
-                            {
-                                wireConflict.ConflictType = (int)refined;
-                            }
+                            wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.ObjectId)];
                         }
                     }
                 }
@@ -1091,18 +1094,12 @@ internal static partial class FeatureServerEndpoints
         // delta excludes the client's own just-applied edits. Download/bidirectional syncs advance the
         // last-sync cursor to the live current generation once the server-to-client delta below has been
         // assembled, so the replica receives every change committed since its last sync exactly once.
-        long currentGen;
-        if (didUpload)
-        {
-            // BH-012: use the post-upload generation for both upload-only AND bidirectional
-            // syncs so concurrent server edits committed after the upload are captured by
-            // the NEXT sync rather than permanently skipped.
-            currentGen = uploadServerGen;
-        }
-        else
-        {
-            currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
-        }
+        // BH-012: use the post-upload generation for both upload-only AND bidirectional
+        // syncs so concurrent server edits committed after the upload are captured by
+        // the NEXT sync rather than permanently skipped.
+        long currentGen = didUpload
+            ? uploadServerGen
+            : await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
         // Download / bidirectional sync: assemble the server-to-client delta and deliver it in the
         // response. This is the core of the #1775 fix — previously the download direction returned
@@ -1606,15 +1603,8 @@ internal static partial class FeatureServerEndpoints
 
     private static bool HasProperty(System.Text.Json.JsonElement entry, string propertyName)
     {
-        foreach (var property in entry.EnumerateObject())
-        {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return entry.EnumerateObject().Any(
+            property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -1640,25 +1630,21 @@ internal static partial class FeatureServerEndpoints
         // to fields named 'objectid' or 'id'. Only if the schema yields no match do we fall
         // through to the legacy hardcoded name list for backward compatibility with ad-hoc payloads.
         var schemaOidName = resource.FindPrimaryIdField()?.Name;
-        if (schemaOidName is not null && feature.Attributes.TryGetValue(schemaOidName, out var schemaValue))
+        if (schemaOidName is not null && feature.Attributes.TryGetValue(schemaOidName, out var schemaValue) &&
+            FeatureServerValueParser.TryConvertToLong(schemaValue, out var schemaObjectId))
         {
-            if (FeatureServerValueParser.TryConvertToLong(schemaValue, out var schemaObjectId))
-            {
-                return schemaObjectId;
-            }
+            return schemaObjectId;
         }
 
         foreach (var (key, value) in feature.Attributes)
         {
-            if (key.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("oid", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("fid", StringComparison.OrdinalIgnoreCase))
+            if ((key.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
+                 key.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
+                 key.Equals("oid", StringComparison.OrdinalIgnoreCase) ||
+                 key.Equals("fid", StringComparison.OrdinalIgnoreCase)) &&
+                FeatureServerValueParser.TryConvertToLong(value, out var objectId))
             {
-                if (FeatureServerValueParser.TryConvertToLong(value, out var objectId))
-                {
-                    return objectId;
-                }
+                return objectId;
             }
         }
 
@@ -1810,10 +1796,17 @@ internal static partial class FeatureServerEndpoints
                     var storageLayerId = publication.LayerIndex
                         ?? snapshot.ResolveStorageLayerId(publication)
                         ?? (resource is not null ? snapshot.ResolveStorageLayerId(resource) : null);
-                    var publicLayerId = publication.LayerIndex ?? storageLayerId;
-                    return resource is not null && storageLayerId is not null && publicLayerId is not null
-                        ? new ReplicaLayerV2(publicLayerId.Value, storageLayerId.Value, publication, resource)
-                        : null;
+                    // publicLayerId falls back to storageLayerId, so once storageLayerId is
+                    // known non-null, publicLayerId is guaranteed non-null too — no separate
+                    // null check needed for it (a prior `publicLayerId is not null` check here
+                    // was always true and has been removed).
+                    if (resource is null || storageLayerId is null)
+                    {
+                        return null;
+                    }
+
+                    var publicLayerId = publication.LayerIndex ?? storageLayerId.Value;
+                    return new ReplicaLayerV2(publicLayerId, storageLayerId.Value, publication, resource);
                 })
                 .Where(layer => layer is not null)
                 .Select(layer => layer!)

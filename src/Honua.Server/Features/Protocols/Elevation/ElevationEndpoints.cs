@@ -217,14 +217,13 @@ internal static class ElevationEndpoints
 
         if (IsWgs84Default(resolvedSrid))
         {
-            foreach (var coordinate in lineString.Coordinates)
+            var hasOutOfBoundsCoordinate = lineString.Coordinates.Any(
+                coordinate => !IsWithinWgs84Bounds(coordinate.X, coordinate.Y));
+            if (hasOutOfBoundsCoordinate)
             {
-                if (!IsWithinWgs84Bounds(coordinate.X, coordinate.Y))
-                {
-                    return StandardErrorHelpers.CreateUnprocessableEntity(
-                        context,
-                        "LineString coordinates must be within WGS 84 bounds when 'srid' is omitted or 4326: longitude in [-180, 180] and latitude in [-90, 90].");
-                }
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "LineString coordinates must be within WGS 84 bounds when 'srid' is omitted or 4326: longitude in [-180, 180] and latitude in [-90, 90].");
             }
         }
 
@@ -302,13 +301,11 @@ internal static class ElevationEndpoints
                 return false;
             }
 
-            foreach (var coordinate in parsedLine.Coordinates)
+            if (parsedLine.Coordinates.Any(
+                coordinate => !IsFiniteCoordinate(coordinate.X) || !IsFiniteCoordinate(coordinate.Y)))
             {
-                if (!IsFiniteCoordinate(coordinate.X) || !IsFiniteCoordinate(coordinate.Y))
-                {
-                    error = "LineString coordinates must be finite numeric values.";
-                    return false;
-                }
+                error = "LineString coordinates must be finite numeric values.";
+                return false;
             }
 
             lineString = parsedLine;
@@ -350,25 +347,19 @@ internal static class ElevationEndpoints
         string datasetId,
         CancellationToken cancellationToken)
     {
-        LayerValidationHelpers.MetadataV2ValidationResult validation;
-        if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-        {
-            validation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+        var validation = int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId)
+            ? await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 AccessScope.Read,
                 ElevationProtocolName,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                cancellationToken).ConfigureAwait(false)
+            : await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 datasetId,
                 AccessScope.Read,
                 ElevationProtocolName,
                 cancellationToken).ConfigureAwait(false);
-        }
 
         if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
         {

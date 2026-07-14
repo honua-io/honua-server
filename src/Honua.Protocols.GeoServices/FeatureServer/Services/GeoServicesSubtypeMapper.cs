@@ -50,12 +50,11 @@ internal static class GeoServicesSubtypeMapper
         IReadOnlyDictionary<string, MetadataV2SubtypeFieldOverride> overrides)
     {
         var domains = new Dictionary<string, GeoServicesFieldDomainInfo>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in overrides)
+        foreach (var (key, mapped) in overrides
+            .Select(pair => (pair.Key, Mapped: GeoServicesFieldDomainMapper.Map(pair.Value.Domain)))
+            .Where(pair => pair.Mapped is not null))
         {
-            if (GeoServicesFieldDomainMapper.Map(pair.Value.Domain) is { } mapped)
-            {
-                domains[pair.Key] = mapped;
-            }
+            domains[key] = mapped!;
         }
 
         return domains.Count == 0 ? null : domains;

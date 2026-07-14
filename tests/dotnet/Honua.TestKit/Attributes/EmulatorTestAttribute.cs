@@ -38,6 +38,9 @@ public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
             return;
         }
 
+        // Not rewritten to `.Where(...)`: this loop applies a side effect
+        // (Environment.SetEnvironmentVariable) to matching entries rather than
+        // filtering a sequence for later use, so a LINQ filter would be misleading here.
         foreach (var name in requiredEnvironmentVariables)
         {
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)) &&

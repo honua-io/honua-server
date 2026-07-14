@@ -710,16 +710,14 @@ internal static partial class ProcessPlanValidator
 
         // distance must be a finite non-negative number (matches the executor).
         if (step.Inputs.TryGetValue("distance", out var distanceRaw)
-            && !string.IsNullOrWhiteSpace(distanceRaw))
-        {
-            if (!double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance)
+            && !string.IsNullOrWhiteSpace(distanceRaw)
+            && (!double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance)
                 || double.IsNaN(distance) || double.IsInfinity(distance)
-                || distance < 0d)
-            {
-                AddRangeViolationIfNew(step, "distance",
-                    $"expected non-negative finite number, got '{distanceRaw}'",
-                    violations);
-            }
+                || distance < 0d))
+        {
+            AddRangeViolationIfNew(step, "distance",
+                $"expected non-negative finite number, got '{distanceRaw}'",
+                violations);
         }
     }
 
@@ -1091,12 +1089,9 @@ internal static partial class ProcessPlanValidator
             "EVI" => new[] { "nir", "red", "blue" },
             _ => [],
         };
-        foreach (var role in required)
+        foreach (var role in required.Where(role => !step.Inputs.TryGetValue(role, out var roleValue) || string.IsNullOrWhiteSpace(roleValue)))
         {
-            if (!step.Inputs.TryGetValue(role, out var roleValue) || string.IsNullOrWhiteSpace(roleValue))
-            {
-                RequireConditionalParameter(step, role, $"the '{index}' index requires it", violations);
-            }
+            RequireConditionalParameter(step, role, $"the '{index}' index requires it", violations);
         }
 
         RequireDoubleInClosedRange(step, "L", 0d, 1d, "(soil factor)", violations);
@@ -1867,15 +1862,11 @@ internal static partial class ProcessPlanValidator
         }
 
         var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var part in parts)
+        if (parts.Any(part => !long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)))
         {
-            if (!long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-            {
-                AddRangeViolationIfNew(step, "objectIds",
-                    $"expected comma-separated integer feature identifiers, got '{raw}'",
-                    violations);
-                return;
-            }
+            AddRangeViolationIfNew(step, "objectIds",
+                $"expected comma-separated integer feature identifiers, got '{raw}'",
+                violations);
         }
     }
 
@@ -2068,14 +2059,9 @@ internal static partial class ProcessPlanValidator
             return;
         }
 
-        foreach (var part in parts)
+        if (parts.Any(part => !int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed < 1))
         {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-                || parsed < 1)
-            {
-                AddRangeViolationIfNew(step, parameter, $"expected comma-separated positive integers, got '{raw}'", violations);
-                return;
-            }
+            AddRangeViolationIfNew(step, parameter, $"expected comma-separated positive integers, got '{raw}'", violations);
         }
     }
 
@@ -2099,13 +2085,10 @@ internal static partial class ProcessPlanValidator
             return;
         }
 
-        foreach (var part in parts)
+        var invalidPart = parts.FirstOrDefault(part => !allowedValues.Contains(part));
+        if (invalidPart is not null)
         {
-            if (!allowedValues.Contains(part))
-            {
-                AddRangeViolationIfNew(step, parameter, $"'{part}' is not in the allowed set ({allowedList})", violations);
-                return;
-            }
+            AddRangeViolationIfNew(step, parameter, $"'{invalidPart}' is not in the allowed set ({allowedList})", violations);
         }
     }
 

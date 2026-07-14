@@ -35,14 +35,9 @@ public sealed class InMemoryArcGisMigrationEvidenceStore : IArcGisMigrationEvide
 
         lock (_gate)
         {
-            if (_runs.TryGetValue(record.RunId, out var existing))
-            {
-                _runs[record.RunId] = existing with { Record = record, Manifest = manifest };
-            }
-            else
-            {
-                _runs[record.RunId] = new StoredRun(record, manifest, null);
-            }
+            _runs[record.RunId] = _runs.TryGetValue(record.RunId, out var existing)
+                ? existing with { Record = record, Manifest = manifest }
+                : new StoredRun(record, manifest, null);
         }
 
         return Task.CompletedTask;

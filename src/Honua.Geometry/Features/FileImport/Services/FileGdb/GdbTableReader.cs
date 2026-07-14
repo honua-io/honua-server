@@ -424,15 +424,9 @@ internal sealed class GdbTableReader : IDisposable
             return null;
         }
 
-        string value;
-        if (UseUtf8Strings)
-        {
-            value = Encoding.UTF8.GetString(data.Slice(pos, byteCount));
-        }
-        else
-        {
-            value = Encoding.Unicode.GetString(data.Slice(pos, byteCount));
-        }
+        var value = UseUtf8Strings
+            ? Encoding.UTF8.GetString(data.Slice(pos, byteCount))
+            : Encoding.Unicode.GetString(data.Slice(pos, byteCount));
 
         pos += byteCount;
         return value;
@@ -480,11 +474,13 @@ internal sealed class GdbTableReader : IDisposable
         }
 
         // FileGDB date epoch: December 30, 1899 00:00:00 (OLE Automation date).
+        // FromOADate throws ArgumentException for out-of-range values; untrusted geodatabase
+        // input can legitimately contain a corrupt/out-of-range date, so treat it as absent.
         try
         {
             return DateTime.FromOADate(fileGdbDays);
         }
-        catch
+        catch (ArgumentException)
         {
             return null;
         }
@@ -493,6 +489,7 @@ internal sealed class GdbTableReader : IDisposable
     private void ParseFieldDescriptions()
     {
         var fieldDescSize = _reader.ReadInt32(); // Size of field description (excluding this int32).
+        _ = fieldDescSize; // Not needed for parsing; read only to advance the stream position.
         FieldDescVersion = _reader.ReadInt32(); // Version (3 or 4).
 
         if (FieldDescVersion < 3)
@@ -550,6 +547,7 @@ internal sealed class GdbTableReader : IDisposable
         var width = _reader.ReadByte();
         var flags = _reader.ReadByte();
         _ = width;
+        _ = flags;
 
         return new GdbField
         {
@@ -770,24 +768,19 @@ internal sealed class GdbTableReader : IDisposable
             }
         }
 
-        // Fallback: detect from well-known datum names.
-        if (wkt.Contains("GCS_WGS_1984", StringComparison.OrdinalIgnoreCase) ||
-            wkt.Contains("D_WGS_1984", StringComparison.OrdinalIgnoreCase))
+        // Fallback: detect from well-known datum names. Only if it's NOT a projected CRS.
+        if ((wkt.Contains("GCS_WGS_1984", StringComparison.OrdinalIgnoreCase) ||
+             wkt.Contains("D_WGS_1984", StringComparison.OrdinalIgnoreCase)) &&
+            !wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase))
         {
-            // Only if it's NOT a projected CRS.
-            if (!wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase))
-            {
-                return 4326;
-            }
+            return 4326;
         }
 
-        if (wkt.Contains("GCS_North_American_1983", StringComparison.OrdinalIgnoreCase) ||
-            wkt.Contains("D_North_American_1983", StringComparison.OrdinalIgnoreCase))
+        if ((wkt.Contains("GCS_North_American_1983", StringComparison.OrdinalIgnoreCase) ||
+             wkt.Contains("D_North_American_1983", StringComparison.OrdinalIgnoreCase)) &&
+            !wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase))
         {
-            if (!wkt.Contains("PROJCS", StringComparison.OrdinalIgnoreCase))
-            {
-                return 4269;
-            }
+            return 4269;
         }
 
         return 0;

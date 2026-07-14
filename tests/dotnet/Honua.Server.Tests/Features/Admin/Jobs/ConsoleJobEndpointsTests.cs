@@ -815,6 +815,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         }
         catch (FormatException)
         {
+            // Intentionally swallowed: a malformed base64/UTF8 cursor falls through
+            // to the ArgumentException below, same as an out-of-range parsed offset.
         }
 
         throw new ArgumentException("Invalid cursor.");

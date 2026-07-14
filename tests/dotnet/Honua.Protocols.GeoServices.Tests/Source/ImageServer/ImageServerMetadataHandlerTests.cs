@@ -109,9 +109,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Name.Should().Be("test-layer");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Name.Should().Be("test-layer");
     }
 
     [UnitTest]
@@ -123,9 +122,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.BandCount.Should().Be(3);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.BandCount.Should().Be(3);
     }
 
     [UnitTest]
@@ -140,9 +138,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Fields.Should().NotBeNullOrEmpty();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Fields.Should().NotBeNullOrEmpty();
         jsonResult.Value.Fields.Should().Contain(f => f.Type == "esriFieldTypeOID");
     }
 
@@ -156,9 +153,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.HasMultidimensions.Should().BeFalse();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.HasMultidimensions.Should().BeFalse();
         jsonResult.Value.MultidimensionalInfo.Should().BeNull();
     }
 
@@ -193,9 +189,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.HasMultidimensions.Should().BeTrue();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.HasMultidimensions.Should().BeTrue();
         jsonResult.Value.MultidimensionalInfo.Should().NotBeNull();
         jsonResult.Value.MultidimensionalInfo!.Variables.Should().ContainSingle()
             .Which.Name.Should().Be("temperature");
@@ -210,9 +205,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Capabilities.Should().NotContain("Tilemap");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Capabilities.Should().NotContain("Tilemap");
         jsonResult.Value.SingleFusedMapCache.Should().BeFalse();
         jsonResult.Value.CacheType.Should().BeNull();
         jsonResult.Value.TileInfo.Should().BeNull();
@@ -229,9 +223,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Extent.XMin.Should().Be(-180);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.Extent.XMin.Should().Be(-180);
         jsonResult.Value.Extent.YMax.Should().Be(90);
         jsonResult.Value.Extent.SpatialReference.Wkid.Should().Be(4326);
     }
@@ -255,9 +248,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        var info = jsonResult!.Value!;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        var info = jsonResult.Value!;
 
         info.FullExtent.Should().NotBeNull();
         info.FullExtent!.XMin.Should().Be(-180);
@@ -293,9 +285,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.MinValues.Should().BeEmpty();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.MinValues.Should().BeEmpty();
         jsonResult.Value.MaxValues.Should().BeEmpty();
     }
 
@@ -315,9 +306,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.MinValues.Should().Equal(0);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.MinValues.Should().Equal(0);
         jsonResult.Value.MaxValues.Should().Equal(0);
     }
 
@@ -330,9 +320,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.PixelSizeX.Should().BeApproximately(1.0, 0.0001);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.PixelSizeX.Should().BeApproximately(1.0, 0.0001);
         jsonResult.Value.PixelSizeY.Should().BeApproximately(1.0, 0.0001);
     }
 
@@ -361,9 +350,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.SpatialReference.Wkid.Should().Be(4326);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.SpatialReference.Wkid.Should().Be(4326);
     }
 
     [UnitTest]
@@ -378,9 +366,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.SingleFusedMapCache.Should().BeFalse();
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        jsonResult.Value!.SingleFusedMapCache.Should().BeFalse();
         jsonResult.Value.TileInfo.Should().BeNull();
     }
 
@@ -393,9 +380,8 @@ public class ImageServerMetadataHandlerTests
         var context = CreateImageServerContext(new ImageServerTileMetadataOptions { Enabled = true });
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        var serviceInfo = jsonResult!.Value!;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        var serviceInfo = jsonResult.Value!;
 
         serviceInfo.SingleFusedMapCache.Should().BeTrue();
         serviceInfo.TileInfo.Should().NotBeNull();
@@ -435,9 +421,8 @@ public class ImageServerMetadataHandlerTests
             new ImageServerTileMetadataOptions { Enabled = true, MaxLevel = 18 });
         var result = await _handler.GetServiceInfoAsync(context, 1);
 
-        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
-        jsonResult.Should().NotBeNull();
-        var tileInfo = jsonResult!.Value!.TileInfo;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
+        var tileInfo = jsonResult.Value!.TileInfo;
         tileInfo.Should().NotBeNull();
         tileInfo!.Lods.Should().HaveCount(19);
         tileInfo.Lods[^1].Level.Should().Be(18);

@@ -215,6 +215,8 @@ internal sealed partial class ODataQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             Log.LayersQueryFailed(_logger, ex);
@@ -304,6 +306,8 @@ internal sealed partial class ODataQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             Log.LayersQueryFailed(_logger, ex);
@@ -365,6 +369,8 @@ internal sealed partial class ODataQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             Log.LayersQueryFailed(_logger, ex);
@@ -396,6 +402,13 @@ internal sealed partial class ODataQueryHandler(
         BoundingBox? bbox = null,
         CancellationToken cancellationToken = default)
     {
+        // Not converted to a `using` declaration: featureActivity is intentionally created
+        // partway through the try block (only once layer validation resolves publicLayerId),
+        // and both the catch blocks (RecordException) and the finally need to observe
+        // whatever value it holds - including null if validation short-circuited before the
+        // activity was started. A using declaration would either force activity creation
+        // before validation (polluting telemetry for invalid-layer requests) or be out of
+        // scope for the catch blocks.
         Activity? featureActivity = null;
         try
         {
@@ -551,11 +564,10 @@ internal sealed partial class ODataQueryHandler(
                            !trackChangesRequested &&
                            !ResponseCacheUtilities.ShouldBypassAdHocSpatialResponseCache(featureQuery, filter) &&
                            !AcceptRequestsNonDefaultMetadata(context.Request, format);
+            // GetQueryTtlWithJitter() is clamped to >= 1s (CacheOptions.ApplyJitter), so it can
+            // never be <= TimeSpan.Zero when canCache is true; a prior "downgrade to no-cache
+            // on non-positive TTL" guard here was dead code and has been removed.
             var cacheTtl = canCache ? _cacheOptions.GetQueryTtlWithJitter() : TimeSpan.Zero;
-            if (canCache && cacheTtl <= TimeSpan.Zero)
-            {
-                canCache = false;
-            }
 
             var cacheKey = canCache
                 ? ResponseCacheUtilities.BuildODataLayerKey(layerId, context.Request)
@@ -660,8 +672,8 @@ internal sealed partial class ODataQueryHandler(
                         nextSkip,
                         pagination.Limit,
                         useSkipToken,
-                        deltaState?.Filter,
-                        deltaState?.OrderBy)
+                        deltaState.Filter,
+                        deltaState.OrderBy)
                     : ODataUtilityService.GenerateNextLink(
                         context.Request,
                         nextSkip,
@@ -752,6 +764,8 @@ internal sealed partial class ODataQueryHandler(
             HonuaTelemetry.RecordException(featureActivity, ex);
             return ODataUtilityService.CreateODataError(context, "InvalidQuery", safeDetail);
         }
+        // Intentional broad catch: request-handling boundary; already logged
+        // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error.
         catch (Exception ex)
         {
             Log.FeaturesQueryFailed(_logger, layerId, ex);

@@ -224,7 +224,7 @@ public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
 
         var requestUri = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query";
         var json = JsonSerializer.Serialize(queryParams, FeatureServerJsonContext.Default.QueryParameters);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await client.PostAsync(requestUri, content);
@@ -902,7 +902,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -946,7 +946,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_PostRequest_HonorsQueryStringParameters()
     {
-        var payload = new FormUrlEncodedContent(
+        using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("where", "1=1"),
             new KeyValuePair<string, string>("f", "json")
@@ -1418,7 +1418,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_PostWithClassBreaksDef_ReturnsClassBreaksRenderer()
     {
-        var form = new FormUrlEncodedContent(new[]
+        using var form = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>(
                 "classificationDef",
@@ -1445,9 +1445,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
     public async Task GenerateRenderer_PostWithoutClassificationDef_ReturnsSimpleRenderer()
     {
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer",
-            new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+            form);
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -1589,15 +1590,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var jsonDoc = JsonDocument.Parse(content);
         var errorElement = jsonDoc.RootElement.GetProperty("error");
         errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
-        var hasUnknownParameter = false;
-        foreach (var detail in errorElement.GetProperty("details").EnumerateArray())
-        {
-            if (detail.GetString() == "Unknown query parameter: unexpected")
-            {
-                hasUnknownParameter = true;
-                break;
-            }
-        }
+        var hasUnknownParameter = errorElement.GetProperty("details").EnumerateArray()
+            .Any(detail => detail.GetString() == "Unknown query parameter: unexpected");
 
         hasUnknownParameter.Should().BeTrue();
     }
@@ -1816,9 +1810,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             f = "json"
         });
 
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            payloadContent);
 
         response.Be200Ok();
 
@@ -1850,7 +1845,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -1987,7 +1982,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task QueryFeatures_PostFormDataWithObjectIds_ReturnsSpecificFeatures()
     {
         // Arrange - Form data POST
-        var formData = new FormUrlEncodedContent(new[]
+        using var formData = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("objectIds", "1,5"),
             new KeyValuePair<string, string>("f", "json"),
@@ -2231,7 +2226,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2294,7 +2289,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2628,7 +2623,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             F = "geojson",
             ResultRecordCount = 2
         }, FeatureServerJsonContext.Default.QueryParameters);
-        var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2696,6 +2691,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         geoJsonResponse!.Features.Should().HaveCount(1);
 
         var feature = geoJsonResponse.Features[0];
+        Assert.NotNull(feature.Id);
         feature.Id.Should().NotBeNull("GeoJSON features should include ID from objectid field");
         feature.Properties.Should().ContainKey("objectid");
 
@@ -2703,6 +2699,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // Handle potential type differences between feature.Id and objectid property
         var idValue = feature.Id?.ToString();
         var objectidValue = feature.Properties["objectid"]?.ToString();
+        Assert.NotNull(idValue);
+        Assert.NotNull(objectidValue);
 
         idValue.Should().NotBeNullOrEmpty("Feature ID should have a value");
         objectidValue.Should().NotBeNullOrEmpty("Objectid property should have a value");
@@ -2737,7 +2735,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2771,7 +2769,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2805,7 +2803,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2839,7 +2837,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2872,7 +2870,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2898,7 +2896,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);
@@ -2930,7 +2928,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 }
             ]
             """;
-        var content = new StringContent(request, Encoding.UTF8, "application/json");
+        using var content = new StringContent(request, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
@@ -2967,7 +2965,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
                 }
             ]
             """;
-        var content = new StringContent(request, Encoding.UTF8, "application/json");
+        using var content = new StringContent(request, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
@@ -3000,7 +2998,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails()
     {
         var malformedRequest = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]""";
-        var content = new StringContent(malformedRequest, Encoding.UTF8, "application/json");
+        using var content = new StringContent(malformedRequest, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
@@ -3020,7 +3018,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task ApplyEdits_ServiceLevel_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
     {
         var request = """[{"id":0,"adds":[{"attributes":{"name":"bad"}}]}]""";
-        var content = new StringContent(request, Encoding.UTF8, "text/plain");
+        using var content = new StringContent(request, Encoding.UTF8, "text/plain");
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
@@ -3049,9 +3047,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             ]
             """;
 
+        using var requestContent = new StringContent(request, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true",
-            new StringContent(request, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
 
@@ -3086,7 +3085,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", content);
@@ -3173,16 +3172,16 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         countQuery!.Count.Should().Be(1, "the retried add must not create a duplicate feature");
     }
 
-    private Task<HttpResponseMessage> PostApplyEditsWithIdempotencyKeyAsync(string json, string idempotencyKey)
+    private async Task<HttpResponseMessage> PostApplyEditsWithIdempotencyKeyAsync(string json, string idempotencyKey)
     {
-        var requestMessage = new HttpRequestMessage(
+        using var requestMessage = new HttpRequestMessage(
             HttpMethod.Post,
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits")
         {
             Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
         };
         requestMessage.Headers.Add("Idempotency-Key", idempotencyKey);
-        return _fixture.Client.SendAsync(requestMessage);
+        return await _fixture.Client.SendAsync(requestMessage);
     }
 
     [IntegrationTest]
@@ -3223,9 +3222,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             };
 
             var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await _fixture.Client.PostAsync(
                 $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                content);
 
             response.Be200Ok();
             var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
@@ -3280,9 +3280,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             };
 
             var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await _fixture.Client.PostAsync(
                 $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                content);
 
             // The request is well-formed (HTTP 200) but the feature edit fails per-feature
             // with the rule's message, matching the domain-validation failure pattern.
@@ -3332,9 +3333,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             };
 
             var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await _fixture.Client.PostAsync(
                 $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                content);
 
             response.Be200Ok();
             var applyEditsResponse = JsonSerializer.Deserialize<ApplyEditsResponse>(
@@ -3376,9 +3378,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
 
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            content);
 
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -3414,7 +3417,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var addJson = JsonSerializer.Serialize(addRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
+        using var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", addContent);
 
         var addResponseContent = await addResponse.Content.ReadAsStringAsync();
@@ -3440,7 +3443,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var updateJson = JsonSerializer.Serialize(updateRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var updateContent = new StringContent(updateJson, System.Text.Encoding.UTF8, "application/json");
+        using var updateContent = new StringContent(updateJson, System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", updateContent);
@@ -3481,7 +3484,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var addJson = JsonSerializer.Serialize(addRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
+        using var addContent = new StringContent(addJson, System.Text.Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", addContent);
 
         var addResponseContent = await addResponse.Content.ReadAsStringAsync();
@@ -3496,7 +3499,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var deleteJson = JsonSerializer.Serialize(deleteRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var deleteContent = new StringContent(deleteJson, System.Text.Encoding.UTF8, "application/json");
+        using var deleteContent = new StringContent(deleteJson, System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", deleteContent);
@@ -3545,7 +3548,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var setupJson = JsonSerializer.Serialize(setupRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var setupContent = new StringContent(setupJson, System.Text.Encoding.UTF8, "application/json");
+        using var setupContent = new StringContent(setupJson, System.Text.Encoding.UTF8, "application/json");
         var setupResponse = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", setupContent);
 
         var setupResponseContent = await setupResponse.Content.ReadAsStringAsync();
@@ -3584,7 +3587,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var mixedJson = JsonSerializer.Serialize(mixedRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var mixedContent = new StringContent(mixedJson, System.Text.Encoding.UTF8, "application/json");
+        using var mixedContent = new StringContent(mixedJson, System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", mixedContent);
@@ -3635,7 +3638,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(updateRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
         // Act
         var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", content);
@@ -3668,9 +3671,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits?useGlobalIds=true",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
 
@@ -3693,9 +3697,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits?f=xml",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         await response.AssertGeoServicesErrorAsync(400);
         var content = await response.Content.ReadAsStringAsync();
@@ -3730,9 +3735,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
 
@@ -3762,9 +3768,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var addRequestContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+            addRequestContent);
         addResponse.Be200Ok();
 
         var addContent = await addResponse.Content.ReadAsStringAsync();
@@ -3786,9 +3793,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var updateRequestContent = new StringContent(updatePayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateFeatures",
-            new StringContent(updatePayload, Encoding.UTF8, "application/json"));
+            updateRequestContent);
 
         response.Be200Ok();
 
@@ -3822,9 +3830,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var addRequestContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+            addRequestContent);
         addResponse.Be200Ok();
 
         var addContent = await addResponse.Content.ReadAsStringAsync();
@@ -3844,9 +3853,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var updateRequestContent = new StringContent(updatePayload, Encoding.UTF8, "application/json");
         var updateResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateFeatures",
-            new StringContent(updatePayload, Encoding.UTF8, "application/json"));
+            updateRequestContent);
         updateResponse.Be200Ok();
 
         var queryResponse = await _fixture.Client.GetAsync(
@@ -3881,9 +3891,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var addRequestContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+            addRequestContent);
         addResponse.Be200Ok();
 
         var addContent = await addResponse.Content.ReadAsStringAsync();
@@ -3897,9 +3908,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var deleteRequestContent = new StringContent(deletePayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
-            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+            deleteRequestContent);
 
         response.Be200Ok();
 
@@ -3923,9 +3935,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var content = new StringContent(deletePayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
-            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+            content);
 
         await response.AssertGeoServicesErrorAsync(400);
     }
@@ -3950,9 +3963,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var requestContent = new StringContent(editsRequest, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-            new StringContent(editsRequest, Encoding.UTF8, "application/json"));
+            requestContent);
 
         // The whole batch is not rejected with a 400; the mismatch is reported per-feature.
         response.Be200Ok();
@@ -3992,9 +4006,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var requestContent = new StringContent(editsRequest, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-            new StringContent(editsRequest, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -4037,9 +4052,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             ]
             """;
 
+        using var requestContent = new StringContent(request, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?rollbackOnFailure=true&f=json",
-            new StringContent(request, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.Be200Ok();
         var responseContent = await response.Content.ReadAsStringAsync();
@@ -4072,9 +4088,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var addRequestContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+            addRequestContent);
         addResponse.Be200Ok();
         var addContent = await addResponse.Content.ReadAsStringAsync();
         var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);
@@ -4087,9 +4104,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var deleteRequestContent = new StringContent(deletePayload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/deleteFeatures",
-            new StringContent(deletePayload, Encoding.UTF8, "application/json"));
+            deleteRequestContent);
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
@@ -4124,9 +4142,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             }
             """;
 
+        using var addRequestContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
         var addResponse = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            new StringContent(addPayload, Encoding.UTF8, "application/json"));
+            addRequestContent);
         addResponse.Be200Ok();
         var addContent = await addResponse.Content.ReadAsStringAsync();
         var addResult = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.ApplyEditsResponse);

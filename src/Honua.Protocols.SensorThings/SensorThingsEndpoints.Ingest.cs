@@ -260,7 +260,10 @@ internal static partial class SensorThingsIngestEndpoints
                 rows.Add(row);
             }
 
-            // Validate referenced datastreams exist (deduplicated).
+            // Validate referenced datastreams exist (deduplicated). Not a candidate for
+            // .Where(...)/.Any(...): the predicate is an awaited async store call, which
+            // synchronous LINQ over IEnumerable cannot express without a separate async-LINQ
+            // dependency, so the explicit foreach + early return is the clearest form here.
             foreach (var datastreamId in rows.Select(r => r.DatastreamId).Distinct())
             {
                 if (await store.GetDatastreamAsync(datastreamId, ct).ConfigureAwait(false) is null)
@@ -297,13 +300,10 @@ internal static partial class SensorThingsIngestEndpoints
         error = string.Empty;
 
         var phenomenonTime = DateTimeOffset.UtcNow;
-        if (!string.IsNullOrWhiteSpace(body.PhenomenonTime))
+        if (!string.IsNullOrWhiteSpace(body.PhenomenonTime) && !TryParseInstant(body.PhenomenonTime, out phenomenonTime))
         {
-            if (!TryParseInstant(body.PhenomenonTime, out phenomenonTime))
-            {
-                error = $"phenomenonTime '{body.PhenomenonTime}' is not a valid ISO-8601 instant.";
-                return false;
-            }
+            error = $"phenomenonTime '{body.PhenomenonTime}' is not a valid ISO-8601 instant.";
+            return false;
         }
 
         DateTimeOffset? resultTime = null;

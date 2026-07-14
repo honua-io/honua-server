@@ -164,14 +164,16 @@ internal static class GeoprocessingServiceCollectionExtensions
         // pagination/streaming) at execution time through an IServiceScopeFactory
         // scope, mirroring the ImportDatasetJobExecutor / ExternalPostgisSinkExecutor
         // provider-resolution pattern. The dispatcher routes by HandledProcessId.
+        // Note: no manual "capturedProcessId" copy is needed here — each foreach
+        // iteration variable has its own scope since C# 5, so the lambda below already
+        // closes over a distinct sourceProcessId per registration.
         foreach (var sourceProcessId in RemoteSourceProcessIds)
         {
-            var capturedProcessId = sourceProcessId;
             // Surface each per-source executor into the IProcessExecutor enumerable the
             // dispatcher's route-table scan consumes, so remote sources route through the
             // same single auto-registration path as every other per-process executor.
             services.AddSingleton<IProcessExecutor>(sp => RemoteSourceExecutor.ForProcess(
-                capturedProcessId,
+                sourceProcessId,
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>(),
                 sp.GetRequiredService<ILogger<RemoteSourceExecutor>>()));

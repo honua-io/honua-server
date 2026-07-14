@@ -168,24 +168,24 @@ public sealed class CrossProtocolIsolationTests
     private static readonly Dictionary<string, string[]> _extractedFamilyRoots =
         new(StringComparer.Ordinal)
         {
-            ["OData"] = new[] { Path.Combine("src", "Honua.Protocols.OData") },
-            ["Scene"] = new[] { Path.Combine("src", "Honua.Protocols.Scene") },
-            ["Stac"] = new[] { Path.Combine("src", "Honua.Protocols.Stac") },
-            ["SensorThings"] = new[] { Path.Combine("src", "Honua.Protocols.SensorThings") },
-            ["GeoServices"] = new[] { Path.Combine("src", "Honua.Protocols.GeoServices") },
+            ["OData"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.OData") },
+            ["Scene"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.Scene") },
+            ["Stac"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.Stac") },
+            ["SensorThings"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.SensorThings") },
+            ["GeoServices"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.GeoServices") },
             // MCP is the AI module's protocol surface (consolidated into Honua.Ai
             // rather than a standalone Honua.Protocols.Mcp, because Ai and Mcp are
             // mutually dependent — MCP tools delegate to AiBuilder/Grounding).
-            ["Mcp"] = new[] { Path.Combine("src", "Honua.Ai", "Features", "Protocols", "Mcp") },
+            ["Mcp"] = new[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Ai", "Features", "Protocols", "Mcp") },
             // Ogc spans the extracted OgcApi + OgcClassic assemblies + the shared
             // Ogc.Shared foundation (the Server Ogc/ folder is now fully extracted).
             // They collapse into one "Ogc" family, so OgcClassic -> OgcApi is an
             // allowed intra-family reference.
             ["Ogc"] = new[]
             {
-                Path.Combine("src", "Honua.Protocols.OgcApi"),
-                Path.Combine("src", "Honua.Protocols.OgcClassic"),
-                Path.Combine("src", "Honua.Protocols.Ogc.Shared"),
+                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.OgcApi"),
+                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.OgcClassic"),
+                ArchitectureTestHelpers.CombinePath("src", "Honua.Protocols.Ogc.Shared"),
             },
         };
 
@@ -207,7 +207,7 @@ public sealed class CrossProtocolIsolationTests
     public void ProtocolFamilies_ShouldNotDependOn_OtherProtocolFamilies()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var protocolsPath = Path.Combine(
+        var protocolsPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot, "src", "Honua.Server", "Features", "Protocols");
 
         Directory.Exists(protocolsPath).Should().BeTrue(
@@ -230,10 +230,10 @@ public sealed class CrossProtocolIsolationTests
                 // roots. A family can legitimately span several locations (e.g. Ogc =
                 // Server Ogc/Classic + Honua.Protocols.OgcApi + Honua.Protocols.Ogc.Shared);
                 // fully-extracted families simply have an empty Server path.
-                var roots = new List<string> { Path.Combine(protocolsPath, family) };
+                var roots = new List<string> { ArchitectureTestHelpers.CombinePath(protocolsPath, family) };
                 if (_extractedFamilyRoots.TryGetValue(family, out var extractedRoots))
                 {
-                    roots.AddRange(extractedRoots.Select(r => Path.Combine(repositoryRoot, r)));
+                    roots.AddRange(extractedRoots.Select(r => ArchitectureTestHelpers.CombinePath(repositoryRoot, r)));
                 }
 
                 return roots

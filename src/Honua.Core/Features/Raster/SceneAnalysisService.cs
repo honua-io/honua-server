@@ -18,6 +18,14 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
 
+    // Tolerance for treating two WGS 84 coordinates (or a geodesic angular
+    // distance in radians) as coincident. This is far tighter than any
+    // meaningful real-world query but absorbs floating-point noise so
+    // "practically identical" inputs don't produce NaN/Infinity downstream
+    // (division by a near-zero geodesic angle) instead of the same behavior
+    // as an exact match.
+    private const double CoordinateEqualityTolerance = 1e-9;
+
     /// <summary>Default number of samples traced along a shadow ray.</summary>
     public const int DefaultShadowSampleCount = 128;
 
@@ -213,7 +221,8 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         RasterMergeStrategy mergeStrategy,
         CancellationToken cancellationToken = default)
     {
-        if (plane.StartLongitude == plane.EndLongitude && plane.StartLatitude == plane.EndLatitude)
+        if (Math.Abs(plane.StartLongitude - plane.EndLongitude) <= CoordinateEqualityTolerance
+            && Math.Abs(plane.StartLatitude - plane.EndLatitude) <= CoordinateEqualityTolerance)
         {
             throw new ElevationQueryException(
                 ElevationFailureKind.InvalidGeometry,
@@ -495,7 +504,7 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         var a = Math.Sin(deltaPhi / 2) * Math.Sin(deltaPhi / 2)
             + Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(deltaLambda / 2) * Math.Sin(deltaLambda / 2);
         var angular = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        if (angular == 0)
+        if (angular <= CoordinateEqualityTolerance)
         {
             return (startLon, startLat);
         }

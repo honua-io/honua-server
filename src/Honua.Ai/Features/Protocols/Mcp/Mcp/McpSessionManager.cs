@@ -388,12 +388,9 @@ internal sealed class McpSessionManager
     /// </summary>
     private void SweepExpired(DateTimeOffset now)
     {
-        foreach (var pair in _sessions)
+        foreach (var pair in _sessions.Where(pair => IsExpired(pair.Value, now)))
         {
-            if (IsExpired(pair.Value, now))
-            {
-                Terminate(pair.Key);
-            }
+            Terminate(pair.Key);
         }
     }
 

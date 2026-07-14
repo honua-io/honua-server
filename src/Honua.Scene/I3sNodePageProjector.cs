@@ -117,6 +117,9 @@ public static class I3sNodePageProjector
         int globalIndex,
         Dictionary<string, int> indexById)
     {
+        // Not a candidate for .Where(...): TryGetValue's out parameter both filters
+        // (unresolved child ids are skipped) and projects (childIndex) in one lookup;
+        // splitting into Where+Select would require a second, redundant dictionary lookup.
         var children = new List<int>(entry.ChildIds.Count);
         foreach (var childId in entry.ChildIds)
         {

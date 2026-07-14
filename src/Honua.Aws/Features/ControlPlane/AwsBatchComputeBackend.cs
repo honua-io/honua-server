@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -156,18 +157,9 @@ internal static class AwsBatchJobDefinitionTierSelector
     /// tiered honua-iac contract rather than a single-ARN config.
     /// </summary>
     private static bool HasTierKeys(IReadOnlyDictionary<string, string> parameters)
-    {
-        foreach (var entry in parameters)
-        {
-            if (entry.Key.StartsWith(AwsBatchParameterKeys.JobDefinitionArnTierPrefix, StringComparison.Ordinal)
-                && !string.IsNullOrWhiteSpace(entry.Value))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => parameters.Any(entry =>
+            entry.Key.StartsWith(AwsBatchParameterKeys.JobDefinitionArnTierPrefix, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(entry.Value));
 
     /// <summary>
     /// Reads the job's ephemeral need (GiB) from <see cref="AwsBatchParameterKeys.EphemeralGib"/>.
@@ -705,6 +697,9 @@ internal sealed partial class AwsBatchComputeBackend(
             if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
             {
                 await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
+                // CanCancelWithoutTerminate(state.Status) only returns true for a non-null,
+                // non-whitespace status, so the "UNKNOWN" fallback can never trigger here;
+                // kept identical to the else branch below for a consistent log shape.
                 Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
             }
             else

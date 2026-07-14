@@ -432,6 +432,15 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
 
     private Task DeleteFileAndMetadataAsync(string fileId)
     {
+        // Defense-in-depth: fileId always originates from a generated Guid or an
+        // already-validated identifier at call sites, but this method has no callers
+        // outside this class — guard here too so Path.Combine below can never be
+        // handed a rooted/absolute segment that would silently discard StorageDirectory.
+        if (!IsSafeFileId(fileId))
+        {
+            return Task.CompletedTask;
+        }
+
         try
         {
             // Delete metadata file
@@ -459,6 +468,18 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Verifies that a file identifier is a plain relative path segment (no directory
+    /// separators, not rooted) before it is interpolated into a <see cref="Path.Combine(string, string)"/>
+    /// call, since a rooted segment would silently discard <see cref="TemporaryFileOptions.StorageDirectory"/>.
+    /// </summary>
+    private static bool IsSafeFileId(string fileId)
+    {
+        return !string.IsNullOrEmpty(fileId)
+            && fileId.IndexOfAny(['/', '\\']) < 0
+            && !Path.IsPathRooted(fileId);
     }
 
     private static string GetFileExtension(string contentType)

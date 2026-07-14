@@ -9,6 +9,8 @@ namespace Honua.Server.Features.Styling;
 
 internal static class StyleJsonUtilities
 {
+    private static readonly string[] HueUnitSuffixes = ["deg", "grad", "rad", "turn"];
+
     public static string Serialize(Dictionary<string, object?> payload)
         => JsonSerializer.Serialize(payload, StyleJsonContext.Default.DictionaryStringObject);
 
@@ -267,15 +269,12 @@ internal static class StyleJsonUtilities
         degrees = 0d;
 
         var trimmed = input.Trim();
-        var unit = "deg";
-        foreach (var candidate in new[] { "deg", "grad", "rad", "turn" })
+        var matchedUnit = HueUnitSuffixes
+            .FirstOrDefault(candidate => trimmed.EndsWith(candidate, StringComparison.OrdinalIgnoreCase));
+        var unit = matchedUnit ?? "deg";
+        if (matchedUnit is not null)
         {
-            if (trimmed.EndsWith(candidate, StringComparison.OrdinalIgnoreCase))
-            {
-                unit = candidate;
-                trimmed = trimmed[..^candidate.Length].TrimEnd();
-                break;
-            }
+            trimmed = trimmed[..^matchedUnit.Length].TrimEnd();
         }
 
         if (!double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
@@ -376,11 +375,15 @@ internal static class StyleJsonUtilities
             : delta / (max + min);
 
         double hue;
-        if (max == r)
+        // Equals() (not ==) is intentional: `max` is exactly Math.Max's chosen operand (r, g, or
+        // b unmodified, no arithmetic performed on it), so this is a deterministic identity check,
+        // not a tolerance-based comparison of independently computed floats. r/g/b can never be
+        // NaN here (derived from byte channels / 255d), so Equals' NaN-equal semantics don't apply.
+        if (max.Equals(r))
         {
             hue = ((g - b) / delta) + (g < b ? 6d : 0d);
         }
-        else if (max == g)
+        else if (max.Equals(g))
         {
             hue = ((b - r) / delta) + 2d;
         }

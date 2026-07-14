@@ -18,7 +18,7 @@ internal static class TileMatrixSetEndpoints
 {
     public static IEndpointRouteBuilder MapTileMatrixSetEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var tileMatrixSets = endpoints.MapGet("/ogc/tiles/tileMatrixSets", HandleGetTileMatrixSets)
+        endpoints.MapGet("/ogc/tiles/tileMatrixSets", HandleGetTileMatrixSets)
             .WithDisplayName("OGC API Tiles TileMatrixSets")
             .WithName("OgcTilesTileMatrixSets")
             .WithSummary("Get available tile matrix sets")
@@ -28,7 +28,7 @@ internal static class TileMatrixSetEndpoints
             .Produces<TileMatrixSetsList>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 
-        var tileMatrixSet = endpoints.MapGet("/ogc/tiles/tileMatrixSets/{tileMatrixSetId}", HandleGetTileMatrixSet)
+        endpoints.MapGet("/ogc/tiles/tileMatrixSets/{tileMatrixSetId}", HandleGetTileMatrixSet)
             .WithDisplayName("OGC API Tiles TileMatrixSet")
             .WithName("OgcTilesTileMatrixSet")
             .WithSummary("Get tile matrix set definition")

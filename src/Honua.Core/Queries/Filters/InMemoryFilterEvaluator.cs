@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -127,16 +128,11 @@ public static class InMemoryFilterEvaluator
             return false;
         }
 
-        foreach (var item in valueList.Values)
-        {
-            var itemValue = ResolveValue(item, props);
-            if (itemValue is not null && CompareValues(left, itemValue) == 0)
-            {
-                return bin.Operator == BinaryOperator.In;
-            }
-        }
+        var isMember = valueList.Values
+            .Select(item => ResolveValue(item, props))
+            .Any(itemValue => itemValue is not null && CompareValues(left, itemValue) == 0);
 
-        return bin.Operator == BinaryOperator.NotIn;
+        return isMember ? bin.Operator == BinaryOperator.In : bin.Operator == BinaryOperator.NotIn;
     }
 
     private static object? ResolveValue(FilterExpression expr, IReadOnlyDictionary<string, JsonElement> props)
@@ -458,6 +454,9 @@ public static class InMemoryFilterEvaluator
             return false;
         }
 
+        // Not a simple LINQ filter: TryValidateScalarExpression reports the specific reason
+        // for whichever item fails via `out error`, so the caller-visible message depends on
+        // which element the loop stopped at, not just whether all elements pass.
         foreach (var value in valueList.Values)
         {
             if (!TryValidateScalarExpression(value, out error))

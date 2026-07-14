@@ -773,17 +773,10 @@ internal sealed partial class SpecGroundingService
     }
 
     private static IEnumerable<string> SplitClauses(string turn)
-    {
-        var sentences = SentenceBreakPattern().Split(turn);
-        foreach (var sentence in sentences)
-        {
-            var trimmed = sentence.Trim();
-            if (trimmed.Length > 0)
-            {
-                yield return trimmed.TrimEnd('.');
-            }
-        }
-    }
+        => SentenceBreakPattern().Split(turn)
+            .Select(sentence => sentence.Trim())
+            .Where(trimmed => trimmed.Length > 0)
+            .Select(trimmed => trimmed.TrimEnd('.'));
 
     private static bool IsOutOfScope(string clause) => OutOfScopePattern().IsMatch(clause);
 
@@ -854,15 +847,15 @@ internal sealed partial class SpecGroundingService
     private static bool TryResolveTargetReference(SpecDocument document, string token, out string id)
     {
         var trimmed = token.Trim().TrimStart('@');
-        foreach (var candidate in document.Sources.Select(source => source.Id)
+        var match = document.Sources.Select(source => source.Id)
             .Concat(document.Compute.Select(step => step.Id))
-            .Concat(document.Outputs.Select(output => output.Id)))
+            .Concat(document.Outputs.Select(output => output.Id))
+            .FirstOrDefault(candidate => string.Equals(candidate, trimmed, StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null)
         {
-            if (string.Equals(candidate, trimmed, StringComparison.OrdinalIgnoreCase))
-            {
-                id = candidate;
-                return true;
-            }
+            id = match;
+            return true;
         }
 
         id = string.Empty;
@@ -876,12 +869,10 @@ internal sealed partial class SpecGroundingService
             return context.TargetId;
         }
 
-        foreach (var source in document.Sources)
+        var matchedSource = document.Sources.FirstOrDefault(source => tail.Contains(source.Id, StringComparison.OrdinalIgnoreCase));
+        if (matchedSource is not null)
         {
-            if (tail.Contains(source.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                return source.Id;
-            }
+            return matchedSource.Id;
         }
 
         return document.Sources.Length == 1 ? document.Sources[0].Id : null;
@@ -937,10 +928,9 @@ internal sealed partial class SpecGroundingService
 
     private static string TryGetStringField(ObjectExpression properties, string key)
     {
-        foreach (var field in properties.Fields)
+        foreach (var field in properties.Fields.Where(field => string.Equals(field.Key, key, StringComparison.Ordinal)))
         {
-            if (string.Equals(field.Key, key, StringComparison.Ordinal) &&
-                field.Value is LiteralNode { Kind: SpecTypeKind.String } literal &&
+            if (field.Value is LiteralNode { Kind: SpecTypeKind.String } literal &&
                 !string.IsNullOrWhiteSpace(literal.String))
             {
                 return literal.String!;

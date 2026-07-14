@@ -51,7 +51,7 @@ public sealed class CoreAbstractionsIsolationTests
     public void AbstractionsCsproj_ShouldNotReference_HeavyPackages()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(
+        var csprojPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
             "Honua.Core.Abstractions",
@@ -102,12 +102,10 @@ public sealed class CoreAbstractionsIsolationTests
                 leakyMembers.Add($"return:{method.Name}");
             }
 
-            foreach (var parameter in method.GetParameters())
+            foreach (var parameter in method.GetParameters()
+                .Where(parameter => MentionsAny(parameter.ParameterType, bannedTypes)))
             {
-                if (MentionsAny(parameter.ParameterType, bannedTypes))
-                {
-                    leakyMembers.Add($"{method.Name}({parameter.Name})");
-                }
+                leakyMembers.Add($"{method.Name}({parameter.Name})");
             }
         }
 
@@ -125,13 +123,7 @@ public sealed class CoreAbstractionsIsolationTests
 
         if (type.IsGenericType)
         {
-            foreach (var argument in type.GetGenericArguments())
-            {
-                if (MentionsAny(argument, bannedTypes))
-                {
-                    return true;
-                }
-            }
+            return type.GetGenericArguments().Any(argument => MentionsAny(argument, bannedTypes));
         }
 
         return false;
@@ -157,7 +149,7 @@ public sealed class CoreAbstractionsIsolationTests
     public void HonuaCoreCsproj_ShouldNotReference_GeometryFileFormatPackages()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(
+        var csprojPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
             "Honua.Core",
@@ -182,7 +174,7 @@ public sealed class CoreAbstractionsIsolationTests
     public void AbstractionsCsproj_ShouldNotReference_HonuaCore()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var csprojPath = Path.Combine(
+        var csprojPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "src",
             "Honua.Core.Abstractions",

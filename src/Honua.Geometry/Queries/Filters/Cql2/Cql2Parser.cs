@@ -744,6 +744,10 @@ public sealed class Cql2Parser
         }
         catch (Exception ex)
         {
+            // Broad catch is intentional: wktText is untrusted CQL2 filter input, and WKT
+            // parsing/WKB writing can throw a variety of format/argument exceptions for
+            // malformed geometry. Wrap as a clean, reported ArgumentException instead of
+            // leaking internals.
             throw new ArgumentException($"Invalid geometry literal: {wktText}", ex);
         }
     }
@@ -837,13 +841,17 @@ public sealed class Cql2Parser
         if (!IsValidCoordinate(minX) || !IsValidCoordinate(minY) ||
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minY >= maxY ||
-            minX == maxX ||
+            Math.Abs(minX - maxX) < CoordinateEpsilon ||
             !IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
             !IsValidLatitude(minY) || !IsValidLatitude(maxY))
         {
             throw new ArgumentException("Invalid BBOX coordinates");
         }
     }
+
+    // Tolerance for comparing bbox longitude bounds; avoids exact floating-point
+    // equality checks when detecting a degenerate (zero-width) geographic bbox.
+    private const double CoordinateEpsilon = 1e-9;
 
     private static bool IsValidCoordinate(double coordinate)
         => !double.IsNaN(coordinate) &&

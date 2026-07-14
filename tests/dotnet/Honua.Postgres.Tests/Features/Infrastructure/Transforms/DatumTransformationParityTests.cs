@@ -53,8 +53,9 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         // Tolerance per docs/internal/evidence/datum-transformation-parity.md (NAD83->WGS84_1: null transform, exact identity).
-        result!.Value.X.Should().BeApproximately(-104.9903, 1e-5);
-        result.Value.Y.Should().BeApproximately(39.7392, 1e-5);
+        var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        point.X.Should().BeApproximately(-104.9903, 1e-5);
+        point.Y.Should().BeApproximately(39.7392, 1e-5);
     }
 
     [IntegrationTest]
@@ -74,9 +75,12 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
         selected.Should().NotBeNull();
         oracle.Should().NotBeNull();
 
+        var selectedPoint = selected is { } sp ? sp : throw new InvalidOperationException("Expected a selected transform result.");
+        var oraclePoint = oracle is { } op ? op : throw new InvalidOperationException("Expected an oracle transform result.");
+
         // Both should be sub-meter; ~1e-5 deg ~ 1.1 m upper bound.
-        selected!.Value.X.Should().BeApproximately(oracle!.Value.X, 1e-5);
-        selected.Value.Y.Should().BeApproximately(oracle.Value.Y, 1e-5);
+        selectedPoint.X.Should().BeApproximately(oraclePoint.X, 1e-5);
+        selectedPoint.Y.Should().BeApproximately(oraclePoint.Y, 1e-5);
     }
 
     [Theory]
@@ -99,8 +103,9 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         // Null transform = exact identity; allow only floating-point noise.
-        result!.Value.X.Should().BeApproximately(lon, 1e-9);
-        result.Value.Y.Should().BeApproximately(lat, 1e-9);
+        var identityPoint = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
+        identityPoint.X.Should().BeApproximately(lon, 1e-9);
+        identityPoint.Y.Should().BeApproximately(lat, 1e-9);
     }
 
     [IntegrationTest]
@@ -134,7 +139,9 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
 
         viaSelection.Should().NotBeNull();
         viaSridOnly.Should().NotBeNull();
-        viaSelection!.Value.X.Should().Be(viaSridOnly!.Value.X);
-        viaSelection.Value.Y.Should().Be(viaSridOnly.Value.Y);
+        var viaSelectionPoint = viaSelection is { } vs ? vs : throw new InvalidOperationException("Expected a transform result via selection.");
+        var viaSridOnlyPoint = viaSridOnly is { } vo ? vo : throw new InvalidOperationException("Expected a transform result via SRID-only path.");
+        viaSelectionPoint.X.Should().Be(viaSridOnlyPoint.X);
+        viaSelectionPoint.Y.Should().Be(viaSridOnlyPoint.Y);
     }
 }

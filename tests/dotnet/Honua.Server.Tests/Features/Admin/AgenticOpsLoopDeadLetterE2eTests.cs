@@ -312,7 +312,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
             eventId.Should().NotBeNull();
             eventIds.Add(eventId!.Value);
-            await dispatchStore.EnqueueAsync(eventId.Value, ImmutableArray.Create(AlertChannelType.WebSocket));
+            await dispatchStore.EnqueueAsync(eventId!.Value, ImmutableArray.Create(AlertChannelType.WebSocket));
         }
 
         await MarkSeededDispatchesDeadLetterAsync(fixture, eventIds);

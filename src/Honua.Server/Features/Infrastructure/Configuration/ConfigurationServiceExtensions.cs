@@ -318,47 +318,45 @@ internal sealed class SecretResolutionPostConfigureOptions<
         var properties = typeof(TOptions).GetProperties(
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
 
-        foreach (var property in properties)
+        foreach (var property in properties.Where(
+            property => property.PropertyType == typeof(string) && property.CanWrite && property.CanRead))
         {
-            if (property.PropertyType == typeof(string) && property.CanWrite && property.CanRead)
+            var value = property.GetValue(options) as string;
+            if (string.IsNullOrWhiteSpace(value))
             {
-                var value = property.GetValue(options) as string;
-                if (string.IsNullOrWhiteSpace(value))
+                continue;
+            }
+
+            try
+            {
+                if (SecretReferenceResolver.IsEnvironmentReference(value))
                 {
+                    var resolvedValue = SecretReferenceResolver.ResolveEnvironmentReference(
+                        value,
+                        $"{optionsTypeName}.{property.Name}");
+                    property.SetValue(options, resolvedValue);
+                    ConfigurationServiceExtensionsLog.EnvironmentSecretReferenceResolved(
+                        _logger,
+                        optionsTypeName,
+                        property.Name);
                     continue;
                 }
 
-                try
+                if (_secretProvider.IsSecretReference(value))
                 {
-                    if (SecretReferenceResolver.IsEnvironmentReference(value))
-                    {
-                        var resolvedValue = SecretReferenceResolver.ResolveEnvironmentReference(
-                            value,
-                            $"{optionsTypeName}.{property.Name}");
-                        property.SetValue(options, resolvedValue);
-                        ConfigurationServiceExtensionsLog.EnvironmentSecretReferenceResolved(
-                            _logger,
-                            optionsTypeName,
-                            property.Name);
-                        continue;
-                    }
-
-                    if (_secretProvider.IsSecretReference(value))
-                    {
-                        throw new InvalidOperationException(
-                            $"Configuration option '{optionsTypeName}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
-                    }
+                    throw new InvalidOperationException(
+                        $"Configuration option '{optionsTypeName}.{property.Name}' uses secret reference '{value}', but only env: references are supported for startup-bound option binding.");
                 }
-                catch (Exception ex)
-                {
-                    ConfigurationServiceExtensionsLog.SecretReferenceResolutionFailed(
-                        _logger,
-                        optionsTypeName,
-                        property.Name,
-                        value,
-                        ex);
-                    throw;
-                }
+            }
+            catch (Exception ex)
+            {
+                ConfigurationServiceExtensionsLog.SecretReferenceResolutionFailed(
+                    _logger,
+                    optionsTypeName,
+                    property.Name,
+                    value,
+                    ex);
+                throw;
             }
         }
     }
@@ -455,6 +453,10 @@ internal sealed class DataAnnotationValidateOptions<
         }
         catch
         {
+            // Best-effort metadata lookup: this constructor has no logger dependency (it is
+            // resolved as a plain IValidateOptions<TOptions> via DI), and an unregistered options
+            // type is an expected, benign case here — falling back to the type name still yields
+            // a usable section label for the validator below.
             _sectionName = typeof(TOptions).Name;
         }
     }

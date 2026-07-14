@@ -138,15 +138,13 @@ public static class MetadataV2GraphSnapshotExtensions
         {
             return null;
         }
-        foreach (var pub in snapshot.Index.PublicationsByService[serviceId])
+        foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub =>
+            string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pub.ServiceLocalId, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(pub.Path, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(pub.Metadata.Name, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(pub.Metadata.Id, serviceLocalIdOrPath, StringComparison.OrdinalIgnoreCase))
-            {
-                return pub;
-            }
+            return pub;
         }
         return null;
     }
@@ -160,12 +158,9 @@ public static class MetadataV2GraphSnapshotExtensions
         int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        foreach (var pub in snapshot.Index.PublicationsByService[serviceId])
+        foreach (var pub in snapshot.Index.PublicationsByService[serviceId].Where(pub => pub.LayerIndex == layerIndex))
         {
-            if (pub.LayerIndex == layerIndex)
-            {
-                return pub;
-            }
+            return pub;
         }
         return null;
     }

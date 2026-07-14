@@ -116,13 +116,10 @@ internal static class McpToolHelpers
         }
         else
         {
-            foreach (var pair in step.Inputs)
+            foreach (var pair in step.Inputs.Where(pair => pair.Value is null))
             {
-                if (pair.Value is null)
-                {
-                    throw new GeoprocessingValidationException(
-                        $"Step '{step.StepId ?? $"at index {index}"}' has a null value for input '{pair.Key}'.");
-                }
+                throw new GeoprocessingValidationException(
+                    $"Step '{step.StepId ?? $"at index {index}"}' has a null value for input '{pair.Key}'.");
             }
 
             inputs = step.Inputs;

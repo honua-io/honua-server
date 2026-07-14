@@ -89,12 +89,9 @@ internal sealed class PortalJwtAccessTokenService(
             claims.Add(new Claim(PortalTokenIssuer.TenantClaimType, request.TenantId!));
         }
 
-        foreach (var role in request.Roles)
+        foreach (var role in request.Roles.Where(role => !string.IsNullOrWhiteSpace(role)))
         {
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                claims.Add(new Claim("role", role));
-            }
+            claims.Add(new Claim("role", role));
         }
 
         var now = DateTime.UtcNow;

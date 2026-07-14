@@ -112,6 +112,8 @@ public sealed class GeocodeStructuredInputTests
     {
         public Uri? LastUri { get; private set; }
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             LastUri = request.RequestUri;

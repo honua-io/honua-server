@@ -23,7 +23,7 @@ namespace Honua.Migration;
 /// imports. Issue #1030 slice 3 — the WCS counterpart to slice 2's
 /// OGC API Coverages import surface.
 /// </summary>
-internal static class OgcWcsImportEndpoints
+internal static partial class OgcWcsImportEndpoints
 {
     /// <summary>
     /// Map OGC WCS import endpoints onto the web application with formal API versioning.
@@ -56,8 +56,9 @@ internal static class OgcWcsImportEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -155,6 +156,18 @@ internal static class OgcWcsImportEndpoints
                 "WCS coverage import timed out.",
                 StatusCodes.Status504GatewayTimeout);
         }
+    }
+
+    private static ILogger<OgcWcsImportEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<OgcWcsImportEndpointsLog>>();
+
+    /// <summary>Log category marker for OGC WCS import endpoint operations.</summary>
+    internal sealed class OgcWcsImportEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8110, LogLevel.Warning, "Failed to deserialize WCS import request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
     }
 }
 

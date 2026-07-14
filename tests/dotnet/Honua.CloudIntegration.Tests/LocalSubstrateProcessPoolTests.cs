@@ -120,6 +120,8 @@ public sealed class LocalSubstrateProcessPoolTests : IClassFixture<LocalSubstrat
         Skip.IfNot(_helper.Available, "The GP process helper could not be compiled/launched.");
 
         using var context = CreateBackend(maxConcurrent: 2);
+        // The second segment is a generated relative literal, so it can never be rooted and drop
+        // WorkingRoot.
         var envFile = Path.Combine(context.WorkingRoot, $"env-{Guid.NewGuid():N}.txt");
 
         var job = CreateJob(

@@ -409,22 +409,21 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 continue;
             }
 
-            foreach (var match in matches)
+            // Dedup is claimed at send time (writer task and per-subscription
+            // replay), not here. Claiming the (event, subscription) slot before
+            // queueing would mark events delivered that the bounded channel
+            // later drops as pre-drain overflow — and replay would then skip
+            // them too, losing the event entirely. Queue speculatively; the
+            // writer/replay path with the atomic test-and-set decides who
+            // actually sends. The generation observed at match time travels
+            // with the frame so the writer can reject queued frames whose
+            // subscription was unsubscribed or replaced before drain.
+            foreach (var subscriptionMessage in matches.Select(match => message with
             {
-                // Dedup is claimed at send time (writer task and per-subscription
-                // replay), not here. Claiming the (event, subscription) slot before
-                // queueing would mark events delivered that the bounded channel
-                // later drops as pre-drain overflow — and replay would then skip
-                // them too, losing the event entirely. Queue speculatively; the
-                // writer/replay path with the atomic test-and-set decides who
-                // actually sends. The generation observed at match time travels
-                // with the frame so the writer can reject queued frames whose
-                // subscription was unsubscribed or replaced before drain.
-                var subscriptionMessage = message with
-                {
-                    Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
-                    SubscriptionGeneration = match.Generation
-                };
+                Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
+                SubscriptionGeneration = match.Generation
+            }))
+            {
                 if (TryQueueMessage(id, entry, subscriptionMessage))
                 {
                     delivered++;
@@ -806,9 +805,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             {
                 _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
             }
-            catch
+            catch (Exception ex)
             {
                 // Best-effort shutdown; the connection owner will close the Redis subscription anyway.
+                FeatureStreamLog.ClusterUnsubscribeFailed(_logger, ex);
             }
         }
 

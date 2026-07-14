@@ -302,6 +302,8 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         {
             try
             {
+                // Best-effort compensating cleanup of the orphaned uploaded file after the metadata
+                // insert failed; a cleanup failure must not mask the original exception being rethrown.
                 await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
             }
             catch (Exception ex)

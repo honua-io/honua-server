@@ -437,7 +437,8 @@ public sealed class MigrationRunAdminEndpointTests : IAsyncLifetime
             }
             if (query.Status.HasValue)
             {
-                all = all.Where(r => r.Status == query.Status.Value);
+                var status = query.Status.Value;
+                all = all.Where(r => r.Status == status);
             }
             var ordered = all.OrderByDescending(r => r.StartedAt).ToList();
             var page = ordered.Skip(query.Offset).Take(query.Limit <= 0 ? 25 : query.Limit).ToArray();

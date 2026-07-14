@@ -441,21 +441,10 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            var trimmed = token.Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return value.Split(',', StringSplitOptions.None)
+            .Select(token => token.Trim())
+            .Where(trimmed => trimmed.Length > 0)
+            .Any(trimmed => !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
     }
 
     private static MetadataV2Field[] ResolveSearchFields(MetadataV2Resource resource, HashSet<string>? requestedFields)
@@ -613,13 +602,10 @@ internal static partial class MapServerEndpoints
             return true;
         }
 
-        foreach (var attribute in feature.Attributes)
+        foreach (var attribute in feature.Attributes.Where(attribute => string.Equals(attribute.Key, fieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(attribute.Key, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                value = attribute.Value;
-                return true;
-            }
+            value = attribute.Value;
+            return true;
         }
 
         value = null;

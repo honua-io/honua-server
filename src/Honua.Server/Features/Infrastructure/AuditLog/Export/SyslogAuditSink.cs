@@ -51,6 +51,8 @@ internal sealed class SyslogAuditSink : IAuditSink
     {
         ArgumentNullException.ThrowIfNull(events);
 
+        // Not a pure map: each iteration sends over the wire and can return early on the
+        // first transport failure, so this doesn't reduce cleanly to a '.Select(...)'.
         foreach (var evt in events)
         {
             var frame = BuildFrame(evt);

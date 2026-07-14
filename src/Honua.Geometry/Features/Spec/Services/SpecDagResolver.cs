@@ -46,19 +46,16 @@ internal static class SpecDagResolver
                 continue;
             }
 
-            if (!nodes.TryAdd(node.Id, node))
+            if (!nodes.TryAdd(node.Id, node) && duplicates.Add(node.Id))
             {
-                if (duplicates.Add(node.Id))
+                diagnostics.Add(new SpecWarning
                 {
-                    diagnostics.Add(new SpecWarning
-                    {
-                        Code = SpecDiagnosticCodes.DuplicateNodeId,
-                        Message = $"Node id '{node.Id}' is declared more than once.",
-                        Severity = SpecDiagnosticSeverity.Error,
-                        NodeId = node.Id,
-                        Remedy = "Ensure every spec node has a unique id."
-                    });
-                }
+                    Code = SpecDiagnosticCodes.DuplicateNodeId,
+                    Message = $"Node id '{node.Id}' is declared more than once.",
+                    Severity = SpecDiagnosticSeverity.Error,
+                    NodeId = node.Id,
+                    Remedy = "Ensure every spec node has a unique id."
+                });
             }
         }
 
@@ -186,12 +183,9 @@ internal static class SpecDagResolver
 
         // Use a stable order ready queue so identical specs always resolve identically.
         var ready = new SortedSet<string>(StringComparer.Ordinal);
-        foreach (var (id, degree) in inDegree)
+        foreach (var (id, _) in inDegree.Where(entry => entry.Value == 0))
         {
-            if (degree == 0)
-            {
-                ready.Add(id);
-            }
+            ready.Add(id);
         }
 
         var result = new List<string>(nodes.Count);

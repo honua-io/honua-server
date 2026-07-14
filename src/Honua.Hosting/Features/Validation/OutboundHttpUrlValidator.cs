@@ -121,15 +121,7 @@ internal static class OutboundHttpUrlValidator
             return true;
         }
 
-        foreach (var address in addresses)
-        {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return addresses.Any(IsPrivateOrReservedAddress);
     }
 
     private static bool IsLocalhostHostName(string host)

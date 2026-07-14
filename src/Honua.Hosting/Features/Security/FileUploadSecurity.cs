@@ -366,13 +366,9 @@ internal static class FileUploadSecurity
                     return FileValidationResult.Invalid("File appears to be empty or cannot be read.");
                 }
 
-                var signatureSlice = buffer.AsSpan(0, bytesRead);
-                foreach (var signature in _maliciousSignatures.Values)
+                if (_maliciousSignatures.Values.Any(signature => ByteArrayStartsWith(buffer.AsSpan(0, bytesRead), signature)))
                 {
-                    if (ByteArrayStartsWith(signatureSlice, signature))
-                    {
-                        return FileValidationResult.Invalid("File contains a potentially malicious signature.");
-                    }
+                    return FileValidationResult.Invalid("File contains a potentially malicious signature.");
                 }
             }
             finally
@@ -402,6 +398,8 @@ internal static class FileUploadSecurity
         }
         catch (Exception)
         {
+            // Intentional: any failure reading/parsing the upload (IO, malformed stream, etc.)
+            // must fail closed as an invalid file rather than propagate to the caller.
             return FileValidationResult.Invalid("Error validating file content.");
         }
     }
@@ -431,14 +429,7 @@ internal static class FileUploadSecurity
                 "<%",
             };
 
-            var maxPatternLength = 0;
-            foreach (var pattern in dangerousPatterns)
-            {
-                if (pattern.Length > maxPatternLength)
-                {
-                    maxPatternLength = pattern.Length;
-                }
-            }
+            var maxPatternLength = dangerousPatterns.Max(pattern => pattern.Length);
 
             const int bufferSize = 4096;
             var buffer = ArrayPool<char>.Shared.Rent(bufferSize);
@@ -457,12 +448,9 @@ internal static class FileUploadSecurity
                     var chunk = new string(buffer, 0, read);
                     var combined = string.Concat(tail, chunk);
 
-                    foreach (var pattern in dangerousPatterns)
+                    if (dangerousPatterns.Any(pattern => combined.Contains(pattern, StringComparison.OrdinalIgnoreCase)))
                     {
-                        if (combined.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return FileValidationResult.Invalid("File contains potentially dangerous script content.");
-                        }
+                        return FileValidationResult.Invalid("File contains potentially dangerous script content.");
                     }
 
                     if (maxPatternLength > 1)

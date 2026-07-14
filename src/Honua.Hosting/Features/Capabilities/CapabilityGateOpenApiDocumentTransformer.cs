@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net.Http;
 using Honua.Core.Features.Capabilities;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
@@ -142,15 +143,10 @@ internal sealed class CapabilityGateOpenApiDocumentTransformer : IOpenApiDocumen
     private static string? FindPathKey(OpenApiDocument document, string? relativePath)
     {
         var target = NormalizeKey(relativePath);
-        foreach (var entry in document.Paths)
-        {
-            if (string.Equals(NormalizeKey(entry.Key), target, StringComparison.OrdinalIgnoreCase))
-            {
-                return entry.Key;
-            }
-        }
-
-        return null;
+        return document.Paths
+            .Where(entry => string.Equals(NormalizeKey(entry.Key), target, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.Key)
+            .FirstOrDefault();
     }
 
     private static string NormalizeKey(string? path)

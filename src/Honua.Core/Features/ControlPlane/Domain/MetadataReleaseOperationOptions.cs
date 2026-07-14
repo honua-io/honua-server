@@ -73,14 +73,6 @@ public sealed class MetadataReleaseFaultInjectionOptions
             return false;
         }
 
-        foreach (var allowed in AllowedEnvironments)
-        {
-            if (string.Equals(allowed, targetEnvironment, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return AllowedEnvironments.Any(allowed => string.Equals(allowed, targetEnvironment, StringComparison.OrdinalIgnoreCase));
     }
 }

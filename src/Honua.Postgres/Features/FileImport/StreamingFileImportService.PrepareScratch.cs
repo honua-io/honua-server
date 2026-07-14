@@ -68,25 +68,25 @@ internal sealed partial class StreamingFileImportService
                 ?? throw new InvalidDataException("Zip does not contain required .shp and .dbf files.");
             var extractionBudget = CreateArchiveExtractionBudget();
 
-            var shpPath = Path.Combine(scratchDir, entries.BaseName + ".shp");
-            var dbfPath = Path.Combine(scratchDir, entries.BaseName + ".dbf");
+            var shpPath = CombineScratchComponentPath(scratchDir, entries.BaseName + ".shp");
+            var dbfPath = CombineScratchComponentPath(scratchDir, entries.BaseName + ".dbf");
 
             await ExtractEntryAsync(entries.ShpEntry, shpPath, extractionBudget, cancellationToken);
             await ExtractEntryAsync(entries.DbfEntry, dbfPath, extractionBudget, cancellationToken);
 
             if (entries.ShxEntry != null)
             {
-                await ExtractEntryAsync(entries.ShxEntry, Path.Combine(scratchDir, entries.BaseName + ".shx"), extractionBudget, cancellationToken);
+                await ExtractEntryAsync(entries.ShxEntry, CombineScratchComponentPath(scratchDir, entries.BaseName + ".shx"), extractionBudget, cancellationToken);
             }
 
             if (entries.PrjEntry != null)
             {
-                await ExtractEntryAsync(entries.PrjEntry, Path.Combine(scratchDir, entries.BaseName + ".prj"), extractionBudget, cancellationToken);
+                await ExtractEntryAsync(entries.PrjEntry, CombineScratchComponentPath(scratchDir, entries.BaseName + ".prj"), extractionBudget, cancellationToken);
             }
 
             if (entries.CpgEntry != null)
             {
-                await ExtractEntryAsync(entries.CpgEntry, Path.Combine(scratchDir, entries.BaseName + ".cpg"), extractionBudget, cancellationToken);
+                await ExtractEntryAsync(entries.CpgEntry, CombineScratchComponentPath(scratchDir, entries.BaseName + ".cpg"), extractionBudget, cancellationToken);
             }
 
             return new ShapefileScratch(scratchDir, shpPath);
@@ -111,6 +111,8 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch (Exception ex)
                 {
+                    // Best-effort temp-zip cleanup; log and continue rather than failing the import
+                    // over a leftover temp file (the scratch directory cleanup on failure paths still runs).
                     ShapefileLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
@@ -216,6 +218,8 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch (Exception ex)
                 {
+                    // Best-effort temp-zip cleanup; log and continue rather than failing the import
+                    // over a leftover temp file (the scratch directory cleanup on failure paths still runs).
                     KmzLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
@@ -444,15 +448,10 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
-        foreach (var group in groups.Values)
-        {
-            if (group.Shp != null && group.Dbf != null)
-            {
-                return new ShapefileEntries(group.BaseName, group.Shp, group.Dbf, group.Shx, group.Prj, group.Cpg);
-            }
-        }
-
-        return null;
+        var match = groups.Values.FirstOrDefault(g => g.Shp != null && g.Dbf != null);
+        return match != null
+            ? new ShapefileEntries(match.BaseName, match.Shp!, match.Dbf!, match.Shx, match.Prj, match.Cpg)
+            : null;
     }
 
     private static string GetShapefileComponentGroupKey(ZipArchiveEntry entry, string baseName)
@@ -508,6 +507,25 @@ internal sealed partial class StreamingFileImportService
         }
 
         return new ArchiveExtractionBudget(maxTotalBytes, maxEntryBytes, maxCompressionRatio);
+    }
+
+    /// <summary>
+    /// Combines a scratch directory with a filename component derived from untrusted zip
+    /// entry data (e.g. <c>entries.BaseName</c> from <see cref="SelectShapefileEntries"/>).
+    /// <see cref="ZipArchiveEntry.Name"/> cannot contain a path separator, but a malicious
+    /// or malformed archive could still supply a component that <see cref="Path.IsPathRooted(string)"/>
+    /// treats as absolute (e.g. a Windows drive-relative "C:name" segment), which would make
+    /// <see cref="Path.Combine(string, string)"/> silently discard <paramref name="scratchDir"/>
+    /// and write outside the scratch sandbox. Reject that case explicitly instead.
+    /// </summary>
+    private static string CombineScratchComponentPath(string scratchDir, string componentName)
+    {
+        if (Path.IsPathRooted(componentName))
+        {
+            throw new InvalidDataException($"Archive entry name '{componentName}' resolves to an absolute path, which is not permitted.");
+        }
+
+        return Path.Combine(scratchDir, componentName);
     }
 
     private static async Task ExtractEntryAsync(

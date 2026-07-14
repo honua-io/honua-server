@@ -298,13 +298,11 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
 
         // Fall back to a case-insensitive scan to honor the case-insensitive field-name contract
         // even when the attribute bag is keyed ordinally.
-        foreach (var pair in feature.Attributes)
+        foreach (var pair in feature.Attributes.Where(
+            p => string.Equals(p.Key, fieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                value = pair.Value;
-                return true;
-            }
+            value = pair.Value;
+            return true;
         }
 
         value = null;

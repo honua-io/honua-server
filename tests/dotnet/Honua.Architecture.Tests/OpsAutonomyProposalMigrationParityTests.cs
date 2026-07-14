@@ -12,13 +12,13 @@ public sealed class OpsAutonomyProposalMigrationParityTests
     public void ProposalResolutionLedger_MigrationAndSeedStayMinimalAndInParity()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var migration = File.ReadAllText(Path.Combine(
+        var migration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
             root,
             "src",
             "Honua.Server",
             "Migrations",
             "081_CreateOpsAutonomyProposalResolutions.sql"));
-        var seed = File.ReadAllText(Path.Combine(root, "tests", "seed", "server.yaml"));
+        var seed = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "tests", "seed", "server.yaml"));
         const string table = "ops_autonomy_proposal_resolutions";
         const string constraint = "CHECK (resolution IN (0, 1))";
 

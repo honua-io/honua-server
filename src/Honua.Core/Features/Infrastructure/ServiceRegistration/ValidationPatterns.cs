@@ -118,6 +118,11 @@ public abstract class ConfigurationValidator<
                 errors.Add($"{propertyName} path '{filePath}' does not exist.");
             }
         }
+        // Path.GetFullPath/File.Exists/Directory.Exists can throw several distinct types
+        // (ArgumentException, PathTooLongException, NotSupportedException, IOException,
+        // SecurityException, UnauthorizedAccessException) for a malformed operator-supplied
+        // path. This is startup configuration validation: any of them should surface as a
+        // validation error, not crash the host, so catching broadly here is intentional.
         catch (Exception ex)
         {
             errors.Add($"{propertyName} path '{filePath}' is invalid: {ex.Message}");
@@ -346,6 +351,10 @@ public abstract class ConfigurationValidator<
                 errors.Add($"{propertyName} contains invalid path characters: '{path}'.");
             }
         }
+        // Path.IsPathRooted/GetInvalidPathChars can throw for a malformed operator-supplied
+        // path. This is startup configuration validation, not a hot path: any failure should
+        // become a validation error rather than crash the host, so catching broadly here is
+        // intentional.
         catch (Exception ex)
         {
             errors.Add($"{propertyName} is not a valid path: {ex.Message}");

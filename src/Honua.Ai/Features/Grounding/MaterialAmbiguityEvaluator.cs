@@ -221,15 +221,9 @@ internal static class MaterialAmbiguityEvaluator
         if (request.ExplicitInputs.Count > 0)
         {
             var pinnedId = request.ExplicitInputs[0];
-            foreach (var candidate in candidates.Datasets)
-            {
-                if (string.Equals(candidate.Id, pinnedId, StringComparison.Ordinal)
-                    && candidate.DatasetSubtype == DatasetSubtype.Service)
-                {
-                    return false;
-                }
-            }
-            return true;
+            return !candidates.Datasets.Any(candidate =>
+                string.Equals(candidate.Id, pinnedId, StringComparison.Ordinal)
+                && candidate.DatasetSubtype == DatasetSubtype.Service);
         }
 
         return candidates.Datasets.Count > 0

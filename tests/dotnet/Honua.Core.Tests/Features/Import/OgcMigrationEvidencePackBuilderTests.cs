@@ -78,7 +78,7 @@ public sealed class OgcMigrationEvidencePackBuilderTests
                         ? entry with { AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview }
                         : entry)
                     .ToArray(),
-                inputs.WmsPlan.Value.Diagnostics)
+                inputs.WmsPlan!.Value.Diagnostics)
         };
 
         var baseline = OgcMigrationEvidencePackBuilder.Build(inputs);

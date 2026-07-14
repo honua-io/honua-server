@@ -314,6 +314,7 @@ public sealed class LicenseMintRoundTripTests
     private static async Task<LicenseSnapshot> ValidateAsync(byte[] envelopeJson, string trustedKeySetting)
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
         await File.WriteAllBytesAsync(licensePath, envelopeJson);
 

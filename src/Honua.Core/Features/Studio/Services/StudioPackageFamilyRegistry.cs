@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -64,17 +65,7 @@ public sealed class StudioPackageFamilyRegistry : IStudioPackageFamilyRegistry
 
     /// <inheritdoc />
     public StudioPackageFamilyDescriptor? GetDescriptor(StudioPackageFamily family)
-    {
-        foreach (var descriptor in GetCapabilities().Families)
-        {
-            if (descriptor.Family == family)
-            {
-                return descriptor;
-            }
-        }
-
-        return null;
-    }
+        => GetCapabilities().Families.FirstOrDefault(descriptor => descriptor.Family == family);
 
     private static StudioPackageFamilyDescriptor Build(
         StudioPackageFamily family,

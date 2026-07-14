@@ -110,11 +110,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
                           context.Response.StatusCode == StatusCodes.Status408RequestTimeout;
             _systemMetricsCollector.RecordRequest(stopwatch.Elapsed, isError);
 
-            if (operationScope is not null)
-            {
-                operationScope.WithTag("status_code", context.Response.StatusCode.ToString(CultureInfo.InvariantCulture));
-                operationScope.Dispose();
-            }
+            operationScope?.WithTag("status_code", context.Response.StatusCode.ToString(CultureInfo.InvariantCulture));
 
             // Log slow requests
             if (stopwatch.Elapsed > _options.SlowRequestThreshold)
@@ -126,6 +122,8 @@ internal sealed partial class PerformanceMonitoringMiddleware
                     stopwatch.Elapsed.TotalMilliseconds,
                     _options.SlowRequestThreshold.TotalMilliseconds);
             }
+
+            operationScope?.Dispose();
         }
     }
 

@@ -159,10 +159,10 @@ public sealed partial class McpTaxonomyAlignmentTests
         };
 
     private static string SchemaRoot =>
-        Path.Combine(AppContext.BaseDirectory, "ConformanceSchemas", "geospatial-mcp");
+        Path.Join(AppContext.BaseDirectory, "ConformanceSchemas", "geospatial-mcp");
 
     private static string FixtureRoot =>
-        Path.Combine(AppContext.BaseDirectory, "ConformanceSchemas", "fixtures");
+        Path.Join(AppContext.BaseDirectory, "ConformanceSchemas", "fixtures");
 
     [UnitTest]
     public void VendoredStandardSchemas_AreDraft2020_12AndLoad()
@@ -227,7 +227,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ImplementedToolStandardNames.TryGetValue(tool.Name, out var standardName)
                 .Should().BeTrue($"tool '{tool.Name}' must map to a standard tool schema");
 
-            var standardSchemaPath = Path.Combine(SchemaRoot, "tools", standardName + ".schema.json");
+            var standardSchemaPath = Path.Join(SchemaRoot, "tools", standardName + ".schema.json");
             File.Exists(standardSchemaPath).Should().BeTrue(
                 $"vendored standard schema for '{standardName}' must exist");
 
@@ -271,7 +271,7 @@ public sealed partial class McpTaxonomyAlignmentTests
                 continue;
             }
 
-            var fixtureDir = Path.Combine(FixtureRoot, "tools", standardName);
+            var fixtureDir = Path.Join(FixtureRoot, "tools", standardName);
             if (!Directory.Exists(fixtureDir))
             {
                 continue;
@@ -279,7 +279,7 @@ public sealed partial class McpTaxonomyAlignmentTests
 
             var liveSchema = LoadSchemaFromJson(SerializeLive(tool.Describe().InputSchema));
             var standardSchema = LoadSchema(
-                Path.Combine(SchemaRoot, "tools", standardName + ".schema.json"));
+                Path.Join(SchemaRoot, "tools", standardName + ".schema.json"));
 
             foreach (var fixtureFile in Directory.EnumerateFiles(fixtureDir, "*.json"))
             {
@@ -320,7 +320,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         // resolve the enums against the raw JSON so the assertion does not depend
         // on a JSON-schema engine's $ref representation.
         using var doc = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(SchemaRoot, "tools", "validate_plan.schema.json")));
+            File.ReadAllText(Path.Join(SchemaRoot, "tools", "validate_plan.schema.json")));
         var root = doc.RootElement;
 
         // properties.plan -> $defs.analysisPlan -> properties.steps.items
@@ -360,7 +360,7 @@ public sealed partial class McpTaxonomyAlignmentTests
                 $"'{gap}' is recorded as a known-gap; if Honua now implements it, "
                 + "map it in ImplementedToolStandardNames and remove it from the gap list");
 
-            File.Exists(Path.Combine(SchemaRoot, "tools", gap + ".schema.json"))
+            File.Exists(Path.Join(SchemaRoot, "tools", gap + ".schema.json"))
                 .Should().BeTrue($"the standard must publish a schema for the gap tool '{gap}'");
         }
     }
@@ -385,8 +385,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         var asserted = 0;
         foreach (var (family, schemaFile) in resourceFamilies)
         {
-            var schema = LoadSchema(Path.Combine(SchemaRoot, "resources", schemaFile));
-            var fixtureDir = Path.Combine(FixtureRoot, "resources", family);
+            var schema = LoadSchema(Path.Join(SchemaRoot, "resources", schemaFile));
+            var fixtureDir = Path.Join(FixtureRoot, "resources", family);
             Directory.Exists(fixtureDir).Should().BeTrue(
                 $"resource fixtures for '{family}' must be vendored");
 
@@ -545,7 +545,7 @@ public sealed partial class McpTaxonomyAlignmentTests
 
         foreach (var family in standardResourceFamilies)
         {
-            File.Exists(Path.Combine(SchemaRoot, "resources", family + ".schema.json"))
+            File.Exists(Path.Join(SchemaRoot, "resources", family + ".schema.json"))
                 .Should().BeTrue($"vendored standard resource schema for '{family}' must exist");
         }
 
@@ -564,7 +564,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     // a build failure rather than a silent spec/server divergence.
     // -------------------------------------------------------------------
 
-    private static string VendoredIndexPath => Path.Combine(SchemaRoot, "index.json");
+    private static string VendoredIndexPath => Path.Join(SchemaRoot, "index.json");
 
     /// <summary>
     /// Normalizes a URI template by collapsing every <c>{token}</c> placeholder
@@ -787,7 +787,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             // Relative-path forms used by $ref within the resources/ directory.
             var fileName = Path.GetFileName(file);
             resolver.Add(new Uri(fileName, UriKind.Relative), content);
-            var relFromResources = Path.GetRelativePath(Path.Combine(SchemaRoot, "resources"), file)
+            var relFromResources = Path.GetRelativePath(Path.Join(SchemaRoot, "resources"), file)
                 .Replace(Path.DirectorySeparatorChar, '/');
             resolver.Add(new Uri(relFromResources, UriKind.Relative), content);
         }
@@ -808,7 +808,7 @@ public sealed partial class McpTaxonomyAlignmentTests
 
     private static void AssertPayloadConformsToResourceSchema(JToken payload, string schemaFile, string reason)
     {
-        var schema = LoadSchema(Path.Combine(SchemaRoot, "resources", schemaFile));
+        var schema = LoadSchema(Path.Join(SchemaRoot, "resources", schemaFile));
         payload.IsValid(schema, out IList<string> errors);
         errors.Should().BeEmpty($"{reason} must conform to '{schemaFile}'");
     }

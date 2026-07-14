@@ -87,13 +87,13 @@ public sealed class DatabaseMigrationSafetyTests
         const string expectedConstraint =
             "CHECK (outcome IS NULL OR outcome IN (0, 1, 2, 3, 4))";
         var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
-        var migration = File.ReadAllText(Path.Combine(
+        var migration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
             projectRoot,
             "src",
             "Honua.Server",
             "Migrations",
             "080_AddOpsAutonomyTerminalOutcomes.sql"));
-        var seed = File.ReadAllText(Path.Combine(projectRoot, "tests", "seed", "server.yaml"));
+        var seed = File.ReadAllText(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "seed", "server.yaml"));
 
         migration.Should().Contain(expectedConstraint,
             "migration 080 must retain every terminal autonomy outcome");
@@ -111,8 +111,8 @@ public sealed class DatabaseMigrationSafetyTests
         var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
         var migrationDirectories = new[]
         {
-            Path.Combine(projectRoot, "src", "Honua.Server", "Migrations"),
-            Path.Combine(projectRoot, "src", "Honua.Postgres", "Migrations")
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Migrations"),
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Postgres", "Migrations")
         };
 
         return migrationDirectories
@@ -126,7 +126,7 @@ public sealed class DatabaseMigrationSafetyTests
         var current = new DirectoryInfo(startDirectory);
         while (current != null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
+            if (File.Exists(ArchitectureTestHelpers.CombinePath(current.FullName, "Honua.sln")))
             {
                 return current.FullName;
             }

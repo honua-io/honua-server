@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.OData.Services;
 
@@ -121,13 +122,11 @@ internal static partial class ODataComputeService
         }
 
         var func = ODataComputeFunction.None;
-        if (match.Groups["func"].Success && match.Groups["func"].Value.Length > 0)
+        if (match.Groups["func"].Success && match.Groups["func"].Value.Length > 0 &&
+            !TryMapFunction(match.Groups["func"].Value, out func))
         {
-            if (!TryMapFunction(match.Groups["func"].Value, out func))
-            {
-                errorMessage = $"Unsupported $compute function '{match.Groups["func"].Value}'.";
-                return false;
-            }
+            errorMessage = $"Unsupported $compute function '{match.Groups["func"].Value}'.";
+            return false;
         }
 
         var left = match.Groups["left"].Value;
@@ -262,21 +261,51 @@ internal static partial class ODataComputeService
             return false;
         }
 
-        return raw switch
+        // byte/short/int always round-trip through double exactly (double's 53-bit mantissa
+        // covers the full int32 range), so those arms can assign unconditionally. long and
+        // decimal can lose precision converting to double; round-trip back to the source type
+        // and compare there (not on the double itself) to detect that loss.
+        switch (raw)
         {
-            byte b => (numericValue = b) == b,
-            short s => (numericValue = s) == s,
-            int i => (numericValue = i) == i,
-            long l => (numericValue = l) == l,
-            float f => (numericValue = f) == f,
-            double d => (numericValue = d) == d,
-            decimal dec => (numericValue = (double)dec) == (double)dec,
-            string text when double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) =>
-                (numericValue = parsed) == parsed,
-            System.Text.Json.JsonElement json when json.ValueKind == System.Text.Json.JsonValueKind.Number && json.TryGetDouble(out var parsed) =>
-                (numericValue = parsed) == parsed,
-            _ => false
-        };
+            case byte b:
+                numericValue = b;
+                return true;
+            case short s:
+                numericValue = s;
+                return true;
+            case int i:
+                numericValue = i;
+                return true;
+            case long l:
+                numericValue = l;
+                return (long)numericValue == l;
+            case float f:
+                numericValue = f;
+                return true;
+            case double d:
+                numericValue = d;
+                return true;
+            case decimal dec:
+                numericValue = (double)dec;
+                try
+                {
+                    // A double that round-trips outside decimal's representable range is just
+                    // another way the conversion lost precision, not an exceptional condition.
+                    return (decimal)numericValue == dec;
+                }
+                catch (OverflowException)
+                {
+                    return false;
+                }
+            case string text when double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
+                numericValue = parsed;
+                return true;
+            case System.Text.Json.JsonElement json when json.ValueKind == System.Text.Json.JsonValueKind.Number && json.TryGetDouble(out var parsed):
+                numericValue = parsed;
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static bool TryMapOperator(string token, out ODataComputeOperator op)

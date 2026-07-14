@@ -200,11 +200,11 @@ public sealed class FeatureServerApplyEditsConflictCodeTests
             return new EditHarness(fixture);
         }
 
-        public Task<HttpResponseMessage> PostApplyEditsAsync(ApplyEditsRequest request)
+        public async Task<HttpResponseMessage> PostApplyEditsAsync(ApplyEditsRequest request)
         {
             var json = JsonSerializer.Serialize(request, FeatureServerJsonContext.Default.ApplyEditsRequest);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            return _fixture.Client.PostAsync(
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            return await _fixture.Client.PostAsync(
                 $"/rest/services/{ServiceId}/FeatureServer/{LayerId}/applyEdits", content);
         }
 

@@ -832,6 +832,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                 }
                 catch
                 {
+                    // Any other transport/deserialization error during rolling-deploy load generation
+                    // just counts as a failed request; cancellation is already rethrown above.
                     Interlocked.Increment(ref _failures);
                 }
 

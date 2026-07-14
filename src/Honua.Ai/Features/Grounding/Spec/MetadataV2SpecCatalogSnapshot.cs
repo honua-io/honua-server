@@ -60,11 +60,9 @@ internal sealed class MetadataV2SpecCatalogSnapshot : ISpecCatalogSnapshot
 
     private static string? TryGetLiteral(ObjectExpression expression, string key)
     {
-        foreach (var field in expression.Fields)
+        foreach (var field in expression.Fields.Where(field => string.Equals(field.Key, key, StringComparison.Ordinal)))
         {
-            if (string.Equals(field.Key, key, StringComparison.Ordinal) &&
-                field.Value is LiteralNode literal &&
-                literal.Kind == SpecTypeKind.String)
+            if (field.Value is LiteralNode { Kind: SpecTypeKind.String } literal)
             {
                 return literal.String;
             }

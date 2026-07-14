@@ -64,149 +64,117 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void ValidateAgainstTrustedCas_WithNoSslErrors_ReturnsTrueWithoutRebuildingChain()
     {
-        var (rootCert, leafCert) = CreateTestChain("CN=TestRoot", "CN=leaf.example");
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert, presentedChain: null, SslPolicyErrors.None, roots);
-            result.Should().BeTrue();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            leafCert.Dispose();
-        }
+        var chain = CreateTestChain("CN=TestRoot", "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var leafCert = chain.Leaf;
+
+        var roots = new X509Certificate2Collection { rootCert };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert, presentedChain: null, SslPolicyErrors.None, roots);
+        result.Should().BeTrue();
     }
 
     [Fact]
     public void ValidateAgainstTrustedCas_ChainsToCustomRoot_ReturnsTrue()
     {
-        var (rootCert, leafCert) = CreateTestChain("CN=TestRoot", "CN=leaf.example");
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert,
-                presentedChain: null,
-                SslPolicyErrors.RemoteCertificateChainErrors,
-                roots);
-            result.Should().BeTrue();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            leafCert.Dispose();
-        }
+        var chain = CreateTestChain("CN=TestRoot", "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var leafCert = chain.Leaf;
+
+        var roots = new X509Certificate2Collection { rootCert };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert,
+            presentedChain: null,
+            SslPolicyErrors.RemoteCertificateChainErrors,
+            roots);
+        result.Should().BeTrue();
     }
 
     [Fact]
     public void ValidateAgainstTrustedCas_RejectsHostnameMismatch()
     {
-        var (rootCert, leafCert) = CreateTestChain("CN=TestRoot", "CN=leaf.example");
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert,
-                presentedChain: null,
-                SslPolicyErrors.RemoteCertificateNameMismatch,
-                roots);
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            leafCert.Dispose();
-        }
+        var chain = CreateTestChain("CN=TestRoot", "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var leafCert = chain.Leaf;
+
+        var roots = new X509Certificate2Collection { rootCert };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert,
+            presentedChain: null,
+            SslPolicyErrors.RemoteCertificateNameMismatch,
+            roots);
+        result.Should().BeFalse();
     }
 
     [Fact]
     public void ValidateAgainstTrustedCas_RejectsHostnameMismatchEvenWhenChainTrusted()
     {
-        var (rootCert, leafCert) = CreateTestChain("CN=TestRoot", "CN=leaf.example");
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
-            var combined = SslPolicyErrors.RemoteCertificateNameMismatch
-                | SslPolicyErrors.RemoteCertificateChainErrors;
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert, presentedChain: null, combined, roots);
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            leafCert.Dispose();
-        }
+        var chain = CreateTestChain("CN=TestRoot", "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var leafCert = chain.Leaf;
+
+        var roots = new X509Certificate2Collection { rootCert };
+        var combined = SslPolicyErrors.RemoteCertificateNameMismatch
+            | SslPolicyErrors.RemoteCertificateChainErrors;
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert, presentedChain: null, combined, roots);
+        result.Should().BeFalse();
     }
 
     [Fact]
     public void ValidateAgainstTrustedCas_RejectsMissingCertificate()
     {
-        var (rootCert, leafCert) = CreateTestChain("CN=TestRoot", "CN=leaf.example");
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert,
-                presentedChain: null,
-                SslPolicyErrors.RemoteCertificateNotAvailable,
-                roots);
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            leafCert.Dispose();
-        }
+        var chain = CreateTestChain("CN=TestRoot", "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var leafCert = chain.Leaf;
+
+        var roots = new X509Certificate2Collection { rootCert };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert,
+            presentedChain: null,
+            SslPolicyErrors.RemoteCertificateNotAvailable,
+            roots);
+        result.Should().BeFalse();
     }
 
     [Fact]
     public void ValidateAgainstTrustedCas_RejectsExpiredLeafCertificate()
     {
-        var (rootCert, expiredLeaf) = CreateTestChain(
+        var chain = CreateTestChain(
             "CN=TestRoot",
             "CN=leaf.example",
             leafNotBefore: DateTimeOffset.UtcNow.AddDays(-10),
             leafNotAfter: DateTimeOffset.UtcNow.AddDays(-1));
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                expiredLeaf,
-                presentedChain: null,
-                SslPolicyErrors.RemoteCertificateChainErrors,
-                roots);
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            expiredLeaf.Dispose();
-        }
+        using var rootCert = chain.Root;
+        using var expiredLeaf = chain.Leaf;
+
+        var roots = new X509Certificate2Collection { rootCert };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            expiredLeaf,
+            presentedChain: null,
+            SslPolicyErrors.RemoteCertificateChainErrors,
+            roots);
+        result.Should().BeFalse();
     }
 
     [Fact]
     public void ValidateAgainstTrustedCas_RejectsLeafNotChainingToTrustedRoot()
     {
-        var (trustedRoot, _) = CreateTestChain("CN=TrustedRoot", "CN=trusted.example");
-        var (_, untrustedLeaf) = CreateTestChain("CN=OtherRoot", "CN=other.example");
-        try
-        {
-            var roots = new X509Certificate2Collection { trustedRoot };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                untrustedLeaf,
-                presentedChain: null,
-                SslPolicyErrors.RemoteCertificateChainErrors,
-                roots);
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            trustedRoot.Dispose();
-            untrustedLeaf.Dispose();
-        }
+        var trustedChain = CreateTestChain("CN=TrustedRoot", "CN=trusted.example");
+        using var trustedRoot = trustedChain.Root;
+        using var trustedLeafUnused = trustedChain.Leaf;
+
+        var untrustedChain = CreateTestChain("CN=OtherRoot", "CN=other.example");
+        using var untrustedRootUnused = untrustedChain.Root;
+        using var untrustedLeaf = untrustedChain.Leaf;
+
+        var roots = new X509Certificate2Collection { trustedRoot };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            untrustedLeaf,
+            presentedChain: null,
+            SslPolicyErrors.RemoteCertificateChainErrors,
+            roots);
+        result.Should().BeFalse();
     }
 
     [Fact]
@@ -215,10 +183,13 @@ public sealed class KubernetesJobClientTests
         // Private-PKI clusters commonly present a root→intermediate→leaf chain. The
         // custom trust store only carries the root, so the intermediate has to come
         // from the chain argument or Build() fails with PartialChain.
-        var (rootCert, intermediateCert, leafCert) = CreateIntermediateChain(
+        var chain = CreateIntermediateChain(
             rootSubject: "CN=TestRoot",
             intermediateSubject: "CN=TestIntermediate",
             leafSubject: "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var intermediateCert = chain.Intermediate;
+        using var leafCert = chain.Leaf;
 
         using var presentedChain = new X509Chain();
         presentedChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
@@ -227,25 +198,16 @@ public sealed class KubernetesJobClientTests
         presentedChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         presentedChain.Build(leafCert);
 
-        try
-        {
-            // Trust bundle contains only the root — the intermediate must arrive via
-            // the presented chain argument.
-            var roots = new X509Certificate2Collection { rootCert };
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert,
-                presentedChain,
-                SslPolicyErrors.RemoteCertificateChainErrors,
-                roots);
+        // Trust bundle contains only the root — the intermediate must arrive via
+        // the presented chain argument.
+        var roots = new X509Certificate2Collection { rootCert };
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert,
+            presentedChain,
+            SslPolicyErrors.RemoteCertificateChainErrors,
+            roots);
 
-            result.Should().BeTrue("the presented intermediate must be carried into ExtraStore");
-        }
-        finally
-        {
-            rootCert.Dispose();
-            intermediateCert.Dispose();
-            leafCert.Dispose();
-        }
+        result.Should().BeTrue("the presented intermediate must be carried into ExtraStore");
     }
 
     [Fact]
@@ -314,7 +276,7 @@ public sealed class KubernetesJobClientTests
             var resolved = KubernetesJobClient.ResolveTrustedCaPath(
                 inClusterAutoDetect: true,
                 configuredCaBundlePath: configuredCa,
-                inClusterCaCertPath: Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
+                inClusterCaCertPath: Path.Join(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
 
             resolved.Should().Be(configuredCa);
         }
@@ -330,7 +292,7 @@ public sealed class KubernetesJobClientTests
         var resolved = KubernetesJobClient.ResolveTrustedCaPath(
             inClusterAutoDetect: false,
             configuredCaBundlePath: null,
-            inClusterCaCertPath: Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
+            inClusterCaCertPath: Path.Join(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
 
         resolved.Should().BeNull();
     }
@@ -338,31 +300,25 @@ public sealed class KubernetesJobClientTests
     [Fact]
     public void ValidateAgainstTrustedCas_WithIntermediate_FailsWhenIntermediateUnavailable()
     {
-        var (rootCert, intermediateCert, leafCert) = CreateIntermediateChain(
+        var chain = CreateIntermediateChain(
             rootSubject: "CN=TestRoot",
             intermediateSubject: "CN=TestIntermediate",
             leafSubject: "CN=leaf.example");
+        using var rootCert = chain.Root;
+        using var intermediateCert = chain.Intermediate;
+        using var leafCert = chain.Leaf;
 
-        try
-        {
-            var roots = new X509Certificate2Collection { rootCert };
+        var roots = new X509Certificate2Collection { rootCert };
 
-            // No presentedChain → the intermediate isn't discoverable, so the build
-            // must fail rather than silently trusting the leaf.
-            var result = KubernetesJobClient.ValidateAgainstTrustedCas(
-                leafCert,
-                presentedChain: null,
-                SslPolicyErrors.RemoteCertificateChainErrors,
-                roots);
+        // No presentedChain → the intermediate isn't discoverable, so the build
+        // must fail rather than silently trusting the leaf.
+        var result = KubernetesJobClient.ValidateAgainstTrustedCas(
+            leafCert,
+            presentedChain: null,
+            SslPolicyErrors.RemoteCertificateChainErrors,
+            roots);
 
-            result.Should().BeFalse();
-        }
-        finally
-        {
-            rootCert.Dispose();
-            intermediateCert.Dispose();
-            leafCert.Dispose();
-        }
+        result.Should().BeFalse();
     }
 
     private static (X509Certificate2 Root, X509Certificate2 Leaf) CreateTestChain(

@@ -46,6 +46,8 @@ public sealed class NvidiaConstructionFixtureFileTests
     [UnitTest]
     public void MainTileset_IsValidJsonWithRequiredAssetVersion()
     {
+        // _fixtureRoot is absolute; the filename constant is a relative literal,
+        // so Path.Combine cannot silently drop it.
         var path = Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.MainTilesetFileName);
         File.Exists(path).Should().BeTrue("the demo fixture must commit the main tileset");
 
@@ -133,6 +135,8 @@ public sealed class NvidiaConstructionFixtureFileTests
     [UnitTest]
     public void ObservationsSidecar_HasStableDeterministicShape()
     {
+        // _fixtureRoot is absolute; the filename constant is a relative literal,
+        // so Path.Combine cannot silently drop it.
         var path = Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName);
         File.Exists(path).Should().BeTrue();
 
@@ -172,6 +176,8 @@ public sealed class NvidiaConstructionFixtureFileTests
         // observation layer. Sidecar coordinates outside those bounds would be
         // dropped from the camera framing or culled from the scene entirely.
         // Asserting on both tilesets keeps main and obs bounds in sync.
+        // _fixtureRoot is absolute; the filename constant is a relative literal,
+        // so Path.Combine cannot silently drop it.
         using var sidecar = JsonDocument.Parse(File.ReadAllText(
             Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName)));
         var observations = sidecar.RootElement.GetProperty("observations");
@@ -201,6 +207,8 @@ public sealed class NvidiaConstructionFixtureFileTests
     {
         foreach (var relative in BothTileBinaries)
         {
+            // _fixtureRoot is absolute; `relative` is always one of the relative
+            // path constants above, so Path.Combine cannot silently drop it.
             var bytes = File.ReadAllBytes(Path.Combine(_fixtureRoot, relative));
             bytes.Length.Should().BeGreaterThan(4);
             System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("b3dm");
@@ -212,6 +220,9 @@ public sealed class NvidiaConstructionFixtureFileTests
     {
         foreach (var tileset in BothTilesetFiles)
         {
+            // Not a candidate for .Select(...): `doc` is an IDisposable
+            // JsonDocument scoped to this iteration via `using`, and the loop
+            // body runs several assertions against `uri`, not a pure mapping.
             using var doc = LoadTileset(tileset);
             var uri = doc.RootElement.GetProperty("root").GetProperty("content").GetProperty("uri").GetString();
 
@@ -225,5 +236,7 @@ public sealed class NvidiaConstructionFixtureFileTests
     }
 
     private JsonDocument LoadTileset(string fileName)
+        // _fixtureRoot is absolute; every caller passes one of the tileset
+        // filename constants above, so Path.Combine cannot silently drop it.
         => JsonDocument.Parse(File.ReadAllText(Path.Combine(_fixtureRoot, fileName)));
 }

@@ -57,15 +57,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
         CancellationToken cancellationToken)
     {
         var host = context.DnsEndPoint.Host;
-        IPAddress[] addresses;
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            addresses = [literalAddress];
-        }
-        else
-        {
-            addresses = await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
-        }
+        IPAddress[] addresses = IPAddress.TryParse(host, out var literalAddress)
+            ? [literalAddress]
+            : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
 
         // Re-run the network guard against the addresses this connection will actually use.
         var hostUri = new UriBuilder(Uri.UriSchemeHttps, host).Uri;
@@ -101,6 +95,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
             }
             finally
             {
+                // Not a plain `using`: on success, ownership of the socket transfers to the
+                // returned NetworkStream (ownsSocket: true), so disposal here must be
+                // conditional on the connect attempt failing, not unconditional.
                 if (!connected)
                 {
                     socket.Dispose();
@@ -950,6 +947,11 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     private static int? GetWfsSrid(XElement featureType)
     {
+        // Not a simple filter: this walks candidate element names in priority order and,
+        // for each, its child values, returning the first value that parses to a valid
+        // SRID (ParseOgcCrsSrid can return null for a present-but-unparseable value, so
+        // the search must continue past it) - a LINQ Select/FirstOrDefault would not
+        // preserve that fallback-through-null behavior across two nested sequences.
         foreach (var localName in new[] { "DefaultCRS", "DefaultSRS", "SRS", "OtherCRS", "OtherSRS" })
         {
             foreach (var value in ChildValues(featureType, localName))
@@ -1084,6 +1086,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         if (collection.Crs is not null)
         {
+            // Not a simple filter: ParseOgcCrsSrid can return null for an unparseable CRS
+            // entry, so the loop must keep scanning past it; a LINQ Select/FirstOrDefault
+            // would stop at the first non-matching Where result instead of skipping it.
             foreach (var crs in collection.Crs)
             {
                 if (ParseOgcCrsSrid(crs) is { } srid)
@@ -1216,7 +1221,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         var tokenSource = string.IsNullOrWhiteSpace(credentials.TokenUrl)
             ? DeriveArcGisTokenUrl(serviceUri)
-            : credentials.TokenUrl!;
+            : credentials.TokenUrl;
         var tokenUri = await NormalizeAndValidateAsync(tokenSource, cancellationToken).ConfigureAwait(false);
 
         var form = new List<KeyValuePair<string, string>>
@@ -1651,6 +1656,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     private static string? FirstChildValue(XElement element, params string[] localNames)
     {
+        // Not a simple map: each candidate name's matching child value must be looked up,
+        // blank-checked, and trimmed, with the search continuing past blank values, so a
+        // LINQ Select/FirstOrDefault would not preserve this fallback-through-blank search.
         foreach (var localName in localNames)
         {
             var value = element.Elements()

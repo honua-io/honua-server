@@ -590,30 +590,17 @@ public sealed class ContentPublicationService : IContentPublicationService
             return;
         }
 
-        foreach (var token in tokens)
+        if (tokens.Any(token => string.IsNullOrWhiteSpace(token) || ContainsWhitespaceOrControl(token)))
         {
-            if (string.IsNullOrWhiteSpace(token) || ContainsWhitespaceOrControl(token))
-            {
-                throw new ContentPublicationValidationException(
-                    $"{field} entries must be non-empty values without whitespace or control characters.",
-                    code: "publication.embed.token.invalid",
-                    path: "/policy/" + field.Replace('.', '/'));
-            }
+            throw new ContentPublicationValidationException(
+                $"{field} entries must be non-empty values without whitespace or control characters.",
+                code: "publication.embed.token.invalid",
+                path: "/policy/" + field.Replace('.', '/'));
         }
     }
 
     private static bool ContainsWhitespaceOrControl(string value)
-    {
-        foreach (var character in value)
-        {
-            if (char.IsWhiteSpace(character) || char.IsControl(character))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => value.Any(character => char.IsWhiteSpace(character) || char.IsControl(character));
 
     private static void ValidateBbox(ContentPublicationBbox? bbox)
     {

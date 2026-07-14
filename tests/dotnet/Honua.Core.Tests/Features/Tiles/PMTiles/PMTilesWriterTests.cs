@@ -53,7 +53,7 @@ public class PMTilesWriterTests
         writer.AddTile(1, 1, 1, CreateFakeTileData(90));
 
         using var stream = new MemoryStream();
-        var bytesWritten = await writer.WriteAsync(stream, DefaultMetadata);
+        _ = await writer.WriteAsync(stream, DefaultMetadata);
 
         stream.Position = 0;
         var headerBytes = new byte[PMTilesHeader.HeaderSize];

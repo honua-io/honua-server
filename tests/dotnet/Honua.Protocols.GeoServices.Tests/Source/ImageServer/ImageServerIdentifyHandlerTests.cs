@@ -221,9 +221,8 @@ public class ImageServerIdentifyHandlerTests
         };
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.CatalogItems.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>().Which;
+        jsonResult.Value!.CatalogItems.Should().HaveCount(1);
         jsonResult.Value.CatalogItems![0].Footprint.Should().NotBeNull();
     }
 
@@ -244,9 +243,8 @@ public class ImageServerIdentifyHandlerTests
         };
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.CatalogItems.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>().Which;
+        jsonResult.Value!.CatalogItems.Should().HaveCount(1);
         jsonResult.Value.CatalogItems![0].Footprint.Should().BeNull();
     }
 
@@ -266,9 +264,8 @@ public class ImageServerIdentifyHandlerTests
         };
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Properties.Should().ContainKey("PixelSize");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>().Which;
+        jsonResult.Value!.Properties.Should().ContainKey("PixelSize");
         jsonResult.Value.Properties!["PixelSize"].Should().Be(30);
     }
 
@@ -336,9 +333,8 @@ public class ImageServerIdentifyHandlerTests
         var request = CreateRequest("10,20");
         var result = await _handler.IdentifyAsync(context, 1, request);
 
-        var jsonResult = result as JsonHttpResult<IdentifyResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Properties.Should().ContainKey("BandCount");
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>().Which;
+        jsonResult.Value!.Properties.Should().ContainKey("BandCount");
         jsonResult.Value.Properties.Should().ContainKey("HasData");
     }
 

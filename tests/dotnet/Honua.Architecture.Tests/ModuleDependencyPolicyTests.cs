@@ -508,7 +508,7 @@ public sealed class ModuleDependencyPolicyTests
         // If someone deletes the ADR without updating the test (or vice versa)
         // this assertion surfaces the drift loudly.
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var adrPath = Path.Combine(
+        var adrPath = ArchitectureTestHelpers.CombinePath(
             repositoryRoot,
             "docs",
             "internal",
@@ -534,9 +534,8 @@ public sealed class ModuleDependencyPolicyTests
     private static IEnumerable<string> EnumerateRuntimeCsprojs(string repositoryRoot)
     {
         var roots = new[] { "src", "tests", "samples", "benchmarks" };
-        foreach (var root in roots)
+        foreach (var rootPath in roots.Select(root => ArchitectureTestHelpers.CombinePath(repositoryRoot, root)))
         {
-            var rootPath = Path.Combine(repositoryRoot, root);
             if (!Directory.Exists(rootPath))
             {
                 continue;

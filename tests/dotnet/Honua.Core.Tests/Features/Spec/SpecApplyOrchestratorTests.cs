@@ -845,17 +845,7 @@ public class SpecApplyOrchestratorTests
     }
 
     private static bool HasTag(KeyValuePair<string, object?>[] tags, string name, string value)
-    {
-        foreach (var tag in tags)
-        {
-            if (tag.Key == name && tag.Value is string s && s == value)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => tags.Any(tag => tag.Key == name && tag.Value is string s && s == value);
 
     private static long ToTimestampTicks(TimeSpan duration)
         => (long)(duration.TotalSeconds * TimeProvider.System.TimestampFrequency);

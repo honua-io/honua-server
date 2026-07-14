@@ -237,15 +237,9 @@ internal sealed partial class GeoServerRestClient
             throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
-        if (!allowUnsafeLocalUrls)
+        if (!allowUnsafeLocalUrls && addresses.Any(OutboundHttpUrlValidator.IsPrivateOrReservedAddress))
         {
-            foreach (var address in addresses)
-            {
-                if (OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address))
-                {
-                    throw new HttpRequestException(DisallowedNetworkAddressMessage);
-                }
-            }
+            throw new HttpRequestException(DisallowedNetworkAddressMessage);
         }
 
         return addresses;
@@ -267,6 +261,11 @@ internal sealed partial class GeoServerRestClient
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // Intentionally not `using var socket = ...`: on success the socket's ownership
+            // transfers to the returned NetworkStream (ownsSocket: true). A `using`
+            // declaration would dispose the socket during the `return` unwind, before the
+            // caller ever sees the stream, closing the connection out from under it. The
+            // `connected` flag makes disposal conditional on transfer *not* having happened.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 
@@ -333,7 +332,10 @@ internal sealed partial class GeoServerRestClient
                 );
             }
         }
-        catch (Exception ex)
+        // Best-effort version enrichment only: a failed/unparsable version probe still lets
+        // the rest of discovery proceed. Cancellation must propagate rather than be swallowed
+        // as a "version unavailable" result.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.VersionUnavailable(_logger, ex);
         }
@@ -364,7 +366,10 @@ internal sealed partial class GeoServerRestClient
                 };
             }
         }
-        catch (Exception ex)
+        // Best-effort enrichment only: a failed global-settings fetch still lets discovery
+        // proceed without it. Cancellation must propagate rather than be swallowed as a
+        // "settings unavailable" result.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.GlobalSettingsUnavailable(_logger, ex);
         }
@@ -583,42 +588,28 @@ internal sealed partial class GeoServerRestClient
 
         if (json.RootElement.TryGetProperty("layer", out var layerElement))
         {
-            var alternativeStyles = new List<string>();
-            foreach (var style in EnumerateCollectionItems(layerElement, "styles", "style"))
-            {
-                var styleName = GetQualifiedName(style);
-                if (styleName != null)
-                {
-                    alternativeStyles.Add(styleName);
-                }
-            }
+            var alternativeStyles = EnumerateCollectionItems(layerElement, "styles", "style")
+                .Select(GetQualifiedName)
+                .OfType<string>()
+                .ToList();
 
-            var keywords = new List<string>();
-            foreach (var keyword in EnumerateCollectionItems(layerElement, "keywords", "string"))
-            {
-                if (keyword.ValueKind == JsonValueKind.String)
-                {
-                    var keywordStr = keyword.GetString();
-                    if (keywordStr != null)
-                    {
-                        keywords.Add(keywordStr);
-                    }
-                }
-            }
+            var keywords = EnumerateCollectionItems(layerElement, "keywords", "string")
+                .Where(static keyword => keyword.ValueKind == JsonValueKind.String)
+                .Select(static keyword => keyword.GetString())
+                .OfType<string>()
+                .ToList();
 
             var metadata = new Dictionary<string, object>();
             if (layerElement.TryGetProperty("metadata", out var metadataElement) &&
                 metadataElement.ValueKind == JsonValueKind.Object)
             {
-                foreach (var metadataProperty in metadataElement.EnumerateObject())
+                foreach (var metadataProperty in metadataElement.EnumerateObject()
+                    .Where(static p => p.Value.ValueKind == JsonValueKind.String))
                 {
-                    if (metadataProperty.Value.ValueKind == JsonValueKind.String)
+                    var value = metadataProperty.Value.GetString();
+                    if (value != null)
                     {
-                        var value = metadataProperty.Value.GetString();
-                        if (value != null)
-                        {
-                            metadata[metadataProperty.Name] = value;
-                        }
+                        metadata[metadataProperty.Name] = value;
                     }
                 }
             }
@@ -701,25 +692,15 @@ internal sealed partial class GeoServerRestClient
 
         if (json.RootElement.TryGetProperty("layerGroup", out var groupElement))
         {
-            var layers = new List<GeoServerLayerGroupEntry>();
-            foreach (var published in EnumerateCollectionItems(groupElement, "publishables", "published"))
-            {
-                var entry = CreateLayerGroupEntry(published, workspaceName, "LAYER");
-                if (entry != null)
-                {
-                    layers.Add(entry);
-                }
-            }
+            var layers = EnumerateCollectionItems(groupElement, "publishables", "published")
+                .Select(published => CreateLayerGroupEntry(published, workspaceName, "LAYER"))
+                .OfType<GeoServerLayerGroupEntry>()
+                .ToList();
 
-            var styles = new List<GeoServerLayerGroupEntry>();
-            foreach (var style in EnumerateCollectionItems(groupElement, "styles", "style"))
-            {
-                var entry = CreateLayerGroupEntry(style, workspaceName, "STYLE");
-                if (entry != null)
-                {
-                    styles.Add(entry);
-                }
-            }
+            var styles = EnumerateCollectionItems(groupElement, "styles", "style")
+                .Select(style => CreateLayerGroupEntry(style, workspaceName, "STYLE"))
+                .OfType<GeoServerLayerGroupEntry>()
+                .ToList();
 
             var compatibility = AssessLayerGroupCompatibility(groupElement, layers.Count);
 
@@ -936,7 +917,10 @@ internal sealed partial class GeoServerRestClient
 
                     sldContent = await GetStringAsync(sldUrl, cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                // Best-effort style-content enrichment only: a failed SLD fetch still lets the
+                // rest of the style metadata surface. Cancellation must propagate rather than
+                // be swallowed as a "content unavailable" result.
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     Log.StyleContentFetchFailed(_logger, styleName, ex);
                 }
@@ -1384,7 +1368,6 @@ internal sealed partial class GeoServerRestClient
     private static GeoServerResourceCompatibility AssessLayerCompatibility(JsonElement layerElement)
     {
         var enabled = GetOptionalBoolProperty(layerElement, "enabled") ?? true;
-        var queryable = GetOptionalBoolProperty(layerElement, "queryable") ?? true;
 
         if (!enabled)
         {

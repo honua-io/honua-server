@@ -133,6 +133,10 @@ internal static class WebAppFixtureSharedBootstrapMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
         };
 
+        // Not disposed here by design: the returned factory is stored in the process-wide
+        // _sharedFactory field by the caller (EnsureInitializedAsync) and disposed once,
+        // in ReleaseAsync, when the last referencing WebAppFixture tears down. Disposing
+        // it here or wrapping the call in `using` would break every fixture sharing it.
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {

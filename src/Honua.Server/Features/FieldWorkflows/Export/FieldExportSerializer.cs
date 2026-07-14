@@ -109,31 +109,29 @@ internal static class FieldExportSerializer
         var builder = new StringBuilder();
         builder.AppendLine(string.Join(',', CsvHeader));
 
-        foreach (var item in items)
+        foreach (var fields in items.Select(item => new[]
         {
-            var fields = new[]
-            {
-                item.SubmissionId.ToString(),
-                item.FormId,
-                item.FormVersion.ToString(CultureInfo.InvariantCulture),
-                item.ServiceId,
-                item.LayerId.ToString(CultureInfo.InvariantCulture),
-                item.TargetFeatureId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-                item.Operation,
-                item.SyncStatus,
-                item.HasValidationIssues ? "true" : "false",
-                item.HasConflict ? "true" : "false",
-                item.SubmitterHash ?? string.Empty,
-                item.DeviceId ?? string.Empty,
-                item.AttachmentCount.ToString(CultureInfo.InvariantCulture),
-                item.SubmittedAt.ToString("O", CultureInfo.InvariantCulture),
-                item.Review.Status,
-                item.Review.AssignedTo ?? string.Empty,
-                item.Review.DecidedBy ?? string.Empty,
-                item.Review.DecidedAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
-                item.Review.DecisionNote ?? string.Empty
-            };
-
+            item.SubmissionId.ToString(),
+            item.FormId,
+            item.FormVersion.ToString(CultureInfo.InvariantCulture),
+            item.ServiceId,
+            item.LayerId.ToString(CultureInfo.InvariantCulture),
+            item.TargetFeatureId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            item.Operation,
+            item.SyncStatus,
+            item.HasValidationIssues ? "true" : "false",
+            item.HasConflict ? "true" : "false",
+            item.SubmitterHash ?? string.Empty,
+            item.DeviceId ?? string.Empty,
+            item.AttachmentCount.ToString(CultureInfo.InvariantCulture),
+            item.SubmittedAt.ToString("O", CultureInfo.InvariantCulture),
+            item.Review.Status,
+            item.Review.AssignedTo ?? string.Empty,
+            item.Review.DecidedBy ?? string.Empty,
+            item.Review.DecidedAt?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+            item.Review.DecisionNote ?? string.Empty
+        }))
+        {
             builder.AppendLine(string.Join(',', Array.ConvertAll(fields, EscapeCsv)));
         }
 

@@ -344,13 +344,11 @@ public static class MetadataV2GraphValidator
             return;
         }
 
-        foreach (var id in storageBindingIds)
+        foreach (var id in storageBindingIds.Where(id =>
+            storageBindingsById.TryGetValue(id, out var binding) && binding.StorageLayerId is null))
         {
-            if (storageBindingsById.TryGetValue(id, out var binding) && binding.StorageLayerId is null)
-            {
-                errors.Add(
-                    $"storage binding '{id}' on resource '{resource.Metadata.Id}' (type '{resource.Type}') must declare storageLayerId.");
-            }
+            errors.Add(
+                $"storage binding '{id}' on resource '{resource.Metadata.Id}' (type '{resource.Type}') must declare storageLayerId.");
         }
     }
 
@@ -472,9 +470,8 @@ public static class MetadataV2GraphValidator
     {
         // At most one publication per (resourceId, serviceId) may set IsPrimary = true.
         var counts = new Dictionary<(string, string), int>();
-        foreach (var pub in publications)
+        foreach (var pub in publications.Where(pub => pub.IsPrimary))
         {
-            if (!pub.IsPrimary) continue;
             var key = (pub.ResourceId, pub.ServiceId);
             counts[key] = counts.TryGetValue(key, out var n) ? n + 1 : 1;
         }
@@ -668,6 +665,8 @@ public static class MetadataV2GraphValidator
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.
         _ = publicationsById;
 
+        // judgment call: `is { } settings` both filters and binds the extracted value used by
+        // every ValidatePositiveInt/Long call below; a .Where() would have to re-extract it.
         foreach (var service in services)
         {
             if (service.Settings is { } settings)

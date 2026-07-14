@@ -59,9 +59,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -101,9 +100,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -136,9 +134,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -167,9 +164,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -204,9 +200,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -241,9 +236,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -277,9 +271,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -308,9 +301,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -338,9 +330,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -390,9 +381,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -440,9 +430,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -469,9 +458,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -499,9 +487,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -533,9 +520,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -582,9 +568,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -625,9 +610,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await _fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadAsStringAsync();
@@ -663,7 +647,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
             string.Empty
         ]);
 
-        var content = new StringContent(payload, Encoding.UTF8);
+        using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
 
         var response = await _fixture.Client.PostAsync("/odata/$batch", content);
@@ -707,9 +691,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(batchRequest, ODataJsonContext.Default.ODataBatchRequest);
-        var response = await fixture.Client.PostAsync(
-            "/odata/$batch",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await fixture.Client.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         publisher.Requests.Should().ContainSingle(request =>
@@ -1077,9 +1060,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         var values = document.RootElement.GetProperty("value");
         values.GetArrayLength().Should().BeGreaterThan(0);
 
-        foreach (var value in values.EnumerateArray())
+        foreach (var attributes in values.EnumerateArray().Select(ODataTestHelpers.ParseAttributes))
         {
-            var attributes = ODataTestHelpers.ParseAttributes(value);
             var name = attributes.GetProperty("name").GetString() ?? string.Empty;
             var state = attributes.GetProperty("state").GetString() ?? string.Empty;
 
@@ -1141,9 +1123,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         var values = document.RootElement.GetProperty("value");
         values.GetArrayLength().Should().BeGreaterThan(0);
 
-        foreach (var value in values.EnumerateArray())
+        foreach (var attributes in values.EnumerateArray().Select(ODataTestHelpers.ParseAttributes))
         {
-            var attributes = ODataTestHelpers.ParseAttributes(value);
             var name = attributes.GetProperty("name").GetString() ?? string.Empty;
             name.Contains("San", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
         }
@@ -1403,9 +1384,8 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         landmarks.ValueKind.Should().Be(JsonValueKind.Array);
 
         var landmarkNames = new List<string>();
-        foreach (var landmark in landmarks.EnumerateArray())
+        foreach (var attributes in landmarks.EnumerateArray().Select(ODataTestHelpers.ParseAttributes))
         {
-            var attributes = ODataTestHelpers.ParseAttributes(landmark);
             var name = attributes.GetProperty("name").GetString();
             if (!string.IsNullOrWhiteSpace(name))
             {

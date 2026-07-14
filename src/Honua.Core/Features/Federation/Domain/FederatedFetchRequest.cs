@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Federation.Domain;
@@ -27,16 +28,8 @@ public readonly record struct FederatedFetchRequest(
     /// </summary>
     /// <param name="predicate">The predicate family to test.</param>
     /// <returns><see langword="true"/> when the connector should apply the predicate remotely.</returns>
-    public bool ShouldPushDown(FederationPredicateKind predicate)
-    {
-        foreach (var decision in Plan.Decisions)
-        {
-            if (decision.Predicate == predicate)
-            {
-                return decision.PushedDown;
-            }
-        }
-
-        return false;
-    }
+    public bool ShouldPushDown(FederationPredicateKind predicate) =>
+        // A decision that is absent from the plan defaults to Predicate=0/PushedDown=false,
+        // which is exactly the "not pushed down" result callers expect for a missing predicate.
+        Plan.Decisions.FirstOrDefault(decision => decision.Predicate == predicate).PushedDown;
 }

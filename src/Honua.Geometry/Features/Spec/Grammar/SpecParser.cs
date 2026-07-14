@@ -227,19 +227,8 @@ public sealed class SpecParser : ISpecParser
         return new SpecParseResult(document, diagnostics);
     }
 
-    private static int CountErrors(IReadOnlyList<SpecDiagnostic> diagnostics)
-    {
-        var count = 0;
-        foreach (var d in diagnostics)
-        {
-            if (d.Severity == SpecDiagnosticSeverity.Error)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
+    private static int CountErrors(IReadOnlyList<SpecDiagnostic> diagnostics) =>
+        diagnostics.Count(d => d.Severity == SpecDiagnosticSeverity.Error);
 
     private static SourceBinding? ParseSource(ParserState state)
     {
@@ -711,8 +700,7 @@ public sealed class SpecParser : ISpecParser
         if (state.Peek().Type == SpecTokenType.Dot && state.Peek(1).Type == SpecTokenType.Identifier)
         {
             // Unit annotation: number '.' identifier
-            var dotSpan = state.Peek().Span;
-            state.Advance();
+            state.Advance(); // consume '.'
             var unitToken = state.Peek();
             state.Advance();
             var kind = ResolveUnitKind(unitToken.Text);

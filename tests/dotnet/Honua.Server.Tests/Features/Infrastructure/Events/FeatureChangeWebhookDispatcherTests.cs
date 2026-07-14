@@ -42,7 +42,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
             null);
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CountingHandler();
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
 
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
@@ -203,14 +204,13 @@ public sealed class FeatureChangeWebhookDispatcherTests
                 var key = call.ArgAt<RedisKey>(0).ToString();
                 var when = call.ArgAt<When>(4);
                 return Task.FromResult(
-                    string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal) && when == When.NotExists
-                        ? false
-                        : true);
+                    !(string.Equals(key, "featurechange:webhook:delivery:evt-1", StringComparison.Ordinal) && when == When.NotExists));
             });
 
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CountingHandler();
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
 
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
@@ -353,7 +353,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CancellationAwareHandler();
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
 
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
@@ -431,7 +432,8 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         var handler = new CancellationAwareHandler();
-        httpClientFactory.CreateClient("feature-change-webhook").Returns(new HttpClient(handler));
+        using var httpClient = new HttpClient(handler);
+        httpClientFactory.CreateClient("feature-change-webhook").Returns(httpClient);
 
         var dispatcher = new FeatureChangeWebhookDispatcher(
             store,
@@ -625,6 +627,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             SendCount++;
+            // Ownership transfers to the HttpClient pipeline/caller, which disposes it; not this handler's responsibility.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }

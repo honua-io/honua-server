@@ -121,14 +121,12 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         // merge without resampling artifacts.
         var resamplingFlag = "near";
         if (GdalJobInputReader.TryGetInput(parameters, "resampling", out var resamplingRaw)
-            && !string.IsNullOrWhiteSpace(resamplingRaw))
+            && !string.IsNullOrWhiteSpace(resamplingRaw)
+            && !ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
         {
-            if (!ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
-            {
-                return JobExecutionResult.Failed(
-                    $"Invalid mosaic inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
-                    "(nearestneighbor, bilinear, cubic, lanczos).");
-            }
+            return JobExecutionResult.Failed(
+                $"Invalid mosaic inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
+                "(nearestneighbor, bilinear, cubic, lanczos).");
         }
 
         if (!TryDecodeSources(parameters, opts.MaxArtifactBytes, out var sources, out var sourcesError))

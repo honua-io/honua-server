@@ -806,13 +806,17 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         var values = new List<OgcCoverageCrsMetadata>();
         var envelope = Descendants(coverageElement, "Envelope").FirstOrDefault();
         var envelopeCrs = envelope?.Attribute("srsName")?.Value;
-        if (!string.IsNullOrWhiteSpace(envelopeCrs))
+        // envelope is never null here: envelopeCrs is derived from envelope, so a non-blank
+        // envelopeCrs implies envelope was present. Spelling out `envelope is not null`
+        // (rather than relying on that implicit invariant) makes the non-null access below
+        // provably safe instead of just incidentally always-non-null.
+        if (envelope is not null && !string.IsNullOrWhiteSpace(envelopeCrs))
         {
             values.Add(new OgcCoverageCrsMetadata
             {
                 Role = "native",
                 Crs = envelopeCrs.Trim(),
-                AxisLabels = SplitTokens(envelope?.Attribute("axisLabels")?.Value)
+                AxisLabels = SplitTokens(envelope.Attribute("axisLabels")?.Value)
             });
         }
 
@@ -1553,13 +1557,11 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         var values = new List<OgcCoverageCrsMetadata>();
         if (collection.TryGetProperty("crs", out var crs) && crs.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in crs.EnumerateArray())
+            foreach (var value in crs.EnumerateArray()
+                         .Select(static item => item.ValueKind == JsonValueKind.String ? item.GetString() : null)
+                         .Where(static value => !string.IsNullOrWhiteSpace(value)))
             {
-                var value = item.ValueKind == JsonValueKind.String ? item.GetString() : null;
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    values.Add(new OgcCoverageCrsMetadata { Role = "supported", Crs = value });
-                }
+                values.Add(new OgcCoverageCrsMetadata { Role = "supported", Crs = value! });
             }
         }
 

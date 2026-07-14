@@ -112,15 +112,6 @@ public static class WorkflowStepConditionEvaluator
             return artifacts.Count;
         }
 
-        var count = 0;
-        foreach (var artifact in artifacts)
-        {
-            if (string.Equals(artifact.Label, label, StringComparison.OrdinalIgnoreCase))
-            {
-                count++;
-            }
-        }
-
-        return count;
+        return artifacts.Count(artifact => string.Equals(artifact.Label, label, StringComparison.OrdinalIgnoreCase));
     }
 }

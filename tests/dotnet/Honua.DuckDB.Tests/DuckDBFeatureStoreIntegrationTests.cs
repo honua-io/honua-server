@@ -27,6 +27,8 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Second argument is always a generated relative filename (hex GUID + extension), never rooted,
+        // so Path.Combine cannot silently drop the temp-path prefix here.
         _dbPath = Path.Combine(Path.GetTempPath(), $"honua_test_{Guid.NewGuid():N}.duckdb");
         _connectionString = $"Data Source={_dbPath}";
 
@@ -149,8 +151,9 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         var extent = await _store.GetExtentAsync(LayerId);
 
         Assert.NotNull(extent);
-        Assert.True(extent.Value.MinX < extent.Value.MaxX);
-        Assert.True(extent.Value.MinY < extent.Value.MaxY);
+        var extentValue = extent!.Value;
+        Assert.True(extentValue.MinX < extentValue.MaxX);
+        Assert.True(extentValue.MinY < extentValue.MaxY);
     }
 
     [Fact]
@@ -159,9 +162,10 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         var feature = await _store.GetAsync(LayerId, 1);
 
         Assert.NotNull(feature);
-        Assert.Equal(1, feature.Value.Id);
-        Assert.NotNull(feature.Value.Geometry);
-        Assert.Equal("Parcel 1", feature.Value.Attributes["name"]);
+        var featureValue = feature!.Value;
+        Assert.Equal(1, featureValue.Id);
+        Assert.NotNull(featureValue.Geometry);
+        Assert.Equal("Parcel 1", featureValue.Attributes["name"]);
     }
 
     [Fact]

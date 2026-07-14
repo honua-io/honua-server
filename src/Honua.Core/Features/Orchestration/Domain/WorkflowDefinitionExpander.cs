@@ -186,13 +186,10 @@ public static class WorkflowDefinitionExpander
             }
 
             Dictionary<string, string>? substituted = null;
-            foreach (var pair in step.Inputs)
+            foreach (var pair in step.Inputs.Where(p => p.Value.Contains(placeholder, StringComparison.Ordinal)))
             {
-                if (pair.Value.Contains(placeholder, StringComparison.Ordinal))
-                {
-                    substituted ??= new Dictionary<string, string>(step.Inputs, StringComparer.Ordinal);
-                    substituted[pair.Key] = pair.Value.Replace(placeholder, item, StringComparison.Ordinal);
-                }
+                substituted ??= new Dictionary<string, string>(step.Inputs, StringComparer.Ordinal);
+                substituted[pair.Key] = pair.Value.Replace(placeholder, item, StringComparison.Ordinal);
             }
 
             steps[s] = substituted is null ? step : step with { Inputs = substituted };

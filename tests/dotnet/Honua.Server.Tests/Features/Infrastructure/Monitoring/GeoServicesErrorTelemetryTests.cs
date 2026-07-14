@@ -126,12 +126,9 @@ public sealed class GeoServicesErrorTelemetryTests
     {
         public bool HasTag(string name, object? expected)
         {
-            foreach (var tag in Tags)
+            foreach (var tag in Tags.Where(t => t.Key == name))
             {
-                if (tag.Key == name)
-                {
-                    return Equals(tag.Value, expected);
-                }
+                return Equals(tag.Value, expected);
             }
 
             return false;

@@ -22,7 +22,7 @@ namespace Honua.Migration;
 /// <summary>
 /// Admin endpoints for OGC WMTS tile-cache export (#1016 slice 4).
 /// </summary>
-internal static class OgcTileCacheExportEndpoints
+internal static partial class OgcTileCacheExportEndpoints
 {
     /// <summary>
     /// Maps tile-cache export endpoints.
@@ -51,8 +51,9 @@ internal static class OgcTileCacheExportEndpoints
                 OgcTileCacheExportJsonContext.Default.OgcTileCacheExportApiRequest,
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -173,6 +174,18 @@ internal static class OgcTileCacheExportEndpoints
         }
 
         await Results.Json(result, OgcTileCacheExportJsonContext.Default.OgcTileCacheExportResult).ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private static ILogger<OgcTileCacheExportEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<OgcTileCacheExportEndpointsLog>>();
+
+    /// <summary>Log category marker for OGC tile-cache export endpoint operations.</summary>
+    internal sealed class OgcTileCacheExportEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8120, LogLevel.Warning, "Failed to deserialize tile-cache export request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
     }
 }
 

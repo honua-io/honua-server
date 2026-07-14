@@ -949,6 +949,9 @@ internal static class ShareAdminEndpoints
 
     private static bool TryGetConfig(ShareExportDefinition definition, string key, out string value)
     {
+        // Not a simple filter: the matched pair's value is assigned to the out parameter
+        // and the loop returns immediately, so a LINQ Where/FirstOrDefault would not
+        // simplify this TryGetValue-style lookup.
         foreach (var pair in definition.DestinationConfig)
         {
             if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase))

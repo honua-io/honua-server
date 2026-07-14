@@ -42,11 +42,26 @@ internal sealed class FileSystemObjectStoreTriggerProbe : IObjectStoreTriggerPro
         var searchRoot = root;
         if (!string.IsNullOrEmpty(config.Prefix))
         {
-            // Prefix is interpreted as a relative sub-path under the store root. Reject any
-            // attempt to escape the root so a malformed prefix cannot read outside the store.
+            // Prefix is interpreted as a relative sub-path under the store root. Path.Combine
+            // silently discards `root` when Prefix is rooted (e.g. an absolute path), so reject
+            // rooted prefixes outright before combining rather than relying solely on the
+            // containment check below.
+            if (Path.IsPathRooted(config.Prefix))
+            {
+                return Task.FromResult<ObjectStoreProbeResult?>(null);
+            }
+
+            // Reject any attempt to escape the root so a malformed prefix cannot read outside
+            // the store. Compare against the root plus a trailing separator (not a bare prefix)
+            // so a sibling directory that merely shares the root's string prefix (e.g. "/data/store1"
+            // vs "/data/store12") is not mistaken for containment.
             var combined = Path.GetFullPath(Path.Combine(root, config.Prefix));
             var normalizedRoot = Path.GetFullPath(root);
-            if (!combined.StartsWith(normalizedRoot, StringComparison.Ordinal))
+            var rootWithSeparator = normalizedRoot.EndsWith(Path.DirectorySeparatorChar)
+                ? normalizedRoot
+                : normalizedRoot + Path.DirectorySeparatorChar;
+            if (!string.Equals(combined, normalizedRoot, StringComparison.Ordinal) &&
+                !combined.StartsWith(rootWithSeparator, StringComparison.Ordinal))
             {
                 return Task.FromResult<ObjectStoreProbeResult?>(null);
             }

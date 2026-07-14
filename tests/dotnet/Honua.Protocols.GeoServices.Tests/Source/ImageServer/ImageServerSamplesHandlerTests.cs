@@ -90,7 +90,8 @@ public class ImageServerSamplesHandlerTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
         // Sample value is encoded as level*1000 + row*10 + col; level 1, row 2, col 2 -> 1022.
         body.Should().Contain("1022");
     }

@@ -63,6 +63,10 @@ internal sealed class ImageServerMetadataHandler
         int layerId,
         CancellationToken cancellationToken = default)
     {
+        // Intentionally not a `using` declaration: featureActivity must stay live and
+        // undisposed through the catch block below so RecordException can still attach the
+        // exception to the in-flight activity. Disposing via a using-scope ending inside the
+        // try would stop the activity before the catch runs, dropping exception telemetry.
         Activity? featureActivity = null;
 
         try
@@ -231,14 +235,9 @@ internal sealed class ImageServerMetadataHandler
         if (pixelCount <= 0)
             return 0;
 
-        if (isHeight)
-        {
-            return (extent.YMax - extent.YMin) / pixelCount;
-        }
-        else
-        {
-            return (extent.XMax - extent.XMin) / pixelCount;
-        }
+        return isHeight
+            ? (extent.YMax - extent.YMin) / pixelCount
+            : (extent.XMax - extent.XMin) / pixelCount;
     }
 
     private static string MapPixelType(string postgisPixelType)

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -146,6 +147,11 @@ internal sealed class InMemoryFeatureChangeEventStore(
             }
             catch (Exception ex)
             {
+                // Intentional: no ILogger is wired into this store (constructed by a factory
+                // outside this project); degradation is surfaced via _redisUnavailable /
+                // IsUsingInMemoryFallback for callers (health checks) to observe and log, and
+                // the exception itself is preserved as the InnerException when fallback is
+                // disallowed rather than being silently dropped.
                 _redisUnavailable = true;
                 if (!_allowInMemoryFallback)
                 {
@@ -230,6 +236,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
             }
             catch
             {
+                // Intentional: same no-logger rationale as AppendAsync above — degraded state
+                // is exposed via _redisUnavailable/IsUsingInMemoryFallback rather than logged here.
                 _redisUnavailable = true;
                 if (!_allowInMemoryFallback)
                 {
@@ -290,6 +298,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
             }
             catch
             {
+                // Intentional: same no-logger rationale as AppendAsync above — degraded state
+                // is exposed via _redisUnavailable/IsUsingInMemoryFallback rather than logged here.
                 _redisUnavailable = true;
                 if (!_allowInMemoryFallback)
                 {
@@ -467,6 +477,8 @@ internal sealed class InMemoryFeatureChangeEventStore(
         }
         catch
         {
+            // Intentional: same no-logger rationale as AppendAsync above — a failed ping
+            // just keeps _redisUnavailable set so the next call retries via EnsureRedisAvailableAsync.
             _redisUnavailable = true;
             return false;
         }
@@ -484,18 +496,19 @@ internal sealed class InMemoryFeatureChangeEventStore(
 
         var removeCount = length - _maxRetained;
         var staleMembers = await _redisDb.SortedSetRangeByRankAsync(IndexKey, 0, removeCount - 1, Order.Ascending).ConfigureAwait(false);
-        foreach (var member in staleMembers)
+        var staleCursors = staleMembers
+            .Select(member => long.TryParse(member.ToString(), out var parsed) ? parsed : (long?)null)
+            .Where(parsed => parsed.HasValue)
+            .Select(parsed => parsed!.Value);
+        foreach (var cursor in staleCursors)
         {
-            if (long.TryParse(member.ToString(), out var cursor))
+            var featureEvent = await TryGetRedisEventAsync(cursor).ConfigureAwait(false);
+            if (featureEvent != null)
             {
-                var featureEvent = await TryGetRedisEventAsync(cursor).ConfigureAwait(false);
-                if (featureEvent != null)
-                {
-                    await _redisDb.KeyDeleteAsync($"{EventIdKeyPrefix}{featureEvent.EventId}").ConfigureAwait(false);
-                }
-
-                await _redisDb.KeyDeleteAsync(GetEventKey(cursor)).ConfigureAwait(false);
+                await _redisDb.KeyDeleteAsync($"{EventIdKeyPrefix}{featureEvent.EventId}").ConfigureAwait(false);
             }
+
+            await _redisDb.KeyDeleteAsync(GetEventKey(cursor)).ConfigureAwait(false);
         }
 
         if (staleMembers.Length > 0)

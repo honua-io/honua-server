@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -109,16 +110,13 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
     /// <inheritdoc/>
     public ValidationResult ValidateAllowedParameters(IReadOnlyCollection<string> queryParameterNames, IReadOnlySet<string> allowedParameters)
     {
-        foreach (var parameterName in queryParameterNames)
-        {
-            if (!allowedParameters.Contains(parameterName) &&
-                !ContainsIgnoreCase(allowedParameters, parameterName))
-            {
-                return ValidationResult.Failure($"Unknown query parameter: {parameterName}");
-            }
-        }
+        var unknownParameter = queryParameterNames.FirstOrDefault(parameterName =>
+            !allowedParameters.Contains(parameterName) &&
+            !ContainsIgnoreCase(allowedParameters, parameterName));
 
-        return ValidationResult.Success();
+        return unknownParameter is null
+            ? ValidationResult.Success()
+            : ValidationResult.Failure($"Unknown query parameter: {unknownParameter}");
     }
 
     /// <inheritdoc/>
@@ -172,14 +170,12 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
                 "Bounding box minimum coordinates must be less than maximum coordinates");
         }
 
-        if (isGeographic)
+        if (isGeographic &&
+            (coords[0] < -180 || coords[0] > 180 || coords[2] < -180 || coords[2] > 180 ||
+             coords[1] < -90 || coords[1] > 90 || coords[3] < -90 || coords[3] > 90))
         {
-            if (coords[0] < -180 || coords[0] > 180 || coords[2] < -180 || coords[2] > 180 ||
-                coords[1] < -90 || coords[1] > 90 || coords[3] < -90 || coords[3] > 90)
-            {
-                return ValidationResult<BoundingBox>.Failure(
-                    "Geographic coordinates must be within valid ranges (longitude: -180 to 180, latitude: -90 to 90)");
-            }
+            return ValidationResult<BoundingBox>.Failure(
+                "Geographic coordinates must be within valid ranges (longitude: -180 to 180, latitude: -90 to 90)");
         }
 
         var bbox = new BoundingBox(coords[0], coords[1], coords[2], coords[3]);
@@ -231,16 +227,13 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         var inspectable = System.Text.RegularExpressions.Regex.Replace(
             whereClause, @"'(?:[^']|'')*'", "''");
 
-        foreach (var pattern in dangerousPatterns)
-        {
-            if (System.Text.RegularExpressions.Regex.IsMatch(inspectable, pattern,
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-            {
-                return ValidationResult.Failure("WHERE clause contains potentially dangerous SQL patterns");
-            }
-        }
+        var hasDangerousPattern = dangerousPatterns.Any(pattern =>
+            System.Text.RegularExpressions.Regex.IsMatch(inspectable, pattern,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase));
 
-        return ValidationResult.Success();
+        return hasDangerousPattern
+            ? ValidationResult.Failure("WHERE clause contains potentially dangerous SQL patterns")
+            : ValidationResult.Success();
     }
 
     /// <inheritdoc/>
@@ -304,17 +297,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
     }
 
     private static bool ContainsIgnoreCase(IReadOnlySet<string> values, string value)
-    {
-        foreach (var candidate in values)
-        {
-            if (string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => values.Any(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>

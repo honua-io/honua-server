@@ -625,14 +625,12 @@ internal static partial class SceneEndpoints
             return true;
         }
 
-        foreach (var rangeChunk in headerValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var candidate = rangeChunk;
-            if (candidate.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
-            {
-                candidate = candidate[2..];
-            }
+        var candidates = headerValue
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(chunk => chunk.StartsWith("W/", StringComparison.OrdinalIgnoreCase) ? chunk[2..] : chunk);
 
+        foreach (var candidate in candidates)
+        {
             if (string.Equals(candidate, currentETag, StringComparison.Ordinal))
             {
                 return true;

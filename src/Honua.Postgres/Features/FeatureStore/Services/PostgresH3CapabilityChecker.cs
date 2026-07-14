@@ -22,6 +22,10 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
     // different databases would need a cache keyed by connection string.
     // Values: 0=unknown, 1=available, 2=unavailable.
     // Transient failures leave this at 0 and set s_failureCacheExpiryMs instead.
+    // Intentional shared mutable state (flagged by cs/static-field-written-by-instance): this is a
+    // process-wide capability cache by design (h3-pg availability does not vary per request/instance),
+    // guarded by s_lock for the read-check-write sequence and Volatile.Read/Write for the fast-path
+    // reads, so concurrent scoped instances race safely.
     private static int s_cachedResult;
     private static long s_failureCacheExpiryMs;
     private static readonly SemaphoreSlim s_lock = new(1, 1);
@@ -97,9 +101,10 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
         }
         catch (Exception ex)
         {
-            // Cache the failure for a bounded period so that subsequent requests
-            // fast-fail instead of serializing behind the semaphore while the
-            // database is unreachable.
+            // Best-effort capability probe: log and cache the failure for a bounded period so that
+            // subsequent requests fast-fail instead of serializing behind the semaphore while the
+            // database is unreachable. Returning null (vs. throwing) lets callers treat "unknown" as
+            // "capability unavailable for now" rather than failing the whole request.
             Volatile.Write(ref s_failureCacheExpiryMs, Environment.TickCount64 + FailureCacheDurationMs);
             LogH3ExtensionCheckFailed(_logger, ex);
             return null;

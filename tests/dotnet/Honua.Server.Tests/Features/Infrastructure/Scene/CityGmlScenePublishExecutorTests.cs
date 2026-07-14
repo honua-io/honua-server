@@ -28,7 +28,7 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
 
     public CityGmlScenePublishExecutorTests()
     {
-        _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-citygml-{Guid.NewGuid():N}");
+        _outputRoot = Path.Join(Path.GetTempPath(), $"honua-citygml-{Guid.NewGuid():N}");
         _registration = new StubRegistrationService();
 
         var options = Options.Create(new SceneGenerationServerOptions
@@ -71,8 +71,8 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
 
         // The tileset.json and the GLB tile must exist under the promoted asset
         // root so the standard scene serving path can stream them.
-        File.Exists(Path.Combine(outcome.AssetRoot, "tileset.json")).Should().BeTrue();
-        File.Exists(Path.Combine(outcome.AssetRoot, "building_0000.glb")).Should().BeTrue();
+        File.Exists(Path.Join(outcome.AssetRoot, "tileset.json")).Should().BeTrue();
+        File.Exists(Path.Join(outcome.AssetRoot, "building_0000.glb")).Should().BeTrue();
 
         // No staging directory should survive a successful promotion.
         Directory.GetDirectories(_outputRoot, ".staging-*").Should().BeEmpty();
@@ -101,12 +101,12 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
             new CityGmlSceneIngestRequest(CityGmlSceneFixtures.SingleBuildingGeographic(), SceneId: "det-b"),
             CancellationToken.None);
 
-        var glb1 = await File.ReadAllBytesAsync(Path.Combine(first.AssetRoot, "building_0000.glb"));
-        var glb2 = await File.ReadAllBytesAsync(Path.Combine(second.AssetRoot, "building_0000.glb"));
+        var glb1 = await File.ReadAllBytesAsync(Path.Join(first.AssetRoot, "building_0000.glb"));
+        var glb2 = await File.ReadAllBytesAsync(Path.Join(second.AssetRoot, "building_0000.glb"));
         glb1.Should().Equal(glb2, "identical CityGML input must produce byte-identical GLB output.");
 
-        var tileset1 = await File.ReadAllBytesAsync(Path.Combine(first.AssetRoot, "tileset.json"));
-        var tileset2 = await File.ReadAllBytesAsync(Path.Combine(second.AssetRoot, "tileset.json"));
+        var tileset1 = await File.ReadAllBytesAsync(Path.Join(first.AssetRoot, "tileset.json"));
+        var tileset2 = await File.ReadAllBytesAsync(Path.Join(second.AssetRoot, "tileset.json"));
         tileset1.Should().Equal(tileset2, "identical CityGML input must produce byte-identical tileset.json output.");
     }
 
@@ -179,7 +179,7 @@ public sealed class CityGmlScenePublishExecutorTests : IDisposable
         // against, and assert the span now carries ActivityStatusCode.Error.
         const string sceneId = "bim-promote-fail";
         Directory.CreateDirectory(_outputRoot);
-        var finalDirectory = Path.Combine(_outputRoot, sceneId);
+        var finalDirectory = Path.Join(_outputRoot, sceneId);
         await File.WriteAllTextAsync(finalDirectory, "blocks Directory.Move");
 
         var activities = new List<Activity>();

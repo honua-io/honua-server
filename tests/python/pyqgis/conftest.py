@@ -496,6 +496,7 @@ def wfs_typename(base_url: str) -> str:
         + " Set HONUA_PYQGIS_REQUIRE_WFS=1 in environments that promise WFS "
         "coverage so this becomes a hard failure instead of a silent skip."
     )
+    raise AssertionError("unreachable")  # pytest.fail()/pytest.skip() always raise
 
 
 # ---------------------------------------------------------------------------

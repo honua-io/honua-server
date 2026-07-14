@@ -43,13 +43,10 @@ internal static class McpRegistryCompositionValidator
             .Select(d => d.McpToolName!)
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var tool in surface.ToolHandlers)
+        foreach (var tool in surface.ToolHandlers.Where(tool => !registryToolNames.Contains(tool.Name)))
         {
-            if (!registryToolNames.Contains(tool.Name))
-            {
-                problems.Add(
-                    $"served /mcp tool '{tool.Name}' has no capability-registry descriptor");
-            }
+            problems.Add(
+                $"served /mcp tool '{tool.Name}' has no capability-registry descriptor");
         }
 
         var registryResourceUris = registry.All
@@ -59,24 +56,18 @@ internal static class McpRegistryCompositionValidator
 
         foreach (var resource in surface.Resources)
         {
-            foreach (var descriptor in resource.Describe())
+            foreach (var descriptor in resource.Describe().Where(d => !registryResourceUris.Contains(d.Uri)))
             {
-                if (!registryResourceUris.Contains(descriptor.Uri))
-                {
-                    problems.Add(
-                        $"served /mcp resource '{descriptor.Uri}' (family '{resource.Family}') "
-                        + "has no capability-registry descriptor");
-                }
+                problems.Add(
+                    $"served /mcp resource '{descriptor.Uri}' (family '{resource.Family}') "
+                    + "has no capability-registry descriptor");
             }
 
-            foreach (var template in resource.DescribeTemplates())
+            foreach (var template in resource.DescribeTemplates().Where(t => !registryResourceUris.Contains(t.UriTemplate)))
             {
-                if (!registryResourceUris.Contains(template.UriTemplate))
-                {
-                    problems.Add(
-                        $"served /mcp resource template '{template.UriTemplate}' "
-                        + $"(family '{resource.Family}') has no capability-registry descriptor");
-                }
+                problems.Add(
+                    $"served /mcp resource template '{template.UriTemplate}' "
+                    + $"(family '{resource.Family}') has no capability-registry descriptor");
             }
         }
 

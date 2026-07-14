@@ -198,12 +198,10 @@ public static class ZarrTileSlicePlanner
             ? metadata.PrimaryVariable ?? metadata.Arrays[0].Name
             : variable;
 
-        foreach (var candidate in metadata.Arrays)
+        var match = metadata.Arrays.FirstOrDefault(candidate => string.Equals(candidate.Name, resolved, StringComparison.Ordinal));
+        if (match is not null)
         {
-            if (string.Equals(candidate.Name, resolved, StringComparison.Ordinal))
-            {
-                return candidate;
-            }
+            return match;
         }
 
         error = $"Variable '{resolved}' is not available in the coverage.";

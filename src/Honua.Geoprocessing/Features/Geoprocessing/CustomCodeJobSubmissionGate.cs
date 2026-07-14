@@ -103,6 +103,9 @@ internal sealed class CustomCodeJobSubmissionGate
         }
         catch (Exception ex)
         {
+            // Intentionally broad: this is the documented best-effort revocation path (see
+            // the XML doc above) — a revoke failure must not fail job submission/cleanup, but
+            // it is logged so an un-revoked token is diagnosable rather than silently dropped.
             GeoprocessingServiceLog.CustomCodeTokenRevokeFailed(_logger, ex);
         }
     }

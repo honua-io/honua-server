@@ -90,24 +90,20 @@ internal sealed partial class GdalRasterResampleJobExecutor(
 
         var cellSizeY = cellSizeX;
         if (GdalJobInputReader.TryGetInput(parameters, "cellSizeY", out var cellSizeYRaw)
-            && !string.IsNullOrWhiteSpace(cellSizeYRaw))
+            && !string.IsNullOrWhiteSpace(cellSizeYRaw)
+            && !TryReadPositiveDouble(parameters, "cellSizeY", out cellSizeY, out var cellYError))
         {
-            if (!TryReadPositiveDouble(parameters, "cellSizeY", out cellSizeY, out var cellYError))
-            {
-                return JobExecutionResult.Failed($"Invalid resample inputs: {cellYError}");
-            }
+            return JobExecutionResult.Failed($"Invalid resample inputs: {cellYError}");
         }
 
         var resamplingFlag = "bilinear";
         if (GdalJobInputReader.TryGetInput(parameters, "resampling", out var resamplingRaw)
-            && !string.IsNullOrWhiteSpace(resamplingRaw))
+            && !string.IsNullOrWhiteSpace(resamplingRaw)
+            && !ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
         {
-            if (!ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
-            {
-                return JobExecutionResult.Failed(
-                    $"Invalid resample inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
-                    "(nearestneighbor, bilinear, cubic, lanczos).");
-            }
+            return JobExecutionResult.Failed(
+                $"Invalid resample inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
+                "(nearestneighbor, bilinear, cubic, lanczos).");
         }
 
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))

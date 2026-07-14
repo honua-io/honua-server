@@ -306,14 +306,12 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         // An explicit SRID is supplemental (overrides .prj detection) but cannot
         // replace the world file â€” without it pixels map 1:1 to CRS units which is
         // almost certainly wrong.
-        if (request.Format is SupportedRasterFormat.PngWorldFile or SupportedRasterFormat.JpegWorldFile)
+        if (request.Format is SupportedRasterFormat.PngWorldFile or SupportedRasterFormat.JpegWorldFile &&
+            string.IsNullOrWhiteSpace(request.WorldFileContent))
         {
-            if (string.IsNullOrWhiteSpace(request.WorldFileContent))
-            {
-                throw new ArgumentException(
-                    $"{request.Format} imports require a world file (.pgw/.jgw/.tfw) for georeferencing. " +
-                    "An explicit SRID can optionally accompany the world file to override CRS detection.");
-            }
+            throw new ArgumentException(
+                $"{request.Format} imports require a world file (.pgw/.jgw/.tfw) for georeferencing. " +
+                "An explicit SRID can optionally accompany the world file to override CRS detection.");
         }
 
         // COG is a valid TIFF â€” same import path as GeoTIFF.
@@ -685,7 +683,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
             // A zero (or non-finite) pixel scale yields a degenerate geotransform with no spatial
             // extent, so reject it up front rather than persisting an unusable georeference.
-            if (scaleX == 0.0 || scaleY == 0.0 ||
+            // Compare against a tolerance rather than exact 0.0: a pixel scale parsed from
+            // user-supplied world-file text that is merely astronomically small is just as
+            // degenerate as an exact zero, and exact float equality would let it slip through.
+            const double MinPixelScaleMagnitude = 1e-9;
+            if (Math.Abs(scaleX) < MinPixelScaleMagnitude || Math.Abs(scaleY) < MinPixelScaleMagnitude ||
                 !double.IsFinite(scaleX) || !double.IsFinite(scaleY))
             {
                 throw new InvalidDataException("World file pixel scale (lines 1 and 4) must be non-zero and finite.");

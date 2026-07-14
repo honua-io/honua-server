@@ -112,14 +112,11 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
 
         foreach (var token in tokens)
         {
-            foreach (var pair in FamilyVerbs)
+            var match = FamilyVerbs.FirstOrDefault(pair => token.StartsWith(pair.Key, StringComparison.Ordinal));
+            if (match.Key is not null)
             {
-                if (token.StartsWith(pair.Key, StringComparison.Ordinal))
-                {
-                    counts[(int)pair.Value]++;
-                    evidence.Add($"verb:{token}→{pair.Value}");
-                    break;
-                }
+                counts[(int)match.Value]++;
+                evidence.Add($"verb:{token}→{match.Value}");
             }
         }
 
@@ -152,7 +149,9 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
         }
 
         var winnerCount = counts[winner];
-        var confidence = total == 0 ? 0.0 : (double)winnerCount / total;
+
+        // total == 0 already returned above, so this is always a real division.
+        var confidence = (double)winnerCount / total;
         return new WorkflowFamilyClassification
         {
             Value = (WorkflowFamily)winner,
@@ -358,15 +357,6 @@ internal sealed class DeterministicGroundingEngine : IGroundingEngine
             return 0;
         }
 
-        var hits = 0;
-        foreach (var token in GroundingTokenizer.Tokenize(text))
-        {
-            if (queryTokens.Contains(token))
-            {
-                hits++;
-            }
-        }
-
-        return hits;
+        return GroundingTokenizer.Tokenize(text).Count(token => queryTokens.Contains(token));
     }
 }

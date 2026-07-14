@@ -392,10 +392,13 @@ internal static class GPServerOutputReprojection
     private static Geometry ReprojectInMemory(Geometry source, int fromSrid, int toSrid)
     {
         var editor = new GeometryEditor(source.Factory);
-        return editor.Edit(source, new CoordinateOperation(fromSrid, toSrid));
+        return editor.Edit(source, new SridCoordinateOperation(fromSrid, toSrid));
     }
 
-    private sealed class CoordinateOperation(int fromSrid, int toSrid) : GeometryEditor.CoordinateOperation
+    // Named distinctly from its NTS base class (GeometryEditor.CoordinateOperation) to
+    // avoid a same-name subclass shadowing its base type; this is NTS's designated
+    // extension point for GeometryEditor coordinate transforms.
+    private sealed class SridCoordinateOperation(int fromSrid, int toSrid) : GeometryEditor.CoordinateOperation
     {
         public override Coordinate[] Edit(Coordinate[] coordinates, Geometry geometry)
         {

@@ -379,7 +379,7 @@ public sealed class GeocodingEndpointTests
         using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["text"] = "hon",
             ["f"] = "json"
@@ -445,7 +445,7 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]""";
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["records"] = records,
             ["f"] = "json"
@@ -475,7 +475,7 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":2,"SingleLine":"350 Fifth Avenue, New York"}}]}""";
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["addresses"] = addresses,
             ["f"] = "json"
@@ -512,7 +512,7 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["addresses"] = addresses,
             // Canonical Esri spatial-reference JSON object, as the JS SDK / Pro send it.
@@ -572,7 +572,7 @@ public sealed class GeocodingEndpointTests
         using var client = factory.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["addresses"] = addresses,
             ["f"] = "json"
@@ -726,7 +726,7 @@ public sealed class GeocodingEndpointTests
         using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["singleLine"] = "1600 Pennsylvania Ave NW",
             ["f"] = "json"
@@ -750,7 +750,7 @@ public sealed class GeocodingEndpointTests
         using var factory = CreateDefaultFactory();
         using var client = factory.CreateClient();
 
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["location"] = "-77.03655,38.89768",
             ["f"] = "json"
@@ -958,7 +958,7 @@ public sealed class GeocodingEndpointTests
         Assert.Equal(40.0, fakeProvider.LastForwardRequest.SearchBounds.YMax, precision: 5);
 
         // POST path accepts the comma-delimited "xmin,ymin,xmax,ymax" form.
-        var postContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var postContent = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["singleLine"] = "Springfield",
             ["searchExtent"] = "-100.0,30.0,-99.0,31.0",

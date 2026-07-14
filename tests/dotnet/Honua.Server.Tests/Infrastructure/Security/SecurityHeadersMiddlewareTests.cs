@@ -158,10 +158,10 @@ public class SecurityHeadersMiddlewareTests
         await middleware.InvokeAsync(context);
 
         // Assert
-        Assert.True(context.Response.Headers.ContainsKey("Content-Security-Policy-Report-Only"));
+        Assert.True(context.Response.Headers.TryGetValue("Content-Security-Policy-Report-Only", out var reportOnlyValues));
         Assert.False(context.Response.Headers.ContainsKey("Content-Security-Policy"));
 
-        var reportOnlyHeader = context.Response.Headers["Content-Security-Policy-Report-Only"].ToString();
+        var reportOnlyHeader = reportOnlyValues.ToString();
         Assert.Contains("report-uri /csp-report", reportOnlyHeader);
     }
 

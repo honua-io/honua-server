@@ -143,17 +143,17 @@ public sealed class GpScaffolderTests
         // `gp test <id>` works out of the box. Write the rendered files to a temp dir
         // (the only filesystem touch in this suite) and load them with GoldenFixtureLoader.
         var plan = GpScaffolder.Plan("geometry.recenter", GpProcessKind.Geometry, []);
-        var fixtureDir = Path.Combine(Path.GetTempPath(), "gp-scaffold-test-" + Guid.NewGuid().ToString("N"));
+        var fixtureDir = Path.Join(Path.GetTempPath(), "gp-scaffold-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fixtureDir);
         try
         {
             foreach (var file in plan.Files.Where(f => f.RelativePath.StartsWith("samples/gp/", StringComparison.Ordinal)))
             {
                 var name = Path.GetFileName(file.RelativePath);
-                File.WriteAllText(Path.Combine(fixtureDir, name), file.Contents);
+                File.WriteAllText(Path.Join(fixtureDir, name), file.Contents);
             }
 
-            var manifestPath = Path.Combine(fixtureDir, GoldenFixtureLoader.ManifestFileName);
+            var manifestPath = Path.Join(fixtureDir, GoldenFixtureLoader.ManifestFileName);
             var fixture = GoldenFixtureLoader.Load(manifestPath);
 
             fixture.Id.Should().Be("geometry-recenter");

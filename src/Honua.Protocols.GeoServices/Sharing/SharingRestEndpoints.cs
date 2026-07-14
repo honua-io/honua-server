@@ -190,7 +190,7 @@ public static class SharingRestEndpoints
             return entitlementFailure;
         }
 
-        var (username, password, clientType, refererInput, expirationMinutes, format, formatValid) =
+        var (username, password, clientType, refererInput, expirationMinutes, _, formatValid) =
             await ReadParametersAsync(context).ConfigureAwait(false);
 
         // Detect whether credentials arrived via query string (GET or non-form POST). This is
@@ -538,12 +538,9 @@ public static class SharingRestEndpoints
         }
 
         var result = new List<PortalItem>(items.Count);
-        foreach (var item in items)
+        foreach (var item in items.Where(item => terms.All(term => MatchesTerm(item, term))))
         {
-            if (terms.All(term => MatchesTerm(item, term)))
-            {
-                result.Add(item);
-            }
+            result.Add(item);
         }
 
         return result;

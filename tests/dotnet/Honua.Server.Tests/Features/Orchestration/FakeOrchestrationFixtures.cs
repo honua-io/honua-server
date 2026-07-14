@@ -152,12 +152,9 @@ internal sealed class FakeWorkflowDefinitionStore : IWorkflowDefinitionStore
             result = cursor;
         }
 
-        if (_pendingScheduleCursors.TryGetValue(workflowId, out var pending))
+        if (_pendingScheduleCursors.TryGetValue(workflowId, out var pending) && (result is null || pending > result.Value))
         {
-            if (result is null || pending > result.Value)
-            {
-                result = pending;
-            }
+            result = pending;
         }
 
         return Task.FromResult(result);

@@ -108,6 +108,9 @@ internal static class GdalNoData
                 return null;
             }
 
+            // Not a .Where(...)/.Select(...) candidate: TryGetProperty/TryGetDouble's out
+            // values feed directly into the returned result, so a LINQ split would need
+            // to re-parse each band's JSON value a second time.
             foreach (var band in bands.EnumerateArray())
             {
                 if (band.TryGetProperty("noDataValue", out var noData)

@@ -121,6 +121,9 @@ internal sealed partial class AzureEventHubAlertDeliverySink : IAlertDeliverySin
         {
             throw;
         }
+        // Intentionally generic: the Event Hub SDK surfaces a wide range of transport,
+        // throttling, and auth exception types. Logged and converted to a non-throwing
+        // AlertDeliveryResult so one sink failure never blocks other sinks.
         catch (Exception ex)
         {
             Log.DeliveryFailed(_logger, ex);

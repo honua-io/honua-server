@@ -160,6 +160,8 @@ internal sealed partial class Wfs20Handler
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost GetPropertyValue request boundary.
+            // Already logged (with exception) and mapped to a WFS ExceptionReport.
             Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.GetPropertyValue, ex.Message);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to process GetPropertyValue request.");
         }
@@ -405,6 +407,9 @@ internal sealed partial class Wfs20Handler
 
         var geometryField = resource.FindPrimaryGeometryField();
         var primaryKeyField = resource.FindPrimaryIdField();
+        // Not simplifiable to bare 'A': the null-conditional chain makes these `bool?`,
+        // and `== true` is the idiom that collapses a null (no field) to false while
+        // keeping `isGeometry`/`isFeatureId` non-nullable `bool`.
         var isGeometry = geometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
         var isFeatureId = primaryKeyField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true ||
                           resolvedName.Equals("objectid", StringComparison.OrdinalIgnoreCase);

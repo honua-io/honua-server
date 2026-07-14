@@ -107,9 +107,10 @@ public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime
         };
 
         var json = JsonSerializer.Serialize(editsRequest, FeatureServerJsonContext.Default.ApplyEditsRequest);
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -131,9 +132,10 @@ public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime
             f = "json",
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -151,10 +153,12 @@ public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime
     {
         if (!layer.TryGetProperty("addFeatures", out var addFeatures) || addFeatures.ValueKind != JsonValueKind.Array)
         {
-            yield break;
+            return [];
         }
 
-        foreach (var feature in addFeatures.EnumerateArray())
+        return addFeatures.EnumerateArray().SelectMany(ExtractObjectId);
+
+        static IEnumerable<long> ExtractObjectId(JsonElement feature)
         {
             if (feature.TryGetProperty("attributes", out var attributes) &&
                 attributes.TryGetProperty("objectid", out var objectId) &&

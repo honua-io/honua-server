@@ -36,6 +36,9 @@ namespace Honua.Import.FileImport;
 /// <summary>
 /// File import endpoints for uploading and processing geospatial files
 /// </summary>
+// Note: the broad `catch (Exception ex)` clauses below are intentional. This surface parses
+// untrusted, caller-supplied files/URLs; each catch logs the full exception via Log.* and
+// returns a generic, client-safe error message/status rather than leaking parser internals.
 internal static partial class ImportEndpoints
 {
     private const string InvalidMultipartImportRequestMessage = "Multipart import request is invalid.";
@@ -283,13 +286,13 @@ internal static partial class ImportEndpoints
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-            Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
+            Log.PreviewFailed(logger, file.FileName, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
         }
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-            Log.PreviewFailed(logger, file?.FileName ?? "unknown", ex);
+            Log.PreviewFailed(logger, file.FileName, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status500InternalServerError);
         }
     }

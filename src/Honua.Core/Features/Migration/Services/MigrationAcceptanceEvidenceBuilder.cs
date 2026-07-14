@@ -144,19 +144,17 @@ public static class MigrationAcceptanceEvidenceBuilder
             .Select(static entry => entry.SourceKind)
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var sourceKind in Order(options.RequiredSourceKinds))
+        foreach (var sourceKind in Order(options.RequiredSourceKinds)
+                     .Where(sourceKind => !coveredSourceKinds.Contains(sourceKind)))
         {
-            if (!coveredSourceKinds.Contains(sourceKind))
+            yield return new MigrationAcceptanceEvidenceGap
             {
-                yield return new MigrationAcceptanceEvidenceGap
-                {
-                    Id = $"missing-source-kind:{sourceKind}",
-                    SourceKind = sourceKind,
-                    State = MigrationEvidenceStates.Fail,
-                    Summary = $"Required migration source kind '{sourceKind}' has no evidence entry.",
-                    Remediation = ["Add a deterministic fixture or scheduled evidence lane for this source kind."]
-                };
-            }
+                Id = $"missing-source-kind:{sourceKind}",
+                SourceKind = sourceKind,
+                State = MigrationEvidenceStates.Fail,
+                Summary = $"Required migration source kind '{sourceKind}' has no evidence entry.",
+                Remediation = ["Add a deterministic fixture or scheduled evidence lane for this source kind."]
+            };
         }
 
         if (options.RequireAutomatedEntries)
@@ -469,16 +467,14 @@ public static class MigrationAcceptanceEvidenceBuilder
             }
         }
 
-        foreach (var requiredStage in Order(thresholds.RequiredDurationStages))
+        foreach (var requiredStage in Order(thresholds.RequiredDurationStages)
+                     .Where(requiredStage => !operations.Any(operation =>
+                         StageMatches(operation.Stage, requiredStage) &&
+                         operation.DurationMilliseconds is > 0)))
         {
-            if (!operations.Any(operation =>
-                    StageMatches(operation.Stage, requiredStage) &&
-                    operation.DurationMilliseconds is > 0))
-            {
-                yield return MissingMetric(
-                    $"stage-duration:{requiredStage}",
-                    $"Measured {requiredStage} duration is required.");
-            }
+            yield return MissingMetric(
+                $"stage-duration:{requiredStage}",
+                $"Measured {requiredStage} duration is required.");
         }
 
         foreach (var finding in EvaluateUpperLimit(

@@ -144,6 +144,7 @@ class TestSingleFeature:
             data = response.json()
             # Links may be in the feature or in a wrapper
             # OGC spec allows links in feature properties or at root
+            assert isinstance(data, dict)
 
     @pytest.mark.integration
     @pytest.mark.ogc

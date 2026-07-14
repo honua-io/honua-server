@@ -41,6 +41,8 @@ internal sealed partial class StreamingFileImportService
         }
         catch (Exception ex)
         {
+            // Best-effort scratch cleanup after import: log and continue rather than
+            // failing the import operation over a leftover temp directory.
             ShapefileLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
@@ -81,6 +83,8 @@ internal sealed partial class StreamingFileImportService
         }
         catch (Exception ex)
         {
+            // Best-effort scratch cleanup after import: log and continue rather than
+            // failing the import operation over a leftover temp directory.
             GeoPackageLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
@@ -101,6 +105,8 @@ internal sealed partial class StreamingFileImportService
         }
         catch (Exception ex)
         {
+            // Best-effort scratch cleanup after import: log and continue rather than
+            // failing the import operation over a leftover temp directory.
             KmzLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
@@ -131,6 +137,8 @@ internal sealed partial class StreamingFileImportService
         }
         catch (Exception ex)
         {
+            // Best-effort scratch cleanup after import: log and continue rather than
+            // failing the import operation over a leftover temp directory.
             FileGdbLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }
@@ -168,6 +176,8 @@ internal sealed partial class StreamingFileImportService
         }
         catch (Exception ex)
         {
+            // Best-effort scratch cleanup after import: log and continue rather than
+            // failing the import operation over a leftover temp directory.
             GeoParquetLog.CleanupScratchFailed(_logger, ex, scratchDir);
         }
     }

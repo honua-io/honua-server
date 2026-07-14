@@ -39,6 +39,8 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All three segments are compile-time relative literals (none rooted), so Path.Combine
+        // cannot silently drop earlier arguments here.
         _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
     }
@@ -102,9 +104,10 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
         }
         """;
 
+        using var requestContent = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{SpatialReferenceTestLayerCatalog.ServiceId}/FeatureServer/{SpatialReferenceTestLayerCatalog.LineLayerId}/applyEdits",
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

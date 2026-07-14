@@ -76,6 +76,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                 }
                 catch (Exception ex)
                 {
+                    // Intentionally broad: this is the job's terminal callback — it must
+                    // never throw, so any persistence failure is captured and gates the
+                    // status transition below instead.
                     artifactPersistenceError =
                         "Failed to persist analysis-content artifacts; results would be incomplete.";
                     Log.ArtifactPersistenceFailed(logger, job.OperationId, ex);
@@ -154,6 +157,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         }
         catch (Exception ex)
         {
+            // Intentionally broad: best-effort terminal progress sync — the job itself
+            // has already reached a terminal state, so a sync failure here must be
+            // logged, not thrown.
             Log.ProgressSyncFailed(logger, job.OperationId, ex);
         }
     }
@@ -178,6 +184,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         }
         catch (Exception ex)
         {
+            // Intentionally broad: best-effort token revocation on job terminal — a
+            // revoke failure must not fail the terminal callback, but it is logged so an
+            // un-revoked token is diagnosable.
             Log.CustomCodeTokenRevokeFailed(logger, job.OperationId, ex);
         }
     }

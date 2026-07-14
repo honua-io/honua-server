@@ -103,10 +103,8 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             {
                 Log.NotModified(_logger, requestPath, ifNoneMatch, etag);
 
-                // Return 304 Not Modified with ETag
-                var notModifiedResult = Results.StatusCode((int)HttpStatusCode.NotModified);
-
-                // Set ETag header using a custom result that wraps the 304 response
+                // Return 304 Not Modified with ETag header using a custom result
+                // that wraps the 304 response.
                 return new NotModifiedWithETagResult(etag, etagService);
             }
 
@@ -169,6 +167,9 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             // Type info not available in AOT-friendly serializer options.
             return null;
         }
+        // Intentional: ETag generation is a caching optimization, not a required
+        // behavior — any serialization failure is logged and falls back to
+        // skipping the ETag header rather than failing the response.
         catch (Exception ex)
         {
             Log.ETagComputationFailed(_logger, ex);

@@ -13,7 +13,6 @@ internal static class CloudDemoEndpoints
     private const string WritableServiceId = "field-inspections-demo-writable";
     private const int WritableContractLayerId = 0;
     private const string DefaultIncidentSourceId = "incident-ops";
-    private const string DefaultIncidentLayerId = "incident-points";
 
     public static void MapCloudDemoEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -109,7 +108,6 @@ internal static class CloudDemoEndpoints
 
         var query = context.Request.Query;
         var sourceId = GetQueryValue(query["sourceId"]) ?? DefaultIncidentSourceId;
-        var layerId = GetQueryValue(query["layerId"]) ?? DefaultIncidentLayerId;
         var requestedCursor = GetQueryValue(query["cursor"]);
         var once = string.Equals(GetQueryValue(query["once"]), "true", StringComparison.OrdinalIgnoreCase);
         var stale = string.Equals(GetQueryValue(query["stale"]), "true", StringComparison.OrdinalIgnoreCase);

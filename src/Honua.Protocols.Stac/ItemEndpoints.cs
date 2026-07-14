@@ -205,6 +205,7 @@ internal static class ItemEndpoints
             StacTelemetry.RecordException(activity, ex);
             throw;
         }
+        // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
         catch (Exception ex)
         {
             StacTelemetry.RecordException(activity, ex);
@@ -283,6 +284,7 @@ internal static class ItemEndpoints
             StacTelemetry.RecordException(activity, ex);
             throw;
         }
+        // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
         catch (Exception ex)
         {
             StacTelemetry.RecordException(activity, ex);

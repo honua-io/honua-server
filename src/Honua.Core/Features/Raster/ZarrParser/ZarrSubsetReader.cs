@@ -116,14 +116,8 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
 
     private static ZarrArrayMetadata ResolveArray(ZarrStoreMetadata metadata, string variable)
     {
-        foreach (var candidate in metadata.Arrays)
-        {
-            if (string.Equals(candidate.Name, variable, StringComparison.Ordinal))
-            {
-                return candidate;
-            }
-        }
-        throw new InvalidOperationException($"Variable '{variable}' was not discovered in the Zarr store.");
+        return metadata.Arrays.FirstOrDefault(candidate => string.Equals(candidate.Name, variable, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException($"Variable '{variable}' was not discovered in the Zarr store.");
     }
 
     private static void ValidateRequest(ZarrArrayMetadata array, ZarrSubsetRequest request)

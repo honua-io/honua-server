@@ -350,7 +350,7 @@ internal static class CoordinateTransformer
             return 0;
         }
 
-        var extentWidthMeters = extent.Width;
+        double extentWidthMeters;
 
         // If geographic coordinates, convert width to meters at center latitude.
         if (IsGeographicSrid(srid))

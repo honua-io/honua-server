@@ -86,6 +86,9 @@ internal sealed class Wfs20QueryParameterAdapter(
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: adapter boundary converting protocol-shaped input
+            // into the unified query model. Already logged (with exception) and mapped
+            // to a caller-facing failure result.
             Wfs20PreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
             return Task.FromResult(QueryAdapterResult.Failure("Invalid WFS query parameters."));
         }
@@ -154,6 +157,9 @@ internal sealed class Wfs20EditParameterAdapter(
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: adapter boundary converting protocol-shaped input
+            // into the unified edit model. Already logged (with exception) and mapped
+            // to a caller-facing failure result.
             Wfs20PreparedAdaptersLog.TransactionConversionFailed(_logger, ex);
             return Task.FromResult(EditAdapterResult.Failure("Invalid WFS transaction."));
         }

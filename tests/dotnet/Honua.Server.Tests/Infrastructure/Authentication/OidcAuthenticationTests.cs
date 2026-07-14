@@ -582,7 +582,7 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
 
         // Act - Access admin endpoint with API key
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", adminPassword);
         var response = await client.SendAsync(request);
 
@@ -614,7 +614,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken();
 
         // Act - Access admin endpoint with Bearer token
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -638,7 +638,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -668,11 +668,11 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
-        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         firstRequest.Headers.Add("Authorization", $"Bearer {token}");
         var firstResponse = await client.SendAsync(firstRequest);
 
-        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         secondRequest.Headers.Add("Authorization", $"Bearer {token}");
         var secondResponse = await client.SendAsync(secondRequest);
 
@@ -701,11 +701,11 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
-        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         firstRequest.Headers.Add("Authorization", $"Bearer {token}");
         var firstResponse = await client.SendAsync(firstRequest);
 
-        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         secondRequest.Headers.Add("Authorization", $"Bearer {token}");
         var secondResponse = await client.SendAsync(secondRequest);
 
@@ -724,7 +724,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"], issuer: "https://wrong-issuer.example.com");
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -743,7 +743,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"], audience: "wrong-audience");
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -762,7 +762,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"], expiresInMinutes: -60);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -781,7 +781,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: [$"non-admin-{Guid.NewGuid():N}"]);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -800,7 +800,7 @@ public class OidcAuthenticationTests
         var invalidBearer = GenerateTestJwtToken(roles: ["admin"], issuer: "https://wrong-issuer.example.com");
 
         // Act - valid API key is present, but invalid bearer should still fail due bearer precedence
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", TestAdminPassword);
         request.Headers.Add("Authorization", $"Bearer {invalidBearer}");
         var response = await client.SendAsync(request);
@@ -820,7 +820,7 @@ public class OidcAuthenticationTests
         var validBearer = GenerateTestJwtToken(roles: ["admin"]);
 
         // Act - invalid API key is present, valid bearer should still succeed
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("X-API-Key", "wrong-password");
         request.Headers.Add("Authorization", $"Bearer {validBearer}");
         var response = await client.SendAsync(request);
@@ -849,7 +849,7 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
         request.Headers.Add("X-API-Key", TestAdminPassword);
         request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await client.SendAsync(request);
@@ -870,7 +870,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/connections");
         request.Headers.Add("Authorization", $"Bearer {token}");
         request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await client.SendAsync(request);
@@ -1424,7 +1424,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"], issuer: oktaIssuer);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -1454,7 +1454,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -1486,7 +1486,7 @@ public class OidcAuthenticationTests
         var token = GenerateTestJwtToken(roles: ["admin"], issuer: auth0Issuer, audience: apiAudience);
 
         // Act
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 

@@ -116,15 +116,13 @@ internal static class GPServerParameterTranslation
             }
 
             // GPDataFile / GPRasterDataLayer: { "url": "..." }
-            if (root.TryGetProperty("url", out var urlProp) && urlProp.ValueKind == JsonValueKind.String)
+            // Only extract when "url" is the dominant property (data-file shape).
+            // Feature/record set payloads also have "url" but carry "features" or "fields",
+            // so we leave those as JSON passthrough.
+            if (root.TryGetProperty("url", out var urlProp) && urlProp.ValueKind == JsonValueKind.String &&
+                !root.TryGetProperty("features", out _) && !root.TryGetProperty("fields", out _))
             {
-                // Only extract when "url" is the dominant property (data-file shape).
-                // Feature/record set payloads also have "url" but carry "features" or "fields",
-                // so we leave those as JSON passthrough.
-                if (!root.TryGetProperty("features", out _) && !root.TryGetProperty("fields", out _))
-                {
-                    return urlProp.GetString() ?? value;
-                }
+                return urlProp.GetString() ?? value;
             }
 
             // GPLinearUnit / GPArealUnit: { "distance": <number>, "units": "<string>" }
@@ -238,12 +236,9 @@ internal static class GPServerParameterTranslation
             return;
         }
 
-        foreach (var candidate in allowed)
+        if (allowed.Any(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
+            return;
         }
 
         throw new GeoprocessingValidationException(
@@ -292,12 +287,9 @@ internal static class GPServerParameterTranslation
 
         // Always start with query-string parameters so they are honoured
         // regardless of HTTP method or content type.
-        foreach (var entry in context.Request.Query)
+        foreach (var entry in context.Request.Query.Where(e => !string.IsNullOrEmpty(e.Value.FirstOrDefault())))
         {
-            if (!string.IsNullOrEmpty(entry.Value.FirstOrDefault()))
-            {
-                result[entry.Key] = entry.Value.FirstOrDefault()!;
-            }
+            result[entry.Key] = entry.Value.FirstOrDefault()!;
         }
 
         // For POST with form content, overlay form values (form takes precedence
@@ -305,12 +297,9 @@ internal static class GPServerParameterTranslation
         if (context.Request.HasFormContentType)
         {
             var form = await context.Request.ReadFormAsync(cancellationToken);
-            foreach (var entry in form)
+            foreach (var entry in form.Where(e => !string.IsNullOrEmpty(e.Value.FirstOrDefault())))
             {
-                if (!string.IsNullOrEmpty(entry.Value.FirstOrDefault()))
-                {
-                    result[entry.Key] = entry.Value.FirstOrDefault()!;
-                }
+                result[entry.Key] = entry.Value.FirstOrDefault()!;
             }
         }
 

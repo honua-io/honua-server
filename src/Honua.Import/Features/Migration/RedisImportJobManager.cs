@@ -24,6 +24,11 @@ namespace Honua.Migration;
 /// Redis-based distributed import job manager with in-memory fallback.
 /// Uses StackExchange.Redis primitives when available, falling back to IDistributedCache.
 /// </summary>
+// Note: the broad `catch (Exception ex)` clauses throughout this file (and the RedisJobQueue,
+// RedisLeaderElection, and RedisProgressStore<T> types below) are intentional. Redis is a
+// best-effort dependency here: every catch marks the affected component unavailable, logs via
+// Log.RedisFailed/LeadershipError, and falls back to local/in-memory coordination rather than
+// letting a transient Redis fault take down import processing.
 internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>, IImportCoordinationHealth, IAsyncDisposable, IDisposable
 {
     private readonly ImportJobManagerState<GeoservicesImportRequest, GeoservicesImportProgress> _state;
@@ -121,13 +126,10 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
         _allowFallback = allowFallback;
         _useRedis = _redisDb != null;
 
-        if (!_useRedis)
+        if (!_useRedis && _allowFallback)
         {
-            if (_allowFallback)
-            {
-                _hasLoggedUnavailable = true;
-                Log.QueueUsingFallback(_logger, _queueKey);
-            }
+            _hasLoggedUnavailable = true;
+            Log.QueueUsingFallback(_logger, _queueKey);
         }
     }
 
@@ -503,7 +505,9 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         if (!_useRedis && _redisDb != null && ShouldRetryRedis(DateTime.UtcNow))
         {
             await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-            if (_useRedis && _redisDb != null && _isLeader)
+            // _redisDb is readonly and already known non-null here (outer check); only
+            // _useRedis can have changed as a result of TryRestoreRedisAsync above.
+            if (_useRedis && _isLeader)
             {
                 await EnsureRedisLeadershipAsync().ConfigureAwait(false);
             }
@@ -894,6 +898,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             return;
         }
 
+        // Captured to a local: the guard above already proved the cache is live, and a local
+        // keeps that narrowing valid across the awaits and the catch block below (unlike the
+        // nullable field, whose narrowing the compiler cannot carry across a try/catch).
+        var cache = _cache;
+
         try
         {
             if (CanUseRedisDirectly)
@@ -903,7 +912,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             }
 
             var json = JsonSerializer.Serialize(progress, _jsonTypeInfo);
-            await _cache.SetStringAsync(key, json,
+            await cache.SetStringAsync(key, json,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = effectiveTtl },
                 cancellationToken);
             cachedWriteCompleted = true;
@@ -914,11 +923,11 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         }
         catch (Exception ex)
         {
-            if (cachedWriteCompleted && _cache != null)
+            if (cachedWriteCompleted)
             {
                 try
                 {
-                    await _cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+                    await cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
                 }
                 catch
                 {

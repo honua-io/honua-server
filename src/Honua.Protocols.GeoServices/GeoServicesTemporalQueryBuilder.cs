@@ -129,14 +129,8 @@ internal static class GeoServicesTemporalQueryBuilder
 
     private static MetadataV2Field? FindV2Field(MetadataV2Resource resource, string fieldName)
     {
-        foreach (var field in resource.SchemaFields)
-        {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return field;
-            }
-        }
-        return null;
+        return resource.SchemaFields.FirstOrDefault(field =>
+            string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static Literal? ToTemporalLiteralV2(DateTimeOffset? value, MetadataV2FieldType fieldType)
@@ -411,8 +405,11 @@ internal static class GeoServicesTemporalQueryBuilder
                 time = DateTimeOffset.FromUnixTimeMilliseconds(unixMs);
                 return true;
             }
-            catch
+            catch (ArgumentOutOfRangeException)
             {
+                // FromUnixTimeMilliseconds only throws when the value falls outside the
+                // representable DateTimeOffset range; this is a Try-pattern parse, so an
+                // out-of-range input is reported as a normal parse failure, not an error.
                 return false;
             }
         }

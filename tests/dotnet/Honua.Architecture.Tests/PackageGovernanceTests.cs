@@ -18,22 +18,25 @@ public sealed class PackageGovernanceTests
     public void DirectoryPackagesProps_ShouldEnableCentralPackageManagement()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var packagesPath = Path.Combine(repositoryRoot, "Directory.Packages.props");
+        var packagesPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, "Directory.Packages.props");
 
         File.Exists(packagesPath).Should().BeTrue("NuGet package versions must be declared once at the repository root");
 
         var document = XDocument.Load(packagesPath);
-        var centrallyManaged = document
+        var centrallyManagedElement = document
             .Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == "ManagePackageVersionsCentrally")
-            ?.Value;
-        var overridesEnabled = document
+            .FirstOrDefault(element => element.Name.LocalName == "ManagePackageVersionsCentrally");
+        var overridesEnabledElement = document
             .Descendants()
-            .FirstOrDefault(element => element.Name.LocalName == "CentralPackageVersionOverrideEnabled")
-            ?.Value;
+            .FirstOrDefault(element => element.Name.LocalName == "CentralPackageVersionOverrideEnabled");
 
-        centrallyManaged.Should().Be("true", "package versions should be governed by Directory.Packages.props");
-        overridesEnabled.Should().Be("false", "project-local VersionOverride metadata would bypass package governance");
+        centrallyManagedElement.Should().NotBeNull(
+            "Directory.Packages.props must declare <ManagePackageVersionsCentrally>");
+        overridesEnabledElement.Should().NotBeNull(
+            "Directory.Packages.props must declare <CentralPackageVersionOverrideEnabled>");
+
+        centrallyManagedElement!.Value.Should().Be("true", "package versions should be governed by Directory.Packages.props");
+        overridesEnabledElement!.Value.Should().Be("false", "project-local VersionOverride metadata would bypass package governance");
     }
 
     [ArchitectureTest]

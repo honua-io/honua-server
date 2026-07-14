@@ -56,15 +56,7 @@ internal static class SubstrateProfileResolver
     {
         ArgumentNullException.ThrowIfNull(environmentAccessor);
 
-        foreach (var marker in ServerlessEnvironmentMarkers)
-        {
-            if (!string.IsNullOrWhiteSpace(environmentAccessor(marker)))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return ServerlessEnvironmentMarkers.Any(marker => !string.IsNullOrWhiteSpace(environmentAccessor(marker)));
     }
 
     /// <summary>Default environment accessor reading process environment variables.</summary>

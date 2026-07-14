@@ -109,6 +109,9 @@ public static class SecurityTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: an attack payload can trigger any exception
+                // type from the client/server stack, and any exception here is a safe
+                // outcome (better than a successful injection).
                 results.Add(new SecurityTestAttempt
                 {
                     Payload = payload,
@@ -156,6 +159,9 @@ public static class SecurityTestScenarios
             }
             catch (Exception ex)
             {
+                // Broad catch is intentional: an attack payload can trigger any exception
+                // type from the client/server stack, and any exception here is a safe
+                // outcome (the payload wasn't reflected).
                 results.Add(new SecurityTestAttempt
                 {
                     Payload = payload,

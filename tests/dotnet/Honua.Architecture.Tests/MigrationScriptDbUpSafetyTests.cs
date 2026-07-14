@@ -39,8 +39,8 @@ public sealed class MigrationScriptDbUpSafetyTests
     /// </summary>
     private static readonly string[] _migrationDirectories =
     {
-        Path.Combine("src", "Honua.Server", "Migrations"),
-        Path.Combine("src", "Honua.Postgres", "Migrations"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Migrations"),
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Postgres", "Migrations"),
     };
 
     // A named dollar-quote tag: a single '$' (not preceded by another '$', so the
@@ -62,7 +62,7 @@ public sealed class MigrationScriptDbUpSafetyTests
 
         foreach (var relativeDirectory in _migrationDirectories)
         {
-            var directory = Path.Combine(repositoryRoot, relativeDirectory);
+            var directory = ArchitectureTestHelpers.CombinePath(repositoryRoot, relativeDirectory);
             Directory.Exists(directory).Should().BeTrue(
                 $"migration directory '{relativeDirectory}' must exist; update the scan list if it was moved.");
 

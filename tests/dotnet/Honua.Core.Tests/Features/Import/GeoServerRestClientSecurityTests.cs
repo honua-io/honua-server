@@ -91,6 +91,9 @@ public sealed class GeoServerRestClientSecurityTests
                 connectCallback!(context, cts.Token).AsTask());
         }
 
+        // Drain pending socket finalizers so the FD count reflects actual leaks rather
+        // than queued finalizable state from cancelled ConnectAsync calls (mirrors the
+        // ArcGisRestClientSecurityTests descriptor-leak check).
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
@@ -159,6 +162,8 @@ public sealed class GeoServerRestClientSecurityTests
 
         public int RequestCount => _requestCount;
 
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _requestCount);

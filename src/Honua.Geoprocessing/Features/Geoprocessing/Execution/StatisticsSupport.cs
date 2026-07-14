@@ -55,6 +55,9 @@ internal static class StatisticsSupport
             return specs;
         }
 
+        // Not a .Select(...) candidate: each token goes through multi-step parsing with
+        // an explicit validation throw, which reads better as an imperative loop than a
+        // Select lambda with an embedded throw.
         foreach (var token in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var parts = token.Split(':', StringSplitOptions.TrimEntries);

@@ -30,14 +30,12 @@ internal static class RasterMosaicUtilities
 
     private static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
     {
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in element.EnumerateObject().Where(property =>
+            string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+            property.Value.ValueKind == JsonValueKind.String))
         {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
-                property.Value.ValueKind == JsonValueKind.String)
-            {
-                value = property.Value.GetString();
-                return true;
-            }
+            value = property.Value.GetString();
+            return true;
         }
 
         value = null;

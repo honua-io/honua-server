@@ -17,21 +17,7 @@ internal sealed record SldConversionResult
 
     public required SldVersion DetectedVersion { get; init; }
 
-    public bool HasErrors
-    {
-        get
-        {
-            foreach (var diagnostic in Diagnostics)
-            {
-                if (diagnostic.Severity == SldDiagnosticSeverity.Error)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-    }
+    public bool HasErrors => Diagnostics.Any(diagnostic => diagnostic.Severity == SldDiagnosticSeverity.Error);
 }
 
 /// <summary>

@@ -240,7 +240,7 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
     public async Task GenerateToken_EmitsExpiryAsUnixMilliseconds()
     {
         using var client = _fixture.CreateClient();
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("username", "admin"),
             new KeyValuePair<string, string>("password", AdminPassword),
@@ -269,7 +269,7 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
 
     private async Task<string> IssueAdminTokenAsync(HttpClient client)
     {
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("username", "admin"),
             new KeyValuePair<string, string>("password", AdminPassword),

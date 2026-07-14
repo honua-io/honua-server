@@ -74,15 +74,7 @@ internal static class BaseUrlResolver
 
     private static string? GetFirstNonEmpty(params string?[] values)
     {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return null;
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 
     private static bool TryGetLocalOriginBaseUrl(HttpRequest request, out string baseUrl)

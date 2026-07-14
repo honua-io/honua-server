@@ -35,11 +35,18 @@ namespace Honua.Server.Features.Protocols.Elevation;
 /// gate into the pipeline would lock out every caller whose permissions live on
 /// the layer rather than on a global role.
 /// </remarks>
-internal static class SceneAnalysisEndpoints
+internal static partial class SceneAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string SunShadowEntitlement = "analytics.sun-shadow";
     private const string SliceEntitlement = "analytics.slice";
+
+    /// <summary>
+    /// Tolerance (in decimal degrees) for treating two WGS 84 coordinates as the same point
+    /// when checking for degenerate (identical start/end) analysis requests. Avoids exact
+    /// double equality on user-supplied coordinates.
+    /// </summary>
+    private const double CoordinateEqualityEpsilon = 1e-9;
 
     public static IEndpointRouteBuilder MapSceneAnalysisEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -101,8 +108,12 @@ internal static class SceneAnalysisEndpoints
                 SceneAnalysisJsonContext.Default.SunShadowRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            if (logger is not null)
+            {
+                LogSunShadowRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -227,8 +238,12 @@ internal static class SceneAnalysisEndpoints
                 SceneAnalysisJsonContext.Default.SliceRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            if (logger is not null)
+            {
+                LogSliceRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -272,7 +287,8 @@ internal static class SceneAnalysisEndpoints
             }
         }
 
-        if (startLon == endLon && startLat == endLat)
+        if (Math.Abs(startLon - endLon) < CoordinateEqualityEpsilon &&
+            Math.Abs(startLat - endLat) < CoordinateEqualityEpsilon)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -484,4 +500,10 @@ internal static class SceneAnalysisEndpoints
         RasterMergeStrategy.Min => "min",
         _ => "newest"
     };
+
+    [LoggerMessage(EventId = 9450, Level = LogLevel.Warning, Message = "Failed to parse sun/shadow analysis request body for dataset {DatasetId}.")]
+    private static partial void LogSunShadowRequestParseFailed(ILogger logger, string datasetId, Exception exception);
+
+    [LoggerMessage(EventId = 9451, Level = LogLevel.Warning, Message = "Failed to parse slice analysis request body for dataset {DatasetId}.")]
+    private static partial void LogSliceRequestParseFailed(ILogger logger, string datasetId, Exception exception);
 }

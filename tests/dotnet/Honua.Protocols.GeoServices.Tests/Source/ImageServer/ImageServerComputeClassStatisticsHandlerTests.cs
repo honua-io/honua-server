@@ -84,9 +84,8 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
 
         var result = await _handler.ComputeAsync(CreateImageServerContext(), 1, values, CancellationToken.None);
 
-        var json = result as JsonHttpResult<ComputeClassStatisticsResponse>;
-        json.Should().NotBeNull();
-        var classes = json!.Value!.ClassStatistics;
+        var json = result.Should().BeOfType<JsonHttpResult<ComputeClassStatisticsResponse>>().Which;
+        var classes = json.Value!.ClassStatistics;
         classes.Should().HaveCount(2);
 
         // Class 1 — mean (2.5, 5), sample covariance [[5/3, 10/3],[10/3, 20/3]].

@@ -244,12 +244,12 @@ public static class StudioDeliverableComposer
         if (body.TryGetProperty("layers", out var layers) && layers.ValueKind == JsonValueKind.Array)
         {
             lines.Add($"Layers ({layers.GetArrayLength()}):");
-            foreach (var layer in layers.EnumerateArray())
-            {
-                var name = TryGetString(layer, "title", out var t) ? t
+            foreach (var name in layers.EnumerateArray().Select(layer =>
+                TryGetString(layer, "title", out var t) ? t
                     : TryGetString(layer, "name", out var n) ? n
                     : TryGetString(layer, "id", out var id) ? id
-                    : "Untitled layer";
+                    : "Untitled layer"))
+            {
                 lines.Add($"  • {name}");
             }
         }
@@ -301,11 +301,11 @@ public static class StudioDeliverableComposer
         if (body.TryGetProperty("sections", out var sections) && sections.ValueKind == JsonValueKind.Array)
         {
             lines.Add($"Sections ({sections.GetArrayLength()}):");
-            foreach (var section in sections.EnumerateArray())
-            {
-                var heading = TryGetString(section, "heading", out var h) ? h
+            foreach (var heading in sections.EnumerateArray().Select(section =>
+                TryGetString(section, "heading", out var h) ? h
                     : TryGetString(section, "title", out var t) ? t
-                    : "Untitled section";
+                    : "Untitled section"))
+            {
                 lines.Add($"  • {heading}");
             }
         }

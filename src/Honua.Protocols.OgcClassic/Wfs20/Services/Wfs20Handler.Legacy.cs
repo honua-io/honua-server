@@ -177,6 +177,8 @@ internal sealed partial class Wfs20Handler
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: outermost legacy (WFS 1.0/1.1) GetFeature request
+            // boundary. Already logged (with exception) and mapped to a ServiceException.
             Wfs20Log.DatabaseQueryFailed(_logger, ex, Wfs20Utilities.Operations.GetFeature, ex.Message);
             return CreateLegacyWfsException(version, "NoApplicableCode", "Failed to process GetFeature request.", statusCode: StatusCodes.Status500InternalServerError);
         }

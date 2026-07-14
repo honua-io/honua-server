@@ -242,7 +242,7 @@ public sealed class RedisLeaderElectionTests : IDisposable
         _mockDatabase.Setup(db => db.LockTakeAsync("test-key", It.IsAny<RedisValue>(), It.IsAny<TimeSpan>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
-        var election = CreateElection("test-key");
+        using var election = CreateElection("test-key");
         await election.StartAsync();
 
         var unhandled = 0;
@@ -257,7 +257,6 @@ public sealed class RedisLeaderElectionTests : IDisposable
         {
             AppDomain.CurrentDomain.UnhandledException -= handler;
             await election.StopAsync();
-            election.Dispose();
         }
 
         unhandled.Should().Be(0, "async void timer callback must swallow inner exceptions");

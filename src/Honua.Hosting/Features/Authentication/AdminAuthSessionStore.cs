@@ -230,6 +230,9 @@ internal sealed partial class AdminAuthSessionStore(
         }
         catch (Exception ex)
         {
+            // Intentional: the memory-tier entry is already removed above, and the distributed
+            // entry still expires on its own TTL, so a removal failure here is non-fatal — log
+            // and continue rather than fail the caller's request.
             AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
         }
     }

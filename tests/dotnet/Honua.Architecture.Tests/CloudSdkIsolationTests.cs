@@ -34,9 +34,9 @@ public sealed class CloudSdkIsolationTests
     /// </summary>
     public static IEnumerable<object[]> CloudNeutralProjects()
     {
-        yield return new object[] { Path.Combine("src", "Honua.Core.Abstractions", "Honua.Core.Abstractions.csproj") };
-        yield return new object[] { Path.Combine("src", "Honua.Core", "Honua.Core.csproj") };
-        yield return new object[] { Path.Combine("src", "Honua.Hosting", "Honua.Hosting.csproj") };
+        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core.Abstractions", "Honua.Core.Abstractions.csproj") };
+        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Core", "Honua.Core.csproj") };
+        yield return new object[] { ArchitectureTestHelpers.CombinePath("src", "Honua.Hosting", "Honua.Hosting.csproj") };
     }
 
     [Theory]
@@ -45,7 +45,7 @@ public sealed class CloudSdkIsolationTests
     public void CloudNeutralProject_MustNotTransitivelyReference_AwsOrAzurePackages(string relativeCsprojPath)
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var entryCsproj = Path.Combine(repositoryRoot, relativeCsprojPath);
+        var entryCsproj = ArchitectureTestHelpers.CombinePath(repositoryRoot, relativeCsprojPath);
 
         File.Exists(entryCsproj).Should().BeTrue(
             "the upstream cloud-neutral csproj must exist at the canonical path: {0}",
@@ -77,7 +77,7 @@ public sealed class CloudSdkIsolationTests
     public void HonuaServer_MustNotImport_AwsOrAzureSdkNamespaces()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var serverRoot = Path.Combine(repositoryRoot, "src", "Honua.Server");
+        var serverRoot = ArchitectureTestHelpers.CombinePath(repositoryRoot, "src", "Honua.Server");
 
         Directory.Exists(serverRoot).Should().BeTrue(
             "Honua.Server source root must exist at: {0}",
@@ -93,9 +93,8 @@ public sealed class CloudSdkIsolationTests
                 continue;
             }
 
-            foreach (var line in File.ReadLines(file))
+            foreach (var trimmed in File.ReadLines(file).Select(line => line.TrimStart()))
             {
-                var trimmed = line.TrimStart();
                 if (trimmed.StartsWith("using Amazon.", StringComparison.Ordinal)
                     || trimmed.StartsWith("using Azure.", StringComparison.Ordinal)
                     || trimmed.StartsWith("using static Amazon.", StringComparison.Ordinal)
@@ -133,13 +132,11 @@ public sealed class CloudSdkIsolationTests
             .Descendants("PackageReference")
             .Select(element => element.Attribute("Include")?.Value)
             .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!))
+            .Select(value => value!)
+            .Where(package => BannedPackagePrefixes.Any(prefix =>
+                package.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))))
         {
-            if (BannedPackagePrefixes.Any(prefix =>
-                package.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-            {
-                offending.Add((normalized, package));
-            }
+            offending.Add((normalized, package));
         }
 
         var csprojDir = Path.GetDirectoryName(normalized)
@@ -153,7 +150,7 @@ public sealed class CloudSdkIsolationTests
             .Select(value => value!))
         {
             var normalizedInclude = projectInclude.Replace('\\', Path.DirectorySeparatorChar);
-            var referenced = Path.GetFullPath(Path.Combine(csprojDir, normalizedInclude));
+            var referenced = Path.GetFullPath(ArchitectureTestHelpers.CombinePath(csprojDir, normalizedInclude));
             CollectBannedPackageRefs(referenced, visited, offending);
         }
     }

@@ -197,9 +197,10 @@ public static class OidcAuthenticationExtensions
                 var clientCertificateOptions = context.RequestServices
                     .GetService<IOptions<ClientCertificateAuthenticationOptions>>()?
                     .Value;
-                if (clientCertificateOptions?.Mode != ClientCertificateAuthenticationMode.Disabled &&
+                if (clientCertificateOptions is not null &&
+                    clientCertificateOptions.Mode != ClientCertificateAuthenticationMode.Disabled &&
                     (context.Connection.ClientCertificate is not null ||
-                     (clientCertificateOptions?.ForwardedCertificate.Enabled == true &&
+                     (clientCertificateOptions.ForwardedCertificate.Enabled &&
                       context.Request.Headers.ContainsKey(clientCertificateOptions.ForwardedCertificate.HeaderName))))
                 {
                     return ClientCertificateAuthenticationDefaults.AuthenticationScheme;
@@ -298,20 +299,14 @@ public static class OidcAuthenticationExtensions
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var role in roles)
+        foreach (var role in roles.Where(role => !string.IsNullOrWhiteSpace(role)))
         {
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                set.Add(role.Trim());
-            }
+            set.Add(role.Trim());
         }
 
-        foreach (var role in additionalRoles)
+        foreach (var role in additionalRoles.Where(role => !string.IsNullOrWhiteSpace(role)))
         {
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                set.Add(role.Trim());
-            }
+            set.Add(role.Trim());
         }
 
         return set;
@@ -435,12 +430,9 @@ public static class OidcAuthenticationExtensions
                         audiencesByIssuer[issuer] = set;
                     }
 
-                    foreach (var audience in audiences)
+                    foreach (var audience in audiences.Where(audience => !string.IsNullOrWhiteSpace(audience)))
                     {
-                        if (!string.IsNullOrWhiteSpace(audience))
-                        {
-                            set.Add(audience);
-                        }
+                        set.Add(audience);
                     }
                 }
             }
@@ -787,11 +779,34 @@ public static class OidcAuthenticationExtensions
 
     private static void ResolveOidcSecrets(OidcAuthenticationOptions options)
     {
-        options.AzureAd?.ClientSecret = ResolveSecretReference(options.AzureAd?.ClientSecret, "Oidc:AzureAd:ClientSecret");
-        options.Google?.ClientSecret = ResolveSecretReference(options.Google?.ClientSecret, "Oidc:Google:ClientSecret");
-        options.Generic?.ClientSecret = ResolveSecretReference(options.Generic?.ClientSecret, "Oidc:Generic:ClientSecret");
-        options.Okta?.ClientSecret = ResolveSecretReference(options.Okta?.ClientSecret, "Oidc:Okta:ClientSecret");
-        options.Auth0?.ClientSecret = ResolveSecretReference(options.Auth0?.ClientSecret, "Oidc:Auth0:ClientSecret");
+        // Each provider's secret is resolved through a single non-null-narrowed local so
+        // there is exactly one null check per provider (the original
+        // `options.X?.ClientSecret = ResolveSecretReference(options.X?.ClientSecret, ...)`
+        // form redundantly re-tested the already-proven-non-null receiver inside the RHS).
+        if (options.AzureAd is { } azureAd)
+        {
+            azureAd.ClientSecret = ResolveSecretReference(azureAd.ClientSecret, "Oidc:AzureAd:ClientSecret");
+        }
+
+        if (options.Google is { } google)
+        {
+            google.ClientSecret = ResolveSecretReference(google.ClientSecret, "Oidc:Google:ClientSecret");
+        }
+
+        if (options.Generic is { } generic)
+        {
+            generic.ClientSecret = ResolveSecretReference(generic.ClientSecret, "Oidc:Generic:ClientSecret");
+        }
+
+        if (options.Okta is { } okta)
+        {
+            okta.ClientSecret = ResolveSecretReference(okta.ClientSecret, "Oidc:Okta:ClientSecret");
+        }
+
+        if (options.Auth0 is { } auth0)
+        {
+            auth0.ClientSecret = ResolveSecretReference(auth0.ClientSecret, "Oidc:Auth0:ClientSecret");
+        }
     }
 
     private static string? ResolveSecretReference(string? value, string settingName)
@@ -1187,12 +1202,10 @@ public static class OidcAuthenticationExtensions
         var additionalTypes = new List<string>(options.ClaimsMapping.AdditionalRoleClaimTypes);
 
         // Okta: add "groups" when RequestGroupsClaim is true
-        if (options.Okta?.IsValid == true && options.Okta.RequestGroupsClaim)
+        if (options.Okta?.IsValid == true && options.Okta.RequestGroupsClaim &&
+            !additionalTypes.Contains("groups", StringComparer.OrdinalIgnoreCase))
         {
-            if (!additionalTypes.Contains("groups", StringComparer.OrdinalIgnoreCase))
-            {
-                additionalTypes.Add("groups");
-            }
+            additionalTypes.Add("groups");
         }
 
         // Auth0: add namespace-prefixed roles and permissions when RoleClaimNamespace is set

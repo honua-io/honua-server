@@ -101,9 +101,10 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     {
         await SeedFullWorldRasterAsync(100);
 
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/elevation/0/line-of-sight",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -204,9 +205,10 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     {
         await SeedFullWorldRasterAsync(50);
 
+        using var content = new StringContent("{\"radiusMeters\":1000}", Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/elevation/0/viewshed",
-            new StringContent("{\"radiusMeters\":1000}", Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");

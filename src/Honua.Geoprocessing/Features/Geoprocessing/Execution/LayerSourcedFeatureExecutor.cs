@@ -128,6 +128,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
         catch (Exception ex)
         {
+            // Intentionally broad: any source-read failure must become a Failed job
+            // result rather than crash the worker; the full exception is logged and
+            // only the exception type name reaches the result.
             Log.SourceReadFailed(_logger, job.OperationId, ProcessId, ex);
             return JobExecutionResult.Failed($"{ProcessId} failed reading the source layer: {ex.GetType().Name}.");
         }
@@ -295,18 +298,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return CustomizeRequest(request, inputs);
     }
 
-    private static IDagFeatureSource? ResolveHonuaLayerSource(IServiceProvider services)
-    {
-        foreach (var candidate in services.GetServices<IDagFeatureSource>())
-        {
-            if (string.Equals(candidate.SourceId, HonuaLayerSourceId, StringComparison.Ordinal))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
+    private static IDagFeatureSource? ResolveHonuaLayerSource(IServiceProvider services) =>
+        services.GetServices<IDagFeatureSource>()
+            .FirstOrDefault(candidate => string.Equals(candidate.SourceId, HonuaLayerSourceId, StringComparison.Ordinal));
 
     private static Feature ToNtsFeature(DagSourceFeature sourceFeature, GeoJsonReader reader)
     {

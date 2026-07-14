@@ -35,7 +35,7 @@ public class CogImportEndpointTests : IAsyncLifetime
     public async Task ImportCog_WithEmptyFile_Returns400()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var emptyFile = new ByteArrayContent(Array.Empty<byte>());
         emptyFile.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -59,7 +59,7 @@ public class CogImportEndpointTests : IAsyncLifetime
     public async Task ImportCog_WithInvalidTiffHeader_Returns400()
     {
         // Arrange — a file that claims to be COG but has no TIFF magic bytes
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var badBytes = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
         var fileContent = new ByteArrayContent(badBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -84,7 +84,7 @@ public class CogImportEndpointTests : IAsyncLifetime
     public async Task ImportCog_WithValidTiffHeader_AcceptsFormat()
     {
         // Arrange — minimal valid TIFF header (little-endian, classic TIFF magic)
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var tiffBytes = CreateMinimalGeoTiffBytes();
         var fileContent = new ByteArrayContent(tiffBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -112,7 +112,7 @@ public class CogImportEndpointTests : IAsyncLifetime
     public async Task ImportCog_WithBigTiffHeader_AcceptsFormat()
     {
         // Arrange — BigTIFF header (little-endian, BigTIFF magic 43)
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var bigTiffBytes = CreateMinimalBigTiffBytes();
         var fileContent = new ByteArrayContent(bigTiffBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")

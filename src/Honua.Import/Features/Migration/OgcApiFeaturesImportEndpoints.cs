@@ -23,7 +23,7 @@ namespace Honua.Migration;
 /// once an operator confirms an inventory artifact, they invoke this endpoint to materialize a
 /// single collection into the catalog target.
 /// </summary>
-internal static class OgcApiFeaturesImportEndpoints
+internal static partial class OgcApiFeaturesImportEndpoints
 {
     /// <summary>
     /// Maps OGC API Features collection import endpoints.
@@ -56,8 +56,9 @@ internal static class OgcApiFeaturesImportEndpoints
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
             return;
         }
@@ -177,6 +178,18 @@ internal static class OgcApiFeaturesImportEndpoints
             ImportJsonContext.Default.OgcApiFeaturesImportResult,
             contentType: null,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static ILogger<OgcApiFeaturesImportEndpointsLog> GetLogger(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILogger<OgcApiFeaturesImportEndpointsLog>>();
+
+    /// <summary>Log category marker for OGC API Features import endpoint operations.</summary>
+    internal sealed class OgcApiFeaturesImportEndpointsLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(8140, LogLevel.Warning, "Failed to deserialize OGC API Features import request")]
+        public static partial void RequestDeserializationFailed(ILogger logger, Exception exception);
     }
 }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -384,15 +385,8 @@ internal sealed class AzureManagementContainerAppsRevisionClient(IHttpClientFact
             var active = entry.TryGetProperty("properties", out var props) &&
                          props.TryGetProperty("active", out var a) && a.GetBoolean();
 
-            var weight = 0;
-            foreach (var tw in trafficWeights)
-            {
-                if (string.Equals(tw.RevisionName, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    weight = tw.Weight;
-                    break;
-                }
-            }
+            var weight = trafficWeights.FirstOrDefault(
+                tw => string.Equals(tw.RevisionName, name, StringComparison.OrdinalIgnoreCase))?.Weight ?? 0;
 
             revisions.Add(new AzureContainerAppsRevisionSummary
             {

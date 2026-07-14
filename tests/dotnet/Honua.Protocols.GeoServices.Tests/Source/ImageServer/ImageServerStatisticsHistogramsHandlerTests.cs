@@ -86,9 +86,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, EmptyValues(), CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<ComputeStatisticsHistogramsResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Statistics.Should().HaveCount(1);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>().Which;
+        jsonResult.Value!.Statistics.Should().HaveCount(1);
         jsonResult.Value.Statistics[0].Min.Should().Be(0);
         jsonResult.Value.Statistics[0].Max.Should().Be(255);
         jsonResult.Value.Statistics[0].Mean.Should().Be(128);
@@ -118,9 +117,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, EmptyValues(), CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<ComputeStatisticsHistogramsResponse>;
-        jsonResult.Should().NotBeNull();
-        jsonResult!.Value!.Statistics[0].Min.Should().Be(0);
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>().Which;
+        jsonResult.Value!.Statistics[0].Min.Should().Be(0);
         jsonResult.Value.Statistics[0].Max.Should().Be(0);
         jsonResult.Value.Statistics[0].Mean.Should().Be(0);
         jsonResult.Value.Statistics[0].StandardDeviation.Should().Be(0);
@@ -391,9 +389,8 @@ public class ImageServerStatisticsHistogramsHandlerTests
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
-        var jsonResult = result as JsonHttpResult<ComputeStatisticsHistogramsResponse>;
-        jsonResult.Should().NotBeNull();
-        var response = jsonResult!.Value!;
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>().Which;
+        var response = jsonResult.Value!;
 
         response.Statistics.Should().HaveCount(2);
         response.Histograms.Should().HaveCount(2);

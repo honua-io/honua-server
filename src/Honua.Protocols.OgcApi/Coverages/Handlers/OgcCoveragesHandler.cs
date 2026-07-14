@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -354,18 +355,13 @@ internal sealed class OgcCoveragesHandler
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            OgcCoverageCollection collection;
-            if (resolution.ZarrRegistration is { } zarrCollection)
-            {
-                collection = Services.ZarrCoverageService.CreateCollection(
+            var collection = resolution.ZarrRegistration is { } zarrCollection
+                ? Services.ZarrCoverageService.CreateCollection(
                     resolution.Resource!,
                     resolution.StorageLayerId!.Value,
                     zarrCollection,
-                    baseUrl);
-            }
-            else
-            {
-                collection = await CreateCollectionAsync(
+                    baseUrl)
+                : await CreateCollectionAsync(
                         resolution.Resource!,
                         resolution.Service,
                         resolution.StorageLayerId!.Value,
@@ -373,7 +369,6 @@ internal sealed class OgcCoveragesHandler
                         baseUrl,
                         cancellationToken)
                     .ConfigureAwait(false);
-            }
 
             return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
@@ -519,7 +514,7 @@ internal sealed class OgcCoveragesHandler
 
             var scalingResult = await TryApplyScalingAsync(
                     context,
-                    resolution.Raster.Value,
+                    resolution.Raster!.Value,
                     supportedCrs,
                     storageSrid,
                     rasterQuery,
@@ -538,11 +533,11 @@ internal sealed class OgcCoveragesHandler
                 .WithTag("honua.coverage.id", collectionId)
                 .WithTag("honua.output.format", negotiatedFormat.ContentType)
                 .WithTag("honua.coverage.bbox", rasterQuery.ClipRegion.HasValue)
-                .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster.Value.BandCount);
+                .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster!.Value.BandCount);
 
             var result = await _rasterStore.ExportImageAsync(
-                    resolution.StorageLayerId.Value,
-                    resolution.Raster.Value.Id,
+                    resolution.StorageLayerId!.Value,
+                    resolution.Raster!.Value.Id,
                     rasterQuery,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -915,12 +910,10 @@ internal sealed class OgcCoveragesHandler
 
     private static string? ValidateCoverageQueryParameters(HttpContext context)
     {
-        foreach (var parameter in context.Request.Query.Keys)
+        var unsupportedParameter = context.Request.Query.Keys.FirstOrDefault(parameter => !CoverageQueryParameters.Contains(parameter));
+        if (unsupportedParameter is not null)
         {
-            if (!CoverageQueryParameters.Contains(parameter))
-            {
-                return $"Unsupported coverage parameter '{parameter}'.";
-            }
+            return $"Unsupported coverage parameter '{unsupportedParameter}'.";
         }
 
         if (context.Request.Query.ContainsKey("datetime"))

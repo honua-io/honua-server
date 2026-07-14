@@ -60,7 +60,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithEmptyFile_Returns400()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var emptyFile = new ByteArrayContent(Array.Empty<byte>());
         emptyFile.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -72,7 +72,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("test-raster"), "name");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -83,7 +83,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithMissingLayerId_Returns400()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = CreateMinimalGeoTiffBytes();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -95,7 +95,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("test-raster"), "name");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -108,7 +108,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithMissingName_Returns400()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = CreateMinimalGeoTiffBytes();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -120,7 +120,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("1"), "layerId");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -133,7 +133,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithUnsupportedFormat_Returns400()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = new byte[] { 0x01, 0x02, 0x03, 0x04 };
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -146,7 +146,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("test-raster"), "name");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -159,7 +159,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithInvalidTiffHeader_Returns400()
     {
         // Arrange: file with .tif extension but invalid header
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -172,7 +172,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("test-raster"), "name");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -186,12 +186,12 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithNoFile_Returns400()
     {
         // Arrange: multipart with only form fields, no file
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         content.Add(new StringContent("1"), "layerId");
         content.Add(new StringContent("test-raster"), "name");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -204,7 +204,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_PngWithoutWorldFile_Returns400()
     {
         // Arrange: PNG without world file (no SRID either)
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var pngBytes = CreateMinimalPngBytes();
         var fileContent = new ByteArrayContent(pngBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -217,7 +217,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("test-raster"), "name");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -232,7 +232,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     {
         // Arrange: PNG with explicit SRID but no world file — SRID alone cannot
         // replace the geotransform, so import must be rejected
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var pngBytes = CreateMinimalPngBytes();
         var fileContent = new ByteArrayContent(pngBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -246,7 +246,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("4326"), "srid");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -260,7 +260,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithInvalidTileZoomLevels_Returns400()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = CreateMinimalGeoTiffBytes();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -274,7 +274,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("abc,xyz"), "tileZoomLevels");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -287,7 +287,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     public async Task ImportRaster_WithOutOfRangeTileZoomLevels_Returns400()
     {
         // Arrange: valid integers but outside 0-24 range
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = CreateMinimalGeoTiffBytes();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -301,7 +301,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("0,5,25"), "tileZoomLevels");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -313,7 +313,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/raster")]
     public async Task ImportRaster_WithInvalidAcquisitionDate_Returns400()
     {
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileBytes = CreateMinimalGeoTiffBytes();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -326,7 +326,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("test-raster"), "name");
         content.Add(new StringContent("definitely-not-a-timestamp"), "acquisitionDate");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/raster", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
@@ -370,7 +370,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            var content = new MultipartFormDataContent();
+            using var content = new MultipartFormDataContent();
             var fileBytes = CreateMinimalGeoTiffBytes();
             var fileContent = new ByteArrayContent(fileBytes);
             fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -383,7 +383,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
             content.Add(new StringContent("test-raster"), "name");
             content.Add(new StringContent(expectedAcquisitionDate.ToString("O")), "acquisitionDate");
 
-            var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
+            using var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             capturedRequest.Should().NotBeNull();
@@ -415,7 +415,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            var content = new MultipartFormDataContent();
+            using var content = new MultipartFormDataContent();
             var fileBytes = CreateMinimalGeoTiffBytes();
             var fileContent = new ByteArrayContent(fileBytes);
             fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -427,7 +427,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
             content.Add(new StringContent("1"), "layerId");
             content.Add(new StringContent("test-raster"), "name");
 
-            var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
+            using var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             var body = await response.Content.ReadAsStringAsync();
@@ -507,9 +507,9 @@ public class RasterImportEndpointTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            var body = new StringContent(
+            using var body = new StringContent(
                 """{"name":"renamed"}""", System.Text.Encoding.UTF8, "application/json");
-            var response = await fixture.Client.PatchAsync("/api/v1/admin/import/raster/42", body);
+            using var response = await fixture.Client.PatchAsync("/api/v1/admin/import/raster/42", body);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             (await response.Content.ReadAsStringAsync()).Should().Contain("renamed");
@@ -531,8 +531,8 @@ public class RasterImportEndpointTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
-            var response = await fixture.Client.PatchAsync("/api/v1/admin/import/raster/42", body);
+            using var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            using var response = await fixture.Client.PatchAsync("/api/v1/admin/import/raster/42", body);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }

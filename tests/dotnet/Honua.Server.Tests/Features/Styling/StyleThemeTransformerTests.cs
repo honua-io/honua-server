@@ -1098,12 +1098,10 @@ public class StyleThemeTransformerTests
 
     private static JsonElement FindLayer(JsonElement root, string layerType)
     {
-        foreach (var layer in root.GetProperty("layers").EnumerateArray())
+        foreach (var layer in root.GetProperty("layers").EnumerateArray()
+            .Where(layer => layer.GetProperty("type").GetString() == layerType))
         {
-            if (layer.GetProperty("type").GetString() == layerType)
-            {
-                return layer;
-            }
+            return layer;
         }
         throw new Xunit.Sdk.XunitException($"No layer of type '{layerType}' found.");
     }

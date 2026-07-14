@@ -5,7 +5,7 @@
  * collection tilesets listing, and tileset metadata introspection.
  */
 
-import { config, ogcTilesUrl, discoverCollectionId } from '../shared/config.js';
+import { ogcTilesUrl, discoverCollectionId } from '../shared/config.js';
 import { EvidenceCollector } from '../shared/evidence.js';
 
 const evidence = new EvidenceCollector('mvt');

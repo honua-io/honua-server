@@ -29,6 +29,8 @@ public static class RepositoryPaths
             return root;
         }
 
+        // segments are always relative path fragments supplied by call sites (e.g.
+        // "tests", "seed", "server.yaml"), never rooted, so root can't be dropped here.
         var parts = new string[segments.Length + 1];
         parts[0] = root;
         Array.Copy(segments, 0, parts, 1, segments.Length);
@@ -37,6 +39,8 @@ public static class RepositoryPaths
 
     private static string? FindRepositoryRoot()
     {
+        // "Honua.sln" is a fixed literal marker filename, never rooted, so
+        // directory.FullName can't be dropped here.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
         {

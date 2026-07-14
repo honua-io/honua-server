@@ -367,6 +367,9 @@ internal static partial class RedshiftFeatureQueryBuilder
         }
 
         var rendered = new List<string>(expressions.Count);
+        // Not rewritten as .Select(): each iteration is a multi-branch parser that can
+        // throw, mutate the shared `parameters` accumulator, and `continue` early per
+        // branch -- not a pure map of one iteration variable to another.
         foreach (var raw in expressions)
         {
             var trimmed = raw.Trim();

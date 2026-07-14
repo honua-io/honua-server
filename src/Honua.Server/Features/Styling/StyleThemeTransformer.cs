@@ -123,14 +123,7 @@ internal static class StyleThemeTransformer
     private static void ApplyColorblindSafeTheme(JsonArray layers, ThemeDiagnostics diagnostics)
     {
         var palette = ColorPalettes.Viridis.Colors;
-        var maxClasses = 0;
-        foreach (var key in palette.Keys)
-        {
-            if (key > maxClasses)
-            {
-                maxClasses = key;
-            }
-        }
+        var maxClasses = palette.Keys.Aggregate(0, (max, key) => key > max ? key : max);
 
         var paletteColors = palette[maxClasses];
         // Memoize palette assignment by full input RGBA within one ApplyTheme call so
@@ -154,15 +147,9 @@ internal static class StyleThemeTransformer
                 }
 
                 var paletteHex = paletteColors[assignments.Count % paletteColors.Length];
-                StyleColor resolved;
-                if (StyleJsonUtilities.TryParseMapLibreColor(paletteHex, out var swap))
-                {
-                    resolved = new StyleColor(swap.R, swap.G, swap.B, color.A);
-                }
-                else
-                {
-                    resolved = new StyleColor(0, 0, 0, color.A);
-                }
+                var resolved = StyleJsonUtilities.TryParseMapLibreColor(paletteHex, out var swap)
+                    ? new StyleColor(swap.R, swap.G, swap.B, color.A)
+                    : new StyleColor(0, 0, 0, color.A);
 
                 assignments[color] = resolved;
                 return resolved;
@@ -183,17 +170,14 @@ internal static class StyleThemeTransformer
 
             if (layerObject["paint"] is JsonObject paint)
             {
-                foreach (var opacityProperty in OpacityPaintProperties)
+                // Force every present opacity property to 1.0 regardless of
+                // whether the stored value is a scalar or an expression: the
+                // print contract is "fully opaque", and the normalizer accepts
+                // expression-typed opacity values that would otherwise survive
+                // unchanged here.
+                foreach (var opacityProperty in OpacityPaintProperties.Where(paint.ContainsKey))
                 {
-                    // Force every present opacity property to 1.0 regardless of
-                    // whether the stored value is a scalar or an expression: the
-                    // print contract is "fully opaque", and the normalizer accepts
-                    // expression-typed opacity values that would otherwise survive
-                    // unchanged here.
-                    if (paint.ContainsKey(opacityProperty))
-                    {
-                        paint[opacityProperty] = 1d;
-                    }
+                    paint[opacityProperty] = 1d;
                 }
 
                 // Force every present line-color on line layers to PrintLineColor

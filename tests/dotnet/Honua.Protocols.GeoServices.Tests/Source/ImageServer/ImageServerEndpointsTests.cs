@@ -143,7 +143,7 @@ public class ImageServerEndpointsTests
                     var vector = new double[requestedBands.Length];
                     for (var b = 0; b < requestedBands.Length; b++)
                     {
-                        vector[b] = value * (b + 1);
+                        vector[b] = (double)value * (b + 1);
                     }
 
                     pixels.Add(vector);
@@ -950,7 +950,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("returnGeometry", "false"),
@@ -1083,14 +1083,15 @@ public class ImageServerEndpointsTests
                 ImageServerJsonContext.Default.ImageServerFindResponse);
             AssertFindResponse(find);
 
+            using var findContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("toGeometry", targetGeometry),
+                new KeyValuePair<string, string>("maxCount", "1"),
+            ]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/find",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("toGeometry", targetGeometry),
-                    new KeyValuePair<string, string>("maxCount", "1"),
-                ]));
+                findContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             find = JsonSerializer.Deserialize(
@@ -1108,14 +1109,15 @@ public class ImageServerEndpointsTests
                 ImageServerJsonContext.Default.ImageServerFindResponse);
             AssertFindResponse(find);
 
+            using var serviceFindContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("toGeometry", targetGeometry),
+                new KeyValuePair<string, string>("objectIds", "[100]"),
+            ]);
             var servicePostResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{serviceId}/ImageServer/find",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("toGeometry", targetGeometry),
-                    new KeyValuePair<string, string>("objectIds", "[100]"),
-                ]));
+                serviceFindContent);
 
             servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             find = JsonSerializer.Deserialize(
@@ -1217,18 +1219,19 @@ public class ImageServerEndpointsTests
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertDistanceMeasure(await getResponse.Content.ReadAsStringAsync());
 
+            using var measureContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+                new KeyValuePair<string, string>("toGeometry", toGeometry),
+                new KeyValuePair<string, string>("linearUnit", "esriMeters"),
+                new KeyValuePair<string, string>("angularUnit", "esriDUDecimalDegrees"),
+            ]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/measure",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
-                    new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
-                    new KeyValuePair<string, string>("fromGeometry", fromGeometry),
-                    new KeyValuePair<string, string>("toGeometry", toGeometry),
-                    new KeyValuePair<string, string>("linearUnit", "esriMeters"),
-                    new KeyValuePair<string, string>("angularUnit", "esriDUDecimalDegrees"),
-                ]));
+                measureContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertDistanceMeasure(await postResponse.Content.ReadAsStringAsync());
@@ -1240,16 +1243,17 @@ public class ImageServerEndpointsTests
             serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertDistanceMeasure(await serviceGetResponse.Content.ReadAsStringAsync());
 
+            using var serviceMeasureContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+                new KeyValuePair<string, string>("toGeometry", toGeometry),
+            ]);
             var servicePostResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{serviceId}/ImageServer/measure",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("measureOperation", "esriMensurationDistanceAndAngle"),
-                    new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
-                    new KeyValuePair<string, string>("fromGeometry", fromGeometry),
-                    new KeyValuePair<string, string>("toGeometry", toGeometry),
-                ]));
+                serviceMeasureContent);
 
             servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertDistanceMeasure(await servicePostResponse.Content.ReadAsStringAsync());
@@ -1701,7 +1705,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
@@ -1756,7 +1760,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
@@ -1830,7 +1834,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
@@ -1891,9 +1895,10 @@ public class ImageServerEndpointsTests
             cacheInfo.GetProperty("extent").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
             cacheInfo.TryGetProperty("tileInfo", out _).Should().BeFalse();
 
+            using var cacheInfoContent = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computeCacheInfo",
-                new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+                cacheInfoContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
@@ -1927,13 +1932,14 @@ public class ImageServerEndpointsTests
             point.GetProperty("x").GetDouble().Should().BeApproximately(128, 0.0001);
             point.GetProperty("y").GetDouble().Should().BeApproximately(128, 0.0001);
 
+            using var pixelLocationContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("geometries", geometries),
+            ]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/computePixelLocation",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("geometries", geometries),
-                ]));
+                pixelLocationContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
@@ -1967,9 +1973,10 @@ public class ImageServerEndpointsTests
             json.RootElement.GetProperty("shape").GetProperty("rings")[0].GetArrayLength().Should().Be(5);
             json.RootElement.GetProperty("area").GetDouble().Should().BeGreaterThan(0);
 
+            using var boundaryContent = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/queryBoundary",
-                new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]));
+                boundaryContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             var postJson = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
@@ -2001,15 +2008,16 @@ public class ImageServerEndpointsTests
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertProjectedOrigin(await getResponse.Content.ReadAsStringAsync());
 
+            using var projectContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("inSR", "4326"),
+                new KeyValuePair<string, string>("outSR", "3857"),
+                new KeyValuePair<string, string>("geometries", geometries),
+            ]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/project",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("inSR", "4326"),
-                    new KeyValuePair<string, string>("outSR", "3857"),
-                    new KeyValuePair<string, string>("geometries", geometries),
-                ]));
+                projectContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertProjectedOrigin(await postResponse.Content.ReadAsStringAsync());
@@ -2021,15 +2029,16 @@ public class ImageServerEndpointsTests
             serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertProjectedOrigin(await serviceGetResponse.Content.ReadAsStringAsync());
 
+            using var serviceProjectContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("inSR", "4326"),
+                new KeyValuePair<string, string>("outSR", "3857"),
+                new KeyValuePair<string, string>("geometries", geometries),
+            ]);
             var servicePostResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{serviceId}/ImageServer/project",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("inSR", "4326"),
-                    new KeyValuePair<string, string>("outSR", "3857"),
-                    new KeyValuePair<string, string>("geometries", geometries),
-                ]));
+                serviceProjectContent);
 
             servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             AssertProjectedOrigin(await servicePostResponse.Content.ReadAsStringAsync());
@@ -2064,16 +2073,17 @@ public class ImageServerEndpointsTests
             geometry.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 0.01);
             geometry.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 0.01);
 
+            using var datumProjectContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("inSR", "4269"),
+                new KeyValuePair<string, string>("outSR", "4326"),
+                new KeyValuePair<string, string>("datumTransformation", "108001"),
+                new KeyValuePair<string, string>("geometries", geometries),
+            ]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/project",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("inSR", "4269"),
-                    new KeyValuePair<string, string>("outSR", "4326"),
-                    new KeyValuePair<string, string>("datumTransformation", "108001"),
-                    new KeyValuePair<string, string>("geometries", geometries),
-                ]));
+                datumProjectContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
@@ -2201,15 +2211,16 @@ public class ImageServerEndpointsTests
                 ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
             AssertExportTilesEstimate(estimate);
 
+            using var estimateContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("levels", "0"),
+                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                new KeyValuePair<string, string>("maxTiles", "1"),
+            ]);
             var postResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/estimateExportTilesSize",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("levels", "0"),
-                    new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                    new KeyValuePair<string, string>("maxTiles", "1"),
-                ]));
+                estimateContent);
 
             postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             estimate = JsonSerializer.Deserialize(
@@ -2227,15 +2238,16 @@ public class ImageServerEndpointsTests
                 ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
             AssertExportTilesEstimate(estimate);
 
+            using var serviceEstimateContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("levels", "0"),
+                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                new KeyValuePair<string, string>("maxTiles", "1"),
+            ]);
             var servicePostResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{serviceId}/ImageServer/estimateExportTilesSize",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("levels", "0"),
-                    new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                    new KeyValuePair<string, string>("maxTiles", "1"),
-                ]));
+                serviceEstimateContent);
 
             servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             estimate = JsonSerializer.Deserialize(
@@ -2273,15 +2285,16 @@ public class ImageServerEndpointsTests
             uploadedFileIds.Add(export!.ArchiveFileId!);
 
             var serviceId = WebAppFixture.TestServiceId;
+            using var exportTilesContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("levels", "0"),
+                new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
+                new KeyValuePair<string, string>("maxTiles", "1"),
+            ]);
             var servicePostResponse = await fixture.Client.PostAsync(
                 $"/rest/services/{serviceId}/ImageServer/exportTiles",
-                new FormUrlEncodedContent(
-                [
-                    new KeyValuePair<string, string>("f", "json"),
-                    new KeyValuePair<string, string>("levels", "0"),
-                    new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-                    new KeyValuePair<string, string>("maxTiles", "1"),
-                ]));
+                exportTilesContent);
 
             servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             export = JsonSerializer.Deserialize(
@@ -2421,7 +2434,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 3));
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
             });
@@ -2536,7 +2549,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
             });
@@ -2567,7 +2580,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>(
@@ -2676,7 +2689,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
                 new KeyValuePair<string, string>("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}},{"id":2,"name":"land","geometry":{"rings":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}}]}"""),
@@ -2777,7 +2790,7 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
         {
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
             });
@@ -2838,7 +2851,7 @@ public class ImageServerEndpointsTests
             var getJson = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
             getJson.RootElement.GetProperty("slices").GetArrayLength().Should().Be(0);
 
-            var content = new FormUrlEncodedContent(new[]
+            using var content = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string, string>("f", "json"),
             });

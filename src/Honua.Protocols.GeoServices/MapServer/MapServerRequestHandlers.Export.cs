@@ -999,13 +999,11 @@ internal static partial class MapServerEndpoints
                 var mapLayerId = resolvedSource.MapLayerId;
 
                 string? definitionExpression = null;
-                if (element.TryGetProperty("definitionExpression", out var definitionElement))
+                if (element.TryGetProperty("definitionExpression", out var definitionElement) &&
+                    !TryReadJsonStringOrNumber(definitionElement, out definitionExpression))
                 {
-                    if (!TryReadJsonStringOrNumber(definitionElement, out definitionExpression))
-                    {
-                        error = $"dynamicLayers entry '{id}' has an invalid definitionExpression.";
-                        return false;
-                    }
+                    error = $"dynamicLayers entry '{id}' has an invalid definitionExpression.";
+                    return false;
                 }
 
                 JsonElement? layerDefinitionElement = null;
@@ -1017,13 +1015,11 @@ internal static partial class MapServerEndpoints
 
                 if (definitionExpression == null &&
                     layerDefinitionElement is { } layerDefinition &&
-                    layerDefinition.TryGetProperty("definitionExpression", out var nestedDefinition))
+                    layerDefinition.TryGetProperty("definitionExpression", out var nestedDefinition) &&
+                    !TryReadJsonStringOrNumber(nestedDefinition, out definitionExpression))
                 {
-                    if (!TryReadJsonStringOrNumber(nestedDefinition, out definitionExpression))
-                    {
-                        error = $"dynamicLayers entry '{id}' has an invalid layerDefinition.definitionExpression.";
-                        return false;
-                    }
+                    error = $"dynamicLayers entry '{id}' has an invalid layerDefinition.definitionExpression.";
+                    return false;
                 }
 
                 string? drawingInfoJson = null;
@@ -1203,15 +1199,13 @@ internal static partial class MapServerEndpoints
             // joinTable sources must also satisfy the right (secondary) layer's access policy: even
             // though export renders only the left geometry, gating both sides keeps the join's
             // authorization model identical across export/identify/metadata.
-            if (dynamicLayer.Join is { } exportJoin)
+            if (dynamicLayer.Join is { } exportJoin &&
+                (!layerLookup.TryGetValue(exportJoin.RightMapLayerId, out var rightLayer) ||
+                 !AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service)))
             {
-                if (!layerLookup.TryGetValue(exportJoin.RightMapLayerId, out var rightLayer) ||
-                    !AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service))
-                {
-                    return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "layers parameter references an invalid or inaccessible layer."));
-                }
+                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
             }
 
             renderLayers.Add(new ExportRenderLayer(
@@ -1353,12 +1347,12 @@ internal static partial class MapServerEndpoints
             start = null;
         }
 
-        if (options?.TimeOffset.HasValue == true)
+        if (options?.TimeOffset is { } timeOffset)
         {
             if (!TryApplyTimeOffset(
                     start,
                     end,
-                    options.TimeOffset.Value,
+                    timeOffset,
                     options.TimeOffsetUnits,
                     out var adjustedStart,
                     out var adjustedEnd,
@@ -1746,15 +1740,7 @@ internal static partial class MapServerEndpoints
             spec = spec["exclude:".Length..];
         }
 
-        foreach (var token in spec.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return spec.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
     }
 
     private static bool HasNonIntegerExportLayerToken(string? layersParam)
@@ -1782,21 +1768,10 @@ internal static partial class MapServerEndpoints
             spec = spec["exclude:".Length..];
         }
 
-        foreach (var token in spec.Split(',', StringSplitOptions.None))
-        {
-            var trimmed = token.Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return spec.Split(',', StringSplitOptions.None)
+            .Select(token => token.Trim())
+            .Where(trimmed => trimmed.Length > 0)
+            .Any(trimmed => !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
     }
 
     private static int ResolveExportServiceSrid(

@@ -9,6 +9,13 @@ namespace Honua.Infrastructure.Helpers;
 
 internal static class ContentNegotiationHelpers
 {
+    /// <summary>
+    /// Tolerance used in place of exact floating-point equality when comparing
+    /// Accept-header "q" quality values, which are parsed from decimal text and
+    /// should not be compared with exact double equality.
+    /// </summary>
+    private const double QualityEpsilon = 1e-9;
+
     public static bool TrySelectBestMediaType(
         IReadOnlyList<string> supportedMediaTypes,
         StringValues acceptHeader,
@@ -266,7 +273,7 @@ internal static class ContentNegotiationHelpers
     {
         public bool IsPreferredCandidateTo(AcceptSelection other)
         {
-            if (Quality != other.Quality)
+            if (Math.Abs(Quality - other.Quality) > QualityEpsilon)
             {
                 return Quality > other.Quality;
             }
@@ -291,7 +298,7 @@ internal static class ContentNegotiationHelpers
                 return Specificity > other.Specificity;
             }
 
-            if (Quality != other.Quality)
+            if (Math.Abs(Quality - other.Quality) > QualityEpsilon)
             {
                 return Quality > other.Quality;
             }

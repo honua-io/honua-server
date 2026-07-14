@@ -29,15 +29,8 @@ internal static class BatchComputeBackendExtensions
             return null;
         }
 
-        foreach (var backend in backends)
-        {
-            if (string.Equals(backend.BackendName, backendName, StringComparison.Ordinal) &&
-                backend.TargetKind == targetKind)
-            {
-                return backend;
-            }
-        }
-
-        return null;
+        return backends.FirstOrDefault(backend =>
+            string.Equals(backend.BackendName, backendName, StringComparison.Ordinal) &&
+            backend.TargetKind == targetKind);
     }
 }

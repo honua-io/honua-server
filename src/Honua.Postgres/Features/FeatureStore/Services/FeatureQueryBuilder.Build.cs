@@ -124,7 +124,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             if (query.Offset.HasValue)
             {
-                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex}");
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -500,7 +500,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
-            var paramIndex = 1;
             var parameters = new List<object>();
             var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
             var geometryForTile = geometryOperand;
@@ -540,7 +539,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             parameters.Add(bufferMapUnits);
             parameters.Add(tileExtent);
             parameters.Add(tileOptions.TileBuffer);
-            paramIndex = 8;
+            var paramIndex = 8;
 
             var tileEnvelopeForFilter = tileEnvelopeWithBuffer;
             if (query.HasValue && query.Value.SpatialReferenceSrid.HasValue)
@@ -597,7 +596,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             if (tileLimits.MaxFeaturesPerTile > 0)
             {
-                var limitParam = $"${paramIndex++}";
+                var limitParam = $"${paramIndex}";
                 parameters.Add(tileLimits.MaxFeaturesPerTile);
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }
@@ -640,7 +639,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var sql = _stringBuilderPool.Get();
         try
         {
-            var paramIndex = 1;
             var parameters = new List<object>();
             var geometryOperand = _geometryProcessor.GetGeometryOperand(geometryStorageType, "f.geometry", query?.SpatialReferenceSrid);
 
@@ -660,7 +658,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             parameters.Add(bufferMapUnits);
             parameters.Add(tileExtent);
             parameters.Add(tileOptions.TileBuffer);
-            paramIndex = 5;
+            var paramIndex = 5;
 
             // The buffered tile envelope, expressed in the gridset CRS.
             var tileEnvelopeWithBuffer = $"ST_Expand({tileEnvelope}, $2)";
@@ -715,7 +713,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             if (tileLimits.MaxFeaturesPerTile > 0)
             {
-                var limitParam = $"${paramIndex++}";
+                var limitParam = $"${paramIndex}";
                 parameters.Add(tileLimits.MaxFeaturesPerTile);
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT {limitParam}");
             }

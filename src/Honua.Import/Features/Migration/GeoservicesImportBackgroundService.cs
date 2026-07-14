@@ -240,14 +240,13 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             if (Volatile.Read(ref leadershipLost) != 0)
             {
                 acknowledgeCompletion = false;
-                var currentProgress = progressController.CurrentProgress;
-                var resumableProgress = (currentProgress ?? GeoservicesImportProgress.CreateInitial(
+                // CurrentProgress is only null on the fallback branch below, so there is no
+                // prior progress to carry forward here; CreateInitial uses its own defaults.
+                var resumableProgress = (progressController.CurrentProgress ?? GeoservicesImportProgress.CreateInitial(
                     jobId,
                     request?.ServiceUrl ?? string.Empty,
                     request?.LayerId ?? 0,
-                    request?.TableName ?? string.Empty,
-                    currentProgress?.SourceLayerName,
-                    currentProgress?.EstimatedTotalFeatures)) with
+                    request?.TableName ?? string.Empty)) with
                 {
                     Status = GeoservicesImportStatus.Queued,
                     CompletedAt = null,
@@ -285,14 +284,13 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             if (Volatile.Read(ref leadershipLost) != 0)
             {
                 acknowledgeCompletion = false;
-                var currentProgress = progressController.CurrentProgress;
-                var resumableProgress = (currentProgress ?? GeoservicesImportProgress.CreateInitial(
+                // CurrentProgress is only null on the fallback branch below, so there is no
+                // prior progress to carry forward here; CreateInitial uses its own defaults.
+                var resumableProgress = (progressController.CurrentProgress ?? GeoservicesImportProgress.CreateInitial(
                     jobId,
                     request?.ServiceUrl ?? string.Empty,
                     request?.LayerId ?? 0,
-                    request?.TableName ?? string.Empty,
-                    currentProgress?.SourceLayerName,
-                    currentProgress?.EstimatedTotalFeatures)) with
+                    request?.TableName ?? string.Empty)) with
                 {
                     Status = GeoservicesImportStatus.Queued,
                     CompletedAt = null,

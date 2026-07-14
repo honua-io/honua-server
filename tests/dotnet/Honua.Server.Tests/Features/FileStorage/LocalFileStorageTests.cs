@@ -27,6 +27,8 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
 
     public LocalFileStorageTests()
     {
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk
+        // (the GUID-suffixed second segment can never be an absolute path).
         _testBasePath = Path.Combine(Path.GetTempPath(), $"honua-test-{Guid.NewGuid():N}");
         var options = Options.Create(new LocalStorageOptions
         {
@@ -136,6 +138,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             FileName = "test.txt",
             ContentType = "text/plain",
             SizeBytes = content.Length,
+            // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
             Folder = Path.Combine(Path.GetTempPath(), "honua-absolute")
         };
 
@@ -384,13 +387,14 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
         // Assert
         result.Should().NotBeNull();
         result!.Value.Url.Should().NotBeNullOrEmpty();
-        result.Value.FileId.Should().NotBeNullOrEmpty();
+        result!.Value.FileId.Should().NotBeNullOrEmpty();
     }
 
     [UnitTest]
     public async Task GetPresignedUrlAsync_WithRelativeBasePath_ShouldReturnAbsoluteFileUrl()
     {
         // Arrange
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var relativeBasePath = Path.Combine("tmp", $"honua-relative-{Guid.NewGuid():N}");
         var storage = CreateStorage(relativeBasePath);
 
@@ -424,6 +428,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
     public async Task GetPresignedUploadUrlAsync_WithRelativeBasePath_ShouldReturnAbsoluteFileUrl()
     {
         // Arrange
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var relativeBasePath = Path.Combine("tmp", $"honua-relative-{Guid.NewGuid():N}");
         var storage = CreateStorage(relativeBasePath);
 
@@ -436,7 +441,7 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
             result.Should().NotBeNull();
             Uri.TryCreate(result!.Value.Url, UriKind.Absolute, out var uri).Should().BeTrue();
             uri!.Scheme.Should().Be(Uri.UriSchemeFile);
-            result.Value.FileId.Should().NotBeNullOrWhiteSpace();
+            result!.Value.FileId.Should().NotBeNullOrWhiteSpace();
         }
         finally
         {
@@ -583,9 +588,10 @@ public class LocalFileStorageTests : IAsyncLifetime, IDisposable
                 Directory.Delete(_testBasePath, recursive: true);
             }
         }
-        catch
+        catch (Exception)
         {
-            // Best effort cleanup
+            // Best-effort teardown: swallow any failure deleting the temp directory (e.g. a
+            // handle still open on another thread) so it never fails/masks the test outcome.
         }
 
         _disposed = true;

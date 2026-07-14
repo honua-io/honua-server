@@ -137,19 +137,19 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
 
     private void SweepExpired(DateTimeOffset asOf)
     {
-        foreach (var kvp in _entries)
+        var expiredEntries = _entries.Where(kvp =>
+            kvp.Value.Reference.ExpiresAt is DateTimeOffset expiry && expiry <= asOf);
+
+        foreach (var kvp in expiredEntries)
         {
-            if (kvp.Value.Reference.ExpiresAt is DateTimeOffset expiry && expiry <= asOf)
+            // Conditional TryRemove: atomically removes only when the slot
+            // still holds the exact CacheEntry we observed. Concurrent
+            // writers that replaced the slot with a fresh entry keep it
+            // untouched, because the record equality over a new byte[] and
+            // fresh CachedArtifactRef will not match the captured one.
+            if (_entries.TryRemove(kvp))
             {
-                // Conditional TryRemove: atomically removes only when the slot
-                // still holds the exact CacheEntry we observed. Concurrent
-                // writers that replaced the slot with a fresh entry keep it
-                // untouched, because the record equality over a new byte[] and
-                // fresh CachedArtifactRef will not match the captured one.
-                if (_entries.TryRemove(kvp))
-                {
-                    Interlocked.Add(ref _totalBytes, -kvp.Value.Bytes.LongLength);
-                }
+                Interlocked.Add(ref _totalBytes, -kvp.Value.Bytes.LongLength);
             }
         }
     }

@@ -93,7 +93,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
                 "f": "json"
             }
             """;
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query", content);

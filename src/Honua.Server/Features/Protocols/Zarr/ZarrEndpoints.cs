@@ -102,15 +102,7 @@ internal static class ZarrEndpoints
         }
 
         var registrations = await store.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        ZarrRegistration? servable = null;
-        foreach (var candidate in registrations)
-        {
-            if (candidate.Metadata is not null)
-            {
-                servable = candidate;
-                break;
-            }
-        }
+        var servable = registrations.FirstOrDefault(candidate => candidate.Metadata is not null);
 
         if (servable is null || servable.Metadata is null)
         {
@@ -398,14 +390,7 @@ internal static class ZarrEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (publication.LayerIndex == layerId)
-            {
-                return true;
-            }
-        }
-        return false;
+        return snapshot.Graph.Publications.Any(publication => publication.LayerIndex == layerId);
     }
 
     private static ZarrRegistrationResponse ToResponse(ZarrRegistration registration)

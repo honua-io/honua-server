@@ -95,13 +95,9 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
             var policies = await _policyStore
                 .GetEffectivePoliciesAsync(roles, service, layerName, cancellationToken)
                 .ConfigureAwait(false);
-            foreach (var policy in policies)
-            {
-                if (!string.IsNullOrWhiteSpace(policy.Attribute))
-                {
-                    maskedFields.Add(policy.Attribute.Trim());
-                }
-            }
+            maskedFields.UnionWith(policies
+                .Where(policy => !string.IsNullOrWhiteSpace(policy.Attribute))
+                .Select(policy => policy.Attribute.Trim()));
         }
 
         return maskedFields;
@@ -152,25 +148,16 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
     private static List<string> EnumeratePrincipalRoles(ClaimsPrincipal principal, RbacOptions options)
     {
         var roles = new List<string>();
-
-        foreach (var claim in principal.FindAll(ClaimTypes.Role))
-        {
-            if (!string.IsNullOrWhiteSpace(claim.Value))
-            {
-                roles.Add(claim.Value);
-            }
-        }
+        roles.AddRange(principal.FindAll(ClaimTypes.Role)
+            .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
+            .Select(claim => claim.Value));
 
         var roleClaimType = options.EffectiveRoleClaimType;
         if (!string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var claim in principal.FindAll(roleClaimType))
-            {
-                if (!string.IsNullOrWhiteSpace(claim.Value))
-                {
-                    roles.Add(claim.Value);
-                }
-            }
+            roles.AddRange(principal.FindAll(roleClaimType)
+                .Where(claim => !string.IsNullOrWhiteSpace(claim.Value))
+                .Select(claim => claim.Value));
         }
 
         return roles;

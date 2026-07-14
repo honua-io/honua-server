@@ -124,14 +124,9 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                     continue;
                 }
 
-                foreach (var method in httpMethods)
-                {
-                    var key = $"{method.ToUpperInvariant()} {NormalizePath(pattern)}";
-                    if (!IsExcluded(key))
-                    {
-                        deployedEndpoints.Add(key);
-                    }
-                }
+                deployedEndpoints.UnionWith(httpMethods
+                    .Select(method => $"{method.ToUpperInvariant()} {NormalizePath(pattern)}")
+                    .Where(key => !IsExcluded(key)));
             }
         }
 
@@ -411,6 +406,9 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     private static IEnumerable<TestSourceBlock> EnumerateIntegrationTestMethodBodies(IEnumerable<string> sourceFiles)
     {
+        // Not a straightforward .Select(...) candidate: this is a yield-return iterator with a
+        // nested scan loop and mutable cursor state (methodStart/methodEnd/index) per source file,
+        // not a simple per-element map.
         foreach (var sourceFile in sourceFiles)
         {
             var lines = File.ReadAllLines(sourceFile);
@@ -542,11 +540,15 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     private static string FindServerTestSourceRoot()
     {
+        // Not a missed-select: this walks up the directory tree per start path and returns early
+        // on the first match, it does not map each element of the outer sequence to an output.
         foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
         {
             var directory = new DirectoryInfo(start);
             while (directory is not null)
             {
+                // "tests", "dotnet", "Honua.Server.Tests" are fixed relative literals (never rooted),
+                // so Path.Combine cannot drop directory.FullName here.
                 var candidate = Path.Combine(directory.FullName, "tests", "dotnet", "Honua.Server.Tests");
                 if (Directory.Exists(candidate))
                 {

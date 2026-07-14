@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Linq;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -55,17 +56,8 @@ internal static class OgcFeaturesResponseHelpers
             return loaded;
         }
 
-        var distinctIds = ImmutableArray.CreateBuilder<long>(objectIds.Count);
         var seen = new HashSet<long>();
-        foreach (var objectId in objectIds)
-        {
-            if (seen.Add(objectId))
-            {
-                distinctIds.Add(objectId);
-            }
-        }
-
-        var ids = distinctIds.ToImmutable();
+        var ids = objectIds.Where(seen.Add).ToImmutableArray();
         var storageSrid = resource.ReadSrid() ?? 4326;
         var query = responseCrs.Srid == storageSrid
             ? new FeatureQuery

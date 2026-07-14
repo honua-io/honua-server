@@ -152,6 +152,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = _client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 
@@ -188,6 +190,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = _client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 
@@ -319,6 +323,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = _client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 
@@ -406,6 +412,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = _client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 
@@ -468,6 +476,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = _client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 
@@ -498,6 +508,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = _client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 
@@ -526,6 +538,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
             using var call = client.ApplySpec(request);
             await foreach (var _ in call.ResponseStream.ReadAllAsync())
             {
+                // intentional: draining forces the pre-stream validation
+                // failure to surface as an RpcException from ReadAllAsync.
             }
         };
 

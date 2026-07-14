@@ -68,6 +68,9 @@ internal sealed partial class ODataMetadataService
     public string GenerateMetadataDocumentV2(IEnumerable<MetadataV2Resource> resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
+        // Intentional broad catch: metadata generation must never 500 the $metadata
+        // endpoint; already logged (Log.MetadataFallback) and downgraded to the static
+        // fallback document.
         try
         {
             return GenerateODataMetadataV2(resources.ToArray());
@@ -289,14 +292,13 @@ internal sealed partial class ODataMetadataService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var relationship in relationships)
-        {
-            var name = duplicateNames.Contains(relationship.SanitizedName)
+        foreach (var name in relationships.Select(relationship =>
+            duplicateNames.Contains(relationship.SanitizedName)
                 ? ODataUtilityService.BuildRelationshipMetadataNameForV2(
                     relationship.SanitizedName,
                     relationship.RelationshipId)
-                : relationship.SanitizedName;
-
+                : relationship.SanitizedName))
+        {
             if (!string.IsNullOrWhiteSpace(name))
             {
                 names.Add(name);

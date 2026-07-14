@@ -95,12 +95,10 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         var now = DateTimeOffset.UtcNow;
         if (_sridCache.TryGetValue(srid, out var cached))
         {
-            if (!IsCacheExpired(cached, now))
+            if (!IsCacheExpired(cached, now) &&
+                !string.Equals(cached.Definition.Uri, Crs84Uri, StringComparison.OrdinalIgnoreCase))
             {
-                if (!string.Equals(cached.Definition.Uri, Crs84Uri, StringComparison.OrdinalIgnoreCase))
-                {
-                    return cached.Definition;
-                }
+                return cached.Definition;
             }
 
             _sridCache.TryRemove(srid, out _);

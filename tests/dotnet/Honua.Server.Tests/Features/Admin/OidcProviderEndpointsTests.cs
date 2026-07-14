@@ -113,7 +113,8 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<OidcProviderResponse>>(json, _jsonOptions);
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal("Get Test", result.Data.Name);
     }
 
@@ -201,7 +202,8 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
         var json = await response.Content.ReadAsStringAsync();
         var result = JsonSerializer.Deserialize<ApiResponse<OidcProviderTestResponse>>(json, _jsonOptions);
 
-        Assert.NotNull(result?.Data);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Data);
         Assert.Equal(created.Data.ProviderId, result.Data.ProviderId);
     }
 }

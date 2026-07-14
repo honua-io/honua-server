@@ -102,12 +102,9 @@ public static class Fes20Parser
             throw new Fes20ParseException(ex.Message, ex);
         }
 
-        foreach (var child in element.Elements())
+        foreach (var child in element.Elements().Where(c => c.Name.NamespaceName == FesNamespace))
         {
-            if (child.Name.NamespaceName == FesNamespace)
-            {
-                ValidateExpressionDepth(child, depth + 1);
-            }
+            ValidateExpressionDepth(child, depth + 1);
         }
     }
 
@@ -1257,7 +1254,7 @@ public static class Fes20Parser
             !IsValidCoordinate(maxX) || !IsValidCoordinate(maxY) ||
             minY >= maxY ||
             (!isGeographic && minX >= maxX) ||
-            (isGeographic && minX == maxX))
+            (isGeographic && Math.Abs(minX - maxX) < CoordinateEpsilon))
         {
             throw new Fes20ParseException("Invalid envelope coordinates");
         }
@@ -1269,6 +1266,10 @@ public static class Fes20Parser
             throw new Fes20ParseException("Invalid envelope coordinates");
         }
     }
+
+    // Tolerance for comparing envelope longitude bounds; avoids exact floating-point
+    // equality checks when detecting a degenerate (zero-width) geographic envelope.
+    private const double CoordinateEpsilon = 1e-9;
 
     private static bool IsValidCoordinate(double coordinate)
         => !double.IsNaN(coordinate) &&

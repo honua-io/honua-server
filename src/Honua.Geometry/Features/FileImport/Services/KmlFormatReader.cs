@@ -368,29 +368,32 @@ internal static class KmlFormatReader
 
     private static Coordinate[] ParseCoordinates(string coordsString)
     {
-        var coords = new List<Coordinate>();
         var parts = coordsString.Trim().Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
 
-        foreach (var part in parts)
+        return parts
+            .Select(ParseCoordinateTuple)
+            .Where(coordinate => coordinate != null)
+            .Select(coordinate => coordinate!)
+            .ToArray();
+    }
+
+    private static Coordinate? ParseCoordinateTuple(string part)
+    {
+        var components = part.Split(',');
+        if (components.Length >= 2 &&
+            double.TryParse(components[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
+            double.TryParse(components[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
         {
-            var components = part.Split(',');
-            if (components.Length >= 2 &&
-                double.TryParse(components[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon) &&
-                double.TryParse(components[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
+            if (components.Length >= 3 &&
+                double.TryParse(components[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var altitude))
             {
-                if (components.Length >= 3 &&
-                    double.TryParse(components[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var altitude))
-                {
-                    coords.Add(new CoordinateZ(lon, lat, altitude));
-                }
-                else
-                {
-                    coords.Add(new Coordinate(lon, lat));
-                }
+                return new CoordinateZ(lon, lat, altitude);
             }
+
+            return new Coordinate(lon, lat);
         }
 
-        return coords.ToArray();
+        return null;
     }
 
     private static void AddOrReplaceAttribute(AttributesTable attributes, string name, object? value)

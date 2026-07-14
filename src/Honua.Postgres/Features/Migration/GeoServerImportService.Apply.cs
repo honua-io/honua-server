@@ -220,11 +220,14 @@ internal sealed partial class GeoServerImportService
             if (layerGroupsById.TryGetValue(step.SourceId, out var scopeGroup) &&
                 !IsWorkspaceInScope(filteredResources, scopeGroup.WorkspaceName))
             {
-                Log.WorkspaceWriteRejected(_logger, "layer-group", scopeGroup.WorkspaceName ?? "global");
+                // IsWorkspaceInScope returns true (short-circuiting this branch) whenever
+                // WorkspaceName is null/whitespace, so reaching here guarantees it is set.
+                var rejectedWorkspaceName = scopeGroup.WorkspaceName!;
+                Log.WorkspaceWriteRejected(_logger, "layer-group", rejectedWorkspaceName);
                 return CreateExecutionStepResult(
                     step,
                     "manual-review",
-                    $"Catalog write for layer-group '{step.SourceId}' rejected: source workspace '{scopeGroup.WorkspaceName}' is outside the requested workspace scope (issue #1098).");
+                    $"Catalog write for layer-group '{step.SourceId}' rejected: source workspace '{rejectedWorkspaceName}' is outside the requested workspace scope (issue #1098).");
             }
 
             return await ApplyLayerGroupCatalogStepAsync(
@@ -255,11 +258,14 @@ internal sealed partial class GeoServerImportService
         // workspace is not part of the operator's requested scope.
         if (!IsWorkspaceInScope(filteredResources, layer.WorkspaceName))
         {
-            Log.WorkspaceWriteRejected(_logger, "layer", layer.WorkspaceName ?? "global");
+            // IsWorkspaceInScope returns true (short-circuiting this branch) whenever
+            // WorkspaceName is null/whitespace, so reaching here guarantees it is set.
+            var rejectedWorkspaceName = layer.WorkspaceName!;
+            Log.WorkspaceWriteRejected(_logger, "layer", rejectedWorkspaceName);
             return CreateExecutionStepResult(
                 step,
                 "manual-review",
-                $"Catalog write for layer '{step.SourceId}' rejected: source workspace '{layer.WorkspaceName}' is outside the requested workspace scope (issue #1098).");
+                $"Catalog write for layer '{step.SourceId}' rejected: source workspace '{rejectedWorkspaceName}' is outside the requested workspace scope (issue #1098).");
         }
 
         if (string.IsNullOrWhiteSpace(layer.DataStoreName))
@@ -1143,12 +1149,9 @@ internal sealed partial class GeoServerImportService
             {
                 builder.Append(ch);
             }
-            else if (ch is ' ' or '-' or '_' or '.' or ':' or '/')
+            else if (ch is ' ' or '-' or '_' or '.' or ':' or '/' && builder.Length > 0 && builder[^1] != '-')
             {
-                if (builder.Length > 0 && builder[^1] != '-')
-                {
-                    builder.Append('-');
-                }
+                builder.Append('-');
             }
         }
 
@@ -1270,15 +1273,7 @@ internal sealed partial class GeoServerImportService
             return false;
         }
 
-        foreach (var ch in identifier)
-        {
-            if (!(char.IsAsciiLetterOrDigit(ch) || ch == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return identifier.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_');
     }
 
     private static int? ResolveSrid(string? srs)

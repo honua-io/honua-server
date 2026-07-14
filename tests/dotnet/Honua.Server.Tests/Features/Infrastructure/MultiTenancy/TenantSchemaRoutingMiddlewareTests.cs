@@ -233,12 +233,9 @@ public class TenantSchemaRoutingMiddlewareTests
         app.MapGet("/usage", (ITenantContext tenant, ITenantUsageMeter meter) =>
         {
             var id = tenant.TenantId ?? "<null>";
-            foreach (var snapshot in meter.Snapshot())
+            foreach (var snapshot in meter.Snapshot().Where(s => string.Equals(s.TenantId, id, StringComparison.Ordinal)))
             {
-                if (string.Equals(snapshot.TenantId, id, StringComparison.Ordinal))
-                {
-                    return Results.Text($"{id}={snapshot.RequestCount}");
-                }
+                return Results.Text($"{id}={snapshot.RequestCount}");
             }
 
             return Results.Text($"{id}=0");

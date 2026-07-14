@@ -38,7 +38,8 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 
         if (filter.IsActive.HasValue)
         {
-            query = query.Where(u => u.IsActive == filter.IsActive.Value);
+            var isActive = filter.IsActive.Value;
+            query = query.Where(u => u.IsActive == isActive);
         }
 
         var all = query.ToList();

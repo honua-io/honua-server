@@ -75,16 +75,14 @@ internal static class MetadataReleaseOperationEndpoints
         }
 
         if (operation.Status is WorkflowOperationStatus.Submitted
-            or WorkflowOperationStatus.Reconciling
-            or WorkflowOperationStatus.RollbackRequested)
+                or WorkflowOperationStatus.Reconciling
+                or WorkflowOperationStatus.RollbackRequested
+            && reconciler != null)
         {
-            if (reconciler != null)
-            {
-                await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId, context.RequestAborted)
-                    .ConfigureAwait(false);
-                operation = await workflowStore.GetAsync(operation.OperationId, context.RequestAborted)
-                    .ConfigureAwait(false) ?? operation;
-            }
+            await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId, context.RequestAborted)
+                .ConfigureAwait(false);
+            operation = await workflowStore.GetAsync(operation.OperationId, context.RequestAborted)
+                .ConfigureAwait(false) ?? operation;
         }
 
         return Results.Json(

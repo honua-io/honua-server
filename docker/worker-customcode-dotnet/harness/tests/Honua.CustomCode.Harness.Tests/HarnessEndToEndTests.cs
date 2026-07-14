@@ -14,6 +14,10 @@ namespace Honua.CustomCode.Harness.Tests;
 public sealed class ProbeTool : IGeoprocessingTool
 {
     // Set by the test before the run; the tool records what it observed.
+    // Intentionally static: the harness activates this type via reflection
+    // (EntrypointLoader/Activator.CreateInstance) with a parameterless constructor, so
+    // there is no seam to inject per-test state or read back a per-instance result —
+    // these statics are the only channel between the test and the activated instance.
     public static IDictionary<string, string?>? ObservedEnv;
     public static object? ObservedClient;
     public static bool? TokenPresentAtExecute;

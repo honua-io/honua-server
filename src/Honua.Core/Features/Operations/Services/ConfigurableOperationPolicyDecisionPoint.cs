@@ -47,12 +47,10 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
             return Task.FromResult(PolicyDecision.Allowed);
         }
 
-        foreach (var rule in _options.Rules)
+        var matchedRule = _options.Rules.FirstOrDefault(rule => rule is not null && Matches(rule, request, context));
+        if (matchedRule is not null)
         {
-            if (rule is not null && Matches(rule, request, context))
-            {
-                return Task.FromResult(ResolveDecision(rule.Decision, rule.Reason, rule.ApprovalLane, request));
-            }
+            return Task.FromResult(ResolveDecision(matchedRule.Decision, matchedRule.Reason, matchedRule.ApprovalLane, request));
         }
 
         return Task.FromResult(ResolveDecision(

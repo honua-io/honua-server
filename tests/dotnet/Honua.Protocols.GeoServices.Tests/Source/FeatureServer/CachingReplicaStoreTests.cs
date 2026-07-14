@@ -94,8 +94,9 @@ public sealed class CachingReplicaStoreTests
         repository.TryUpdateSyncStateCalls.Should().Be(1);
         cache.Backend.SetCalls.Should().Be(1);
         var record = await repository.GetAsync(replica.ReplicaId);
-        record!.Value.LastSyncGeneration.Should().Be(5);
-        record.Value.UploadBaseGeneration.Should().Be(5);
+        var recordValue = record!.Value;
+        recordValue.LastSyncGeneration.Should().Be(5);
+        recordValue.UploadBaseGeneration.Should().Be(5);
     }
 
     [Fact]
@@ -121,8 +122,9 @@ public sealed class CachingReplicaStoreTests
         cache.Backend.SetCalls.Should().Be(0);
         // The winner's cursor is untouched.
         var record = await repository.GetAsync(replica.ReplicaId);
-        record!.Value.LastSyncGeneration.Should().Be(9);
-        record.Value.UploadBaseGeneration.Should().Be(9);
+        var recordValue = record!.Value;
+        recordValue.LastSyncGeneration.Should().Be(9);
+        recordValue.UploadBaseGeneration.Should().Be(9);
     }
 
     [Fact]

@@ -90,6 +90,8 @@ internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStrin
         }
         catch
         {
+            // A malformed connection string (unparseable by NpgsqlConnectionStringBuilder) is exactly
+            // what this method exists to reject; no logger is injected into this lightweight builder.
             return false;
         }
     }

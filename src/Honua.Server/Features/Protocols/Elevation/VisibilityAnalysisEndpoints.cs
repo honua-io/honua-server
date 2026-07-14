@@ -23,11 +23,18 @@ namespace Honua.Server.Features.Protocols.Elevation;
 /// build on the elevation profile sampler. Registered alongside the elevation
 /// API and gated through <see cref="LicenseGate"/>.
 /// </summary>
-internal static class VisibilityAnalysisEndpoints
+internal static partial class VisibilityAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string LineOfSightEntitlement = "analytics.line-of-sight";
     private const string ViewshedEntitlement = "analytics.viewshed";
+
+    /// <summary>
+    /// Tolerance (in decimal degrees) for treating two WGS 84 coordinates as the same point
+    /// when checking for degenerate (identical observer/target) analysis requests. Avoids
+    /// exact double equality on user-supplied coordinates.
+    /// </summary>
+    private const double CoordinateEqualityEpsilon = 1e-9;
 
     public static IEndpointRouteBuilder MapVisibilityAnalysisEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -99,8 +106,12 @@ internal static class VisibilityAnalysisEndpoints
                 VisibilityJsonContext.Default.LineOfSightRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            if (logger is not null)
+            {
+                LogLineOfSightRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -152,7 +163,8 @@ internal static class VisibilityAnalysisEndpoints
             }
         }
 
-        if (observerLon == targetLon && observerLat == targetLat)
+        if (Math.Abs(observerLon - targetLon) < CoordinateEqualityEpsilon &&
+            Math.Abs(observerLat - targetLat) < CoordinateEqualityEpsilon)
         {
             return StandardErrorHelpers.CreateUnprocessableEntity(
                 context,
@@ -220,8 +232,12 @@ internal static class VisibilityAnalysisEndpoints
                 VisibilityJsonContext.Default.ViewshedRequest,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            if (logger is not null)
+            {
+                LogViewshedRequestParseFailed(logger, datasetId, ex);
+            }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
 
@@ -463,4 +479,10 @@ internal static class VisibilityAnalysisEndpoints
         RasterMergeStrategy.Min => "min",
         _ => "newest"
     };
+
+    [LoggerMessage(EventId = 9452, Level = LogLevel.Warning, Message = "Failed to parse line-of-sight analysis request body for dataset {DatasetId}.")]
+    private static partial void LogLineOfSightRequestParseFailed(ILogger logger, string datasetId, Exception exception);
+
+    [LoggerMessage(EventId = 9453, Level = LogLevel.Warning, Message = "Failed to parse viewshed analysis request body for dataset {DatasetId}.")]
+    private static partial void LogViewshedRequestParseFailed(ILogger logger, string datasetId, Exception exception);
 }

@@ -19,14 +19,6 @@ internal static class ODataProtocolConstants
             return false;
         }
 
-        foreach (var protocol in service.Protocols)
-        {
-            if (string.Equals(protocol, ProtocolName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return service.Protocols.Any(protocol => string.Equals(protocol, ProtocolName, StringComparison.OrdinalIgnoreCase));
     }
 }

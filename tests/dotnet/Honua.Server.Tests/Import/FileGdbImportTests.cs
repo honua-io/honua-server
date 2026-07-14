@@ -35,10 +35,11 @@ public sealed class FileGdbImportTests : IAsyncLifetime
     public async Task Upload_WithMultiLayerFileGdbArchive_FailsWithClearLayerMessage()
     {
         // Arrange
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -70,10 +71,11 @@ public sealed class FileGdbImportTests : IAsyncLifetime
     public async Task Upload_WithSparseFileGdb_ReturnsNoFeaturesFound()
     {
         // Arrange - sparse.gdb contains only system tables with no spatial features.
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "sparse.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(fileBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -103,11 +105,12 @@ public sealed class FileGdbImportTests : IAsyncLifetime
     public async Task Upload_WithMultiLayerFileGdbArchive_OverwriteExisting_DoesNotMergeFeatureClasses()
     {
         // Arrange
+        // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
         // First import
-        var content1 = new MultipartFormDataContent();
+        using var content1 = new MultipartFormDataContent();
         var fileContent1 = new ByteArrayContent(fileBytes);
         fileContent1.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         fileContent1.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -127,7 +130,7 @@ public sealed class FileGdbImportTests : IAsyncLifetime
         responseContent1.Should().Contain("multiple feature classes");
 
         // Second import with overwrite
-        var content2 = new MultipartFormDataContent();
+        using var content2 = new MultipartFormDataContent();
         var fileContent2 = new ByteArrayContent(fileBytes);
         fileContent2.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         fileContent2.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")

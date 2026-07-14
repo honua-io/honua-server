@@ -408,12 +408,9 @@ public sealed class TileStyleSpecWriterTests
         TileStyleConditions conditions,
         IReadOnlyDictionary<string, object?> attributes)
     {
-        foreach (var pair in conditions.Conditions)
+        foreach (var pair in conditions.Conditions.Where(pair => EvaluateTest(pair[0], attributes)))
         {
-            if (EvaluateTest(pair[0], attributes))
-            {
-                return pair[1];
-            }
+            return pair[1];
         }
 
         throw new InvalidOperationException("conditions array is not total (no trailing true branch).");
@@ -462,6 +459,9 @@ public sealed class TileStyleSpecWriterTests
             return false;
         }
 
+        // Exact equality is intentional here: "===" / "!==" reproduce the 3D Tiles
+        // Styling language's own (JS-style) equality operators, not a coordinate or
+        // measurement comparison, so a tolerance would diverge from client runtimes.
         return op switch
         {
             "===" => left == right,

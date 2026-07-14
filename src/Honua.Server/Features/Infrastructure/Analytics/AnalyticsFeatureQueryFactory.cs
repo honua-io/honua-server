@@ -284,13 +284,12 @@ internal static class AnalyticsFeatureQueryFactory
             return true;
         }
 
-        foreach (var field in resource.SchemaFields)
+        var match = resource.SchemaFields.FirstOrDefault(field =>
+            string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (match is not null)
         {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                fieldType = field.Type;
-                return true;
-            }
+            fieldType = match.Type;
+            return true;
         }
 
         fieldType = default;

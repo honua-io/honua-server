@@ -354,9 +354,7 @@ internal static class AdminSldStyleEndpoints
         var styleLayer = StyleLayerDescriptor.FromResource(resource, layerId);
         var document = StyleDefaults.BuildDefaultMapLibreStyle(styleLayer);
         var sourceId = StyleDefaults.GetSourceId(styleLayer);
-        var layerList = new List<Dictionary<string, object?>>(convertedLayers.Length);
-
-        foreach (var converted in convertedLayers)
+        var layerList = new List<Dictionary<string, object?>>(convertedLayers.Select(converted =>
         {
             var serialized = JsonSerializer.SerializeToElement(
                 converted,
@@ -364,8 +362,8 @@ internal static class AdminSldStyleEndpoints
             var layerObject = JsonElementToDictionary(serialized);
             layerObject["source"] = sourceId;
             layerObject["source-layer"] = StyleDefaults.SourceLayerName;
-            layerList.Add(layerObject);
-        }
+            return layerObject;
+        }));
 
         document["layers"] = layerList;
         return document;

@@ -405,6 +405,8 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
 
         var result = new Dictionary<string, int>(StringComparer.Ordinal);
         using var document = JsonDocument.Parse(json);
+        // Not rewritten as .Where(...): TryGetInt32 does the "is it a valid int" check and the value
+        // fetch in a single call; a LINQ filter would need a second conversion attempt to get the value.
         foreach (var property in document.RootElement.EnumerateObject())
         {
             if (property.Value.TryGetInt32(out var count))

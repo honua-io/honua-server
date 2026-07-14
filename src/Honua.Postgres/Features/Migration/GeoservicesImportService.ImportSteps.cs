@@ -101,7 +101,6 @@ internal sealed partial class GeoservicesImportService
 
                 if (queryResult.Features.Length == 0)
                 {
-                    hasMore = false;
                     break;
                 }
 
@@ -285,6 +284,8 @@ internal sealed partial class GeoservicesImportService
         }
         catch (Exception ex)
         {
+            // Top-level import failure: roll back, log, and map to a sanitized failure result via
+            // BuildImportFailureMessage rather than leaking the raw exception to the caller.
             await transaction.RollbackAsync(CancellationToken.None);
             stopwatch.Stop();
             Log.ImportFailed(_logger, request.TableName, ex);
@@ -344,12 +345,9 @@ internal sealed partial class GeoservicesImportService
             $"{FieldNames.ObjectId} BIGSERIAL PRIMARY KEY"
         };
 
-        // Add attribute fields
-        foreach (var field in layerInfo.Fields)
+        // Add attribute fields (objectid/geometry fields are handled separately above/below).
+        foreach (var field in layerInfo.Fields.Where(field => !field.IsObjectId && !IsGeometryField(field)))
         {
-            if (field.IsObjectId || IsGeometryField(field))
-                continue; // We use the canonical objectid primary key instead
-
             var pgType = MapEsriTypeToPgType(field.Type, field.Length);
             columns.Add($"\"{field.Name.SanitizeFieldName()}\" {pgType}");
         }

@@ -353,6 +353,9 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
     {
         public List<string> AttachmentRequestPaths { get; } = [];
 
+        // Ownership of the HttpResponseMessage instances returned below transfers to the HttpClient
+        // pipeline that invokes this handler; they are disposed by the caller, not here
+        // (cs/local-not-disposed false positive).
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;

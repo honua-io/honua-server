@@ -77,6 +77,9 @@ public sealed class FeatureStreamHealthCheckTests
         }
         finally
         {
+            // A `using` declaration doesn't apply cleanly to a dynamically-sized List<T> of
+            // disposables created via LINQ; disposing each item in a finally block is the
+            // correct idiom here.
             foreach (var session in sessions)
             {
                 session.Dispose();

@@ -91,13 +91,10 @@ internal static class CloudStorageMetadata
             return true;
         }
 
-        foreach (var pair in metadata)
+        foreach (var pair in metadata.Where(pair => string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase))
-            {
-                value = pair.Value;
-                return true;
-            }
+            value = pair.Value;
+            return true;
         }
 
         value = null;

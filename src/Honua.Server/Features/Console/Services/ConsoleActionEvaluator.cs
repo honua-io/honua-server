@@ -101,14 +101,7 @@ internal sealed class ConsoleActionEvaluator(
         IReadOnlyList<ConsoleContentAction> candidateActions)
     {
         var pool = candidateActions.Count == 0 ? AllActions : candidateActions;
-        var allowed = new List<ConsoleContentAction>(pool.Count);
-        foreach (var action in pool)
-        {
-            if (IsItemActionAllowed(item, profile, action))
-            {
-                allowed.Add(action);
-            }
-        }
+        var allowed = pool.Where(action => IsItemActionAllowed(item, profile, action)).ToList();
         ConsoleAuthorizationLog.ItemActionsEvaluated(logger, profile.UserId, item.Id, allowed.Count);
         return allowed;
     }
@@ -211,22 +204,12 @@ internal sealed class ConsoleActionEvaluator(
     {
         if (string.IsNullOrEmpty(item.TeamScopeId))
             return false;
-        foreach (var scope in profile.TeamScopes)
-        {
-            if (string.Equals(scope, item.TeamScopeId, StringComparison.Ordinal))
-                return true;
-        }
-        return false;
+        return profile.TeamScopes.Any(scope => string.Equals(scope, item.TeamScopeId, StringComparison.Ordinal));
     }
 
     private static bool HasCapability(AuthorizationProfile profile, string capability)
     {
-        foreach (var c in profile.Capabilities)
-        {
-            if (string.Equals(c, capability, StringComparison.Ordinal))
-                return true;
-        }
-        return false;
+        return profile.Capabilities.Any(c => string.Equals(c, capability, StringComparison.Ordinal));
     }
 
     private static ConsoleNavigationEntitlement EvaluateRoute(string routeKey, AuthorizationProfile profile)

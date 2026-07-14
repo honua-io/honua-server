@@ -71,14 +71,12 @@ public sealed class GeoArrowQueryFormatterTests
         geoDoc.RootElement.GetProperty("version").GetString().Should().Be("1.1.0");
 
         // Verify attribute values
-        var nameArray = batch.Column("name") as StringArray;
-        nameArray.Should().NotBeNull();
-        nameArray!.GetString(0).Should().Be("Honolulu Harbor");
+        var nameArray = batch.Column("name").Should().BeOfType<StringArray>().Which;
+        nameArray.GetString(0).Should().Be("Honolulu Harbor");
 
         // Verify geometry is readable WKB
-        var geometryArray = batch.Column("geometry") as BinaryArray;
-        geometryArray.Should().NotBeNull();
-        var wkb = geometryArray!.GetBytes(0).ToArray();
+        var geometryArray = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        var wkb = geometryArray.GetBytes(0).ToArray();
         var point = new WKBReader().Read(wkb);
         point.Should().BeOfType<Point>();
         ((Point)point).X.Should().BeApproximately(-157.8583, 0.0001);
@@ -404,9 +402,8 @@ public sealed class GeoArrowQueryFormatterTests
         reader.Schema.FieldsList.Select(f => f.Name)
             .Should().Contain("distance", "runtime-computed fields should appear in schema");
 
-        var distanceArray = batch!.Column("distance") as DoubleArray;
-        distanceArray.Should().NotBeNull();
-        distanceArray!.GetValue(0).Should().Be(42.5);
+        var distanceArray = batch!.Column("distance").Should().BeOfType<DoubleArray>().Which;
+        distanceArray.GetValue(0).Should().Be(42.5);
     }
 
     [Fact]

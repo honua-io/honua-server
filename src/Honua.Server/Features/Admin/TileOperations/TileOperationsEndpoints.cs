@@ -254,40 +254,31 @@ internal static class TileOperationsEndpoints
         }
 
         var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is "seed" or "warm")
+        if (operation is "seed" or "warm" && !request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
         {
-            if (!request.LayerId.HasValue && string.IsNullOrWhiteSpace(request.ServiceId))
-            {
-                return ProblemDetailsHelpers.CreateAdminProblemDetails(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    "Seed/warm operations require either 'layerId' or 'serviceId'.");
-            }
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "Seed/warm operations require either 'layerId' or 'serviceId'.");
         }
 
-        if (operation is "archive")
+        if (operation is "archive" && !request.LayerId.HasValue)
         {
-            if (!request.LayerId.HasValue)
-            {
-                return ProblemDetailsHelpers.CreateAdminProblemDetails(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    "Archive operations require 'layerId'.");
-            }
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "Archive operations require 'layerId'.");
         }
 
-        if (operation is "publish")
+        if (operation is "publish" && !request.LayerId.HasValue)
         {
-            if (!request.LayerId.HasValue)
-            {
-                return ProblemDetailsHelpers.CreateAdminProblemDetails(
-                    context,
-                    StatusCodes.Status400BadRequest,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                    "Publish operations require 'layerId'.");
-            }
+            return ProblemDetailsHelpers.CreateAdminProblemDetails(
+                context,
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "Publish operations require 'layerId'.");
         }
 
         return null;

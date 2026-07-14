@@ -190,6 +190,8 @@ internal sealed partial class ExecutionJobReconciler(
             }
             catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
             {
+                // Expected: cancelling reconciliationCancellation above deliberately unblocks
+                // the lease-renewal loop's Task.Delay/RenewLeaseAsync calls. Nothing to log.
             }
 
             await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
@@ -383,6 +385,8 @@ internal sealed partial class ExecutionJobReconciler(
         }
         catch (Exception ex)
         {
+            // Deliberately broad: a progress-store failure here must not fail the retry
+            // reset itself — the job record still needs to be requeued for another attempt.
             Log.ExecutionJobProgressBridgeFailed(logger, job.OperationId, ex);
         }
 
@@ -417,6 +421,9 @@ internal sealed partial class ExecutionJobReconciler(
         }
         catch (Exception ex)
         {
+            // Deliberately broad: bridging progress is a best-effort side effect of
+            // reconciliation and must not fail the reconcile cycle that already persisted
+            // the durable job-status transition.
             Log.ExecutionJobProgressBridgeFailed(logger, updated.OperationId, ex);
         }
     }
@@ -476,7 +483,7 @@ internal sealed partial class ExecutionJobReconciler(
             // On a nonterminal transition, treat a prior terminal observation's
             // step counters as stale (a Completed projection carries StepsCompleted==TotalSteps
             // even though the job is now Running/AwaitingExecution again).
-            if (!jobIsTerminal && existing?.CompletedAt.HasValue == true)
+            if (!jobIsTerminal && existing is { CompletedAt: not null })
             {
                 return (0, existing.TotalSteps);
             }
@@ -485,11 +492,11 @@ internal sealed partial class ExecutionJobReconciler(
         }
 
         var clampedPercent = Math.Clamp(percentComplete.Value, 0d, 100d);
-        var totalSteps = existing?.TotalSteps is > 0
-            ? existing.TotalSteps
+        var totalSteps = existing?.TotalSteps is int existingTotalSteps and > 0
+            ? existingTotalSteps
             : 100;
-        var stepsCompleted = (int)Math.Round(clampedPercent / 100d * totalSteps.Value, MidpointRounding.AwayFromZero);
-        stepsCompleted = Math.Clamp(stepsCompleted, 0, totalSteps.Value);
+        var stepsCompleted = (int)Math.Round(clampedPercent / 100d * totalSteps, MidpointRounding.AwayFromZero);
+        stepsCompleted = Math.Clamp(stepsCompleted, 0, totalSteps);
         return (stepsCompleted, totalSteps);
     }
 
@@ -609,6 +616,8 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
                     }
                     catch (Exception ex)
                     {
+                        // Deliberately broad: one job's reconciliation failure must not stop
+                        // the sweep from reconciling the remaining active jobs in this batch.
                         ExecutionJobReconciler.Log.ExecutionJobReconcileFailed(logger, job.OperationId, ex);
                     }
                 }
@@ -619,6 +628,8 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
             }
             catch (Exception ex)
             {
+                // Deliberately broad: a failure while listing/dispatching active jobs must not
+                // crash this background service; log and retry on the next poll interval.
                 ExecutionJobReconciler.Log.ExecutionJobPollLoopFailed(logger, ex);
             }
 

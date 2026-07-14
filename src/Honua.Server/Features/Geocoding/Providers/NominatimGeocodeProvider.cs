@@ -230,12 +230,9 @@ internal sealed class NominatimGeocodeProvider(
 
         if (result.Address is { Count: > 0 })
         {
-            foreach (var pair in result.Address)
+            foreach (var pair in result.Address.Where(pair => !string.IsNullOrWhiteSpace(pair.Key)))
             {
-                if (!string.IsNullOrWhiteSpace(pair.Key))
-                {
-                    attributes[pair.Key] = pair.Value;
-                }
+                attributes[pair.Key] = pair.Value;
             }
         }
 

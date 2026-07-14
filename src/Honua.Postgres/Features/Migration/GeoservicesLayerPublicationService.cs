@@ -174,12 +174,9 @@ internal sealed partial class GeoservicesLayerPublicationService
         GeoservicesLayerInfo layerInfo)
     {
         var map = new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
-        foreach (var field in layerInfo.Fields)
+        foreach (var field in layerInfo.Fields.Where(field => field.Domain is not null && !string.IsNullOrWhiteSpace(field.Name)))
         {
-            if (field.Domain is { } domain && !string.IsNullOrWhiteSpace(field.Name))
-            {
-                map[field.Name] = domain;
-            }
+            map[field.Name] = field.Domain!;
         }
 
         return map;
@@ -203,10 +200,9 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
 
         JsonElement drawingInfoElement;
-        JsonDocument? drawingInfoDocument = null;
         try
         {
-            drawingInfoDocument = JsonDocument.Parse(layerInfo.DrawingInfoJson);
+            using var drawingInfoDocument = JsonDocument.Parse(layerInfo.DrawingInfoJson);
             drawingInfoElement = drawingInfoDocument.RootElement.Clone();
         }
         catch (JsonException)
@@ -214,10 +210,6 @@ internal sealed partial class GeoservicesLayerPublicationService
             warnings.Add(
                 "Source service returned a malformed 'drawingInfo' payload; the published layer was left unstyled.");
             return;
-        }
-        finally
-        {
-            drawingInfoDocument?.Dispose();
         }
 
         try

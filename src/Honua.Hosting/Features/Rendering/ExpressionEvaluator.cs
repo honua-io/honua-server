@@ -14,6 +14,14 @@ namespace Honua.Infrastructure.Rendering;
 internal static class ExpressionEvaluator
 {
     /// <summary>
+    /// Tolerance used in place of exact floating-point equality when evaluating
+    /// numeric MapLibre style expressions (division-by-zero guards, truthiness,
+    /// and HSL color math), since style values are frequently the product of
+    /// upstream arithmetic rather than exact literals.
+    /// </summary>
+    private const double NumericEpsilon = 1e-9;
+
+    /// <summary>
     /// Evaluates a MapLibre expression to a color value.
     /// </summary>
     public static SKColor EvaluateColor(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
@@ -131,7 +139,7 @@ internal static class ExpressionEvaluator
             "+" => EvaluateArithmetic(array, properties, (a, b) => a + b),
             "-" => EvaluateArithmetic(array, properties, (a, b) => a - b),
             "*" => EvaluateArithmetic(array, properties, (a, b) => a * b),
-            "/" => EvaluateArithmetic(array, properties, (a, b) => b != 0 ? a / b : 0),
+            "/" => EvaluateArithmetic(array, properties, (a, b) => Math.Abs(b) > NumericEpsilon ? a / b : 0),
             _ => null
         };
     }
@@ -226,6 +234,8 @@ internal static class ExpressionEvaluator
             var label = array[i];
             if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
             {
+                // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
+                // allocation: "match" expressions are evaluated once per feature per style paint property.
                 foreach (var item in label.Items)
                 {
                     if (MatchesLabel(inputStr, input, item))
@@ -248,6 +258,8 @@ internal static class ExpressionEvaluator
     {
         if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
         {
+            // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
+            // allocation on this hot, recursively-invoked match-label path.
             foreach (var item in label.Items)
             {
                 if (MatchesLabel(inputStr, inputObj, item))
@@ -513,7 +525,7 @@ internal static class ExpressionEvaluator
         {
             null => false,
             bool b => b,
-            double d => d != 0.0,
+            double d => Math.Abs(d) > NumericEpsilon,
             string s => s.Length > 0,
             _ => true
         };
@@ -548,12 +560,9 @@ internal static class ExpressionEvaluator
         }
 
         // Handle hex colors
-        if (str.StartsWith('#'))
+        if (str.StartsWith('#') && SKColor.TryParse(str, out var hex))
         {
-            if (SKColor.TryParse(str, out var hex))
-            {
-                return hex;
-            }
+            return hex;
         }
 
         // Handle rgb(r,g,b) and rgba(r,g,b,a)
@@ -656,7 +665,7 @@ internal static class ExpressionEvaluator
     private static (float R, float G, float B) HslToRgb(float h, float s, float l)
     {
         h /= 360f;
-        if (s == 0f)
+        if (MathF.Abs(s) <= NumericEpsilon)
         {
             return (l, l, l);
         }

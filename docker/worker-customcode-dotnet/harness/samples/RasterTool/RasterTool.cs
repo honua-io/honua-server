@@ -32,6 +32,14 @@ namespace Honua.CustomCode.Samples;
 /// </remarks>
 public sealed class RasterTool : IGeoprocessingTool
 {
+    // Standalone sample harness (no reference to Honua.Core/Honua.Geometry tolerance
+    // helpers); NDVI band values are reflectance-like floats near [0, 1], so this is a
+    // sensible local epsilon for "denominator is effectively zero".
+    private const float DenominatorEpsilon = 1e-6f;
+
+    // Intentionally static and mutated from an instance method: GDAL driver
+    // registration is process-global (native/unmanaged state), not per-tool-instance,
+    // so the guard must be shared across every RasterTool instance in the process.
     private static int _initialized;
 
     /// <inheritdoc />
@@ -54,6 +62,12 @@ public sealed class RasterTool : IGeoprocessingTool
                       n.ValueKind == System.Text.Json.JsonValueKind.String
             ? n.GetString()!
             : "ndvi.tif";
+        if (!ArtifactNames.IsSimpleFileName(outName))
+        {
+            return Task.FromResult(GpResult.Failed(
+                $"params.out_name '{outName}' must be a simple file name (no path separators or '..')."));
+        }
+
         var size = context.Params.TryGetProperty("size", out var s) &&
                    s.ValueKind == System.Text.Json.JsonValueKind.Number
             ? Math.Clamp(s.GetInt32(), 2, 4096)
@@ -103,7 +117,9 @@ public sealed class RasterTool : IGeoprocessingTool
         for (var i = 0; i < count; i++)
         {
             var denom = nir[i] + red[i];
-            ndvi[i] = denom == 0f ? 0f : (nir[i] - red[i]) / denom;
+            // Guard near-zero denominators (not just exact zero) so a tiny non-zero
+            // sum from floating-point noise cannot blow NDVI up toward +/-Infinity.
+            ndvi[i] = MathF.Abs(denom) < DenominatorEpsilon ? 0f : (nir[i] - red[i]) / denom;
         }
 
         // Write a single-band Float32 GeoTIFF, preserving CRS + geotransform, LZW-compressed.

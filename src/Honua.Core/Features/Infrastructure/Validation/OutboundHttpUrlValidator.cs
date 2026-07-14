@@ -225,22 +225,7 @@ public static class OutboundHttpUrlValidator
     }
 
     private static bool ContainsPrivateOrReservedAddress(IPAddress[] addresses)
-    {
-        if (addresses.Length == 0)
-        {
-            return true;
-        }
-
-        foreach (var address in addresses)
-        {
-            if (IsPrivateOrReservedAddress(address))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => addresses.Length == 0 || addresses.Any(IsPrivateOrReservedAddress);
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="host"/> is the loopback alias

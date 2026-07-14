@@ -251,7 +251,11 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                 for (var column = 0; column < columns; column++)
                 {
                     var offset = ((level * rows + row) * columns + column) * sizeof(float);
-                    Buffer.BlockCopy(BitConverter.GetBytes((float)(level * 1000 + row * 10 + column)), 0, values, offset, sizeof(float));
+                    // Build the value in float space from the start rather than multiplying as
+                    // integers and casting at the end, so there's no int/long overflow or
+                    // precision-loss pattern for the analyzer (or a future larger fixture) to flag.
+                    var value = level * 1000f + row * 10f + column;
+                    Buffer.BlockCopy(BitConverter.GetBytes(value), 0, values, offset, sizeof(float));
                 }
             }
         }
@@ -283,6 +287,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             var data = Get(key);
+            // Ownership transfers to the returned Stream's caller, which disposes it after reading.
             return Task.FromResult<Stream>(new MemoryStream(
                 data,
                 checked((int)offset),
@@ -305,6 +310,9 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             int layerId,
             ZarrRasterSliceReadRequest request,
             CancellationToken cancellationToken = default)
+            // Exact equality is intentional: both sides are integer-valued doubles (the request
+            // literal "666" is parsed straight to 666.0 with no arithmetic in between), so this is
+            // a deterministic sentinel match, not a genuine floating-point precision comparison.
             => request.Selections.Any(static selection => selection.Coordinate == 666)
                 ? Task.FromResult(new ZarrRasterSliceReadResult(
                     ZarrRasterSliceReadStatus.ReaderUnavailable,

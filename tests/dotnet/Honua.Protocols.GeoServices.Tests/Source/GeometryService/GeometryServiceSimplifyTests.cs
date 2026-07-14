@@ -48,7 +48,7 @@ public sealed class GeometryServiceSimplifyTests : IClassFixture<WebAppFixture>
             "sr": "4326"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 
@@ -87,7 +87,7 @@ public sealed class GeometryServiceSimplifyTests : IClassFixture<WebAppFixture>
             "sr": "4326"
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 
@@ -148,7 +148,7 @@ public sealed class GeometryServiceSimplifyTests : IClassFixture<WebAppFixture>
             }
         }
         """;
-        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/simplify", content);
 

@@ -13,17 +13,20 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
+internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertDeliveryOptions _options;
+    private readonly ILogger<TeamsAlertDeliverySink>? _logger;
 
     public TeamsAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
-        IOptions<AlertDeliveryOptions> options)
+        IOptions<AlertDeliveryOptions> options,
+        ILogger<TeamsAlertDeliverySink>? logger = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger;
     }
 
     public AlertChannelType ChannelType => AlertChannelType.MicrosoftTeams;
@@ -111,8 +114,12 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            if (_logger is not null)
+            {
+                LogDeliveryFailed(_logger, alertEvent.DedupeKey, ex);
+            }
             return new AlertDeliveryResult
             {
                 Succeeded = false,
@@ -164,4 +171,7 @@ internal sealed class TeamsAlertDeliverySink : IAlertDeliverySink
             Markdown = true
         };
     }
+
+    [LoggerMessage(EventId = 9443, Level = LogLevel.Warning, Message = "Microsoft Teams alert delivery failed for event {DedupeKey}.")]
+    private static partial void LogDeliveryFailed(ILogger logger, string dedupeKey, Exception exception);
 }

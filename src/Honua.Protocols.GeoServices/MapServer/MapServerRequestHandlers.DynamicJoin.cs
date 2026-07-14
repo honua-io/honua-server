@@ -232,13 +232,10 @@ internal static partial class MapServerEndpoints
         string field,
         out object? value)
     {
-        foreach (var kvp in attributes)
+        foreach (var kvp in attributes.Where(kvp => string.Equals(kvp.Key, field, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(kvp.Key, field, StringComparison.OrdinalIgnoreCase))
-            {
-                value = kvp.Value;
-                return true;
-            }
+            value = kvp.Value;
+            return true;
         }
 
         value = null;

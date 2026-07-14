@@ -67,15 +67,7 @@ public static class ZarrCoverageSubsetPlanner
             ? metadata.PrimaryVariable ?? metadata.Arrays[0].Name
             : variable;
 
-        ZarrArrayMetadata? array = null;
-        foreach (var candidate in metadata.Arrays)
-        {
-            if (string.Equals(candidate.Name, resolvedVariable, StringComparison.Ordinal))
-            {
-                array = candidate;
-                break;
-            }
-        }
+        var array = metadata.Arrays.FirstOrDefault(candidate => string.Equals(candidate.Name, resolvedVariable, StringComparison.Ordinal));
 
         if (array is null)
         {

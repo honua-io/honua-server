@@ -140,8 +140,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/formats"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/formats");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         }
@@ -171,7 +171,7 @@ public class ImportEndpointTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -181,7 +181,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.BeSuccessful();
@@ -201,8 +201,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         }
@@ -217,8 +217,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload-url"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload-url");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -235,8 +235,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/limits"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/limits");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -253,8 +253,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview-url"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/preview-url");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -271,8 +271,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/upload");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -289,8 +289,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads/test-upload/progress"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads/test-upload/progress");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -307,8 +307,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads/test-upload/cancel"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads/test-upload/cancel");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -325,8 +325,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/uploads");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -343,8 +343,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -361,8 +361,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "POST", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs/test-job"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs/test-job");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -379,8 +379,8 @@ public class ImportEndpointTests : IAsyncLifetime
     {
         foreach (var method in new[] { "GET", "PUT", "DELETE", "PATCH" })
         {
-            var response = await _client.SendAsync(
-                new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs/test-job/cancel"));
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/admin/import/jobs/test-job/cancel");
+            using var response = await _client.SendAsync(request);
 
             response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
             TryGetAllowValues(response, out var allowedValues).Should().BeTrue();
@@ -412,7 +412,7 @@ public class ImportEndpointTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -422,7 +422,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.BeSuccessful();
@@ -438,7 +438,7 @@ public class ImportEndpointTests : IAsyncLifetime
     public async Task PreviewFile_WithEmptyFile_ReturnsBadRequest()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent("", Encoding.UTF8);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -448,7 +448,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -459,7 +459,7 @@ public class ImportEndpointTests : IAsyncLifetime
     public async Task PreviewFile_WithUnsupportedFormat_ReturnsBadRequest()
     {
         // Arrange
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent("some content", Encoding.UTF8);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -469,7 +469,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/preview", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -501,7 +501,7 @@ public class ImportEndpointTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
 
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -516,7 +516,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -758,7 +758,7 @@ public class ImportEndpointTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
 
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -773,7 +773,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("true"), "OverwriteExisting");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.BeSuccessful();
@@ -791,7 +791,7 @@ public class ImportEndpointTests : IAsyncLifetime
         // Arrange
         var geoJsonContent = """{"type": "FeatureCollection", "features": []}""";
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
 
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -804,7 +804,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("invalid-table-name!"), "TableName"); // Invalid characters
 
         // Act
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -819,7 +819,7 @@ public class ImportEndpointTests : IAsyncLifetime
         // Arrange
         var geoJsonContent = """{"type": "FeatureCollection", "features": []}""";
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
 
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8);
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
@@ -830,7 +830,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(fileContent);
 
         // Act (no TableName provided)
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -860,7 +860,7 @@ public class ImportEndpointTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -871,7 +871,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("background_import_table"), "TableName");
         content.Add(new StringContent("true"), "ForceBackground");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var responseBody = await response.Content.ReadAsStringAsync();
@@ -905,7 +905,7 @@ public class ImportEndpointTests : IAsyncLifetime
         }
         """;
 
-        var content = new MultipartFormDataContent();
+        using var content = new MultipartFormDataContent();
         var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
         fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
@@ -917,7 +917,7 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("true"), "ForceBackground");
         content.Add(new StringContent(uploadId), "UploadId");
 
-        var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var queued = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -925,14 +925,14 @@ public class ImportEndpointTests : IAsyncLifetime
         var jobId = queued.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrWhiteSpace();
 
-        var uploadProgressResponse = await _client.GetAsync($"/api/v1/admin/import/uploads/{uploadId}/progress");
+        using var uploadProgressResponse = await _client.GetAsync($"/api/v1/admin/import/uploads/{uploadId}/progress");
         uploadProgressResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var uploadProgress = await uploadProgressResponse.Content.ReadFromJsonAsync<JsonElement>();
         uploadProgress.GetProperty("uploadId").GetString().Should().Be(uploadId);
         uploadProgress.GetProperty("currentPhase").GetString().Should().NotBeNullOrWhiteSpace();
         uploadProgress.GetProperty("status").ValueKind.Should().NotBe(JsonValueKind.Undefined);
 
-        var jobResponse = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
+        using var jobResponse = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
         jobResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var jobProgress = await jobResponse.Content.ReadFromJsonAsync<JsonElement>();
         jobProgress.GetProperty("jobId").GetString().Should().Be(jobId);
@@ -997,7 +997,7 @@ public class ImportEndpointTests : IAsyncLifetime
             }
             """;
 
-            var content = new MultipartFormDataContent();
+            using var content = new MultipartFormDataContent();
             var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
             fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
             {
@@ -1008,7 +1008,7 @@ public class ImportEndpointTests : IAsyncLifetime
             content.Add(new StringContent("cloud_cleanup_table"), "TableName");
             content.Add(new StringContent("true"), "ForceBackground");
 
-            var response = await client.PostAsync("/api/v1/admin/import/upload", content);
+            using var response = await client.PostAsync("/api/v1/admin/import/upload", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             await cloudStorage.Received(1).DeleteAsync("imports/test-cloud-file", Arg.Any<CancellationToken>());

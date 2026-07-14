@@ -347,6 +347,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
         catch (Exception ex)
         {
+            // Top-level import failure: log and report a sanitized failure result/progress update
+            // rather than letting a raw exception (which may carry GeoServer URLs/credentials
+            // context) propagate to the caller.
             Log.ImportFailed(_logger, ex.Message, ex);
 
             var errorProgress = currentProgress with
@@ -405,20 +408,12 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         else if (request.LayerNames != null)
         {
             var scopedWorkspaceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var layer in layers)
-            {
-                if (!string.IsNullOrWhiteSpace(layer.WorkspaceName))
-                {
-                    scopedWorkspaceNames.Add(layer.WorkspaceName);
-                }
-            }
-            foreach (var group in layerGroups)
-            {
-                if (!string.IsNullOrWhiteSpace(group.WorkspaceName))
-                {
-                    scopedWorkspaceNames.Add(group.WorkspaceName);
-                }
-            }
+            scopedWorkspaceNames.UnionWith(layers
+                .Where(l => !string.IsNullOrWhiteSpace(l.WorkspaceName))
+                .Select(l => l.WorkspaceName));
+            scopedWorkspaceNames.UnionWith(layerGroups
+                .Where(g => !string.IsNullOrWhiteSpace(g.WorkspaceName))
+                .Select(g => g.WorkspaceName));
             workspaces = serviceInfo.Workspaces
                 .Where(w => scopedWorkspaceNames.Contains(w.Name))
                 .ToArray();
@@ -429,13 +424,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
 
         var scopedWorkspaceNameSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var workspace in workspaces)
-        {
-            if (!string.IsNullOrWhiteSpace(workspace.Name))
-            {
-                scopedWorkspaceNameSet.Add(workspace.Name);
-            }
-        }
+        scopedWorkspaceNameSet.UnionWith(workspaces
+            .Where(w => !string.IsNullOrWhiteSpace(w.Name))
+            .Select(w => w.Name));
 
         return new FilteredResources
         {

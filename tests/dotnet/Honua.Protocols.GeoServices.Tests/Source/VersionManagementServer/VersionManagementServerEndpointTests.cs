@@ -591,10 +591,10 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
         return lastDoc.RootElement.Clone();
     }
 
-    private Task<HttpResponseMessage> PostFormAsync(string url, params (string Key, string Value)[] fields)
+    private async Task<HttpResponseMessage> PostFormAsync(string url, params (string Key, string Value)[] fields)
     {
-        var content = new FormUrlEncodedContent(
+        using var content = new FormUrlEncodedContent(
             fields.Select(f => new KeyValuePair<string, string>(f.Key, f.Value)));
-        return _fixture.Client.PostAsync(url, content);
+        return await _fixture.Client.PostAsync(url, content);
     }
 }

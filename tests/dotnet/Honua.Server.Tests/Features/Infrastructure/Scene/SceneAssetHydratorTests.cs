@@ -23,7 +23,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
 
     public SceneAssetHydratorTests()
     {
-        _workRoot = Path.Combine(Path.GetTempPath(), $"honua-hydrate-{Guid.NewGuid():N}");
+        _workRoot = Path.Join(Path.GetTempPath(), $"honua-hydrate-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_workRoot);
     }
 
@@ -40,7 +40,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
     {
         var storage = new InMemoryCloudFileStorage();
         var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
-        var localRoot = Path.Combine(_workRoot, "legacy-local");
+        var localRoot = Path.Join(_workRoot, "legacy-local");
 
         var record = BuildRecord("legacy-scene", Guid.NewGuid(), assetStoragePrefix: null, localRoot);
 
@@ -59,19 +59,19 @@ public sealed class SceneAssetHydratorTests : IDisposable
         var datasetId = Guid.NewGuid();
 
         var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
-        var localRoot = Path.Combine(_workRoot, "node-b", "hydrate-scene");
+        var localRoot = Path.Join(_workRoot, "node-b", "hydrate-scene");
         var record = BuildRecord("hydrate-scene", datasetId, prefix, localRoot);
 
         await hydrator.EnsureLocalAsync(record, localRoot, CancellationToken.None);
 
         foreach (var (relative, expected) in files)
         {
-            var path = Path.Combine(localRoot, relative);
+            var path = Path.Join(localRoot, relative);
             File.Exists(path).Should().BeTrue($"'{relative}' must be materialized locally.");
             (await File.ReadAllBytesAsync(path)).Should().Equal(expected);
         }
 
-        File.Exists(Path.Combine(localRoot, SceneAssetHydration.MarkerFileName)).Should().BeTrue(
+        File.Exists(Path.Join(localRoot, SceneAssetHydration.MarkerFileName)).Should().BeTrue(
             "hydration must stamp the local cache with a version marker.");
     }
 
@@ -83,7 +83,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
         var datasetId = Guid.NewGuid();
 
         var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
-        var localRoot = Path.Combine(_workRoot, "cached", "cached-scene");
+        var localRoot = Path.Join(_workRoot, "cached", "cached-scene");
         var record = BuildRecord("cached-scene", datasetId, prefix, localRoot);
 
         await hydrator.EnsureLocalAsync(record, localRoot, CancellationToken.None);
@@ -104,12 +104,12 @@ public sealed class SceneAssetHydratorTests : IDisposable
         var (prefix, _) = await SeedSceneAsync(storage, "republish-scene");
 
         var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
-        var localRoot = Path.Combine(_workRoot, "republish", "republish-scene");
+        var localRoot = Path.Join(_workRoot, "republish", "republish-scene");
 
         // First registration hydrates the original bytes.
         var firstRecord = BuildRecord("republish-scene", Guid.NewGuid(), prefix, localRoot);
         await hydrator.EnsureLocalAsync(firstRecord, localRoot, CancellationToken.None);
-        (await File.ReadAllTextAsync(Path.Combine(localRoot, "tileset.json")))
+        (await File.ReadAllTextAsync(Path.Join(localRoot, "tileset.json")))
             .Should().Contain("v1");
 
         // Republish overwrites the stored bytes and mints a new dataset id, so the
@@ -120,7 +120,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
         var secondRecord = BuildRecord("republish-scene", Guid.NewGuid(), prefix, localRoot);
         await hydrator.EnsureLocalAsync(secondRecord, localRoot, CancellationToken.None);
 
-        (await File.ReadAllTextAsync(Path.Combine(localRoot, "tileset.json")))
+        (await File.ReadAllTextAsync(Path.Join(localRoot, "tileset.json")))
             .Should().Contain("v2", "a changed content version must re-hydrate the local cache.");
     }
 
@@ -134,7 +134,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
         var datasetId = Guid.NewGuid();
 
         var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
-        var localRoot = Path.Combine(_workRoot, "herd", "herd-scene");
+        var localRoot = Path.Join(_workRoot, "herd", "herd-scene");
         var record = BuildRecord("herd-scene", datasetId, prefix, localRoot);
 
         var tasks = Enumerable.Range(0, 8)
@@ -154,11 +154,11 @@ public sealed class SceneAssetHydratorTests : IDisposable
     {
         var storage = new InMemoryCloudFileStorage();
         var prefix = SceneAssetHydration.BuildPrefix("evil-scene");
-        var localRoot = Path.Combine(_workRoot, "evil-node", "evil-scene");
+        var localRoot = Path.Join(_workRoot, "evil-node", "evil-scene");
 
         // ../../ from the hydrate temp dir (localRoot + ".hydrate-<guid>", under _workRoot/evil-node)
         // resolves to a sentinel under _workRoot — outside the scene cache tree.
-        var escapeTarget = Path.Combine(_workRoot, "escaped-pwned.txt");
+        var escapeTarget = Path.Join(_workRoot, "escaped-pwned.txt");
         var manifest = string.Join('\n', "../../escaped-pwned.txt", "tileset.json");
         storage.Put(
             SceneAssetHydration.BuildObjectKey(prefix, SceneAssetHydration.ManifestObjectName),
@@ -184,9 +184,9 @@ public sealed class SceneAssetHydratorTests : IDisposable
     {
         var storage = new InMemoryCloudFileStorage();
         var prefix = SceneAssetHydration.BuildPrefix("abs-scene");
-        var localRoot = Path.Combine(_workRoot, "abs-node", "abs-scene");
+        var localRoot = Path.Join(_workRoot, "abs-node", "abs-scene");
 
-        var absoluteTarget = Path.Combine(_workRoot, "abs-pwned.txt");
+        var absoluteTarget = Path.Join(_workRoot, "abs-pwned.txt");
         var manifest = string.Join('\n', absoluteTarget, "tileset.json");
         storage.Put(
             SceneAssetHydration.BuildObjectKey(prefix, SceneAssetHydration.ManifestObjectName),
@@ -212,7 +212,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
         var (prefix, _) = await SeedSceneAsync(storage, "swap-scene");
 
         var hydrator = new SceneAssetHydrator(storage, NullLogger<SceneAssetHydrator>.Instance);
-        var localRoot = Path.Combine(_workRoot, "swap", "swap-scene");
+        var localRoot = Path.Join(_workRoot, "swap", "swap-scene");
 
         await hydrator.EnsureLocalAsync(
             BuildRecord("swap-scene", Guid.NewGuid(), prefix, localRoot), localRoot, CancellationToken.None);
@@ -227,10 +227,10 @@ public sealed class SceneAssetHydratorTests : IDisposable
             BuildRecord("swap-scene", Guid.NewGuid(), prefix, localRoot), localRoot, CancellationToken.None);
 
         Directory.Exists(localRoot).Should().BeTrue();
-        File.Exists(Path.Combine(localRoot, "tileset.json")).Should().BeTrue();
-        (await File.ReadAllTextAsync(Path.Combine(localRoot, "tileset.json"))).Should().Contain("v2");
+        File.Exists(Path.Join(localRoot, "tileset.json")).Should().BeTrue();
+        (await File.ReadAllTextAsync(Path.Join(localRoot, "tileset.json"))).Should().Contain("v2");
         // No leftover move-aside sibling should remain after a successful swap.
-        Directory.GetDirectories(Path.Combine(_workRoot, "swap"))
+        Directory.GetDirectories(Path.Join(_workRoot, "swap"))
             .Should().NotContain(d => d.Contains(".replaced-", StringComparison.Ordinal));
     }
 
@@ -244,7 +244,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
         InMemoryCloudFileStorage storage,
         string sceneId)
     {
-        var stagingDir = Path.Combine(_workRoot, "staging", sceneId);
+        var stagingDir = Path.Join(_workRoot, "staging", sceneId);
         Directory.CreateDirectory(stagingDir);
 
         var files = new List<(string Relative, byte[] Bytes)>
@@ -254,7 +254,7 @@ public sealed class SceneAssetHydratorTests : IDisposable
         };
         foreach (var (relative, bytes) in files)
         {
-            await File.WriteAllBytesAsync(Path.Combine(stagingDir, relative), bytes);
+            await File.WriteAllBytesAsync(Path.Join(stagingDir, relative), bytes);
         }
 
         var prefix = await SceneAssetStorageUploader.UploadTreeAsync(

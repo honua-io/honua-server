@@ -744,14 +744,10 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
         public async ValueTask DisposeAsync()
         {
-            try
-            {
-                await Connection.DisposeAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                scope.Dispose();
-            }
+            // Equivalent to the previous try/finally: `using` disposes `scope` when this
+            // method exits, even if disposing the connection throws.
+            using var _ = scope;
+            await Connection.DisposeAsync().ConfigureAwait(false);
         }
     }
 

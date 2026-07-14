@@ -112,11 +112,12 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
             outputSrid: 3857);
 
         extent.Should().NotBeNull();
-        extent!.Value.SpatialReference.Should().Be(3857);
-        extent.Value.MinX.Should().Be(-13636637.6);
-        extent.Value.MinY.Should().Be(4537132.1);
-        extent.Value.MaxX.Should().Be(-13619939.9);
-        extent.Value.MaxY.Should().Be(4556748.2);
+        var resolvedExtent = extent!.Value;
+        resolvedExtent.SpatialReference.Should().Be(3857);
+        resolvedExtent.MinX.Should().Be(-13636637.6);
+        resolvedExtent.MinY.Should().Be(4537132.1);
+        resolvedExtent.MaxX.Should().Be(-13619939.9);
+        resolvedExtent.MaxY.Should().Be(4556748.2);
     }
 
     private static MetadataV2Resource CreateResource(FeatureExtent extent)

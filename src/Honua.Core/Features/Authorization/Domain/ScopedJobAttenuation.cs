@@ -229,12 +229,9 @@ public static class ScopedJobAttenuation
             if (globalDataEditorRoles is { Count: > 0 })
             {
                 globalEditors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var r in globalDataEditorRoles)
+                foreach (var r in globalDataEditorRoles.Where(r => !string.IsNullOrWhiteSpace(r)))
                 {
-                    if (!string.IsNullOrWhiteSpace(r))
-                    {
-                        globalEditors.Add(r.Trim());
-                    }
+                    globalEditors.Add(r.Trim());
                 }
             }
 

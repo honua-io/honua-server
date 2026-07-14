@@ -105,17 +105,15 @@ internal sealed partial class Wfs20Handler
 
         var scopedQueries = GetScopedStoredQueries(context);
         var requestedIds = ParseQualifiedList(storedQueryIds);
-        foreach (var requestedId in requestedIds)
+        var invalidId = requestedIds.FirstOrDefault(requestedId =>
+            !IsGetFeatureByIdStoredQuery(requestedId) && !scopedQueries.ContainsKey(requestedId));
+        if (invalidId is not null)
         {
-            if (!IsGetFeatureByIdStoredQuery(requestedId) &&
-                !scopedQueries.ContainsKey(requestedId))
-            {
-                return Wfs20ErrorResults.CreateBadRequest(
-                    context,
-                    "InvalidParameterValue",
-                    $"Stored query '{requestedId}' is not supported.",
-                    "storedquery_id");
-            }
+            return Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"Stored query '{invalidId}' is not supported.",
+                "storedquery_id");
         }
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);

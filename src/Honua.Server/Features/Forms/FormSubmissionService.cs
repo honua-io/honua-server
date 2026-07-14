@@ -485,11 +485,10 @@ internal sealed class FormSubmissionService
         {
             var descriptor = request.Attachments[i];
             var partName = descriptor.PartName;
-            if (!string.IsNullOrWhiteSpace(partName) &&
+            normalized[i] = !string.IsNullOrWhiteSpace(partName) &&
                 !duplicatePartNames.Contains(partName) &&
-                byPartName.TryGetValue(partName, out var file))
-            {
-                normalized[i] = new FormSubmissionAttachmentDescriptor
+                byPartName.TryGetValue(partName, out var file)
+                ? new FormSubmissionAttachmentDescriptor
                 {
                     ClientAttachmentId = descriptor.ClientAttachmentId,
                     FieldId = descriptor.FieldId,
@@ -498,12 +497,8 @@ internal sealed class FormSubmissionService
                     ContentType = string.IsNullOrWhiteSpace(descriptor.ContentType) ? file.ContentType : descriptor.ContentType,
                     SizeBytes = file.Length,
                     Sha256 = descriptor.Sha256
-                };
-            }
-            else
-            {
-                normalized[i] = descriptor;
-            }
+                }
+                : descriptor;
         }
 
         return CloneRequest(request, attachments: normalized);
@@ -1032,7 +1027,8 @@ internal sealed class FormSubmissionService
         FormFieldAttachmentPolicy? fieldPolicy,
         string contentType)
     {
-        if (fieldPolicy?.AllowedContentTypes.Length > 0 &&
+        if (fieldPolicy is not null &&
+            fieldPolicy.AllowedContentTypes.Length > 0 &&
             !ContentTypeAllowed(fieldPolicy.AllowedContentTypes, contentType))
         {
             return false;

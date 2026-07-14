@@ -259,18 +259,11 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             .Cast<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var candidate in candidates)
-        {
-            var match = Directory
+        return candidates
+            .Select(candidate => Directory
                 .EnumerateFiles(extractRoot, "*" + candidate, SearchOption.AllDirectories)
-                .FirstOrDefault();
-            if (match is not null)
-            {
-                return match;
-            }
-        }
-
-        return string.Empty;
+                .FirstOrDefault())
+            .FirstOrDefault(match => match is not null) ?? string.Empty;
     }
 
     private static partial class Log

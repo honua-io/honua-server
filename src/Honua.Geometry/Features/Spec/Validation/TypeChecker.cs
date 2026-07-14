@@ -76,15 +76,12 @@ internal sealed class TypeChecker
 
                 if (field.Value is ReferenceNode reference)
                 {
-                    if (_locals.TryGetValue(reference.Root, out var referenced))
+                    if (_locals.TryGetValue(reference.Root, out var referenced) && !referenced.IsAssignableTo(port.Type))
                     {
-                        if (!referenced.IsAssignableTo(port.Type))
-                        {
-                            _diagnostics.Add(SpecDiagnostic.Error(
-                                SpecDiagnosticCode.TypeMismatch,
-                                $"Input '{field.Key}' on operator '{signature.Name}' expects {port.Type} but '{reference.Canonical}' resolves to {referenced}.",
-                                reference.Span));
-                        }
+                        _diagnostics.Add(SpecDiagnostic.Error(
+                            SpecDiagnosticCode.TypeMismatch,
+                            $"Input '{field.Key}' on operator '{signature.Name}' expects {port.Type} but '{reference.Canonical}' resolves to {referenced}.",
+                            reference.Span));
                     }
                 }
                 else if (field.Value is not null)
@@ -101,15 +98,12 @@ internal sealed class TypeChecker
             }
         }
 
-        foreach (var port in signature.Inputs)
+        foreach (var port in signature.Inputs.Where(port => port.Required && !provided.Contains(port.Name)))
         {
-            if (port.Required && !provided.Contains(port.Name))
-            {
-                _diagnostics.Add(SpecDiagnostic.Error(
-                    SpecDiagnosticCode.MissingRequiredParameter,
-                    $"Operator '{signature.Name}' requires input '{port.Name}'.",
-                    step.Span));
-            }
+            _diagnostics.Add(SpecDiagnostic.Error(
+                SpecDiagnosticCode.MissingRequiredParameter,
+                $"Operator '{signature.Name}' requires input '{port.Name}'.",
+                step.Span));
         }
     }
 
@@ -142,15 +136,12 @@ internal sealed class TypeChecker
             }
         }
 
-        foreach (var port in signature.Parameters)
+        foreach (var port in signature.Parameters.Where(port => port.Required && !provided.Contains(port.Name)))
         {
-            if (port.Required && !provided.Contains(port.Name))
-            {
-                _diagnostics.Add(SpecDiagnostic.Error(
-                    SpecDiagnosticCode.MissingRequiredParameter,
-                    $"Operator '{signature.Name}' requires parameter '{port.Name}'.",
-                    step.Span));
-            }
+            _diagnostics.Add(SpecDiagnostic.Error(
+                SpecDiagnosticCode.MissingRequiredParameter,
+                $"Operator '{signature.Name}' requires parameter '{port.Name}'.",
+                step.Span));
         }
     }
 

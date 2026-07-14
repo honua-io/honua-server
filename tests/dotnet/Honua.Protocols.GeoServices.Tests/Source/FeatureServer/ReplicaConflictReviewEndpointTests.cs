@@ -61,9 +61,10 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 

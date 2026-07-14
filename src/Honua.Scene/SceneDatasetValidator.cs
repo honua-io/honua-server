@@ -330,13 +330,6 @@ public static partial class SceneDatasetValidator
         // These characters never appear in well-formed filesystem path inputs
         // and indicate either operator error or an injection attempt.
         ReadOnlySpan<char> forbidden = ['\0', ';', '|', '&', '$', '<', '>', '`', '\n', '\r', '*', '?', '"', '\''];
-        foreach (var c in value)
-        {
-            if (forbidden.IndexOf(c) >= 0)
-            {
-                return true;
-            }
-        }
-        return false;
+        return value.AsSpan().IndexOfAny(forbidden) >= 0;
     }
 }

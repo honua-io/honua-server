@@ -57,7 +57,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_WithTrackChangesPreference_ReturnsDeltaLinkAndPreferenceApplied()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
         request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -80,7 +80,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     public async Task Query_WithDeltaToken_ReturnsChangesSinceToken()
     {
         // Capture a delta link (token timestamp) over the current snapshot of layer 0.
-        var firstRequest = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
         firstRequest.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
 
         var firstResponse = await _fixture.Client.SendAsync(firstRequest);
@@ -105,9 +105,10 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         };
 
         var createJson = JsonSerializer.Serialize(createRequest, ODataJsonContext.Default.ODataFeatureRequest);
+        using var createContent = new StringContent(createJson, Encoding.UTF8, "application/json");
         var createResponse = await _fixture.Client.PostAsync(
             $"/odata/Layers({TestLayerId})/Features",
-            new StringContent(createJson, Encoding.UTF8, "application/json"));
+            createContent);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var createdContent = await createResponse.Content.ReadAsStringAsync();
@@ -180,7 +181,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_DeltaLinkNotPresentOnIntermediatePages()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=5");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=5");
         request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -199,7 +200,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_WithTrackChangesPaging_PreservesInitialSnapshotInFinalDeltaLink()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=2");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=2");
         request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
 
         var response = await _fixture.Client.SendAsync(request);
@@ -240,7 +241,8 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         }
 
         deltaLink.Should().NotBeNullOrWhiteSpace();
-        var deltaQuery = QueryHelpers.ParseQuery(new Uri(deltaLink!).Query);
+        var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
+        var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
         var deltaToken = deltaQuery["$deltatoken"].ToString();
         deltaToken.Should().NotBeNullOrWhiteSpace();
         ODataDeltaService.TryDecode(deltaToken, out var finalState, out var finalError).Should().BeTrue(finalError);
@@ -293,7 +295,8 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         }
 
         deltaLink.Should().NotBeNullOrWhiteSpace();
-        var deltaQuery = QueryHelpers.ParseQuery(new Uri(deltaLink!).Query);
+        var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
+        var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
         ODataDeltaService.TryDecode(deltaQuery["$deltatoken"].ToString(), out var finalState, out var finalError)
             .Should().BeTrue(finalError);
         finalState.Timestamp.Should().Be(nextState.UpperBoundTimestamp);

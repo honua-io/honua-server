@@ -45,13 +45,11 @@ internal sealed class TenantSchemaResolver : ITenantSchemaResolver
         var trimmed = tenantId.Trim();
 
         // 1. Excluded tenants keep the default schema (e.g. the anonymous public tenant).
-        foreach (var unrouted in _options.UnroutedTenantIds)
+        if (_options.UnroutedTenantIds.Any(unrouted =>
+                !string.IsNullOrWhiteSpace(unrouted)
+                && string.Equals(unrouted.Trim(), trimmed, StringComparison.OrdinalIgnoreCase)))
         {
-            if (!string.IsNullOrWhiteSpace(unrouted)
-                && string.Equals(unrouted.Trim(), trimmed, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
+            return false;
         }
 
         // 2. Explicit override map takes precedence over the derived form.
@@ -80,6 +78,9 @@ internal sealed class TenantSchemaResolver : ITenantSchemaResolver
     private static string Normalize(string value)
     {
         var builder = new StringBuilder(value.Length);
+        // Not a pure map: each mapped character is appended directly into the StringBuilder
+        // rather than collected into a new sequence, so a '.Select(...)' rewrite would only add
+        // an intermediate allocation without changing behavior.
         foreach (var ch in value)
         {
             var lower = char.ToLowerInvariant(ch);

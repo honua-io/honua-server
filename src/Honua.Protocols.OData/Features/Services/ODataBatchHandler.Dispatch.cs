@@ -142,6 +142,8 @@ internal sealed partial class ODataBatchHandler
             Log.BatchRequestParseFailed(_logger, request.Id, ex);
             return CreateErrorResponse(request.Id, 400, "InvalidRequest", "Invalid request parameters.");
         }
+        // Intentional broad catch: a single batch sub-request must not abort the whole batch;
+        // already logged (Log.BatchSingleRequestFailed) and mapped to a per-request error.
         catch (Exception ex)
         {
             Log.BatchSingleRequestFailed(_logger, request.Id, ex);

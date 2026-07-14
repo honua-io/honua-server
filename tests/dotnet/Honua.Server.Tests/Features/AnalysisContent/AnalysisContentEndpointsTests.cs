@@ -537,9 +537,10 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     {
         // The generate route validates the prompt before invoking any AI provider, so an empty body
         // exercises the wired endpoint (non-404) without calling a real LLM.
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/analysis/content/generate",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+            content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -549,9 +550,10 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/analysis/content/queries/generate")]
     public async Task GenerateSavedQuery_MissingPrompt_ReachesHandlerAndReturnsBadRequest()
     {
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
             "/api/v1/analysis/content/queries/generate",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+            content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

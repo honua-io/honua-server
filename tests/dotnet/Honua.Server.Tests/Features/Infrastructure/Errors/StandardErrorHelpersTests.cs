@@ -33,7 +33,7 @@ public sealed class StandardErrorHelpersTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.UseSeed(Path.Combine("tests", "seed", "server.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
         await _fixture.InitializeAsync();
     }
 

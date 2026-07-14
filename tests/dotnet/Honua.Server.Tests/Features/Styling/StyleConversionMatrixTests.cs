@@ -1654,13 +1654,11 @@ public class StyleConversionMatrixTests
 
     private static JsonElement FindLayer(JsonElement style, string type)
     {
-        foreach (var layer in style.GetProperty("layers").EnumerateArray())
+        foreach (var layer in style.GetProperty("layers").EnumerateArray()
+            .Where(layer => layer.TryGetProperty("type", out var typeElement)
+                && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase)))
         {
-            if (layer.TryGetProperty("type", out var typeElement)
-                && string.Equals(typeElement.GetString(), type, StringComparison.OrdinalIgnoreCase))
-            {
-                return layer.Clone();
-            }
+            return layer.Clone();
         }
 
         throw new XunitException($"Layer type '{type}' not found.");

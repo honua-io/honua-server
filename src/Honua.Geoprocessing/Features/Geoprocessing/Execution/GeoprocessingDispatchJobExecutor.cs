@@ -207,8 +207,13 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         }
         catch (Exception ex)
         {
+            // Intentionally broad: workspace resolution can fail for many storage-provider
+            // reasons (I/O, auth, quota) and must surface as a job failure rather than crash
+            // the dispatcher. The raw exception is logged for diagnosis; the returned reason
+            // stays provider-detail-free so it is safe to surface on the job status.
             scope?.Dispose();
-            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved: {ex.Message}");
+            Log.WorkspaceResolutionFailed(_logger, job.OperationId, requestedLabel, ex);
+            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved.");
         }
 
         var overwrite =
@@ -230,6 +235,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         [LoggerMessage(9091, LogLevel.Warning,
             "Geoprocessing dispatch executor failed job {OperationId}: {Reason}")]
         public static partial void WorkspaceProviderUnavailable(ILogger logger, string operationId, string reason);
+
+        [LoggerMessage(9093, LogLevel.Warning,
+            "Geoprocessing dispatch executor failed to resolve env:workspace='{RequestedLabel}' for job {OperationId}")]
+        public static partial void WorkspaceResolutionFailed(ILogger logger, string operationId, string requestedLabel, Exception exception);
 
         [LoggerMessage(9092, LogLevel.Warning,
             "Geoprocessing dispatch executor failed job {OperationId}: output collision — {Reason}")]

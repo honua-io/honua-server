@@ -58,15 +58,12 @@ public sealed class PermissionResolver : IPermissionResolver
             ? AuthorizationOperationExtensions.Wildcard
             : layer.Trim();
 
-        foreach (var grant in effectivePermissions.Permissions)
-        {
-            if (Matches(grant, service, requestedLayer, operation))
-            {
-                return PermissionDecision.Allow(grant);
-            }
-        }
+        var matchedGrant = effectivePermissions.Permissions
+            .FirstOrDefault(grant => Matches(grant, service, requestedLayer, operation));
 
-        return PermissionDecision.NoMatch();
+        return matchedGrant is not null
+            ? PermissionDecision.Allow(matchedGrant)
+            : PermissionDecision.NoMatch();
     }
 
     /// <inheritdoc />

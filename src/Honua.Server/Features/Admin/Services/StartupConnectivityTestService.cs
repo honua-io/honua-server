@@ -418,17 +418,11 @@ internal sealed class StartupConnectivityTestService
     /// </summary>
     private List<string> GetSecretReferencesFromConfiguration()
     {
-        var secretRefs = new List<string>();
-
-        foreach (var kvp in _configuration.AsEnumerable())
-        {
-            if (!string.IsNullOrEmpty(kvp.Value) && _secretProvider.IsSecretReference(kvp.Value))
-            {
-                secretRefs.Add(kvp.Value);
-            }
-        }
-
-        return secretRefs.Distinct().ToList();
+        return _configuration.AsEnumerable()
+            .Where(kvp => !string.IsNullOrEmpty(kvp.Value) && _secretProvider.IsSecretReference(kvp.Value))
+            .Select(kvp => kvp.Value!)
+            .Distinct()
+            .ToList();
     }
 
     /// <summary>
@@ -436,18 +430,11 @@ internal sealed class StartupConnectivityTestService
     /// </summary>
     private List<(string Name, string ConnectionString)> GetConnectionStringsFromConfiguration()
     {
-        var connections = new List<(string, string)>();
-
         var connectionStringsSection = _configuration.GetSection("ConnectionStrings");
-        foreach (var child in connectionStringsSection.GetChildren())
-        {
-            if (!string.IsNullOrEmpty(child.Value))
-            {
-                connections.Add((child.Key, child.Value));
-            }
-        }
-
-        return connections;
+        return connectionStringsSection.GetChildren()
+            .Where(child => !string.IsNullOrEmpty(child.Value))
+            .Select(child => (child.Key, child.Value!))
+            .ToList();
     }
 
     /// <summary>
@@ -455,22 +442,15 @@ internal sealed class StartupConnectivityTestService
     /// </summary>
     private List<(string Name, string Url)> GetExternalUrlsFromConfiguration()
     {
-        var urls = new List<(string, string)>();
-
         // Look for URL patterns in configuration
-        foreach (var kvp in _configuration.AsEnumerable())
-        {
-            if (!string.IsNullOrEmpty(kvp.Value) &&
+        return _configuration.AsEnumerable()
+            .Where(kvp => !string.IsNullOrEmpty(kvp.Value) &&
                 (kvp.Key.Contains("Url", StringComparison.OrdinalIgnoreCase) ||
                  kvp.Key.Contains("Endpoint", StringComparison.OrdinalIgnoreCase)) &&
                 Uri.TryCreate(kvp.Value, UriKind.Absolute, out var uri) &&
                 (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            {
-                urls.Add((kvp.Key, kvp.Value));
-            }
-        }
-
-        return urls;
+            .Select(kvp => (kvp.Key, kvp.Value!))
+            .ToList();
     }
 
     /// <summary>

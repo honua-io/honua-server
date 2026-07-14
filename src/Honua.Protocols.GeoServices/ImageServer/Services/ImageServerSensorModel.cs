@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
@@ -86,9 +87,13 @@ internal static class ImageServerSensorModel
                 return null;
             }
 
-            if (sampleScale == 0 || lineScale == 0 || longScale == 0 || latScale == 0)
+            if (NumericTolerance.IsEffectivelyZero(sampleScale) ||
+                NumericTolerance.IsEffectivelyZero(lineScale) ||
+                NumericTolerance.IsEffectivelyZero(longScale) ||
+                NumericTolerance.IsEffectivelyZero(latScale))
             {
-                // Zero scales would make the normalisation degenerate (divide-by-zero).
+                // Zero (or near-zero) scales would make the normalisation degenerate
+                // (divide-by-zero, or a division blown up by a near-zero denominator).
                 return null;
             }
 

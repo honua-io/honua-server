@@ -87,12 +87,11 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
 
     public void Dispose()
     {
-        foreach (var entry in _dataSources.Values)
+        foreach (var dataSource in _dataSources.Values
+            .Where(entry => entry.DataSource.IsValueCreated)
+            .Select(entry => entry.DataSource.Value))
         {
-            if (entry.DataSource.IsValueCreated)
-            {
-                entry.DataSource.Value.Dispose();
-            }
+            dataSource.Dispose();
         }
 
         _dataSources.Clear();

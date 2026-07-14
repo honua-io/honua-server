@@ -131,6 +131,10 @@ internal sealed partial class AwsSqsAlertDeliverySink : IAlertDeliverySink
         }
         catch (Exception ex)
         {
+            // Intentionally generic: the AWS SDK surfaces a wide range of exception
+            // types for transport, throttling, and auth failures. The exception is
+            // logged and converted to a non-throwing AlertDeliveryResult so a single
+            // sink failure never takes down alert dispatch for other sinks.
             Log.DeliveryFailed(_logger, ex);
             return new AlertDeliveryResult
             {

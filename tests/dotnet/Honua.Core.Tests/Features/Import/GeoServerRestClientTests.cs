@@ -153,6 +153,8 @@ public sealed class GeoServerRestClientTests
 
     private sealed class StubGeoServerHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
@@ -244,6 +246,8 @@ public sealed class GeoServerRestClientTests
 
     private sealed class LayerGroupMetadataGeoServerHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
@@ -303,6 +307,8 @@ public sealed class GeoServerRestClientTests
 
     private sealed class LayerBoundsGeoServerHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
@@ -358,6 +364,8 @@ public sealed class GeoServerRestClientTests
 
     private sealed class QualifiedStyleGeoServerHandler : HttpMessageHandler
     {
+        // Response ownership transfers to the caller via the return value
+        // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;

@@ -76,18 +76,19 @@ public class ImageServerSensorModelTests
 
         var rpc = ImageServerSensorModel.TryReadRpc(metadata);
         rpc.Should().NotBeNull();
+        var rpcValue = rpc!.Value;
 
         // The sample/line centre maps to the ground centre (offsets), and round-trips.
-        var (lon, lat) = rpc!.Value.ImageToGround(1000, 800);
+        var (lon, lat) = rpcValue.ImageToGround(1000, 800);
         lon.Should().BeApproximately(-120.0, 1e-9);
         lat.Should().BeApproximately(35.0, 1e-9);
 
-        var (sample, line) = rpc.Value.GroundToImage(lon, lat);
+        var (sample, line) = rpcValue.GroundToImage(lon, lat);
         sample.Should().BeApproximately(1000, 1e-6);
         line.Should().BeApproximately(800, 1e-6);
 
         // A one-scale offset in sample maps to a one-longitude-scale offset in ground.
-        var (lon2, _) = rpc.Value.ImageToGround(2000, 800);
+        var (lon2, _) = rpcValue.ImageToGround(2000, 800);
         lon2.Should().BeApproximately(-120.0 + 0.05, 1e-9);
     }
 

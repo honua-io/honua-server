@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -307,27 +308,9 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             return false;
         }
 
-        foreach (var ch in value)
-        {
-            if (!(char.IsLetterOrDigit(ch) || ch == '_'))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return value.All(ch => char.IsLetterOrDigit(ch) || ch == '_');
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)
-    {
-        foreach (var token in value.Split(',', StringSplitOptions.None))
-        {
-            if (token.Trim().Length == 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);
 }

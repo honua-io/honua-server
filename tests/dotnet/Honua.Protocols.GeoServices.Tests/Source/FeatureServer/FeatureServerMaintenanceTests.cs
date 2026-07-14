@@ -40,9 +40,10 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -62,9 +63,10 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     {
         var payload = JsonSerializer.Serialize(new { f = "json" });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -89,9 +91,10 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/nonexistent/FeatureServer/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -114,9 +117,10 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -134,9 +138,10 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     {
         var payload = JsonSerializer.Serialize(new { f = "json" });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -156,9 +161,10 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
             f = "json"
         });
 
+        using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/append",
-            new StringContent(payload, Encoding.UTF8, "application/json"));
+            requestContent);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -453,7 +459,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
     public async Task ValidateSql_StatementType_ReturnsIsValid()
     {
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("sql", "objectid = 1"),
             new KeyValuePair<string, string>("sqlType", "statement"),
@@ -474,7 +480,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/validateSQL")]
     public async Task ValidateSql_PostSqlParameter_ReturnsIsValid()
     {
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("sql", "1=1"),
             new KeyValuePair<string, string>("sqlType", "native"),
@@ -499,7 +505,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/validateSQL")]
     public async Task ServiceValidateSql_WhereType_ReturnsIsValid()
     {
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("sql", "objectid > 0"),
             new KeyValuePair<string, string>("sqlType", "where"),
@@ -562,7 +568,7 @@ public sealed class FeatureServerMaintenanceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/validateSQL")]
     public async Task ServiceValidateSql_EsriSqlTypeWhereEnum_ReturnsIsValid()
     {
-        var content = new FormUrlEncodedContent(new[]
+        using var content = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("sql", "objectid > 0"),
             new KeyValuePair<string, string>("sqlType", "esriSQLTypeWhere"),

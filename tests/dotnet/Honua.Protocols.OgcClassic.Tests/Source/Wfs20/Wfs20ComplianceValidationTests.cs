@@ -107,6 +107,8 @@ public class Wfs20ComplianceValidationTests
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this helper reports serialization/validation failures as
+            // assertable errors via `out errors` rather than letting the test crash with a raw exception.
             errors.Add($"XML serialization/validation error: {ex.Message}");
             return false;
         }

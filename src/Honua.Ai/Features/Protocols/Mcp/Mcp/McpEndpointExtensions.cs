@@ -546,10 +546,9 @@ internal static class McpEndpointExtensions
                 continue;
             }
 
-            foreach (var media in value.Split(','))
+            // Strip any q-value/parameters after ';' and trim whitespace.
+            foreach (var token in value.Split(',').Select(media => media.Split(';', 2)[0].Trim()))
             {
-                // Strip any q-value/parameters after ';' and trim whitespace.
-                var token = media.Split(';', 2)[0].Trim();
                 if (token.Equals(EventStreamMimeType, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
@@ -616,17 +615,7 @@ internal static class McpEndpointExtensions
     /// element is dispatched.
     /// </summary>
     private static bool BatchContainsInitialize(JsonElement batch)
-    {
-        foreach (var element in batch.EnumerateArray())
-        {
-            if (IsInitialize(element))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => batch.EnumerateArray().Any(IsInitialize);
 
     /// <summary>
     /// Classifies the <c>id</c> property of a JSON-RPC message per MCP
