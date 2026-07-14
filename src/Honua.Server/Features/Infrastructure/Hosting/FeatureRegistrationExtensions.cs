@@ -278,6 +278,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapI3sSceneServerEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapNetworkDatasetAdminEndpoints();
+        endpoints.MapNetworkTopologyEditAdminEndpoints();
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapVisibilityAnalysisEndpoints();

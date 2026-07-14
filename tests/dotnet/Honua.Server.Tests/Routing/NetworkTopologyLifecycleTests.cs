@@ -124,6 +124,69 @@ public sealed class NetworkTopologyLifecycleTests
         Assert.Null(updated.ActivatedAt);
     }
 
+    [Theory]
+    [InlineData(NetworkTopologyGenerationState.Draft)]
+    [InlineData(NetworkTopologyGenerationState.Dirty)]
+    public void TryApplyContentEdit_DraftOrDirty_TransitionsToDirtyAndBumpsRevisionAndVersion(
+        NetworkTopologyGenerationState startingState)
+    {
+        var generation = CreateGeneration(startingState, rowVersion: 3);
+
+        var succeeded = NetworkTopologyLifecycle.TryApplyContentEdit(
+            generation,
+            expectedRowVersion: 3,
+            _now,
+            out var updated,
+            out var rejection);
+
+        Assert.True(succeeded);
+        Assert.Equal(NetworkTopologyEditRejection.None, rejection);
+        Assert.Equal(NetworkTopologyGenerationState.Dirty, updated.State);
+        Assert.Equal(4, updated.RowVersion);
+        Assert.Equal(10, updated.SourceRevision);
+        Assert.Equal(_now, updated.UpdatedAt);
+    }
+
+    [Fact]
+    public void TryApplyContentEdit_StaleVersion_ReturnsConflictWithoutMutation()
+    {
+        var generation = CreateGeneration(NetworkTopologyGenerationState.Draft, rowVersion: 5);
+
+        var succeeded = NetworkTopologyLifecycle.TryApplyContentEdit(
+            generation,
+            expectedRowVersion: 4,
+            _now,
+            out var updated,
+            out var rejection);
+
+        Assert.False(succeeded);
+        Assert.Equal(NetworkTopologyEditRejection.StaleRowVersion, rejection);
+        Assert.Same(generation, updated);
+    }
+
+    [Theory]
+    [InlineData(NetworkTopologyGenerationState.Building)]
+    [InlineData(NetworkTopologyGenerationState.Ready)]
+    [InlineData(NetworkTopologyGenerationState.Active)]
+    [InlineData(NetworkTopologyGenerationState.Failed)]
+    [InlineData(NetworkTopologyGenerationState.Retired)]
+    public void TryApplyContentEdit_NonEditableState_ReturnsRejectionWithoutMutation(
+        NetworkTopologyGenerationState nonEditableState)
+    {
+        var generation = CreateGeneration(nonEditableState, rowVersion: 1);
+
+        var succeeded = NetworkTopologyLifecycle.TryApplyContentEdit(
+            generation,
+            expectedRowVersion: 1,
+            _now,
+            out var updated,
+            out var rejection);
+
+        Assert.False(succeeded);
+        Assert.Equal(NetworkTopologyEditRejection.GenerationNotEditable, rejection);
+        Assert.Same(generation, updated);
+    }
+
     private static NetworkTopologyGeneration CreateGeneration(
         NetworkTopologyGenerationState state,
         long rowVersion) => new(

@@ -74,6 +74,12 @@ public static class ServiceCollectionExtensions
         if (UsesPostgresDataProvider(configuration))
         {
             services.AddScoped<INetworkDatasetStore, PostgresNetworkDatasetStore>();
+
+            // Topology generation read/allocation and canonical batched content-edit
+            // stores (#2716). Postgres-only, mirroring the registry store above; the admin
+            // edit endpoints no-op when these are absent.
+            services.AddScoped<INetworkTopologyGenerationStore, PostgresNetworkTopologyGenerationStore>();
+            services.AddScoped<INetworkTopologyEditStore, PostgresNetworkTopologyEditStore>();
         }
 
         // Resolve the selected provider. The Routing:Provider key remains the

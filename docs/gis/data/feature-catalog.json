@@ -2550,6 +2550,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-network-datasets-id-generations",
+      "route": "/api/v1/admin/network-datasets/{id}/generations",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ListGenerations_AfterAllocate_IncludesActiveAndDraft",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ListGenerations_Anonymous_IsDenied"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-oauth-clients",
       "route": "/api/v1/admin/oauth-clients",
       "method": "GET",
@@ -13400,6 +13414,43 @@
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_DuplicateId_Returns409",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_UnsafeEdgeTable_Returns400",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Register_ValidPayload_Returns201WithDto"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-generations",
+      "route": "/api/v1/admin/network-datasets/{id}/generations",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.AllocateDraft_ValidDataset_Returns201WithDraftState"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-generations-generation-edits",
+      "route": "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_ActiveGeneration_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_AddEdge_TransitionsDraftToDirtyAndBumpsRevision",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_DisallowedAttributeKey_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_MissingIdempotencyKey_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_MissingIfMatch_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_RestrictionReferencingUnknownEdge_RollsBackWholeBatch",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_SameIdempotencyKeyDifferentPayload_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_SameIdempotencyKeySamePayload_ReplaysWithoutMutating",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_SridMismatch_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_StaleRowVersion_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_Success_EmitsSanitizedAuditLogAndTelemetrySpan",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_ValidRestriction_ThenDeleteReferencedEdge_Returns400WithoutDeleting"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

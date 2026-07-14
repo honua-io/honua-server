@@ -2890,9 +2890,9 @@ sql:
       END;
       $$;
   - "SELECT honua.seed_metadata_v2_compat_snapshot();"
-  # Network-dataset registry (#1882). Mirrors migrations 062 + 066 + 084 so the
-  # editing surface and its initial-generation invariant exist when
-  # HONUA_SKIP_MIGRATIONS bypasses the runner.
+  # Network-dataset registry (#1882). Mirrors migrations 062 + 066 + 083 + 084
+  # so the editing surface, dataset-backed travel profiles, and the initial-
+  # generation invariant exist when HONUA_SKIP_MIGRATIONS bypasses the runner.
   - |
       CREATE TABLE IF NOT EXISTS honua.network_datasets (
           id               TEXT        NOT NULL PRIMARY KEY,
@@ -2914,6 +2914,10 @@ sql:
   - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS description TEXT;"
   - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS created_by TEXT;"
   - "ALTER TABLE IF EXISTS honua.network_datasets ADD COLUMN IF NOT EXISTS updated_by TEXT;"
+  - |
+      ALTER TABLE honua.network_datasets
+          ADD COLUMN IF NOT EXISTS travel_profiles JSONB NOT NULL DEFAULT
+              '[{"name":"driving","forwardCostColumn":"cost","reverseCostColumn":"reverse_cost"}]'::jsonb;
   - |
       CREATE TABLE IF NOT EXISTS honua.network_topology_generations (
           dataset_id       TEXT        NOT NULL,
@@ -3048,6 +3052,80 @@ sql:
           SELECT 1 FROM honua.network_topology_generations AS existing
           WHERE existing.dataset_id = dataset.id AND existing.state = 'active')
       ON CONFLICT (dataset_id, generation) DO NOTHING;
+  # Network-topology content-edit staging tables (#2716). Mirrors migration 086 so
+  # the batched edge/turn-restriction edit admin surface has its tables when
+  # HONUA_SKIP_MIGRATIONS bypasses the runner.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_edge_edits (
+          dataset_id        TEXT             NOT NULL,
+          generation        BIGINT           NOT NULL,
+          edge_id           TEXT             NOT NULL,
+          source_vertex_id  TEXT             NOT NULL,
+          target_vertex_id  TEXT             NOT NULL,
+          geometry          geometry         NOT NULL,
+          srid              INTEGER          NOT NULL,
+          attributes        JSONB            NOT NULL DEFAULT '{}'::jsonb,
+          created_at        TIMESTAMPTZ      NOT NULL DEFAULT now(),
+          updated_at        TIMESTAMPTZ      NOT NULL DEFAULT now(),
+          created_by        TEXT,
+          updated_by        TEXT,
+          PRIMARY KEY (dataset_id, generation, edge_id),
+          FOREIGN KEY (dataset_id, generation)
+              REFERENCES honua.network_topology_generations (dataset_id, generation)
+              ON DELETE CASCADE,
+          CHECK (srid > 0),
+          CHECK (ST_SRID(geometry) = srid),
+          CHECK (GeometryType(geometry) IN ('LINESTRING', 'MULTILINESTRING'))
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_restriction_edits (
+          dataset_id        TEXT             NOT NULL,
+          generation        BIGINT           NOT NULL,
+          restriction_id    TEXT             NOT NULL,
+          from_edge_id      TEXT             NOT NULL,
+          via_vertex_id     TEXT             NOT NULL,
+          to_edge_id        TEXT             NOT NULL,
+          kind              TEXT             NOT NULL,
+          penalty           DOUBLE PRECISION,
+          attributes        JSONB            NOT NULL DEFAULT '{}'::jsonb,
+          created_at        TIMESTAMPTZ      NOT NULL DEFAULT now(),
+          updated_at        TIMESTAMPTZ      NOT NULL DEFAULT now(),
+          created_by        TEXT,
+          updated_by        TEXT,
+          PRIMARY KEY (dataset_id, generation, restriction_id),
+          FOREIGN KEY (dataset_id, generation)
+              REFERENCES honua.network_topology_generations (dataset_id, generation)
+              ON DELETE CASCADE,
+          FOREIGN KEY (dataset_id, generation, from_edge_id)
+              REFERENCES honua.network_topology_edge_edits (dataset_id, generation, edge_id),
+          FOREIGN KEY (dataset_id, generation, to_edge_id)
+              REFERENCES honua.network_topology_edge_edits (dataset_id, generation, edge_id),
+          CHECK (kind IN ('prohibited', 'required', 'penalty')),
+          CHECK ((kind = 'penalty') = (penalty IS NOT NULL)),
+          CHECK (penalty IS NULL OR penalty >= 0)
+      );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_edit_idempotency (
+          dataset_id              TEXT        NOT NULL,
+          generation               BIGINT      NOT NULL,
+          idempotency_key          TEXT        NOT NULL,
+          content_hash             TEXT        NOT NULL,
+          result_state             TEXT        NOT NULL,
+          result_row_version       BIGINT      NOT NULL,
+          result_source_revision   BIGINT      NOT NULL,
+          edges_added              INTEGER     NOT NULL,
+          edges_updated            INTEGER     NOT NULL,
+          edges_deleted            INTEGER     NOT NULL,
+          restrictions_added       INTEGER     NOT NULL,
+          restrictions_updated     INTEGER     NOT NULL,
+          restrictions_deleted     INTEGER     NOT NULL,
+          created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (dataset_id, generation, idempotency_key),
+          FOREIGN KEY (dataset_id, generation)
+              REFERENCES honua.network_topology_generations (dataset_id, generation)
+              ON DELETE CASCADE,
+          CHECK (result_state IN ('draft', 'dirty', 'building', 'ready', 'active', 'failed', 'retired'))
+      );
   # Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
   # Mirrors migrations 033_CreateTileCacheCatalog + 067_AddTileCachePackageImport so
   # the WMTS exporter sink and the .tpk/.tpkx/.vtpk import + serving binding have their

@@ -194,6 +194,42 @@ transactional content edits (#2716), isolated durable rebuild (#2718), atomic
 promotion/rollback (#2719), then multi-node fencing and recovery (#2720). Travel-profile
 metadata and cost semantics remain independently owned by #2655.
 
+### Transactional edge and turn-restriction content edits (#2716)
+
+Issue #2716 adds the canonical admin edit service the lifecycle foundation was built for.
+Migration 086 adds three additive tables scoped to one `(dataset_id, generation)` pair:
+`network_topology_edge_edits` (staged geometry + allowlisted attributes),
+`network_topology_restriction_edits` (staged turn restrictions, foreign-keyed to the staged
+edges so a dangling reference is a database-enforced rejection), and
+`network_topology_edit_idempotency` (an at-most-once ledger that stores only counts and
+lifecycle state, never geometry or attribute values). Two new admin endpoints under
+`/api/v1/admin/network-datasets/{id}/generations` allocate a `draft` generation (seeded from
+the dataset's current active generation) and list a dataset's generations; a third,
+`POST .../generations/{generation}/edits`, applies a batched add/update/delete edit for
+edges and turn restrictions in one Postgres transaction.
+
+Every batch requires an `Idempotency-Key` header (replaying the same key with the same
+payload returns the original result without re-applying; the same key with a different
+payload is rejected deterministically) and an `If-Match` header carrying the generation's
+current row version (a mismatch is a 409, not a silent overwrite). `NetworkTopologyLifecycle`
+(the same provider-neutral module #2715 introduced) gained `TryApplyContentEdit`: it only
+ever leaves a generation `dirty`, accepts edits when the current state is `draft` or `dirty`,
+and rejects every other state — active, ready, building, failed, and retired generations all
+return a sanitized 409 rather than accepting content. A successful batch increments both the
+row version (concurrency) and the source revision (content clock) in the same
+compare-and-swap `UPDATE` that applies the state transition, so the dirty transition and the
+content mutation commit atomically. Validation runs in two layers: `NetworkTopologyEditValidation`
+checks structure in memory (bounded batch size, duplicate ids, GeoJSON `LineString`/
+`MultiLineString` shape and SRID match, turn-restriction kind/penalty shape, and the edge
+attribute keys against the dataset's #2655 travel-profile forward/reverse cost columns)
+before a transaction opens, while id-collision and turn-restriction edge-reference checks run
+transactionally against the staged content (an `ON CONFLICT DO NOTHING` plus affected-row
+check for create/update/delete semantics, and an explicit existence pre-check for restriction
+references) so `Honua.Routing` never needs a direct Npgsql dependency to detect them. The
+NAServer/GeoServices protocol adapter never calls this edit service and remains read-only;
+rebuild execution, promotion/rollback, and multi-node coordination remain out of scope for
+#2718–#2720.
+
 **Update (post-MVP, #1862 / #1863).** Two deferrals from the original first slice
 are now delivered:
 

@@ -91,6 +91,11 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/network-datasets/{id}"),
         new("DELETE", "/api/v1/admin/network-datasets/{id}"),
 
+        // Network-topology generation/edit admin endpoints (#2716).
+        new("GET", "/api/v1/admin/network-datasets/{id}/generations"),
+        new("POST", "/api/v1/admin/network-datasets/{id}/generations"),
+        new("POST", "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits"),
+
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 
