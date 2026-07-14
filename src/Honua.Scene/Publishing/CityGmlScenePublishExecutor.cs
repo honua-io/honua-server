@@ -124,6 +124,10 @@ internal sealed partial class CityGmlScenePublishExecutor
         try
         {
             Directory.CreateDirectory(stagingDirectory);
+            // Safe: "tileset.json" is a hardcoded literal, and tileset.Tiles' uri keys
+            // are the fixed "building_0000.glb" constant minted by
+            // BuildingSceneLayerBuilder (see its tileUri const) — neither is derived
+            // from the uploaded CityGML document, so neither combine can be rooted.
             await File.WriteAllBytesAsync(
                 Path.Combine(stagingDirectory, "tileset.json"),
                 tileset.TilesetJsonBytes,

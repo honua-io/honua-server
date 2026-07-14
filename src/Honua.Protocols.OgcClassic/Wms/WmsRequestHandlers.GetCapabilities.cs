@@ -186,6 +186,8 @@ internal static partial class WmsRequestHandlers
         }
         catch (Exception ex)
         {
+            // Intentionally generic: a per-layer temporal resolution failure must degrade to no
+            // TIME dimension rather than fail the whole capabilities document (see doc comment above).
             OgcClassicLog.TemporalExtentSkipped(
                 logger,
                 layer.StorageLayerId,

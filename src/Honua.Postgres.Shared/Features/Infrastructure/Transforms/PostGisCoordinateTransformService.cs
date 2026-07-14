@@ -367,10 +367,11 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         {
             throw;
         }
+        // Intentionally generic: this is the last-resort PostGIS ST_Transform fallback path;
+        // on failure there is nowhere further to fall back to, so log and return null for the
+        // caller to treat as "transform unavailable".
         catch (Exception ex)
         {
-            // This is itself the last-resort PostGIS fallback path; on failure there is nowhere further
-            // to fall back to, so log and return null for the caller to treat as "transform unavailable".
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
             return null;
         }
@@ -430,10 +431,11 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         {
             throw;
         }
+        // Intentionally generic: this is the last-resort PostGIS ST_Transform fallback path;
+        // on failure there is nowhere further to fall back to, so log and return null for the
+        // caller to treat as "transform unavailable".
         catch (Exception ex)
         {
-            // This is itself the last-resort PostGIS fallback path; on failure there is nowhere further
-            // to fall back to, so log and return null for the caller to treat as "transform unavailable".
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
             return null;
         }
@@ -489,10 +491,11 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         {
             throw;
         }
+        // Intentionally generic: this is the last-resort PostGIS ST_Transform fallback path;
+        // on failure there is nowhere further to fall back to, so log and return false for the
+        // caller to treat as "transform unavailable".
         catch (Exception ex)
         {
-            // This is itself the last-resort PostGIS fallback path; on failure there is nowhere further
-            // to fall back to, so log and return false for the caller to treat as "transform unavailable".
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
             return false;
         }

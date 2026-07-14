@@ -195,6 +195,10 @@ internal static class SpecDagResolver
             ready.Remove(next);
             result.Add(next);
 
+            // Kept as an imperative loop (not Where): the in-degree decrement (Kahn's algorithm)
+            // is a required side effect for every dependent, not just the ones that reach zero,
+            // so a LINQ Where predicate would have to perform the mutation itself — the
+            // imperative form keeps the mutation and the conditional enqueue explicit.
             foreach (var dependent in reverseEdges[next])
             {
                 if (--inDegree[dependent] == 0)
