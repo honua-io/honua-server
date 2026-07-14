@@ -63,6 +63,9 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
 
             Log.JobEnqueued(Logger, jobId, IsUsingRedis ? "Redis" : "InMemory");
         }
+        // Intentional: unlike the read/diagnostic paths below, an enqueue failure must
+        // surface to the caller (the job would otherwise silently never run), so this logs
+        // for diagnosis and rethrows.
         catch (Exception ex)
         {
             Log.JobEnqueueFailed(Logger, jobId, ex);
@@ -205,6 +208,8 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
 
             Log.JobCompleted(Logger, jobId, IsUsingRedis ? "Redis" : "InMemory");
         }
+        // Intentional: a completion failure must surface to the caller — silently swallowing
+        // it would leave the job stuck in the processing queue with no signal to retry.
         catch (Exception ex)
         {
             Log.JobCompleteFailed(Logger, jobId, ex);
@@ -246,6 +251,8 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
                 fallbackOperation: ct => Task.FromResult(RecoverInFlightFallback()),
                 cancellationToken).ConfigureAwait(false);
         }
+        // Intentional: a recovery failure must surface to the caller (typically a startup
+        // path) so the operator sees it rather than silently leaving in-flight jobs stuck.
         catch (Exception ex)
         {
             Log.RecoveryFailed(Logger, ex);

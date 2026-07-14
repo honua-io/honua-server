@@ -91,6 +91,9 @@ internal static partial class WebhookDeliveryHelper
             {
                 throw;
             }
+            // Intentional: this is one attempt within the retry loop below — transport
+            // failures (DNS, TLS, connection reset) must be caught so the loop can retry
+            // with backoff rather than fail the whole delivery on a transient error.
             catch (Exception ex)
             {
                 LogDeliveryException(logger, request.EventId, attempt, ex);

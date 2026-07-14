@@ -64,6 +64,9 @@ internal sealed partial class NatsFeatureChangeEventSink : IFeatureChangeEventSi
         {
             throw;
         }
+        // Intentional: this is the sink's publish boundary — a producer failure of any kind
+        // must be routed to the dead-letter path rather than propagate, so the mutation
+        // that raised the event is never rolled back by a downstream broker failure.
         catch (Exception ex)
         {
             await DeadLetterAsync(featureEvent, value, headers, ex, cancellationToken).ConfigureAwait(false);

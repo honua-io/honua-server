@@ -127,6 +127,9 @@ internal sealed class Cql2FilterProcessor(
             parsedExpression = NormalizeFilterAxisOrder(parsedExpression, filterCrsDefinition.Value.AxisOrder);
         }
 
+        // Not converted to `.Where(...)`: the predicate is an awaited async lookup, and the
+        // first unsupported SRID must short-circuit the enclosing method with a specific
+        // error message, which a synchronous LINQ filter cannot express.
         foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(parsedExpression))
         {
             if (!await _crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))

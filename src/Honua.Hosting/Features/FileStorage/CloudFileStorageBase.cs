@@ -162,6 +162,9 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         if (BatchIndex.TryRemove(batchId, out var fileIds))
         {
             var deletedCount = 0;
+            // Not converted to `.Where(...)`: the predicate is an awaited async delete call
+            // that must run sequentially per file (not fanned out via Task.WhenAll), so a
+            // synchronous LINQ filter cannot express it.
             foreach (var fileId in fileIds.Keys)
             {
                 if (await DeleteBatchFileAsync(fileId, cancellationToken))

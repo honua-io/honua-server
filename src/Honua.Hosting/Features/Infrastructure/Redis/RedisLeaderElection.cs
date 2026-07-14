@@ -177,11 +177,16 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
             {
                 await TryAcquireOrExtendLeadershipAsync(_stopTokenSource?.Token ?? CancellationToken.None).ConfigureAwait(false);
             }
+            // Intentional: a failed renewal attempt must not stop the timer from firing
+            // again — this node simply stays a non-leader (or loses leadership) until the
+            // next renewal succeeds.
             catch (Exception ex)
             {
                 Log.LeadershipRenewalFailed(Logger, _nodeId, ex);
             }
         }
+        // Intentional: outermost guard for the async void timer callback above — catches
+        // anything the inner try/catch missed (including bugs in the disposed check itself).
         catch (Exception ex)
         {
             Log.UnhandledTimerException(Logger, nameof(OnRenewalTimer), ex);

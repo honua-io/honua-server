@@ -56,6 +56,9 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
 
             await _distributedCache.SetAsync(key, bytes, options, cancellationToken);
         }
+        // Intentional: unlike the read-path methods above, a write failure is not degraded
+        // to a silent no-op — the caller needs to know its write did not durably land, so
+        // this logs for diagnosis and rethrows.
         catch (Exception ex)
         {
             RedisCacheManagerAdapterLog.SetFailed(_logger, key, ex);
