@@ -133,7 +133,7 @@ public readonly record struct BoundingBox
 
         foreach (var range in ranges)
         {
-            foreach (var otherRange in otherRanges.Where(otherRange => range.Min <= otherRange.Max && range.Max >= otherRange.Min))
+            if (otherRanges.Any(otherRange => range.Min <= otherRange.Max && range.Max >= otherRange.Min))
             {
                 return true;
             }
@@ -159,12 +159,7 @@ public readonly record struct BoundingBox
 
         foreach (var otherRange in otherRanges)
         {
-            var contained = false;
-            foreach (var range in ranges.Where(range => range.Min <= otherRange.Min && range.Max >= otherRange.Max))
-            {
-                contained = true;
-                break;
-            }
+            var contained = ranges.Any(range => range.Min <= otherRange.Min && range.Max >= otherRange.Max);
 
             if (!contained)
             {

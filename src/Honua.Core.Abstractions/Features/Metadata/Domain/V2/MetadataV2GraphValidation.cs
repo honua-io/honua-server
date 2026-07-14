@@ -469,6 +469,8 @@ public static class MetadataV2GraphValidator
         List<string> errors, IReadOnlyList<MetadataV2Publication> publications)
     {
         // At most one publication per (resourceId, serviceId) may set IsPrimary = true.
+        // Not rewritten as .Select(): the loop accumulates a frequency count into a shared
+        // dictionary rather than projecting a new sequence, so this is an aggregation, not a map.
         var counts = new Dictionary<(string, string), int>();
         foreach (var pub in publications.Where(pub => pub.IsPrimary))
         {

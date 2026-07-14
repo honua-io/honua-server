@@ -307,6 +307,9 @@ internal static class OgcFeatureIdentifierResolver
         // a single ObjectIds query (mirrors the per-id GetAsync fast path in ResolveAsync).
         if (CanUseObjectIdFastPath(idField))
         {
+            // judgment call: TryParseCanonicalPositiveObjectId both filters (returns false for
+            // non-canonical ids) and binds the extracted `objectId` used below; a .Where() would
+            // have to re-parse the id, so the guard-clause form here is clearer.
             var tokensByObjectId = new Dictionary<long, string>(distinctIds.Count);
             foreach (var featureId in distinctIds)
             {
@@ -328,6 +331,9 @@ internal static class OgcFeatureIdentifierResolver
                     cancellationToken).ConfigureAwait(false);
                 if (!fastPathResult.Items.IsDefaultOrEmpty)
                 {
+                    // judgment call: TryGetValue both filters (skips features whose id was not
+                    // requested) and binds the extracted `token` used below; a .Where() would
+                    // have to re-look-up the token, so the guard-clause form here is clearer.
                     foreach (var feature in fastPathResult.Items)
                     {
                         if (tokensByObjectId.TryGetValue(feature.Id, out var token))
