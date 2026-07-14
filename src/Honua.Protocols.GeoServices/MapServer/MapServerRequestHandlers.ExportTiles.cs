@@ -22,6 +22,7 @@ using Honua.Infrastructure.Tiles;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
 namespace Honua.Protocols.GeoServices.MapServer;
@@ -85,7 +86,21 @@ internal static partial class MapServerEndpoints
     private static async Task<IResult> HandleExportTiles(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var (plan, error) = await TryBuildExportTilesPlanAsync(context, cancellationToken).ConfigureAwait(false);
+
+        // Explicit Compact Cache V2 / TPKX negotiation submits a durable asynchronous job and
+        // returns an ArcGIS { jobId, jobStatus } envelope when the shared tile-export lifecycle
+        // service is registered. The request values are read once here and threaded into the
+        // synchronous plan builder so a JSON POST body is never read twice; every non-CompactV2
+        // request keeps the existing flat-ZIP / exploded-TPK behavior byte-for-byte.
+        var preRead = await TryReadMapServerRequestValuesAsync(context).ConfigureAwait(false);
+        if (preRead.Values is not null
+            && IsCompactV2Requested(preRead.Values)
+            && context.RequestServices.GetService<ITileExportJobService>() is not null)
+        {
+            return await SubmitDurableExportAsync(context, preRead.Values, cancellationToken).ConfigureAwait(false);
+        }
+
+        var (plan, error) = await TryBuildExportTilesPlanAsync(context, cancellationToken, preRead).ConfigureAwait(false);
         if (error is not null)
         {
             return error;
@@ -286,7 +301,8 @@ internal static partial class MapServerEndpoints
 
     private static async Task<(ExportTilesPlan? Plan, IResult? Error)> TryBuildExportTilesPlanAsync(
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        (Dictionary<string, StringValues>? Values, string? Error)? preReadValues = null)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
         if (serviceError is not null)
@@ -294,7 +310,7 @@ internal static partial class MapServerEndpoints
             return (null, serviceError);
         }
 
-        var (values, readError) = await TryReadMapServerRequestValuesAsync(context).ConfigureAwait(false);
+        var (values, readError) = preReadValues ?? await TryReadMapServerRequestValuesAsync(context).ConfigureAwait(false);
         if (values == null)
         {
             if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
