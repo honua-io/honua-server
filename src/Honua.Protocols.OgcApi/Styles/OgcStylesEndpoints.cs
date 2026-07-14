@@ -517,6 +517,9 @@ public static class OgcStylesEndpoints
         {
             await cacheStore.EvictByTagAsync("ogc-styles", CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentionally generic: this is best-effort cache eviction after a style mutation
+        // has already been committed; an eviction failure must only be logged, not fail the
+        // request or leave the caller thinking the mutation itself failed.
         catch (Exception ex)
         {
             OgcStylesLog.StylesCacheEvictionFailed(logger, ex);

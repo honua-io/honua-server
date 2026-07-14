@@ -165,11 +165,11 @@ internal static class OgcResponseFormatter
 
             return sb.ToString();
         }
+        // Intentionally generic: this is a best-effort HTML stats/nav-link enhancement over
+        // an already-serialized JSON payload; if the shape is unexpected, omit the fragment
+        // rather than fail the HTML response for what is a purely cosmetic feature.
         catch
         {
-            // Best-effort HTML stats/nav-link enhancement over an already-serialized JSON
-            // payload; if the shape is unexpected, omit the fragment rather than fail the
-            // HTML response for what is a purely cosmetic feature.
             return string.Empty;
         }
     }

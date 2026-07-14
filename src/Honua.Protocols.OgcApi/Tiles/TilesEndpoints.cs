@@ -687,6 +687,8 @@ internal static partial class TilesEndpoints
         {
             throw;
         }
+        // Intentionally generic: this is the top-level tile request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);

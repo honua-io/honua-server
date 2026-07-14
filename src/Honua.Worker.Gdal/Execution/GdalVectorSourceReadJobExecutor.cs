@@ -127,10 +127,16 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             else
             {
                 var extension = SourceExtensions.TryGetValue(sourceFormat, out var ext) ? ext : ".dat";
+                // Second segment is built from extension, which is always a fixed
+                // literal drawn from the SourceExtensions allowlist above (or the
+                // ".dat" fallback), never user-supplied, so it can never be rooted and
+                // silently discard workspace.
                 ogrSourcePath = Path.Combine(workspace, "input" + extension);
                 await File.WriteAllBytesAsync(ogrSourcePath, sourceBytes, cancellationToken).ConfigureAwait(false);
             }
 
+            // Second segment is a fixed relative literal filename, so it can never be
+            // rooted and silently discard workspace.
             var outputPath = Path.Combine(workspace, "output.geojson");
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -215,6 +221,8 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
     /// </summary>
     private static string ExtractZipSource(byte[] zipBytes, string workspace, string sourceFormat)
     {
+        // Second segment is a fixed relative literal, so it can never be rooted and
+        // silently discard workspace.
         var extractRoot = Path.Combine(workspace, "src");
         Directory.CreateDirectory(extractRoot);
         var fullExtractRoot = Path.GetFullPath(extractRoot) + Path.DirectorySeparatorChar;
@@ -230,6 +238,12 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
                     continue;
                 }
 
+                // entry.FullName is attacker-influenced (an untrusted ZIP entry name) and
+                // CAN be rooted, which would make Path.Combine here silently discard
+                // extractRoot — that is exactly why this result is never trusted
+                // directly: it is re-anchored with Path.GetFullPath and validated
+                // against fullExtractRoot immediately below (zip-slip / extraction-root
+                // escape guard) before anything is written to disk.
                 var destinationPath = Path.GetFullPath(Path.Combine(extractRoot, entry.FullName));
                 if (!destinationPath.StartsWith(fullExtractRoot, StringComparison.Ordinal))
                 {

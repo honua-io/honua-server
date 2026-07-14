@@ -197,6 +197,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
             HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateFromException(context, ex);
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             Log.CreateFeatureFailed(_logger, collectionId, ex);
@@ -325,6 +328,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
             HonuaTelemetry.RecordException(Activity.Current, ex);
             return StandardErrorHelpers.CreateValidationError(context, ex);
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             Log.DeleteFeatureFailed(_logger, collectionId, ex);
@@ -364,6 +370,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 mutationFeature: mutationFeature,
                 serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
         }
+        // Intentionally generic: the edit is already committed, so a publish failure must
+        // not surface as a request failure; log and swallow so the caller still sees a
+        // successful create/delete response.
         catch (Exception ex)
         {
             Log.FeatureChangePublishFailed(_logger, layerId, objectId, ex);

@@ -1114,6 +1114,9 @@ internal sealed partial class ODataStreamingQueryHandler(
             result = (layerIds.First(), null);
             return true;
         }
+        // Intentional broad catch: the OData filter parser can throw a variety of
+        // syntax/format exceptions for a malformed $filter; already logged
+        // (Log.LayerIdFilterResolutionFailed) and mapped to a caller-facing failure result.
         catch (Exception ex)
         {
             Log.LayerIdFilterResolutionFailed(_logger, filter, ex);
@@ -1206,6 +1209,9 @@ internal sealed partial class ODataStreamingQueryHandler(
 
         if (value is double doubleValue)
         {
+            // Intentional exact check: doubleValue is a literal parsed directly from the
+            // $filter text (e.g. LayerId eq 5.0), not the result of floating-point
+            // arithmetic, so testing for an exact whole number is well-defined here.
             if (doubleValue % 1 != 0)
             {
                 return false;

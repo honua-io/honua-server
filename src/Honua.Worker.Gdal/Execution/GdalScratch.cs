@@ -31,6 +31,10 @@ internal static partial class GdalScratch
         }
 
         var root = Path.GetFullPath(scratchRoot);
+        // operationId is attacker-influenced (a job operation id) but is validated
+        // above to contain no path-separator characters and not be rooted, so it can
+        // never make Path.Combine here silently discard root; the containment check
+        // below is the actual escape guard.
         var workspace = Path.GetFullPath(Path.Combine(root, operationId));
         var rootPrefix = Path.EndsInDirectorySeparator(root)
             ? root

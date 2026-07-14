@@ -380,6 +380,9 @@ internal static class ProcessEndpoints
                 "Conflict",
                 conflictEx.Message);
         }
+        // Intentionally generic: this is the top-level process-execution endpoint
+        // boundary; any unanticipated failure must map to a generic 500 rather than
+        // crash the request or leak internals to the client.
         catch (Exception ex)
         {
             OgcProcessesResults.RecordException(ex);
