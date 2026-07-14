@@ -35,9 +35,10 @@ fabricates — where it does not. This mirrors the DEM-height precedent (#1879),
 which returns a real differenced height only when a DEM is modeled and otherwise
 returns an actionable `501`.
 
-This ADR records the decisions for the whole epic (#2667); the **first
-implementation slice ships the ADR plus `computeTiePoints` only**. Shadow / 3D
-mensuration math and `calculateVolume` are explicit follow-up PRs.
+This ADR records the decisions for the whole epic (#2667). The **first
+implementation slice shipped the ADR plus `computeTiePoints`**; a **second slice
+adds shadow / 3D height mensuration and `calculateVolume`** (§7, §8), completing
+the epic's sensor-model operations.
 
 ## Decision
 
@@ -171,13 +172,78 @@ parseable-but-unsupported request:
   (the height path already differences DEM samples to `1e-6`), consistent with
   the epic acceptance criteria.
 
+### 7. Shadow-based height mensuration (second slice)
+
+`esriMensurationHeightFromBaseAndTopShadow` and
+`esriMensurationHeightFromTopAndTopShadow` are computed on the existing `measure`
+route from the **measured ground shadow length** and the raster's **sun
+elevation**: `height = shadowLength · tan(sunElevation)`. Both variants use the
+same formula — the operator measures the object-to-shadow-tip length, and the
+height follows from the sun elevation above the horizon.
+
+- **Sun geometry source.** Sun elevation (and optional azimuth) is read from the
+  `raster_sensor_metadata` **exterior-orientation** JSONB via
+  `ImageServerSensorModel.TryReadSunGeometry` — `sunElevation` (aliases
+  `sun_elevation`, `sunElevationAngle`, `solarElevation`, `sun_elevation_angle`)
+  and `sunAzimuth` (aliases `sun_azimuth`, `solarAzimuth`, `sun_azimuth_angle`).
+  A `{x, y, z}` illumination/look vector (`sunDirection` / `illuminationVector` /
+  `sunVector`) is a fallback: elevation = `asin(|z| / |v|)`. No migration is
+  introduced. The shadow length reuses the existing geodesic/planar distance
+  path, so it is a true ground length (not a raw map-unit delta).
+- **Honest error.** When no sun geometry is modeled (or the elevation is outside
+  the open interval 0°–90°, where `tan` is degenerate), the operation returns the
+  same actionable `501` as the DEM-height path — never a fabricated height. Only
+  the pure-3D operations (`*3d`, which need full exterior orientation / a stereo
+  model) remain gated to `501`.
+- **Azimuth** is parsed for completeness but is **not required** for the height,
+  because the shadow length is measured directly rather than derived from the
+  shadow tip and the sun direction.
+
+### 8. `calculateVolume` (second slice)
+
+Cut/fill volumes are computed against the layer's DEM surface
+(`raster_sensor_metadata.dem_source`, the same source the DEM-height path uses),
+integrating over the DEM pixels inside each area-of-interest.
+
+- **Wire contract.** Follows the ArcGIS Enterprise REST `Calculate Volume`
+  reference (not invented): request `geometries` (array of polygon/envelope AOIs),
+  `geometryType`, `baseType`, `constantZ` (base plane, required for `baseType=0`),
+  `pixelSize`, `mosaicRule`, `f`; response `{ "results": [ { "area", "cut",
+  "fill", "minz", "maxz", "meanz" } ] }` with one entry per AOI. `fill` is
+  negative per the Esri convention. There is **no `net` field** in the reference,
+  so none is emitted (the net is `cut + fill`).
+- **Base plane.** Only **`baseType=0` (constant elevation plane, `constantZ`)** is
+  supported. The shared clip primitive returns per-pixel band *values* with no
+  pixel positions, so a best-fitting plane (`baseType=1`) or a perimeter-derived
+  base (`baseType` 2/3/4) cannot be reconstructed honestly in-process; those
+  return an actionable `501`. `pixelSize` is accepted for wire compatibility but
+  the integration samples at the DEM's native resolution.
+- **Integration.** `cut = Σ_(e>z0)(e−z0)·pixelArea` (material above the base),
+  `fill = Σ_(e<z0)(e−z0)·pixelArea` (void below), `area = validPixels·pixelArea`.
+  Pixel ground area is `|det|` of the DEM geotransform's linear part (handles
+  rotation/skew). Volumes and area are in the DEM's **linear map units** (cubic /
+  square meters for a projected metric DEM); a geographic DEM yields degree-based
+  units — operators supply a projected DEM for metric results.
+- **DEM pixels** are read through the shared `ReadClippedBandVectorsAsync` clip
+  primitive (the same one `computeClassStatistics` uses), reusing the raster
+  analytics path rather than a parallel reader.
+- **Honest error + bound.** No `dem_source` (or a non-layer-id source, or a DEM
+  with no usable geotransform/rasters) → `501`. An AOI whose DEM clip exceeds the
+  synchronous pixel budget (`GeoServices:ImageServer:CalculateVolume:MaxPixelsPerGeometry`,
+  default 4,000,000, mirroring the class-statistics precedent) → actionable `400`
+  — never a truncated (wrong) volume or a `500`. The **async-job path for
+  unbounded AOIs is deferred** to the durable-job seam (§4), noted here rather
+  than built.
+
 ## Scope Out (this slice and epic)
 
 - **Automatic feature-matching tie-point computation** — permanently out of the
   in-process engine (§2); only ever a future cloud-delegated lane.
-- **Shadow-based and pure-3D height mensuration** (`esriMensuration*3d`,
-  `*Shadow`) — follow-up PR; keeps the existing `501` until then.
-- **`calculateVolume`** — follow-up PR.
+- **Pure-3D height mensuration** (`esriMensuration*3d`) — still `501`; needs full
+  exterior orientation / a stereo model. Shadow-based height (`*Shadow`) is now
+  implemented (§7).
+- **`calculateVolume` base surfaces other than the constant plane** (`baseType`
+  1–4) and the **async volume job path** — deferred (§8).
 - **Surfacing GDAL dataset GCPs on `RasterInfo`** — follow-up seam (§1).
 - **Full RPC polynomial correction** — deferred (first-order affine only).
 - **Unbounded synchronous scene processing** — non-goal; use the durable-job
