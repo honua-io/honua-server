@@ -104,12 +104,12 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
         Assert.Contains(ConsoleContentAction.Administer, createdData.Actions);
         Assert.Equal(1, createdData.Generation);
 
-        var getResponse = await _client.GetAsync($"/api/v1/console/content/{created.Data.Id}");
+        var getResponse = await _client.GetAsync($"/api/v1/console/content/{created!.Data!.Id}");
         Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
         var fetched = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await getResponse.Content.ReadAsStringAsync(), JsonOptions);
 
-        Assert.Equal(created.Data.Id, fetched!.Data!.Id);
+        Assert.Equal(created!.Data!.Id, fetched!.Data!.Id);
         Assert.Equal(ConsoleContentItemType.SavedMap, fetched.Data.ItemType);
         Assert.NotEmpty(fetched.Data.Actions);
         // Audit actor must be stamped from the authenticated principal even

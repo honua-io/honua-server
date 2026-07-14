@@ -176,6 +176,9 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             group.RelatedRecords.Should().NotBeNull();
             group.RelatedRecords!.Should().NotBeEmpty(
                 "the high object-id origin has a child referencing it");
+            // ContainsKey + indexer (not TryGetValue) because this lambda compiles as an
+            // Expression<Func<T, bool>> for FluentAssertions' Contain(...); expression trees
+            // cannot contain an inline `out var` declaration.
             group.RelatedRecords.Should().Contain(r =>
                 r.Attributes.ContainsKey("objectid") &&
                 ReadAttributeAsInt64(r.Attributes["objectid"]) == childObjectId);
