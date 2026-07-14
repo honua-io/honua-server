@@ -7,6 +7,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Monitoring;
+using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -46,13 +47,19 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /monitoring/health/comprehensive")]
     [Endpoint("GET /monitoring/metrics/connection-pool")]
     [Endpoint("GET /monitoring/metrics/database-resilience")]
-    public async Task ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown()
+    public async Task ConnectionTimeouts_KeepDatabaseHealthGreenWithKnownPoolUtilization()
     {
         using (var scope = _fixture.Services.CreateScope())
         {
             var metricsCollector = scope.ServiceProvider.GetRequiredService<ProductionMetricsCollector>();
             var connectionPoolMetrics = scope.ServiceProvider.GetRequiredService<ConnectionPoolMetrics>();
-            connectionPoolMetrics.TryGetPoolUtilization(out _).Should().BeFalse();
+
+            // CachingDatabaseConnectionProvider's constructor now publishes the concurrency-gate ceiling
+            // as the pool size (UpdatePoolSize), so once any scoped provider has been constructed in this
+            // process, utilization telemetry is available -- it is no longer permanently "unknown".
+            connectionPoolMetrics.TryGetPoolUtilization(out var initialUtilization).Should().BeTrue();
+            initialUtilization.Should().BeInRange(0.0, 1.0);
+
             var initialTimeouts = connectionPoolMetrics.GetTotalTimeouts();
 
             connectionPoolMetrics.RecordConnectionTimeout();
@@ -64,8 +71,10 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 
             directHealthMetrics.ConnectionAcquisitionTimeouts.Should().Be(expectedTimeouts);
             directHealthMetrics.ConnectionAcquisitionFailures.Should().Be(0);
-            directHealthMetrics.HasDatabaseConnectionPoolUtilization.Should().BeFalse();
-            directHealthMetrics.DatabaseConnectionPoolUtilization.Should().Be(0);
+            directHealthMetrics.HasDatabaseConnectionPoolUtilization.Should().BeTrue();
+            // Connection timeouts are cumulative counters only; they never feed the utilization ratio
+            // itself (ConnectionPoolMetrics.TryGetPoolUtilization derives it purely from active/pool size).
+            directHealthMetrics.DatabaseConnectionPoolUtilization.Should().BeInRange(0.0, 1.0);
 
             using var adminClient = _fixture.CreateAdminClient();
 
@@ -76,12 +85,17 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             {
                 var root = document.RootElement;
                 root.GetProperty("totalTimeouts").GetInt64().Should().Be(expectedTimeouts);
-                root.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-                root.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-                root.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
-                root.GetProperty("utilization").GetDouble().Should().Be(0);
-                root.GetProperty("utilizationStatus").GetString().Should().Be("unavailable");
-                root.GetProperty("utilizationPercentage").GetString().Should().Be("unavailable");
+                root.GetProperty("hasUtilizationData").GetBoolean().Should().BeTrue();
+                root.GetProperty("utilization").GetDouble().Should().BeInRange(0.0, 1.0);
+                root.GetProperty("utilizationStatus").GetString().Should().Be("available");
+                root.GetProperty("utilizationPercentage").GetString().Should().NotBe("unavailable");
+
+                // ResolveConnectionPoolHealthStatus keys solely off utilization (<=0.8 => Healthy); the
+                // effective pool ceiling in this test process is the QueryConcurrencyGate.MaxLimit default
+                // (200), so a handful of active connections in a single-fixture integration run stays well
+                // under the 0.8 degraded threshold.
+                root.GetProperty("healthStatus").GetString().Should().Be("Healthy");
+                root.GetProperty("isHealthy").GetBoolean().Should().BeTrue();
             }
 
             var resilienceResponse = await adminClient.GetAsync("/monitoring/metrics/database-resilience");
@@ -89,15 +103,19 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
 
             using var resilienceDocument = JsonDocument.Parse(await resilienceResponse.Content.ReadAsStringAsync());
             var pool = resilienceDocument.RootElement.GetProperty("connectionPool");
-            pool.GetProperty("isHealthy").GetBoolean().Should().BeFalse();
-            pool.GetProperty("healthStatus").GetString().Should().Be("Unknown");
-            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeFalse();
+            pool.GetProperty("isHealthy").GetBoolean().Should().BeTrue();
+            pool.GetProperty("healthStatus").GetString().Should().Be("Healthy");
+            pool.GetProperty("hasUtilizationData").GetBoolean().Should().BeTrue();
+
+            // Telemetry is no longer unavailable, and utilization is far below both the 0.8/0.9
+            // warning/critical thresholds in GetDatabaseAlerts, so none of the pool-utilization alert
+            // variants (unavailable/high/critical) should be present.
             resilienceDocument.RootElement
                 .GetProperty("alerts")
                 .EnumerateArray()
                 .Select(static alert => alert.GetString())
                 .Should()
-                .Contain("Warning: Database connection pool utilization telemetry is unavailable.");
+                .NotContain(alert => alert != null && alert.Contains("connection pool utilization", StringComparison.Ordinal));
 
 
             var healthResponse = await adminClient.GetAsync("/monitoring/health/comprehensive");
@@ -111,7 +129,9 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
             var data = databaseEntry.GetProperty("data");
             data.GetProperty("connectionTimeouts").GetInt64().Should().Be(expectedTimeouts);
             data.GetProperty("connectionFailures").GetInt64().Should().Be(0);
-            data.GetProperty("poolUtilization").GetDouble().Should().Be(0);
+            // DatabaseHealthCheck now reports the real ratio (ConnectionPoolMetrics.GetPoolUtilization()),
+            // not a hardcoded 0 -- assert it is a valid ratio rather than locking in the old "always 0".
+            data.GetProperty("poolUtilization").GetDouble().Should().BeInRange(0.0, 1.0);
         }
     }
 
@@ -159,13 +179,42 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
         var httpRequestSnapshotProvider = scope.ServiceProvider.GetRequiredService<IHttpRequestMetricsSnapshotProvider>();
         var baseline = httpRequestSnapshotProvider.GetHttpRequestMetricsSnapshot();
 
+        // ErrorRate (#2809) is no longer TotalErrors/TotalQueries; ProductionMetricsCollector.GetHealthMetrics
+        // now sources it from CalculateWindowedErrorRate(), which sums RequestCount/ErrorCount across all
+        // protocols in HonuaTelemetry's rolling serving-latency window. RecordHttpRequest (below) only
+        // updates the IHttpRequestMetricsSnapshotProvider counters, not that window, so the windowed rate
+        // must be driven directly via HonuaTelemetry.RecordServingRequest -- the same call the real request
+        // pipeline makes -- and the expectation derived from a before/after snapshot of that window.
+        long windowBaselineRequests = 0;
+        long windowBaselineErrors = 0;
+        foreach (var protocol in HonuaTelemetry.GetServingLatencySnapshot().Protocols)
+        {
+            windowBaselineRequests += protocol.RequestCount;
+            windowBaselineErrors += protocol.ErrorCount;
+        }
+
         performanceMonitor.RecordHttpRequest("GET", "/collections", StatusCodes.Status200OK, TimeSpan.FromMilliseconds(12));
         performanceMonitor.RecordHttpRequest("GET", "/collections/places/items", StatusCodes.Status500InternalServerError, TimeSpan.FromMilliseconds(37));
         performanceMonitor.RecordHttpRequest("GET", "/collections/places/items", StatusCodes.Status404NotFound, TimeSpan.FromMilliseconds(19));
 
+        HonuaTelemetry.RecordServingRequest("ogc-api", "items", StatusCodes.Status200OK, 12);
+        HonuaTelemetry.RecordServingRequest("ogc-api", "items", StatusCodes.Status500InternalServerError, 37);
+        HonuaTelemetry.RecordServingRequest("ogc-api", "items", StatusCodes.Status404NotFound, 19);
+
         var expectedTotalRequests = baseline.TotalRequests + 3;
         var expectedServerErrors = baseline.TotalServerErrors + 1;
-        var expectedErrorRate = (double)expectedServerErrors / expectedTotalRequests;
+
+        long windowAfterRequests = 0;
+        long windowAfterErrors = 0;
+        foreach (var protocol in HonuaTelemetry.GetServingLatencySnapshot().Protocols)
+        {
+            windowAfterRequests += protocol.RequestCount;
+            windowAfterErrors += protocol.ErrorCount;
+        }
+
+        var expectedErrorRate = windowAfterRequests > 0
+            ? (double)windowAfterErrors / windowAfterRequests
+            : 0.0;
 
         var directHealthMetrics = metricsCollector.GetHealthMetrics();
         directHealthMetrics.TotalQueries.Should().Be(expectedTotalRequests);

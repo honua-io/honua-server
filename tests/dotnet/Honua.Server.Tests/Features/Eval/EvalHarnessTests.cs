@@ -76,18 +76,19 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
     /// scenario's declared set. Subset-only comparison would silently accept drift in
     /// the canonical runtime's artifact surface, weakening the eval gate's contract.
     /// </summary>
+    /// <remarks>
+    /// Uses a dedicated single-step (direct-submit-executable) plan rather than deriving
+    /// from a corpus scenario: DirectSubmitPlanValidator (#2806) now gates the shared
+    /// ValidatePlan/DryRunPlan pipeline on direct-submit executability, so a multi-step
+    /// plan's DryRun response is always Valid=false/Result=null and never reaches the
+    /// artifact-kind comparison this test exercises. A single Geoprocess-only plan stays
+    /// direct-submit executable, so the comparison logic actually runs.
+    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     public async Task DryRun_UnexpectedArtifactKinds_FailsScenario()
     {
-        var baseScenario = EvalScenarioLoader.LoadById("analysis-buffer-places");
-        var scenario = baseScenario with
-        {
-            ExpectedOutcome = baseScenario.ExpectedOutcome with
-            {
-                EstimatedArtifactKinds = [ArtifactKind.FeatureLayer]
-            }
-        };
+        var scenario = BuildArtifactKindMismatchScenario();
 
         var result = await _fixture.Runner.RunAsync(scenario, CancellationToken.None);
 
@@ -310,6 +311,52 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             IsExecutable = true,
             RequiresApproval = true,
             EstimatedArtifactKinds = [ArtifactKind.Scalar]
+        }
+    };
+
+    private static EvalScenario BuildArtifactKindMismatchScenario() => new()
+    {
+        Id = "artifact-kind-mismatch-buffer-places",
+        Name = "Buffer places plan whose declared artifact kinds omit an actual estimate",
+        Mode = EvalScenarioMode.Analysis,
+        FixtureProfile = "ogc",
+        Intent = new EvalIntentSpec
+        {
+            IntentId = "intent-artifact-kind-mismatch-buffer-places",
+            Goal = "Buffer the seed 'places' layer by 500m.",
+            Mode = "analysis",
+            RequestedOutputs = [ArtifactKind.FeatureLayer, ArtifactKind.Report],
+            Inputs = ["places"],
+            AssumptionPolicy = AssumptionPolicy.AskWhenMaterial
+        },
+        PrecompiledPlan = new EvalPlanSpec
+        {
+            PlanId = "plan-artifact-kind-mismatch-buffer-places",
+            IntentId = "intent-artifact-kind-mismatch-buffer-places",
+            Steps =
+            [
+                new EvalPlanStepSpec
+                {
+                    StepId = "buffer-places",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "analytics.buffer-aggregate",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["layerId"] = "0",
+                        ["distance"] = "500",
+                        ["unit"] = "meters"
+                    }
+                }
+            ],
+            Outputs = [ArtifactKind.FeatureLayer, ArtifactKind.Report]
+        },
+        ExpectedOutcome = new EvalExpectedOutcome
+        {
+            IsExecutable = true,
+            // Declares fewer artifact kinds than the plan's own Outputs (which DryRunPlan
+            // uses verbatim as its estimate when non-empty), so the actual estimate
+            // reports Report unexpectedly and the harness's mismatch detection fires.
+            EstimatedArtifactKinds = [ArtifactKind.FeatureLayer]
         }
     };
 
