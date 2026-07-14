@@ -40,9 +40,10 @@ public sealed class ImageServerExportTilesJobEndpointTests
                 "&storageFormatType=esriMapCacheStorageModeCompactV2" +
                 "&exportExtent=-180,-85,180,85&exportExtentSR=4326&levels=0,1,2&format=png&maxTiles=1000");
 
-            submit.StatusCode.Should().Be(HttpStatusCode.OK);
+            var submitBody = await submit.Content.ReadAsStringAsync();
+            submitBody.Should().Contain("esriJobSubmitted", $"submit response was: {submitBody}");
             var submitted = JsonSerializer.Deserialize(
-                await submit.Content.ReadAsStringAsync(),
+                submitBody,
                 ImageServerJsonContext.Default.ImageServerExportTilesJobSubmitResponse);
             submitted!.JobStatus.Should().Be("esriJobSubmitted");
             submitted.JobId.Should().NotBeNullOrEmpty();

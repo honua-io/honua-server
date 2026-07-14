@@ -526,12 +526,15 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
     public async Task MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
     {
+        // Compact Cache V2 / TPKX now negotiates the durable async path (#2706) rather than the old
+        // "unsupported" rejection: a single-level request is instead rejected by the TPKX
+        // validation, which requires at least two zoom levels.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpkx");
 
         var content = await response.Content.ReadAsStringAsync();
         await response.AssertGeoServicesErrorAsync(400);
-        content.Should().Contain("compact");
+        content.ToLowerInvariant().Should().Contain("zoom levels");
     }
 
     [IntegrationTest]

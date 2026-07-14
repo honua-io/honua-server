@@ -28,6 +28,11 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     private const string SubmissionFailurePhase = "Failed (submission)";
     private const int CancellationCasAttempts = 3;
 
+    // Tiles charged per admission cost unit. Normalizes the checked tile count onto the shared
+    // admission cost scale (where a geoprocessing plan step is one unit) so ordinary tile exports
+    // are admissible while enormous ones are still gated per partition.
+    private const long AdmissionTilesPerCostUnit = 1000;
+
     private readonly TimeProvider _timeProvider;
     private readonly IOptions<CloudStorageOptions> _storageOptions;
     private readonly ILogger<TileExportJobService> _logger;
@@ -305,15 +310,19 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             return;
         }
 
-        // Cost is the checked selected-tile count from the bounded grid planner (never materializes
-        // the grid), so admission gates on real export size rather than a flat per-job weight.
+        // Cost is derived from the checked selected-tile count from the bounded grid planner (which
+        // never materializes the grid), then normalized to ~1 unit per 1,000 tiles. The shared
+        // admission cost limit is tuned to job-relative weights (a geoprocessing plan step is one
+        // unit); charging one unit per thousand tiles keeps ordinary exports admissible while a
+        // partition still caps at roughly limit x 1,000 concurrent tiles, so an enormous export is
+        // gated rather than every export being denied under a step-count-scaled limit.
         var grid = TileExportGridPlanner.Create(plan);
         var request = new ExecutionAdmissionRequest
         {
             JobKind = ExecutionJobKind.TileExport,
             PartitionKey = partitionKey,
             PrincipalId = principalId,
-            EstimatedCostWeight = Math.Max(1d, grid.SelectedTileCount),
+            EstimatedCostWeight = Math.Max(1d, Math.Ceiling(grid.SelectedTileCount / (double)AdmissionTilesPerCostUnit)),
             Priority = OperationPriority.Normal
         };
 
