@@ -60,15 +60,12 @@ internal sealed class MetadataV2SpecCatalogSnapshot : ISpecCatalogSnapshot
 
     private static string? TryGetLiteral(ObjectExpression expression, string key)
     {
-        foreach (var field in expression.Fields.Where(field => string.Equals(field.Key, key, StringComparison.Ordinal)))
-        {
-            if (field.Value is LiteralNode { Kind: SpecTypeKind.String } literal)
-            {
-                return literal.String;
-            }
-        }
-
-        return null;
+        return expression.Fields
+            .Where(field => string.Equals(field.Key, key, StringComparison.Ordinal))
+            .Select(field => field.Value)
+            .OfType<LiteralNode>()
+            .FirstOrDefault(node => node.Kind == SpecTypeKind.String)
+            ?.String;
     }
 
     private static bool TryParseCatalogLayerRef(string value, out int layerId)

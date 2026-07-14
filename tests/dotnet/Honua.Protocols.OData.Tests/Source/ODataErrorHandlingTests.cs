@@ -30,6 +30,8 @@ public sealed class ODataErrorHandlingTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }

@@ -276,6 +276,10 @@ internal sealed class FeatureMutationEventService(
                 requestPayload,
                 CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentional: this fires after the mutation's database transaction has already
+        // committed, so a notification failure here must never fail (or appear to fail) the
+        // mutation itself — log and continue. PublishAsync already catches internally; this
+        // is belt-and-braces against a future change there.
         catch (Exception ex)
         {
             FeatureMutationEventLog.PublishAfterCommitFailed(

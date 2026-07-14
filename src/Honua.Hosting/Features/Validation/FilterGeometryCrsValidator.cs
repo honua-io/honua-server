@@ -84,6 +84,9 @@ internal static class FilterGeometryCrsValidator
         Func<int, bool> isSupportedSrid,
         out int unsupportedSrid)
     {
+        // Not converted to `.Where(...)`: the recursive call has an `out` parameter that
+        // must flow back to the caller on the first match, which a LINQ predicate cannot
+        // express.
         foreach (var expression in expressions)
         {
             if (TryFindUnsupportedExplicitGeometryCrs(expression, isSupportedSrid, out unsupportedSrid))

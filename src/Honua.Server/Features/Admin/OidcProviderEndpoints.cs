@@ -105,6 +105,9 @@ internal static partial class OidcProviderEndpoints
             IReadOnlyList<OidcProviderResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<OidcProviderResponse>>.CreateSuccess(readOnly));
         }
+        // Intentional catch-all request-handling boundary: this is the OIDC
+        // provider listing endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             OidcProviderLog.ListProvidersFailed(logger, ex);
@@ -148,6 +151,9 @@ internal static partial class OidcProviderEndpoints
             return TypedResults.Created($"/api/v1/admin/oidc/providers/{created.ProviderId}",
                 ApiResponse<OidcProviderResponse>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: this is the OIDC
+        // provider creation endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             OidcProviderLog.CreateProviderFailed(logger, ex);
@@ -175,6 +181,9 @@ internal static partial class OidcProviderEndpoints
 
             return TypedResults.Ok(ApiResponse<OidcProviderResponse>.CreateSuccess(ToResponse(provider)));
         }
+        // Intentional catch-all request-handling boundary: this is the OIDC
+        // provider retrieval endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             OidcProviderLog.GetProviderFailed(logger, id, ex);
@@ -219,6 +228,9 @@ internal static partial class OidcProviderEndpoints
             var result = await store.UpdateProviderAsync(updated, context.RequestAborted);
             return TypedResults.Ok(ApiResponse<OidcProviderResponse>.CreateSuccess(ToResponse(result!)));
         }
+        // Intentional catch-all request-handling boundary: this is the OIDC
+        // provider update endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             OidcProviderLog.UpdateProviderFailed(logger, id, ex);
@@ -247,6 +259,9 @@ internal static partial class OidcProviderEndpoints
             OidcProviderLog.ProviderDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("OIDC provider deleted"));
         }
+        // Intentional catch-all request-handling boundary: this is the OIDC
+        // provider deletion endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             OidcProviderLog.DeleteProviderFailed(logger, id, ex);
@@ -285,6 +300,9 @@ internal static partial class OidcProviderEndpoints
             OidcProviderLog.ProviderTested(logger, id, testResult.IsReachable);
             return TypedResults.Ok(ApiResponse<OidcProviderTestResponse>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: this is the OIDC
+        // provider connectivity-test endpoint; the failure is logged and mapped
+        // to a generic error response below.
         catch (Exception ex)
         {
             OidcProviderLog.TestProviderFailed(logger, id, ex);

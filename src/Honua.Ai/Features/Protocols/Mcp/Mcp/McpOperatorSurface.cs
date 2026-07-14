@@ -484,12 +484,12 @@ internal sealed class McpOperatorSurface
         {
             throw;
         }
+        // Intentionally generic: this is the top-level MCP tool-invocation boundary. Per MCP
+        // 2025-03-26 tool-execution failures (auth, approval, validation, domain) must appear
+        // inside the result with isError: true so standard clients can drive retry/re-auth flows
+        // without parsing protocol-level JSON-RPC errors.
         catch (Exception ex)
         {
-            // Per MCP 2025-03-26 tool-execution failures (auth, approval,
-            // validation, domain) must appear inside the result with
-            // isError: true so standard clients can drive retry/re-auth flows
-            // without parsing protocol-level JSON-RPC errors.
             result = McpToolHelpers.ErrorResult(ex);
             var code = ExtractErrorCode(result);
             McpTelemetry.ToolCallCount.Add(

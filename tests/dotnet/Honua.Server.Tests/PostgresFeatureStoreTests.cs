@@ -140,7 +140,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         // Assert
         Assert.NotNull(retrieved);
         Assert.Equal(created.Id, retrieved!.Value.Id);
-        Assert.Equal(attributes["name"], retrieved.Value.Attributes["name"]);
+        Assert.Equal(attributes["name"], retrieved!.Value.Attributes["name"]);
     }
 
     [Fact]

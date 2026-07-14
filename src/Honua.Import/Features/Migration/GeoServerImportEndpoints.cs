@@ -87,6 +87,12 @@ internal static partial class GeoServerImportEndpoints
                 GeoServerImportApiJsonContext.Default.GeoServerDiscoveryApiRequest,
                 cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
@@ -141,6 +147,9 @@ internal static partial class GeoServerImportEndpoints
                 "Failed to discover GeoServer service with the supplied configuration.",
                 StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // InvalidOperationException case above; any remaining unexpected failure maps to a
+        // generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.GeoServerRestUrl, ex);
@@ -175,6 +184,12 @@ internal static partial class GeoServerImportEndpoints
                 GeoServerImportApiJsonContext.Default.GeoServerImportApiRequest,
                 cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
+        // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
         catch (Exception ex)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
@@ -336,6 +351,9 @@ internal static partial class GeoServerImportEndpoints
                 "Invalid GeoServer import request.",
                 StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // coordination-unavailable and validation cases above; any remaining unexpected
+        // failure rolls back the queued state and maps to a generic 500.
         catch (Exception ex)
         {
             await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
@@ -404,9 +422,10 @@ internal static partial class GeoServerImportEndpoints
                 jobId,
                 CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentionally generic: best-effort rollback of queued job state after a failure;
+        // any error here is swallowed because the state will still expire via TTL.
         catch
         {
-            // Best-effort rollback; state will expire via TTL.
         }
     }
 
@@ -461,6 +480,8 @@ internal static partial class GeoServerImportEndpoints
             await Results.Json(ToJob(progress), GeoServerImportApiJsonContext.Default.GeoServerImportJob)
                 .ExecuteAsync(context);
         }
+        // Intentionally generic: top-level endpoint boundary; any unexpected failure reading
+        // job status maps to a generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             Log.JobStatusFailed(GetLogger(context), jobId, ex);
@@ -521,6 +542,8 @@ internal static partial class GeoServerImportEndpoints
             await Results.Json(response, GeoServerImportApiJsonContext.Default.GeoServerImportCancelResponse)
                 .ExecuteAsync(context);
         }
+        // Intentionally generic: top-level endpoint boundary; any unexpected failure
+        // cancelling the job maps to a generic 500 rather than leaking exception details.
         catch (Exception ex)
         {
             Log.JobCancelFailed(GetLogger(context), jobId, ex);

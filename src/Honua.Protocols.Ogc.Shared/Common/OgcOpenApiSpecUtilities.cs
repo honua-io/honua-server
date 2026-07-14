@@ -95,7 +95,9 @@ internal static class OgcOpenApiSpecUtilities
         // Eviction is best-effort; concurrent adds may slightly exceed MaxCacheEntries.
         if (_openApiCache.Count >= MaxCacheEntries)
         {
-            // Remove one arbitrary entry rather than clearing the whole cache
+            // Remove one arbitrary entry rather than clearing the whole cache.
+            // Not rewritten as .Where(): this stops at the first successful TryRemove (a
+            // side-effecting removal), not a filter over the sequence.
             foreach (var kvp in _openApiCache)
             {
                 if (_openApiCache.TryRemove(kvp))
@@ -112,6 +114,9 @@ internal static class OgcOpenApiSpecUtilities
 
     private static async Task<string?> ReadOpenApiContentAsync(string contentRootPath, string openApiFileName)
     {
+        // openApiFileName is always a compile-time literal supplied by callers (e.g.
+        // "admin-openapi.json"), never derived from request input, so Path.Combine cannot be
+        // steered by an absolute/rooted second argument here.
         var searchPaths = new[]
         {
             Path.Combine(contentRootPath, openApiFileName),

@@ -103,6 +103,10 @@ internal static class SceneAssetResolver
             return false;
         }
 
+        // Safe: IsSafeRelativePath above already rejects a leading '/'/'\', a
+        // drive-letter/UNC prefix, and '..' segments; IsUnderRoot below re-verifies
+        // containment on the canonicalized result, so this combine cannot escape
+        // assetRoot even under encoding tricks.
         var combined = Path.Combine(assetRoot, assetPath);
         string canonical;
         try

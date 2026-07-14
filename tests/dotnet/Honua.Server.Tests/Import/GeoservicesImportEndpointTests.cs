@@ -646,6 +646,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
             await Task.Delay(TimeSpan.FromMilliseconds(500));
         }
 
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         latestProgress.Should().NotBeNull();
         latestProgress!.Status.Should().Be(GeoservicesImportStatus.Failed);
         latestProgress!.ErrorMessage.Should().Contain("not allowed");

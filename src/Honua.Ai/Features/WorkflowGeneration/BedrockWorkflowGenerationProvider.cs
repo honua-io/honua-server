@@ -190,6 +190,9 @@ internal sealed class BedrockWorkflowGenerationProvider : IWorkflowGenerationPro
             WorkflowGenerationLog.GenerationFailed(_logger, _providerId, ex.Message);
             return WorkflowGenerationProposal.Error("Provider response could not be parsed.", _providerId, model);
         }
+        // Intentionally generic: this is a provider-boundary call to the Bedrock SDK, which
+        // surfaces transport/auth/throttling failures beyond the specific types already handled
+        // above; map any remaining failure to a generic proposal error instead of crashing the caller.
         catch (Exception ex)
         {
             WorkflowGenerationLog.GenerationFailed(_logger, _providerId, ex.Message);

@@ -101,6 +101,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // share projection read endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.get", ex);
@@ -181,6 +184,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // share access-tier update endpoint; the failure is logged and mapped to
+        // a generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.access", ex);
@@ -218,6 +224,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // share dependency-closure preview endpoint; the failure is logged and
+        // mapped to a generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.dependencies", ex);
@@ -252,6 +261,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // public-link listing endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.link.list", ex);
@@ -303,6 +315,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // public-link mint endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.link.mint", ex);
@@ -334,6 +349,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // public-link revocation endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.link.expire", ex);
@@ -409,6 +427,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // embed configuration endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.embed.set", ex);
@@ -467,6 +488,9 @@ internal static class ConsoleShareEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: this is the Console
+        // embed token mint endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.embed.mint", ex);

@@ -525,6 +525,9 @@ internal sealed class CoordinatedReleaseReconcilerBackgroundService(
                 {
                     stoppingToken.ThrowIfCancellationRequested();
 
+                    // Intentional catch-all: this is a per-operation loop inside the background
+                    // poll; one operation's reconcile failure must not prevent the remaining
+                    // active operations from being reconciled this poll cycle.
                     try
                     {
                         await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
@@ -539,6 +542,9 @@ internal sealed class CoordinatedReleaseReconcilerBackgroundService(
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background polling loop. A
+            // single failed iteration (e.g. transient store read failure) must not kill
+            // the host's background service; log and keep polling.
             catch (Exception ex)
             {
                 CoordinatedReleaseReconciler.Log.CoordinatedReleasePollLoopFailed(logger, ex);

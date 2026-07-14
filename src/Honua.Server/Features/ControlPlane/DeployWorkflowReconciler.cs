@@ -666,6 +666,8 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
                     {
                         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
                     }
+                    // Intentional catch-all: this is a per-operation attempt inside the reconciliation
+                    // loop; one operation's failure must not abort reconciliation of the rest.
                     catch (Exception ex)
                     {
                         DeployWorkflowReconciler.Log.WorkflowOperationReconcileFailed(logger, operation.OperationId, ex);
@@ -676,6 +678,8 @@ internal sealed class DeployWorkflowReconcilerBackgroundService(
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background reconciliation loop. A single
+            // failed iteration must not kill the host's background service; log and keep polling.
             catch (Exception ex)
             {
                 DeployWorkflowReconciler.Log.WorkflowOperationPollLoopFailed(logger, ex);

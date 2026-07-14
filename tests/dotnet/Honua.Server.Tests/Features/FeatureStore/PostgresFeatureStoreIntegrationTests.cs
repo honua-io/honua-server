@@ -441,6 +441,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         result.Items.Should().AllSatisfy(f =>
         {
             var category = f.Attributes["category"]?.ToString();
+            // FluentAssertions' NotBeNullOrEmpty()/BeOneOf() are null-safe extension methods, not dereferences.
             category.Should().NotBeNullOrEmpty();
             category.Should().BeOneOf("retail", "commercial");
             Convert.ToInt32(f.Attributes["value"], CultureInfo.InvariantCulture).Should().BeGreaterOrEqualTo(500);
@@ -686,8 +687,8 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
 
         var updatedFeature = Feature.Create(
             existingFeature!.Value.Id,
-            existingFeature.Value.Geometry,
-            existingFeature.Value.Attributes.SetItem("category", "ordered-update"));
+            existingFeature!.Value.Geometry,
+            existingFeature!.Value.Attributes.SetItem("category", "ordered-update"));
 
         var result = await store.ApplyEditsAsync(
             GetLayerId("points"),

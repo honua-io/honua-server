@@ -273,6 +273,9 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
 
             CacheLog.CacheMiss(_logger, finalCacheKey, executionStopwatch.ElapsedMilliseconds, context.CorrelationId);
         }
+        // Intentional: this wraps the caller-supplied queryExecutor purely to record timing
+        // and telemetry around the failure; the query failure itself is not this cache
+        // wrapper's to handle, so it is logged for diagnosis and rethrown unchanged.
         catch (Exception ex)
         {
             executionStopwatch.Stop();

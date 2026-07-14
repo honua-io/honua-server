@@ -196,6 +196,11 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                 CacheFallback(operationId, progress, effectiveTtl);
             }
         }
+        // Intentional: this is the Redis/distributed-cache boundary for every operation in
+        // this store; any failure is translated into the typed
+        // DistributedStateUnavailableException (after flagging fallback mode) so callers get
+        // a single well-known error rather than a leaked provider exception type. This
+        // pattern repeats across the Redis-backed methods below.
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "set progress");
@@ -253,6 +258,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
             return DeserializeProgress(json);
         }
+        // Intentional: see the "set progress" catch above — same translate-to-typed-exception
+        // pattern for the Redis boundary.
         catch (Exception ex)
         {
             HandleRedisFailure(ex, "get progress");
@@ -286,6 +293,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                     await RemoveFromRedisIndexAsync(operationId, storedType).ConfigureAwait(false);
                 }
             }
+            // Intentional: see the "set progress" catch above — same translate-to-typed-exception
+            // pattern for the Redis boundary.
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "delete progress");
@@ -460,6 +469,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 
             Log.ConditionalWriteLockUnavailable(_logger, operationId, null);
         }
+        // Intentional: lock acquisition is best-effort — a Redis failure resolves to "no
+        // lock" (null) rather than throwing, letting the caller proceed unconditionally;
+        // cancellation is excluded so it still propagates.
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.ConditionalWriteLockUnavailable(_logger, operationId, ex);
@@ -485,6 +497,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
                 [(RedisKey)$"{ConditionalWriteLockPrefix}{operationId}"],
                 [(RedisValue)token]).ConfigureAwait(false);
         }
+        // Intentional: lock release is best-effort — the compare-and-delete script above
+        // already guards against releasing a lock this writer no longer owns, and any
+        // remaining lock still expires on its own TTL, so a release failure is logged and
+        // swallowed rather than failing the caller.
         catch (Exception ex)
         {
             Log.ConditionalWriteLockReleaseFailed(_logger, operationId, ex);
@@ -595,6 +611,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             Log.RedisConnectionRestored(_logger);
             return true;
         }
+        // Intentional: this is a probe attempting to exit fallback mode; a failure just
+        // means Redis is still unavailable, so it is logged and reported as "not restored"
+        // rather than thrown.
         catch (Exception ex)
         {
             _lastRedisFailure = DateTime.UtcNow;
@@ -637,6 +656,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             {
                 return await GetActiveOperationIdsFromRedisAsync(operationType, cancellationToken).ConfigureAwait(false);
             }
+            // Intentional: see the "set progress" catch above — same translate-to-typed-exception
+            // pattern for the Redis boundary.
             catch (Exception ex)
             {
                 HandleRedisFailure(ex, "scan progress");
@@ -718,6 +739,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             var progress = DeserializeProgress(progressValue.ToString());
             return progress?.Type;
         }
+        // Intentional: operation-type lookup is a best-effort convenience for index
+        // maintenance during delete; a failure to resolve it must not fail the delete, so
+        // it is logged and reported as "unknown type" instead.
         catch (Exception ex)
         {
             Log.StoredOperationTypeLookupFailed(_logger, operationId, ex);

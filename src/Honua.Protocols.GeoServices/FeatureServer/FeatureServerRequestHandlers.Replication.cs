@@ -1339,6 +1339,9 @@ internal static partial class FeatureServerEndpoints
         foreach (var layer in layerEdits)
         {
             var edits = layer.Edits.IsDefault ? ImmutableArray<ReplicaUploadEdit>.Empty : layer.Edits;
+            // Not rewritten as .Where: the pattern-matched `objectId`/`feature` locals are bound
+            // by the filter condition itself and consumed in the loop body — a Where lambda's
+            // pattern variables do not escape to the outer foreach body.
             foreach (var edit in edits)
             {
                 if (edit.ObjectId is { } objectId && edit.Payload is GeoServicesFeature feature)

@@ -149,6 +149,9 @@ internal sealed class ProductionMetricsCollector : IDisposable
                 return uploadQueueMetricsProvider.GetQueueSnapshot().QueueDepth;
             }
         }
+        // Intentional broad catch: this is a best-effort metrics lookup; a failure to read the
+        // upload queue depth must not break the rest of metrics collection, so it is logged and a
+        // zero depth is reported instead.
         catch (Exception ex)
         {
             MonitoringLog.UploadQueueDepthRetrievalFailed(_logger, ex);

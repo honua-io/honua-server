@@ -289,6 +289,8 @@ internal sealed class GroundingService : IGroundingService
         {
             throw;
         }
+        // Intentionally generic: any backing-store failure here must map to CatalogUnavailable
+        // (see the comment above) so callers can distinguish an outage from an empty ranking.
         catch (Exception ex)
         {
             GroundingLog.PassRejected(_logger, nameof(GroundingErrorKind.CatalogUnavailable), ex.Message);

@@ -54,15 +54,7 @@ internal static class ConfigurationSecretRedactor
         }
 
         var name = propertyName.ToLowerInvariant();
-        foreach (var token in SensitiveNameTokens)
-        {
-            if (name.Contains(token, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return SensitiveNameTokens.Any(token => name.Contains(token, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -77,12 +69,9 @@ internal static class ConfigurationSecretRedactor
 
         var lowered = value.ToLowerInvariant();
 
-        foreach (var fragment in SecretValueKeyFragments)
+        if (SecretValueKeyFragments.Any(fragment => lowered.Contains(fragment, StringComparison.Ordinal)))
         {
-            if (lowered.Contains(fragment, StringComparison.Ordinal))
-            {
-                return true;
-            }
+            return true;
         }
 
         return UriCredentialPattern.IsMatch(value)
@@ -160,9 +149,8 @@ internal static class ConfigurationSecretRedactor
 
         double entropy = 0.0;
         double length = value.Length;
-        foreach (var count in counts.Values)
+        foreach (var probability in counts.Values.Select(count => count / length))
         {
-            var probability = count / length;
             entropy -= probability * Math.Log2(probability);
         }
 

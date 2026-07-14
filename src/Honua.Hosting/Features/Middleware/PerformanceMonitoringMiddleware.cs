@@ -44,6 +44,10 @@ internal sealed partial class PerformanceMonitoringMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
         var endpoint = GetNormalizedEndpoint(context);
+        // Not a `using` declaration: `operationScope` starts null and is conditionally
+        // reassigned below (only when EnableDetailedRequestTracking is on); C# does not
+        // allow reassigning a `using`-declared local, so it is disposed explicitly in the
+        // `finally` block instead.
         IOperationScope? operationScope = null;
         var requestErrored = false;
 
@@ -71,6 +75,10 @@ internal sealed partial class PerformanceMonitoringMiddleware
             // Continue to next middleware
             await _next(context);
         }
+        // Intentional: this is a top-level middleware boundary observing every request; it
+        // must record telemetry/tag the failure for any exception type before rethrowing
+        // unchanged so the shared error-handling middleware further up the pipeline still
+        // produces the actual response.
         catch (Exception ex)
         {
             if (ex is OperationCanceledException && context.RequestAborted.IsCancellationRequested)

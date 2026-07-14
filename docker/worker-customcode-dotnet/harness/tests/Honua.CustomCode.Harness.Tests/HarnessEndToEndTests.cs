@@ -31,6 +31,8 @@ public sealed class ProbeTool : IGeoprocessingTool
 
         if (ArtifactToWrite is not null)
         {
+            // False positive: ArtifactToWrite is always a test-set relative literal
+            // (e.g. "out.geojson"), never rooted.
             var path = Path.Combine(context.WorkDirectory, ArtifactToWrite);
             File.WriteAllText(path, "result-bytes");
             context.Output.AddArtifact(ArtifactToWrite, path);
@@ -73,6 +75,8 @@ public sealed class HarnessEndToEndTests
 
         // Stage the user .csproj so UserProjectBuilder's real path/existence checks pass;
         // the injected dotnet runner below stubs the actual compile.
+        // Path.Combine args below are a temp-dir root plus literal relative segments; no
+        // rooted-segment risk (cs/path-combine false positive).
         var sourceRoot = Path.Combine(workRoot.FullName, "src");
         Directory.CreateDirectory(Path.Combine(sourceRoot, "tool"));
         File.WriteAllText(Path.Combine(sourceRoot, "tool", "MyTool.csproj"), "<Project />");

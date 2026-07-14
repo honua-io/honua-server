@@ -67,9 +67,10 @@ internal sealed partial class RedisCollaborationSessionBackplane
             _enabled = true;
             Log.BackplaneSubscribed(_logger);
         }
+        // Intentionally generic: startup subscribe is best-effort (see class remarks);
+        // Redis-less or unreachable: stay disabled and fall back to local-only delivery.
         catch (Exception ex)
         {
-            // Redis-less or unreachable: stay disabled and fall back to local-only delivery.
             Log.BackplaneUnavailable(_logger, ex);
         }
 
@@ -83,6 +84,8 @@ internal sealed partial class RedisCollaborationSessionBackplane
         {
             _subscriber?.Unsubscribe(BroadcastChannel, HandleBroadcast);
         }
+        // Intentionally generic: shutdown unsubscribe is best-effort; a failed
+        // unsubscribe must not block host shutdown.
         catch (Exception ex)
         {
             Log.BackplaneUnavailable(_logger, ex);
@@ -110,6 +113,9 @@ internal sealed partial class RedisCollaborationSessionBackplane
             // Fire-and-forget: collaboration fan-out must never block on the backplane.
             subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
         }
+        // Intentionally generic: a collaboration mutation must never fail because
+        // the Redis backplane is unavailable (see class remarks); the failure is
+        // rate-limited-logged and swallowed so local delivery still proceeds.
         catch (Exception ex)
         {
             if (Interlocked.Exchange(ref _publishFailureLogged, 1) == 0)
@@ -142,6 +148,9 @@ internal sealed partial class RedisCollaborationSessionBackplane
 
             sessions.ApplyRemoteEvent(message.Event);
         }
+        // Intentionally generic: this is the Redis pub/sub receive callback for a
+        // peer broadcast; a malformed or unexpected payload must not crash the
+        // subscription, so it is rate-limited-logged and dropped.
         catch (Exception ex)
         {
             if (Interlocked.Exchange(ref _receiveFailureLogged, 1) == 0)

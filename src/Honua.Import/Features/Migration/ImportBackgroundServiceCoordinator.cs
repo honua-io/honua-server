@@ -117,6 +117,9 @@ internal static class ImportBackgroundServiceCoordinator
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background worker loop shared by
+            // every import job type; a single failed tick must not kill the host — log, back
+            // off, and keep dequeuing.
             catch (Exception ex)
             {
                 logProcessingError(logger, ex);
@@ -166,6 +169,8 @@ internal static class ImportBackgroundServiceCoordinator
             {
                 return;
             }
+            // Intentionally generic: this is a background cancellation/heartbeat polling
+            // loop; a single failed poll must not kill the monitor — log and keep polling.
             catch (Exception ex)
             {
                 logPollFailed(logger, jobId, ex);
@@ -215,6 +220,8 @@ internal static class ImportBackgroundServiceCoordinator
         {
             await jobQueue.CompleteAsync(jobId, CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentionally generic: this is best-effort queue acknowledgement after a job has
+        // already finished; a failure here must not surface as a failure of the job itself.
         catch (Exception ex)
         {
             logCompletionAcknowledgeFailed(logger, jobId, ex);
@@ -337,6 +344,8 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
         {
             await SetProgressAsync(progress, CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentionally generic: this is a best-effort progress update (see method name);
+        // a failure to publish progress must not fail the import job itself.
         catch (Exception ex)
         {
             logProgressUpdateFailed(logger, _jobId, ex);

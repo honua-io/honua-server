@@ -1154,6 +1154,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 continue;
             }
 
+            // Not a .Where(...) candidate: the filter predicate (!kinds.Contains(kind))
+            // checks against `kinds` itself as it grows across iterations, so this is a
+            // dedup-while-building accumulator rather than a pure filter over the input.
             foreach (var kind in definition.OutputArtifactKinds)
             {
                 if (!kinds.Contains(kind))

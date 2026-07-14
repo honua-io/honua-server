@@ -29,6 +29,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
@@ -442,6 +444,8 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
     {
         // Use the spatial-reference seed with SRID 3857 layers
         var sridFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         sridFixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await sridFixture.InitializeAsync();
 

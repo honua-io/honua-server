@@ -45,8 +45,12 @@ internal sealed class MetadataV2GraphProviderEnvironmentSnapshotReader(
             yield break;
         }
 
+        // This provider serves a single graph/environment (see IMetadataV2GraphProvider), so the
+        // requested list is only a membership filter, not a per-environment lookup key: yield the
+        // one snapshot at most once, even if the caller's list contains duplicate/aliased entries
+        // for the same environment.
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var environment in environments.Where(e => MatchesEnvironment(snapshot, e)))
+        if (environments.Any(e => MatchesEnvironment(snapshot, e)))
         {
             yield return new MetadataV2EnvironmentRevision
             {

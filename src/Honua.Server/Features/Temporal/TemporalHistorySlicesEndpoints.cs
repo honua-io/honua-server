@@ -118,6 +118,8 @@ internal static partial class TemporalHistorySlicesEndpoints
         {
             return problem;
         }
+        // Intentional broad catch: this is the request-handling boundary for the temporal diff
+        // endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "temporal.diff", ex);
@@ -145,6 +147,8 @@ internal static partial class TemporalHistorySlicesEndpoints
         {
             return problem;
         }
+        // Intentional broad catch: this is the request-handling boundary for the temporal timeline
+        // endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "temporal.timeline", ex);
@@ -174,6 +178,8 @@ internal static partial class TemporalHistorySlicesEndpoints
         {
             return problem;
         }
+        // Intentional broad catch: this is the request-handling boundary for the temporal rollback
+        // plan endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "temporal.rollback.plan", ex);
@@ -195,10 +201,14 @@ internal static partial class TemporalHistorySlicesEndpoints
                 return bad;
             }
 
+            // body is provably non-null here: TryBuildCheckpointFromBody only returns true when its
+            // (nullable) TemporalCheckpointBody argument is non-null, and that argument is body?.Checkpoint,
+            // so a true result means the outer body reference was non-null too (the compiler cannot
+            // trace that cross-call invariant, hence the null-forgiving operator below).
             var request = new TemporalRollbackExecuteRequest(
                 TargetCheckpoint: checkpoint,
-                Approved: body?.Approved ?? false,
-                Reason: body?.Reason);
+                Approved: body!.Approved,
+                Reason: body!.Reason);
 
             var handle = await service.ExecuteRollbackAsync(serviceId, layerId, request, context.RequestAborted).ConfigureAwait(false);
             return Results.Json(ToResponse(handle), TemporalHistorySlicesJsonContext.Default.TemporalRollbackJobResponse, statusCode: StatusCodes.Status202Accepted);
@@ -207,6 +217,8 @@ internal static partial class TemporalHistorySlicesEndpoints
         {
             return problem;
         }
+        // Intentional broad catch: this is the request-handling boundary for the temporal rollback
+        // execution endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             LogEndpointFailed(context, "temporal.rollback", ex);

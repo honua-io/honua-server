@@ -439,6 +439,9 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
                 $"GetCoverage response for {sourceCoverageId} declares {declaredLength} bytes, exceeding the {MaxCoverageDownloadBytes}-byte import limit.");
         }
 
+        // Both Path.Combine arguments below are safe: "honua-ogc-coverage-import" is a fixed
+        // relative literal, and the filename is a server-generated GUID ("N" format, hex only)
+        // plus a fixed extension - neither can become a rooted path that discards tempDir.
         var tempDir = Path.Combine(Path.GetTempPath(), "honua-ogc-coverage-import");
         Directory.CreateDirectory(tempDir);
         var path = Path.Combine(tempDir, $"{Guid.NewGuid():N}.tif");
@@ -498,7 +501,9 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         }
         catch
         {
-            // best-effort cleanup
+            // Intentional broad catch: best-effort temp-file cleanup. The caller has already
+            // completed (or failed) its own operation, so a deletion failure here must not
+            // surface as a new exception.
         }
     }
 

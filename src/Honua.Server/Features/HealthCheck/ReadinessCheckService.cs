@@ -159,9 +159,11 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             // Re-throw cancellation exceptions to properly propagate cancellation
             throw;
         }
+        // Intentional catch-all: this is the readiness-check request boundary spanning
+        // several distinct sub-checks; any failure is logged for debugging (without
+        // exposing details in the response) and mapped to a NotReady result.
         catch (Exception ex)
         {
-            // Log the error for debugging but don't expose details in response
             var failureMessage = $"{currentCheckName} health check failed";
             Log.DatabaseConnectionFailed(_logger, $"{failureMessage}: {ex.Message}", ex);
             return ReadinessResult.NotReady(failureMessage, ex);

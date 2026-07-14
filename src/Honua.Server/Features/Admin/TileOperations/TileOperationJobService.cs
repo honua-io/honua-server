@@ -310,6 +310,10 @@ internal sealed partial class TileOperationJobService(
                     finalProgress = (TileOperationProgress)started.WithCancellation(DateTimeOffset.UtcNow, "Cancelled");
                 }
             }
+            // Intentional catch-all: this is a per-job execution boundary inside the
+            // background tile-operation processing loop. A single job's failure
+            // (any exception from the execution core) must not crash the queue
+            // processor; it is recorded as a failed job progress below instead.
             catch (Exception ex)
             {
                 LogJobFailed(_logger, jobId, request.Operation, ex);
@@ -590,6 +594,9 @@ internal sealed partial class TileOperationJobService(
                 };
                 await _progressStore.SetProgressAsync(jobId, failed, _jobRequestRetention, cancellationToken).ConfigureAwait(false);
             }
+            // Intentional catch-all: this is a best-effort status write for a job
+            // whose backing request already disappeared; failing to persist the
+            // "missing request" status must not block the caller's cleanup below.
             catch (Exception ex)
             {
                 TileOperationLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
@@ -616,6 +623,9 @@ internal sealed partial class TileOperationJobService(
                 .ConfigureAwait(false);
             return claimValue.IsNullOrEmpty;
         }
+        // Intentional catch-all: this is a per-job check inside the startup
+        // recovery loop; if the Redis claim can't be inspected, treat the job as
+        // still owned elsewhere (skip recovery) rather than aborting the sweep.
         catch (Exception ex)
         {
             TileOperationLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);

@@ -72,11 +72,11 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                     classifications,
                     journalIsNonEmpty));
         }
+        // Intentionally broad: map any planning failure (bad connection string, DbUp/journal errors,
+        // etc.) to the typed DatabaseMigrationPlan.Failed result with a sanitized message; the raw
+        // exception is carried on the result for the caller to log without leaking it to end users.
         catch (Exception ex)
         {
-            // Map any planning failure (bad connection string, DbUp/journal errors, etc.) to the
-            // typed DatabaseMigrationPlan.Failed result with a sanitized message; the raw exception
-            // is carried on the result for the caller to log without leaking it to end users.
             return Task.FromResult(DatabaseMigrationPlan.Failed(ex, SafeMigrationFailureMessage));
         }
     }
@@ -316,9 +316,10 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             _ = command.Parameters.AddWithValue("lock_key", MigrationLockKey);
             _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
         }
+        // Intentionally generic: best-effort unlock; the advisory lock is connection-scoped and
+        // will be released when the connection is disposed regardless of this call's outcome.
         catch
         {
-            // The advisory lock is connection-scoped and will be released when the connection is disposed.
         }
     }
 
@@ -505,9 +506,10 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 process.Kill(entireProcessTree: true);
             }
         }
+        // Intentionally generic: best-effort cleanup of a timed-out backup-hook process; the process
+        // may have already exited between the HasExited check and Kill.
         catch
         {
-            // Best-effort cleanup; the process may have already exited.
         }
     }
 
@@ -559,9 +561,10 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         {
             await _backupHookRecorder.RecordAsync(result, cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally generic: backup-hook observability recording must not change migration
+        // apply/fail-closed semantics, so any recorder failure here is swallowed.
         catch
         {
-            // Backup-hook observability must not change migration apply/fail-closed semantics.
         }
     }
 }

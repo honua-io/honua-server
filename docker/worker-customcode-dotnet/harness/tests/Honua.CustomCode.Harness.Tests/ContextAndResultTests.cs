@@ -33,6 +33,8 @@ public sealed class ContextAndResultTests
         var dir = Directory.CreateTempSubdirectory("ccnet-sink");
         try
         {
+            // Path.Combine args below are a temp-dir root plus a literal relative file
+            // name; no rooted-segment risk (cs/path-combine false positive).
             var path = Path.Combine(dir.FullName, "out.txt");
             File.WriteAllText(path, new string('x', 100));
 
@@ -65,6 +67,8 @@ public sealed class ContextAndResultTests
         var dir = Directory.CreateTempSubdirectory("ccnet-sink");
         try
         {
+            // Path.Combine args are a temp-dir root plus a literal relative file name;
+            // no rooted-segment risk (cs/path-combine false positive).
             var path = Path.Combine(dir.FullName, "f.txt");
             File.WriteAllText(path, "x");
             var sink = new OutputSink(1000);
@@ -91,6 +95,8 @@ public sealed class ContextAndResultTests
         var dir = Directory.CreateTempSubdirectory("ccnet-up");
         try
         {
+            // Path.Combine args are a temp-dir root plus a literal relative file name;
+            // no rooted-segment risk (cs/path-combine false positive).
             var path = Path.Combine(dir.FullName, "a.txt");
             File.WriteAllText(path, "hello");
             var puts = new List<(string Bucket, string Key, string Path)>();

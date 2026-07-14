@@ -57,6 +57,10 @@ internal sealed class AlertDispatchAutonomousOperationConvergence(
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: this is a best-effort post-action verification
+                // probe; any failure refreshing the backlog snapshot is reported as an
+                // Indeterminate verification result rather than throwing out of the
+                // convergence check.
                 return new AutonomousVerificationResult(
                     AutonomousVerificationState.Indeterminate,
                     $"Alert-dispatch backlog observation {observation.ToString(CultureInfo.InvariantCulture)} "

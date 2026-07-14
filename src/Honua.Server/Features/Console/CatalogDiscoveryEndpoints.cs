@@ -68,6 +68,8 @@ internal static class CatalogDiscoveryEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the catalog
+        // discovery registry endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "catalog-endpoints.registry", ex);
@@ -99,6 +101,8 @@ internal static class CatalogDiscoveryEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the catalog
+        // discovery endpoint-detail endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "catalog-endpoints.detail", ex);
@@ -131,6 +135,8 @@ internal static class CatalogDiscoveryEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the catalog
+        // discovery item endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "catalog-endpoints.item", ex);

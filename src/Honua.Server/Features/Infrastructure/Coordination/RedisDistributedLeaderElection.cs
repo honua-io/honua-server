@@ -136,6 +136,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: Redis is best-effort here — any failure (connection,
+            // timeout, script error) falls back to local leadership when allowed rather than
+            // propagating and crashing the caller.
             Log.LeaderElectionError(_logger, "TryAcquireLeadership", _leaderKey, ex);
             MarkRedisFailure();
 
@@ -194,6 +197,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: Redis is best-effort here — any failure (connection,
+            // timeout, script error) falls back to local leadership when allowed rather than
+            // propagating and crashing the caller.
             Log.LeaderElectionError(_logger, "Heartbeat", _leaderKey, ex);
             MarkRedisFailure();
 
@@ -244,6 +250,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort release of the Redis lock; the finally
+            // block below already clears local leadership state regardless of outcome, so
+            // a Redis failure here must not propagate to the caller.
             Log.LeaderElectionError(_logger, "ReleaseLeadership", _leaderKey, ex);
         }
         finally
@@ -296,11 +305,18 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: this is a timer-driven background renewal
+                // tick; a single failed heartbeat must not kill the renewal timer, so
+                // it is logged and the next tick retries.
                 Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
             }
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: async void timer callback — no managed handler
+            // exists above this, so any escaping exception here would crash the
+            // process. This is the last line of defense; see the comment at the top
+            // of this method.
             Log.UnhandledTimerException(_logger, nameof(RenewLeaseAsync), ex);
         }
     }
@@ -361,6 +377,9 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort cleanup during Dispose; a Redis
+            // failure while releasing the lock must not throw out of the fire-and-forget
+            // dispose task, so it is logged and local state is cleared regardless.
             _isLeader = false;
             Log.LeaderElectionError(_logger, "DisposeReleaseLeadership", _leaderKey, ex);
         }

@@ -89,6 +89,8 @@ internal static class ConsoleSessionEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the Console session load endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "session.load", ex);

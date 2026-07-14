@@ -291,19 +291,15 @@ internal sealed partial class ODataMetadataService
             .Select(group => group.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in relationships.Select(relationship =>
-            duplicateNames.Contains(relationship.SanitizedName)
-                ? ODataUtilityService.BuildRelationshipMetadataNameForV2(
-                    relationship.SanitizedName,
-                    relationship.RelationshipId)
-                : relationship.SanitizedName))
-        {
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                names.Add(name);
-            }
-        }
+        var names = relationships
+            .Select(relationship =>
+                duplicateNames.Contains(relationship.SanitizedName)
+                    ? ODataUtilityService.BuildRelationshipMetadataNameForV2(
+                        relationship.SanitizedName,
+                        relationship.RelationshipId)
+                    : relationship.SanitizedName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return names.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
     }

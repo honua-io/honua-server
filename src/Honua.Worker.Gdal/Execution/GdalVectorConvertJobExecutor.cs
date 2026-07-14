@@ -109,6 +109,10 @@ internal sealed partial class GdalVectorConvertJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Second segment of each call is built from sourceExtension/outputName,
+            // which are always fixed literals drawn from the SupportedFormats
+            // allowlist above (never user-supplied), so neither can be rooted and
+            // silently discard workspace.
             var inputPath = Path.Combine(workspace, "input" + sourceExtension);
             var outputName = "output" + targetMeta.Extension;
             var outputPath = Path.Combine(workspace, outputName);

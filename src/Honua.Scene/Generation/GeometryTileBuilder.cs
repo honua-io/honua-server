@@ -1225,6 +1225,12 @@ internal sealed class SceneMetadataColumn
         // In-range fractional values are still non-integral per the doc
         // contract — truncating 12.5 to 12 silently would lose the warning
         // that callers rely on to catch unexpected source types.
+        //
+        // Intentional exact comparison: Math.Truncate is a bit-exact operation with
+        // no intervening arithmetic, so this reliably detects "value has a fractional
+        // part" with no floating-point rounding risk. An epsilon comparison would be
+        // wrong here — it would silently treat small fractional values (e.g. 1e-7) as
+        // integral and drop the coercion warning above.
         var truncated = Math.Truncate(value);
         if (truncated != value)
         {

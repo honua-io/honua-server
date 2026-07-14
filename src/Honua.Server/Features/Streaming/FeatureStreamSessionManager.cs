@@ -73,6 +73,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: cluster broadcast subscribe is best-effort during
+            // construction. A Redis outage here must not prevent the session manager (and
+            // single-node feature streaming) from starting; the recovery timer retries.
             LogClusterBroadcastUnavailableOnce(ex);
         }
 
@@ -343,6 +346,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is a best-effort cross-node publish on the
+            // feature-edit hot path. Failure falls back to the retry backlog instead of
+            // propagating and interrupting the local broadcast.
             LogClusterBroadcastFailedOnce(ex);
             return false;
         }
@@ -491,6 +497,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this handles an inbound Redis pub/sub callback for
+            // a cross-node broadcast. A malformed or unexpected payload must not throw back
+            // into StackExchange.Redis's dispatch thread; log and drop the message.
             LogClusterBroadcastFailedOnce(ex);
         }
     }
@@ -506,6 +515,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
         catch (Exception ex)
         {
+            // Intentionally generic: this runs on the recurring cluster-broadcast recovery
+            // timer callback. A single failed recovery attempt must not kill the timer or
+            // the host; log and let the next tick retry.
             LogClusterBroadcastUnavailableOnce(ex);
         }
     }
@@ -538,6 +550,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: this is a best-effort re-subscribe attempt inside
+                // the recovery loop; Redis may still be unavailable, so log and leave
+                // cluster broadcast disabled for the next recovery tick to retry.
                 LogClusterBroadcastUnavailableOnce(ex);
                 return;
             }
@@ -569,6 +584,9 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: this is a per-payload attempt inside the backlog
+                // flush loop; one failed publish must not abort the flush of the remaining
+                // backlog entries, so log and leave the rest queued for the next attempt.
                 LogClusterBroadcastFailedOnce(ex);
                 return;
             }
@@ -807,7 +825,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
             catch (Exception ex)
             {
-                // Best-effort shutdown; the connection owner will close the Redis subscription anyway.
+                // Intentional broad catch: best-effort shutdown; the connection owner will
+                // close the Redis subscription anyway.
                 FeatureStreamLog.ClusterUnsubscribeFailed(_logger, ex);
             }
         }

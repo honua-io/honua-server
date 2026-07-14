@@ -114,6 +114,9 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
+        // Intentional broad catch: this is a best-effort webhook delivery attempt; any failure
+        // (network, DNS, TLS, unexpected exception) is logged and reported as a retryable delivery
+        // failure rather than propagated.
         catch (Exception ex)
         {
             if (_logger is not null)

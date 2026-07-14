@@ -815,9 +815,9 @@ internal static class ServiceCollectionExtensions
         }
         catch (Exception ex)
         {
-            // Startup-time secret resolution failure: fail fast with a domain exception (rather than
-            // letting a raw secret-provider exception, which may carry provider/network details,
-            // propagate out of DI registration).
+            // Intentionally broad: a startup-time secret resolution failure must fail fast with a
+            // domain exception (rather than letting a raw secret-provider exception, which may carry
+            // provider/network details, propagate out of DI registration).
             throw new InvalidOperationException("Failed to resolve DefaultConnection via secret provider.", ex);
         }
     }

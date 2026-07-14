@@ -72,6 +72,8 @@ internal sealed class FileStorageCleanupService : BackgroundService
                 // Normal shutdown, don't log as error
                 break;
             }
+            // Intentionally generic: this is a long-running background loop; a single failed
+            // cleanup iteration must not kill the host — log and keep going.
             catch (Exception ex)
             {
                 FileStorageLog.CleanupError(_logger, ex);

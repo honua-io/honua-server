@@ -480,6 +480,8 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
                     }
                     catch (Exception ex)
                     {
+                        // Intentional broad catch: per-item loop over active operations; one
+                        // operation's reconcile failure must not abort the rest of the batch.
                         MetadataReleaseReconciler.Log.MetadataReleaseReconcileFailed(logger, operation.OperationId, ex);
                     }
                 }
@@ -490,6 +492,9 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
             }
             catch (Exception ex)
             {
+                // Intentionally generic: this is a long-running background polling loop.
+                // A single failed iteration must not kill the host's background service;
+                // log and keep polling.
                 MetadataReleaseReconciler.Log.MetadataReleasePollLoopFailed(logger, ex);
             }
 

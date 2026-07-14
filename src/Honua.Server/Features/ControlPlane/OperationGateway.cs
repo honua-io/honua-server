@@ -143,6 +143,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the operation-proposal execution boundary.
+            // An executor failure must terminate this proposal with a Failed status rather
+            // than propagate and leave the proposal stuck in a non-terminal state.
             Log.ProposalExecutionFailed(_logger, proposalId, ex);
             status = OperationProposalStatus.Failed;
             failureMessage = $"Execution failed ({ex.GetType().Name}).";
@@ -657,6 +660,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: a failure verifying the post-action state must not
+            // propagate and abort autonomy handling; it is mapped to an Indeterminate
+            // verification result so the caller routes to manual intervention below.
             verification = new AutonomousVerificationResult(
                 AutonomousVerificationState.Indeterminate,
                 $"Post-action verification could not complete ({ex.GetType().Name}).");
@@ -733,6 +739,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: a failure running compensation must not propagate and
+            // abort autonomy handling; it is mapped to an Indeterminate compensation result
+            // so the caller routes to manual intervention below.
             compensation = new AutonomousCompensationResult(
                 AutonomousCompensationState.Indeterminate,
                 $"Compensation could not complete ({ex.GetType().Name}).");
@@ -850,8 +859,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
         catch (Exception ex)
         {
-            // Never replace the caller's OperationCanceledException with a secondary evidence
-            // persistence failure. The source-generated log is the last-resort breadcrumb.
+            // Intentional broad catch: never replace the caller's OperationCanceledException
+            // with a secondary evidence persistence failure. The source-generated log is the
+            // last-resort breadcrumb.
             Log.AutonomyCancellationEvidenceFailed(
                 _logger,
                 request.AutonomyContext?.FindingId ?? request.Kind.ToString(),

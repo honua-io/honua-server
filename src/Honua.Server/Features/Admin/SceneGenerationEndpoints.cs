@@ -137,6 +137,9 @@ internal static partial class SceneGenerationEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: the exception filters above
+            // handle known error types; anything else is logged and mapped to a generic
+            // admin problem-details response below.
             SceneGenerationEndpointsLog.OperationFailed(logger, intent.IntentId, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to generate scene.");
@@ -228,8 +231,8 @@ internal static partial class SceneGenerationEndpoints
         }
         catch (Exception ex)
         {
-            // Cache invalidation failures must not surface to the caller — the
-            // generated scene is still valid, the next request will simply
+            // Intentional broad catch: cache invalidation failures must not surface to the
+            // caller — the generated scene is still valid, the next request will simply
             // serve from disk via the registry lookup. We log so that systematic
             // failures are visible rather than silently producing stale reads.
             SceneGenerationEndpointsLog.CacheInvalidationFailed(logger, sceneId, ex);

@@ -56,6 +56,8 @@ internal sealed class AuditingFeatureWriter(
             await EmitDeleteAsync(layerId, featureId, deleted, cancellationToken).ConfigureAwait(false);
             return deleted;
         }
+        // Intentional: catches broadly so a failed delete is always audited (any exception
+        // type from the inner writer) before being rethrown unchanged to the caller.
         catch
         {
             await EmitDeleteFailureAsync(layerId, featureId, cancellationToken).ConfigureAwait(false);
@@ -74,6 +76,8 @@ internal sealed class AuditingFeatureWriter(
             await EmitBulkEditAsync(layerId, editBatch, result, cancellationToken).ConfigureAwait(false);
             return result;
         }
+        // Intentional: same rationale as DeleteAsync above — audit the failure broadly
+        // before rethrowing unchanged.
         catch
         {
             await EmitBulkEditFailureAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);

@@ -616,6 +616,9 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         var windowStart = now - NormalizePositive(_options.Value.SampleWindow, TimeSpan.FromDays(30));
         var values = await database.ListRangeAsync(SampleKey).ConfigureAwait(false);
         var samples = new List<LicenseCapacitySample>(values.Length);
+        // Not converted to `.Where(...)`: the filter predicate depends on `sample`, which is
+        // only produced by the preceding `TryParseSamplePayload` out-parameter call — a
+        // single LINQ predicate cannot both parse and filter on the parsed value.
         foreach (var value in values)
         {
             if (TryParseSamplePayload(value.ToString(), out var sample) && sample.Timestamp >= windowStart)

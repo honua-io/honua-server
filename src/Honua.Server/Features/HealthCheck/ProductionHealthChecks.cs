@@ -239,6 +239,9 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the IHealthCheck request boundary; any
+            // failure probing the database must be reported as an Unhealthy result below
+            // rather than throwing out of the health-check pipeline.
             ProductionHealthChecksLog.DatabaseHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "Database connectivity failed",
@@ -336,6 +339,9 @@ internal sealed class RedisHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the IHealthCheck request boundary; any
+            // failure probing Redis must be reported as an Unhealthy result below rather
+            // than throwing out of the health-check pipeline.
             ProductionHealthChecksLog.RedisHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "Redis connectivity failed",
@@ -415,6 +421,9 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the IHealthCheck request boundary; any
+            // failure reading upload-queue metrics must be reported as an Unhealthy
+            // result below rather than throwing out of the health-check pipeline.
             ProductionHealthChecksLog.FileUploadHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Unhealthy(
                 "File upload service check failed",
@@ -491,6 +500,9 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the IHealthCheck request boundary; any
+            // failure collecting production metrics must be reported as a Degraded
+            // result below rather than throwing out of the health-check pipeline.
             ProductionHealthChecksLog.ProductionMetricsHealthCheckFailed(_logger, ex);
             return HealthCheckResult.Degraded(
                 "Production metrics collection failed",

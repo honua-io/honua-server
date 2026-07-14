@@ -137,7 +137,10 @@ public sealed class Harness
         // client must be released as soon as the tool finishes, not linger through the
         // artifact-upload step below.
         GpResult result;
-        using (var disposableClient = client as IDisposable)
+        // No named local: only disposal is needed here (the tool itself reads the
+        // client via `context`), and naming the resource variable trips
+        // cs/useless-assignment-to-local since it is never read afterward.
+        using (client as IDisposable)
         {
             try
             {

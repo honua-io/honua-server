@@ -39,6 +39,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         {
             await _cache.SetAsync(replica, ttl, cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally generic: cache write is best-effort after the authoritative
+        // Postgres write already succeeded; any cache failure must not fail the caller.
         catch (Exception ex)
         {
             Log.CacheWriteFailed(_logger, replica.ReplicaId, ex);
@@ -68,6 +70,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
             {
                 await _cache.RemoveAsync(replica.ReplicaId, cancellationToken).ConfigureAwait(false);
             }
+            // Intentionally generic: best-effort cache eviction after a lost compare-and-set
+            // race; the caller already falls back to the authoritative store on retry.
             catch (Exception ex)
             {
                 Log.CacheRemoveFailed(_logger, replica.ReplicaId, ex);
@@ -80,6 +84,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         {
             await _cache.SetAsync(replica, ttl, cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally generic: cache write is best-effort after the authoritative
+        // Postgres write already succeeded; any cache failure must not fail the caller.
         catch (Exception ex)
         {
             Log.CacheWriteFailed(_logger, replica.ReplicaId, ex);
@@ -111,6 +117,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         {
             await _cache.SetAsync(state, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally generic: cache backfill is best-effort; a cache outage must not
+        // fail a read the authoritative store has already satisfied.
         catch (Exception ex)
         {
             Log.CacheWriteFailed(_logger, replicaId, ex);
@@ -154,6 +162,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         {
             await _cache.RemoveAsync(replicaId, cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally generic: cache removal is best-effort after the authoritative
+        // Postgres delete already succeeded; any cache failure must not fail the caller.
         catch (Exception ex)
         {
             Log.CacheRemoveFailed(_logger, replicaId, ex);

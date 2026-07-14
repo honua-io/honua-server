@@ -93,6 +93,8 @@ internal static partial class RlsPolicyEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic problem response below.
             RlsPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
                 title: "RLS policy listing failed",
@@ -120,6 +122,8 @@ internal static partial class RlsPolicyEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic problem response below.
             RlsPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
                 title: "RLS policy retrieval failed",
@@ -174,6 +178,8 @@ internal static partial class RlsPolicyEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic problem response below.
             RlsPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
                 title: "RLS policy creation failed",
@@ -202,6 +208,8 @@ internal static partial class RlsPolicyEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic problem response below.
             RlsPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
                 title: "RLS policy deletion failed",

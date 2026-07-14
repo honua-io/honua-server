@@ -87,6 +87,8 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Second segment is a fixed relative literal filename, so it can never be
+            // rooted and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.tif");
 
             // Bound the DECLARED pixel footprint before gdalinfo -stats forces a

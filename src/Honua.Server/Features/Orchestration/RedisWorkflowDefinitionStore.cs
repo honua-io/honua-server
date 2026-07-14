@@ -373,8 +373,9 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         {
             await _database.KeyDeleteAsync(GetSchedulePendingCursorKey(workflowId)).ConfigureAwait(false);
         }
-        catch
+        catch (Exception)
         {
+            // Intentional broad catch: best-effort cleanup of the pending cursor marker.
             // Stale pending key is benign: it can only point at a fire time the cursor
             // has already moved past.
         }

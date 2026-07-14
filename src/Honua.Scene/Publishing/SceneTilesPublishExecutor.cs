@@ -263,6 +263,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 {
                     var styleSpec = TileStyleSpecWriter.Build(symbology, attributeSchemas);
                     var styleBytes = TileStyleSpecWriter.Serialize(styleSpec);
+                    // Safe: TileStyleSpecDefaults.FileName is a compile-time constant
+                    // ("style.json"), never externally supplied, so it can never be rooted.
                     await File.WriteAllBytesAsync(
                         Path.Combine(stagingDirectory, TileStyleSpecDefaults.FileName),
                         styleBytes,
@@ -308,6 +310,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                         perFeatureSymbology);
 
                     var tileFileName = "tile_0000.glb";
+                    // Safe: tileFileName and "tileset.json" below are hardcoded literals,
+                    // never externally supplied, so neither combine can be rooted.
                     await File.WriteAllBytesAsync(
                         Path.Combine(stagingDirectory, tileFileName),
                         glb,
@@ -434,6 +438,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         {
             throw;
         }
+        // Intentionally generic: this is the top-level scene-generation job boundary.
+        // ValidationException and cancellation are already handled above; any other
+        // failure (provider, filesystem, serialization, unexpected bug) must convert
+        // to the documented ServiceUnavailableException rather than crash the caller.
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
@@ -503,6 +511,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             var uri = string.Create(
                 CultureInfo.InvariantCulture,
                 $"tile_{i:0000}.glb");
+            // Safe: uri is a deterministic "tile_NNNN.glb" name built from the loop
+            // index above, never from external/dataset-controlled content.
             await File.WriteAllBytesAsync(
                 Path.Combine(stagingDirectory, uri),
                 glb,
@@ -518,6 +528,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             serverOptions.GeneratorTag,
             styleReference);
         var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
+        // Safe: "tileset.json" is a hardcoded literal, never externally supplied.
         await File.WriteAllBytesAsync(
             Path.Combine(stagingDirectory, "tileset.json"),
             tilesetBytes,
@@ -1178,11 +1189,11 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             var deactivated = await _registration.DeactivateAsync(datasetId, CancellationToken.None).ConfigureAwait(false);
             SceneGenerationLog.RegistrationCompensated(_logger, sceneId, datasetId, deactivated);
         }
+        // Publish-pipeline compensation boundary: this is a best-effort rollback of a
+        // partially-completed publish, already logged below; any exception here must
+        // not mask the original failure that triggered compensation.
         catch (Exception ex)
         {
-            // Compensation is best-effort: a failure leaves an Active record
-            // with no bytes on disk. Log loudly so operators can clean up via
-            // the admin scene CRUD path.
             SceneGenerationLog.RegistrationCompensationFailed(_logger, sceneId, datasetId, ex);
         }
     }

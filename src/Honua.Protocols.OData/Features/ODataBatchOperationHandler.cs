@@ -91,6 +91,8 @@ internal sealed partial class ODataBatchOperationHandler(
             {
                 await InvalidateCacheForBatchAsync(context, batchRequest, response, CancellationToken.None);
             }
+            // Intentional broad catch: best-effort post-commit cache invalidation; a Redis
+            // failure here must not turn an already-committed batch into a 500 for the client.
             catch (Exception ex)
             {
                 Log.BatchPostCommitSideEffectFailed(_logger, "cache invalidation", ex);
@@ -100,6 +102,8 @@ internal sealed partial class ODataBatchOperationHandler(
             {
                 await PublishBatchFeatureEventsAsync(context, batchRequest, response, effectiveToken);
             }
+            // Intentional broad catch: best-effort post-commit event publish; a broker
+            // failure here must not turn an already-committed batch into a 500 for the client.
             catch (Exception ex)
             {
                 Log.BatchPostCommitSideEffectFailed(_logger, "event publish", ex);

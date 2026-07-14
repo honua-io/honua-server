@@ -649,6 +649,8 @@ internal sealed partial class TileOperationExecutionCore
         // Spill the archive to a self-deleting temp file rather than a MemoryStream: archive size
         // scales with bbox/zoom range and holding it on the managed heap for the upload duration is
         // an OOM/LOH pressure source. DeleteOnClose cleans up when the consumer disposes the stream.
+        // Path.Combine is safe here: the second segment is a fixed-prefix, GUID-suffixed
+        // relative literal generated locally, never an externally-supplied/rooted path.
         var archiveStream = new FileStream(
             Path.Combine(Path.GetTempPath(), $"honua-pmtiles-{Guid.NewGuid():N}.tmp"),
             FileMode.CreateNew,

@@ -109,7 +109,8 @@ public sealed partial class MigrationRequestCountingHandler : DelegatingHandler
         }
         catch (Exception ex)
         {
-            // Metrics recording must never affect the live import path.
+            // Intentional broad catch: metrics recording must never affect the live import
+            // path — log and continue rather than let a recorder failure fault the response.
             LogRecordFailure(_logger, ex);
         }
 

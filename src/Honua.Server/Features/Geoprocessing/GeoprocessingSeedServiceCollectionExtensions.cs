@@ -66,6 +66,8 @@ internal sealed partial class GeoprocessingSeedHostedService(
             var seeder = scope.ServiceProvider.GetRequiredService<GeoprocessingServiceSeeder>();
             await seeder.EnsureSeededAsync(cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: as documented on the class above, seeding is a best-effort
+        // startup convenience; any failure must not block host startup.
         catch (Exception ex)
         {
             Log.SeedFailed(logger, ex);

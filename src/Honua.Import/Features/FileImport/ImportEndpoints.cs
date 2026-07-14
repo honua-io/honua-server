@@ -289,6 +289,9 @@ internal static partial class ImportEndpoints
             Log.PreviewFailed(logger, file.FileName, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // format/validation cases above; any remaining unexpected failure maps to a
+        // generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -344,6 +347,9 @@ internal static partial class ImportEndpoints
             // Provide generic error message - details logged for debugging
             await AdminResponseWriter.WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // format/validation cases above; any remaining unexpected failure maps to a
+        // generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -426,6 +432,9 @@ internal static partial class ImportEndpoints
             Log.PreviewFailed(logger, staged.File?.FileName ?? "unknown", ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to preview file", StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // format/validation cases above; any remaining unexpected failure maps to a
+        // generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -538,6 +547,9 @@ internal static partial class ImportEndpoints
             Log.ImportFailed(logger, executionRequest.TableName, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Import failed: invalid or unsupported file format", StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: top-level endpoint boundary after the specific
+        // format/validation cases above; any remaining unexpected failure maps to a
+        // generic 500 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -683,6 +695,8 @@ internal static partial class ImportEndpoints
                 {
                     _ = await cloudStorage.CancelUploadAsync(uploadId, CancellationToken.None);
                 }
+                // Intentionally generic: best-effort cleanup of a cancelled upload; a cleanup
+                // failure must not mask the cancellation being rethrown below.
                 catch (Exception cleanupEx)
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -700,6 +714,9 @@ internal static partial class ImportEndpoints
                 {
                     _ = await cloudStorage.DeleteAsync(cloudFileId, CancellationToken.None);
                 }
+                // Intentionally generic: best-effort cleanup of an orphaned cloud-staged file
+                // after an import failure; a cleanup failure must not mask the original
+                // exception being rethrown below.
                 catch (Exception cleanupEx)
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -757,6 +774,9 @@ internal static partial class ImportEndpoints
         {
             throw;
         }
+        // Intentionally generic: this is a best-effort snapshot refresh (see method summary);
+        // the import itself already succeeded, so a refresh failure is logged and swallowed
+        // rather than failing the response.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -843,6 +863,8 @@ internal static partial class ImportEndpoints
             {
                 await progressStore.SetProgressAsync(uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None);
             }
+            // Intentionally generic: this is a best-effort progress update callback; a
+            // failure to publish progress must not fail the underlying upload/import.
             catch (Exception ex)
             {
                 Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
@@ -1199,6 +1221,10 @@ internal static partial class ImportEndpoints
     // may be left under this path — a background job must never be queued referencing it.
     private static string CreateStagedImportFilePath(string fileName)
     {
+        // Not a path-combine drop risk: fileName is always FileUploadSecurity.SanitizeFileName
+        // output at call sites, which strips path separators, so extension can contain neither
+        // a separator nor a drive/root prefix; it is also appended as a suffix after the GUID,
+        // so this segment can never be rooted.
         var extension = Path.GetExtension(fileName);
         return Path.Combine(
             Path.GetTempPath(),
@@ -1387,6 +1413,8 @@ internal static partial class ImportEndpoints
             IResult result = Results.Json(response, ImportJsonContext.Default.ActiveImportJobsResponse);
             await result.ExecuteAsync(context);
         }
+        // Intentionally generic: top-level endpoint boundary; any unexpected failure from the
+        // job service maps to a generic 503 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -1434,6 +1462,8 @@ internal static partial class ImportEndpoints
             IResult result = Results.Json(progress, ImportJsonContext.Default.ImportProgress);
             await result.ExecuteAsync(context);
         }
+        // Intentionally generic: top-level endpoint boundary; any unexpected failure from the
+        // job service maps to a generic 503 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
@@ -1487,6 +1517,8 @@ internal static partial class ImportEndpoints
             IResult result = Results.Json(response, ImportJsonContext.Default.CancelImportJobResponse);
             await result.ExecuteAsync(context);
         }
+        // Intentionally generic: top-level endpoint boundary; any unexpected failure from the
+        // job service maps to a generic 503 rather than leaking exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();

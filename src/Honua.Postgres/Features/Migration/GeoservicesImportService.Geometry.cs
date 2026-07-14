@@ -107,9 +107,10 @@ internal sealed partial class GeoservicesImportService
         }
         catch (Exception)
         {
-            // Malformed/unrecognized Esri geometry JSON: return null like the "no recognized shape"
-            // path above. The caller (InsertFeaturesAsync) already logs GeometryConversionFailed
-            // whenever this returns null, so the failure is surfaced without duplicating it here.
+            // Intentionally generic: malformed/unrecognized Esri geometry JSON should return null
+            // like the "no recognized shape" path above, not crash the import. The caller
+            // (InsertFeaturesAsync) already logs GeometryConversionFailed whenever this returns
+            // null, so the failure is surfaced without duplicating it here.
             return null;
         }
     }
@@ -125,35 +126,27 @@ internal sealed partial class GeoservicesImportService
             // Rings (polygon), paths (polyline), points (multipoint): check coordinate array lengths
             foreach (var propName in new[] { "rings", "paths" })
             {
-                if (geometry.TryGetProperty(propName, out var arrays))
+                if (geometry.TryGetProperty(propName, out var arrays) &&
+                    arrays.EnumerateArray().Any(array => array.EnumerateArray().Any(coord => coord.GetArrayLength() > 2)))
                 {
-                    foreach (var array in arrays.EnumerateArray())
-                    {
-                        foreach (var coord in array.EnumerateArray())
-                        {
-                            if (coord.GetArrayLength() > 2)
-                                return true;
-                        }
-                    }
+                    return true;
                 }
             }
 
-            if (geometry.TryGetProperty("points", out var pts))
+            if (geometry.TryGetProperty("points", out var pts) &&
+                pts.EnumerateArray().Any(coord => coord.GetArrayLength() > 2))
             {
-                foreach (var coord in pts.EnumerateArray())
-                {
-                    if (coord.GetArrayLength() > 2)
-                        return true;
-                }
+                return true;
             }
 
             return false;
         }
         catch (Exception)
         {
-            // This only feeds a diagnostic higher-dimension-count statistic, not the actual geometry
-            // insert path; malformed geometry JSON here safely degrades to "no Z observed" rather than
-            // failing the import (the geometry conversion itself has its own error handling/logging).
+            // Intentionally generic: this only feeds a diagnostic higher-dimension-count statistic,
+            // not the actual geometry insert path; malformed geometry JSON here safely degrades to
+            // "no Z observed" rather than failing the import (the geometry conversion itself has its
+            // own error handling/logging).
             return false;
         }
     }

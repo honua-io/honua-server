@@ -67,6 +67,9 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
             }
             catch (Exception ex)
             {
+                // Intentionally generic: this is a long-running background sweep loop. A
+                // single failed iteration must not kill the host's background service; log
+                // and retry on the next interval.
                 Log.BackstopSweepFailed(logger, ex);
             }
 
@@ -121,6 +124,9 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
                 }
                 catch (Exception ex)
                 {
+                    // Intentional broad catch: this is a per-operation attempt inside the
+                    // backstop sweep loop; one operation's reconcile failure must not abort
+                    // the sweep of the remaining stale operations.
                     Log.BackstopReconcileFailed(logger, operationKind.ToString(), operation.OperationId, ex);
                 }
             }

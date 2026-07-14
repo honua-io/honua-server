@@ -426,6 +426,8 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
     /// </summary>
     private string CanonicalizeAssetRoot(string assetRoot)
     {
+        // Path.Combine is only reached when assetRoot is not rooted (the ternary's other branch
+        // handles the rooted case directly), so it cannot silently drop ContentRootPath here.
         var rooted = Path.IsPathRooted(assetRoot)
             ? assetRoot
             : Path.Combine(_environment.ContentRootPath, assetRoot);

@@ -144,8 +144,9 @@ internal sealed partial class FeatureDataAccess
         }
         catch (Exception ex)
         {
-            // Unexpected failure outside the per-operation try/catch below (e.g. transaction/GUC setup):
-            // log, roll back the whole versioned batch, and report every operation as failed.
+            // Intentionally broad: unexpected failure outside the per-operation try/catch below
+            // (e.g. transaction/GUC setup) must still log, roll back the whole versioned batch, and
+            // report every operation as failed.
             Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
             await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
             var (c, u, d) = CreateFailedOperationResults(editBatch, "Versioned edit batch failed.");
@@ -242,8 +243,8 @@ internal sealed partial class FeatureDataAccess
         }
         catch (Exception ex)
         {
-            // Per-operation failure in a versioned batch: sanitize via GetSafeEditOperationError
-            // and let the rest of the batch continue.
+            // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
+            // via GetSafeEditOperationError and let the rest of the batch continue.
             createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
             return false;
         }
@@ -279,8 +280,8 @@ internal sealed partial class FeatureDataAccess
         }
         catch (Exception ex)
         {
-            // Per-operation failure in a versioned batch: sanitize via GetSafeEditOperationError
-            // and let the rest of the batch continue.
+            // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
+            // via GetSafeEditOperationError and let the rest of the batch continue.
             updateResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             return false;
         }
@@ -315,8 +316,8 @@ internal sealed partial class FeatureDataAccess
         }
         catch (Exception ex)
         {
-            // Per-operation failure in a versioned batch: sanitize via GetSafeEditOperationError
-            // and let the rest of the batch continue.
+            // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
+            // via GetSafeEditOperationError and let the rest of the batch continue.
             deleteResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: objectId));
             return false;
         }

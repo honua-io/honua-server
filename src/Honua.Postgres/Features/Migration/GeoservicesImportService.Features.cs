@@ -132,11 +132,12 @@ internal sealed partial class GeoservicesImportService
                     objectIdMap[sourceOid] = Convert.ToInt64(rawInsertedId, System.Globalization.CultureInfo.InvariantCulture);
                 }
             }
+            // Intentionally broad: per-feature insert failure; roll back to the savepoint so the
+            // outer transaction is not poisoned by the 25P02 aborted-transaction state. Use
+            // CancellationToken.None: if the caller's token has been cancelled we still need to
+            // clean up the transaction state.
             catch (Exception ex)
             {
-                // Roll back to the savepoint so the outer transaction is not poisoned by the
-                // 25P02 aborted-transaction state. Use CancellationToken.None: if the caller's
-                // token has been cancelled we still need to clean up the transaction state.
                 await transaction.RollbackAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
                 firstError ??= "Feature import failed.";
                 Log.FeatureInsertFailed(_logger, ex.Message);

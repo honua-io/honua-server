@@ -106,6 +106,8 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Second segment is a fixed relative literal filename, so it can never be
+            // rooted and silently discard workspace.
             var outputPath = Path.Combine(workspace, "output.tif");
             var firstInputPath = "";
             var args = new List<string>(roles.Count * 2 + 8);
@@ -127,6 +129,10 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                     return JobExecutionResult.Failed($"Invalid spectral-index inputs: {dimensionError}");
                 }
 
+                // Second segment is built from roles[i], which is always one of the
+                // fixed band-role literals ("red", "nir", "green", "swir", "blue")
+                // assigned by TryBuildIndex's switch above (never user-supplied), so
+                // it can never be rooted and silently discard workspace.
                 var inputPath = Path.Combine(workspace, $"{roles[i]}.tif");
                 await File.WriteAllBytesAsync(inputPath, bytes, cancellationToken).ConfigureAwait(false);
                 if (i == 0)

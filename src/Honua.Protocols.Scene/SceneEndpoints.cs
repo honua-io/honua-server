@@ -629,15 +629,7 @@ internal static partial class SceneEndpoints
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(chunk => chunk.StartsWith("W/", StringComparison.OrdinalIgnoreCase) ? chunk[2..] : chunk);
 
-        foreach (var candidate in candidates)
-        {
-            if (string.Equals(candidate, currentETag, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return candidates.Any(candidate => string.Equals(candidate, currentETag, StringComparison.Ordinal));
     }
 
     private static async Task<OpenUsdSceneManifestReader.SceneDatasetRecordView?> ResolveSceneDatasetRecordViewAsync(

@@ -106,6 +106,9 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is a best-effort ops notification side effect
+            // of a workflow-status change; a notifier failure must not fail or roll back
+            // the underlying workflow operation update.
             LogNotifyFailed(_logger, operation.OperationId, ex);
         }
     }
