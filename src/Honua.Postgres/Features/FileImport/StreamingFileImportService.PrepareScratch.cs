@@ -111,8 +111,9 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch (Exception ex)
                 {
-                    // Best-effort temp-zip cleanup; log and continue rather than failing the import
-                    // over a leftover temp file (the scratch directory cleanup on failure paths still runs).
+                    // Intentionally generic: best-effort temp-zip cleanup; log and continue rather
+                    // than failing the import over a leftover temp file (the scratch directory
+                    // cleanup on failure paths still runs).
                     ShapefileLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
@@ -218,8 +219,9 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch (Exception ex)
                 {
-                    // Best-effort temp-zip cleanup; log and continue rather than failing the import
-                    // over a leftover temp file (the scratch directory cleanup on failure paths still runs).
+                    // Intentionally generic: best-effort temp-zip cleanup; log and continue rather
+                    // than failing the import over a leftover temp file (the scratch directory
+                    // cleanup on failure paths still runs).
                     KmzLog.DeleteZipFailed(_logger, ex, zipPath);
                 }
             }
@@ -339,6 +341,9 @@ internal sealed partial class StreamingFileImportService
                 var normalizedRoot = scratchDir.EndsWith(Path.DirectorySeparatorChar)
                     ? scratchDir
                     : scratchDir + Path.DirectorySeparatorChar;
+                // entry.FullName is untrusted archive content; if it were ever rooted, Path.Combine
+                // would silently discard scratchDir. That case is still caught below: the resolved
+                // entryPath is checked against normalizedRoot before any write happens.
                 var entryPath = Path.GetFullPath(Path.Combine(scratchDir, entry.FullName));
                 if (!entryPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
                 {
@@ -392,7 +397,8 @@ internal sealed partial class StreamingFileImportService
                 }
                 catch
                 {
-                    // Best-effort cleanup; scratch directory deletion will handle this
+                    // Intentionally generic: best-effort temp-zip cleanup; the scratch directory
+                    // deletion above already handles removal of this file regardless.
                 }
             }
         }

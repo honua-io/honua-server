@@ -155,8 +155,8 @@ internal sealed class PostgresAuditLog : IAuditLog
         }
         catch (Exception ex)
         {
-            // Audit-write failures must NOT block the audited action; we log and continue.
-            // (The IAuditLog contract documents this best-effort policy.)
+            // Intentionally broad: audit-write failures must NOT block the audited action; we log
+            // and continue. (The IAuditLog contract documents this best-effort policy.)
             AuditLogPostgresLog.RecordFailed(_logger, auditEvent.Action, ex);
         }
     }

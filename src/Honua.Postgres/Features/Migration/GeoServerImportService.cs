@@ -347,9 +347,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
         catch (Exception ex)
         {
-            // Top-level import failure: log and report a sanitized failure result/progress update
-            // rather than letting a raw exception (which may carry GeoServer URLs/credentials
-            // context) propagate to the caller.
+            // Intentionally broad: this is the top-level import boundary. Any failure must map to a
+            // sanitized failure result/progress update rather than letting a raw exception (which may
+            // carry GeoServer URLs/credentials context) propagate to the caller.
             Log.ImportFailed(_logger, ex.Message, ex);
 
             var errorProgress = currentProgress with
