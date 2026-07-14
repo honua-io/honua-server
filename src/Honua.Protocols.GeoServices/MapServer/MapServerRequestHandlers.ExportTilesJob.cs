@@ -289,20 +289,36 @@ internal static partial class MapServerEndpoints
             return (null, accessError);
         }
 
+        // Pin exactly the accessible, requested layers the synchronous render path would draw: resolve
+        // through ResolveRenderLayers so the `layers` filter and per-layer IsResourceAccessible gate
+        // apply. Pinning every published layer here would let a caller who can read one layer receive
+        // inaccessible or default-hidden layers in the queued TPKX (the worker renders without an
+        // HttpContext and cannot re-check access).
+        var renderSelection = ResolveRenderLayers(
+            publishedLayers,
+            service,
+            GetValue(values, "layers"),
+            Array.Empty<DynamicLayerDefinition>(),
+            context);
+        if (renderSelection.Error is not null)
+        {
+            return (null, renderSelection.Error);
+        }
+
         // The producer resolves LayerId as the PUBLIC layer index, so the descriptor must carry
-        // PublicLayerId (not StorageLayerId). Only geometry-bearing published layers render, so the
-        // selection uses the same predicate as the synchronous exportTiles render path.
-        var layers = publishedLayers
-            .Where(static layer => HasMapServerGeometry(layer.Resource))
+        // PublicLayerId (not StorageLayerId). Only geometry-bearing layers render, matching the
+        // synchronous exportTiles render selection.
+        var layers = renderSelection.Layers
+            .Where(static layer => HasMapServerGeometry(layer.Layer.Resource))
             .Select(static layer => new TileExportMapLayerSelection(
-                layer.PublicLayerId.ToString(CultureInfo.InvariantCulture),
+                layer.Layer.PublicLayerId.ToString(CultureInfo.InvariantCulture),
                 "default",
                 0))
             .ToImmutableArray();
         if (layers.Length == 0)
         {
             return (null, StandardErrorHelpers.CreateBadRequest(
-                context, "exportTiles requires at least one geometry layer."));
+                context, "exportTiles requires at least one accessible geometry layer."));
         }
 
         var descriptor = new TileExportMapSourceDescriptor(

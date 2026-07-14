@@ -92,7 +92,24 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         var requestFingerprint = TileExportArtifactIdentity.Compute(plan);
         var partitionKey = BuildPartitionKey(plan);
 
-        await EnsureAdmittedAsync(plan, principalId, partitionKey, cancellationToken).ConfigureAwait(false);
+        // Idempotent fast-path: a keyed replay returns the existing job WITHOUT charging admission, so
+        // a client retry after a timeout is never rejected (429/503) by the active job count, cost, or
+        // rate bucket its own original submission created. A new submission still evaluates admission
+        // below. The unkeyed path derives a fresh GUID id, so no replay is possible.
+        if (resolvedKey is not null)
+        {
+            var replay = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (replay is not null)
+            {
+                EnsureMatchingIdempotentRequest(replay, requestFingerprint, principalId);
+                EnsureSubmissionDidNotRollback(replay);
+                Log.SubmittedIdempotent(_logger, jobId);
+                return replay;
+            }
+        }
+
+        var costWeight = ComputeAdmissionCostWeight(plan);
+        await EnsureAdmittedAsync(partitionKey, principalId, costWeight, cancellationToken).ConfigureAwait(false);
 
         var now = _timeProvider.GetUtcNow();
         var record = new ExecutionJobRecord
@@ -110,20 +127,24 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 CorrelationId = string.IsNullOrWhiteSpace(correlationId) ? null : correlationId.Trim(),
                 RequestFingerprint = requestFingerprint
             },
-            // The recognized admission envelope is persisted on the first-class concurrency
-            // partition rather than in the spec parameters, so the exact-key tile-export contract
-            // is never widened. The evaluator reads this partition when summing active concurrency.
+            // The recognized admission envelope is persisted on first-class record fields rather than
+            // in the spec parameters, so the exact-key tile-export contract is never widened: the
+            // partition drives active-concurrency accounting and the cost weight drives active-cost
+            // accounting. The evaluator reads both when they are absent from spec parameters.
             Concurrency = new OperationConcurrencyPolicy
             {
                 PartitionKey = partitionKey,
                 RequiresExclusiveLease = false
             },
+            AdmissionCostWeight = costWeight,
             Spec = spec
         };
 
         var created = await jobStore.TryCreateAsync(record, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!created)
         {
+            // Lost a race to a concurrent submission of the same key between the fast-path read and
+            // the create: adopt the winner rather than double-submitting.
             var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
                 ?? throw new TileExportStoreUnavailableException(
                     "Tile-export job could not be created or located during idempotent submission.");
@@ -299,10 +320,20 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     // Helpers
     // -----------------------------------------------------------------------
 
+    // Cost is derived from the checked selected-tile count from the bounded grid planner (which never
+    // materializes the grid), then normalized to ~1 unit per 1,000 tiles. The shared admission cost
+    // limit is tuned to job-relative weights (a geoprocessing plan step is one unit); charging one
+    // unit per thousand tiles keeps ordinary exports admissible while a partition still caps at
+    // roughly limit x 1,000 concurrent tiles, so an enormous export is gated rather than every export
+    // being denied under a step-count-scaled limit. The same value is pinned on the record so active
+    // cost accounting is exact for subsequent submissions.
+    private static double ComputeAdmissionCostWeight(TileExportJobPlan plan)
+        => Math.Max(1d, Math.Ceiling(TileExportGridPlanner.Create(plan).SelectedTileCount / (double)AdmissionTilesPerCostUnit));
+
     private async Task EnsureAdmittedAsync(
-        TileExportJobPlan plan,
-        string? principalId,
         string partitionKey,
+        string? principalId,
+        double costWeight,
         CancellationToken cancellationToken)
     {
         if (_admissionEvaluator is null)
@@ -310,19 +341,12 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             return;
         }
 
-        // Cost is derived from the checked selected-tile count from the bounded grid planner (which
-        // never materializes the grid), then normalized to ~1 unit per 1,000 tiles. The shared
-        // admission cost limit is tuned to job-relative weights (a geoprocessing plan step is one
-        // unit); charging one unit per thousand tiles keeps ordinary exports admissible while a
-        // partition still caps at roughly limit x 1,000 concurrent tiles, so an enormous export is
-        // gated rather than every export being denied under a step-count-scaled limit.
-        var grid = TileExportGridPlanner.Create(plan);
         var request = new ExecutionAdmissionRequest
         {
             JobKind = ExecutionJobKind.TileExport,
             PartitionKey = partitionKey,
             PrincipalId = principalId,
-            EstimatedCostWeight = Math.Max(1d, Math.Ceiling(grid.SelectedTileCount / (double)AdmissionTilesPerCostUnit)),
+            EstimatedCostWeight = costWeight,
             Priority = OperationPriority.Normal
         };
 
@@ -438,10 +462,11 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             await jobStore.TrySetAsync(failed, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             await TryRemoveFromQueueAsync(jobId, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // Best-effort rollback; the job TTL or the reconciler repairs any residue. Logged so the
-            // failure is diagnosable rather than silently swallowed.
+            // failure is diagnosable rather than silently swallowed. Cooperative cancellation is not
+            // swallowed.
             Log.RollbackFailed(_logger, jobId, exception);
         }
     }
@@ -457,9 +482,10 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         {
             await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Best-effort removal — the stale-claim reconciler repairs any queue residue.
+            // Best-effort removal — the stale-claim reconciler repairs any queue residue. Cooperative
+            // cancellation is not swallowed.
             Log.QueueRemovalFailed(_logger, jobId, exception);
         }
     }

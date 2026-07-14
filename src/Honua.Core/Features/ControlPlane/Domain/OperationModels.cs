@@ -1131,6 +1131,15 @@ public sealed record ExecutionJobRecord
     /// through the execution context.
     /// </summary>
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Normalized execution-admission cost weight pinned at submit time for jobs whose exact-key spec
+    /// contract forbids carrying the admission cost in <see cref="ExecutionJobSpec.Parameters"/>
+    /// (for example durable tile-export jobs). The admission evaluator sums this when computing active
+    /// per-partition cost. <see langword="null"/> for jobs that carry their cost weight in the spec
+    /// parameters, preserving their existing accounting.
+    /// </summary>
+    public double? AdmissionCostWeight { get; init; }
 }
 
 /// <summary>
