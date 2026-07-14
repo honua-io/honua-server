@@ -27,6 +27,10 @@ internal static class AlertsServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<AlertDeliveryOptions>, AlertDeliveryOptionsValidator>();
 
+        // Alert-pipeline OTel metrics: a singleton that owns its instruments on the shared
+        // "Honua" meter (created via IMeterFactory), injected into the writer, dispatcher, and
+        // ops-notification composition instead of a process-global static (#2802).
+        services.AddSingleton<AlertPipelineMetrics>();
         services.AddScoped<AlertDispatchWriter>();
         services.AddScoped<IAlertPipeline, AlertPipeline>();
         services.AddScoped<IAlertEvaluator, DefaultAlertEvaluator>();

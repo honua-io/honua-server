@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
+using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Events;
 
@@ -27,7 +28,8 @@ public sealed class FeatureChangeRetryQueueTests : IDisposable
     {
         _sessionManager = new FeatureStreamSessionManager(
             Options.Create(new FeatureStreamOptions { MaxBufferPerConnection = 256 }),
-            NullLogger<FeatureStreamSessionManager>.Instance);
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics());
     }
 
     public void Dispose() => _sessionManager.Dispose();

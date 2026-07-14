@@ -12,6 +12,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILeaderElectionStrategy _leaderElection;
     private readonly AlertOptions _options;
+    private readonly AlertPipelineMetrics _metrics;
     private readonly ILogger<AlertEvaluationBackgroundService> _logger;
 
     private volatile bool _isRunning;
@@ -23,11 +24,13 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         IServiceScopeFactory scopeFactory,
         ILeaderElectionStrategy leaderElection,
         IOptions<AlertOptions> options,
+        AlertPipelineMetrics metrics,
         ILogger<AlertEvaluationBackgroundService> logger)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _leaderElection = leaderElection ?? throw new ArgumentNullException(nameof(leaderElection));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -159,12 +162,12 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         {
             // Start the window on the first fault; keep the original start on subsequent faults.
             Interlocked.CompareExchange(ref _leaderAcquisitionFailingSinceTicks, DateTimeOffset.UtcNow.UtcTicks, 0);
-            AlertPipelineMetrics.RecordEvaluationLeaderAcquisitionFailing(true);
+            _metrics.RecordEvaluationLeaderAcquisitionFailing(true);
         }
         else
         {
             Interlocked.Exchange(ref _leaderAcquisitionFailingSinceTicks, 0);
-            AlertPipelineMetrics.RecordEvaluationLeaderAcquisitionFailing(false);
+            _metrics.RecordEvaluationLeaderAcquisitionFailing(false);
         }
     }
 

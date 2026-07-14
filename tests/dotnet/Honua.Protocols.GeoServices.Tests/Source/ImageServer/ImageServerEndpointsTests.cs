@@ -1476,7 +1476,9 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            await response.AssertGeoServicesErrorAsync(501, 500);
+            // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
+            // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
+            await response.AssertGeoServicesErrorAsync(501);
         }
         finally
         {
@@ -1588,7 +1590,9 @@ public class ImageServerEndpointsTests
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTop&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
 
-            await response.AssertGeoServicesErrorAsync(501, 500);
+            // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
+            // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
+            await response.AssertGeoServicesErrorAsync(501);
         }
         finally
         {
@@ -2724,7 +2728,9 @@ public class ImageServerEndpointsTests
                 $"&renderingRule={Uri.EscapeDataString(renderingRule)}");
 
             // Class signatures are computed on source pixels; a renderingRule is explicitly rejected.
-            await response.AssertGeoServicesErrorAsync(501, 500);
+            // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
+            // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
+            await response.AssertGeoServicesErrorAsync(501);
         }
         finally
         {

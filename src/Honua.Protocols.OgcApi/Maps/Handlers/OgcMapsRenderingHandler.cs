@@ -127,8 +127,16 @@ internal sealed class OgcMapsRenderingHandler
 
             OgcMapsLog.CollectionMapRenderStarted(_logger, layerId, renderRequest.Value.Width, renderRequest.Value.Height);
 
+            // Flow the handler-resolved resource identity into the renderer so it does not
+            // re-resolve the layer through the first-wins storage-layer index, which would
+            // pick the wrong (e.g. raster) resource for a colliding StorageLayerId (#2799).
+            var mapRenderRequest = renderRequest.Value with
+            {
+                ResolvedLayers = new[] { new ResolvedMapLayer(layerId, resource.Metadata.Id) }
+            };
+
             // Render the map
-            var result = await _mapRenderer.RenderCollectionMapAsync(layerId, renderRequest.Value, cancellationToken);
+            var result = await _mapRenderer.RenderCollectionMapAsync(layerId, mapRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {
                 OgcMapsLog.NoMapDataFound(_logger, layerId);
@@ -188,11 +196,29 @@ internal sealed class OgcMapsRenderingHandler
 
             if (layerIds.Length == 0)
             {
+                // Enumerate distinct storage layer ids collision-aware so a colliding
+                // Maps-enabled resource that lost the first-wins index is still included
+                // (matching the collections=<id> path). Falls back to the indexed resource
+                // for non-colliding / non-Maps layers so their behavior is unchanged (#2799).
                 var allEntries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
-                foreach (var (id, resource) in snapshot.Index.ResourcesByStorageLayerId)
+                var seenStorageLayerIds = new HashSet<int>();
+                foreach (var binding in snapshot.Graph.StorageBindings)
                 {
-                    var svc = ResolveOgcApiMapsService(snapshot, resource);
-                    allEntries.Add((id, resource, svc));
+                    if (binding.StorageLayerId is not int storageLayerId ||
+                        !seenStorageLayerIds.Add(storageLayerId))
+                    {
+                        continue;
+                    }
+
+                    var (resolvedResource, resolvedService) = ResolveResourceAndService(snapshot, storageLayerId);
+                    if (resolvedResource is not null)
+                    {
+                        allEntries.Add((storageLayerId, resolvedResource, resolvedService));
+                    }
+                    else if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexResource))
+                    {
+                        allEntries.Add((storageLayerId, indexResource, ResolveOgcApiMapsService(snapshot, indexResource)));
+                    }
                 }
                 if (allEntries.Count == 0)
                 {
@@ -333,8 +359,15 @@ internal sealed class OgcMapsRenderingHandler
 
             OgcMapsLog.DatasetMapRenderStarted(_logger, resolvedLayerCount, renderRequest.Value.Width, renderRequest.Value.Height);
 
+            // Flow the handler-resolved resource identities into the renderer so it does not
+            // re-resolve each layer through the first-wins storage-layer index (#2799).
+            var datasetRenderRequest = renderRequest.Value with
+            {
+                ResolvedLayers = entries.Select(e => new ResolvedMapLayer(e.LayerId, e.Resource.Metadata.Id)).ToArray()
+            };
+
             // Render the dataset map
-            var result = await _mapRenderer.RenderDatasetMapAsync(resolvedLayerIds, renderRequest.Value, cancellationToken);
+            var result = await _mapRenderer.RenderDatasetMapAsync(resolvedLayerIds, datasetRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {
                 OgcMapsLog.NoDatasetMapDataFound(_logger, resolvedLayerCount);
@@ -359,62 +392,20 @@ internal sealed class OgcMapsRenderingHandler
     }
 
     private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
-        => IsProtocolEnabled(service, OgcApiMapsProtocol);
+        => OgcMapsResourceResolver.IsProtocolEnabled(service, OgcApiMapsProtocol);
 
-    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
-        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
-
-    private static (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveResourceAndService(
+    // Collision-aware resolution is shared with OgcMapsTileSetHandler so the map,
+    // map/tiles, and dataset-map surfaces agree on the same resource for a colliding
+    // storage layer id (honua-server#2799). The resolved identity is also flowed into
+    // the renderer via MapRenderRequest.ResolvedLayers so the renderer never re-runs the
+    // first-wins storage-layer lookup.
+    private (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveResourceAndService(
         MetadataV2GraphSnapshot snapshot,
         int storageLayerId)
-    {
-        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexedResource))
-        {
-            var indexedService = ResolveOgcApiMapsService(snapshot, indexedResource);
-            if (indexedService is not null)
-            {
-                return (indexedResource, indexedService);
-            }
-        }
-
-        // A compatibility publication can expose the same numeric layer through both a
-        // raster binding and a vector/map binding. ResourcesByStorageLayerId is deliberately
-        // one-to-one and first-wins, so its entry can be the ImageServer-only resource while
-        // a later colliding binding owns the valid Maps publication. Keep the indexed fast
-        // path above, then examine collisions only when that resource is not Maps-enabled.
-        foreach (var binding in snapshot.Graph.StorageBindings)
-        {
-            if (binding.StorageLayerId != storageLayerId ||
-                !snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var resource))
-            {
-                continue;
-            }
-
-            var service = ResolveOgcApiMapsService(snapshot, resource);
-            if (service is not null)
-            {
-                return (resource, service);
-            }
-        }
-
-        return (null, null);
-    }
+        => OgcMapsResourceResolver.ResolveMapsResource(snapshot, storageLayerId, _logger);
 
     private static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
-    {
-        foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
-        {
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidate))
-            {
-                continue;
-            }
-            if (IsProtocolEnabled(candidate, OgcApiMapsProtocol))
-            {
-                return candidate;
-            }
-        }
-        return null;
-    }
+        => OgcMapsResourceResolver.ResolveOgcApiMapsService(snapshot, resource);
 
     /// <summary>
     /// Renders a map with a specific style applied.
@@ -490,8 +481,13 @@ internal sealed class OgcMapsRenderingHandler
                     cancellationToken).ConfigureAwait(false);
             }
 
-            // Render the styled map (raster path)
-            var result = await _mapRenderer.RenderStyledMapAsync(layerId, styleId, renderRequest.Value, cancellationToken);
+            // Render the styled map (raster path). Flow the handler-resolved resource
+            // identity so the renderer does not re-resolve the layer first-wins (#2799).
+            var styledRenderRequest = renderRequest.Value with
+            {
+                ResolvedLayers = new[] { new ResolvedMapLayer(layerId, resource.Metadata.Id) }
+            };
+            var result = await _mapRenderer.RenderStyledMapAsync(layerId, styleId, styledRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {
                 OgcMapsLog.NoMapDataFound(_logger, layerId);

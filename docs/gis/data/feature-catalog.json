@@ -5201,7 +5201,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenWithKnownPoolUtilization",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProductionMonitoringEndpointSecurityTests.ComprehensiveHealth_RedactsSensitiveHealthCheckDataAndExceptions",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.UploadQueueMonitoringEndpointsTests.ComprehensiveHealth_WithZeroMaxQueue_ReturnsFiniteFileUploadUtilization"
       ],
@@ -5216,7 +5216,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenWithKnownPoolUtilization",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ProductionHealthMetrics_ReflectLiveHttpRequestTelemetry"
       ],
       "proof_ledger_surface": "detailed-monitoring",
@@ -5243,7 +5243,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenWithKnownPoolUtilization"
       ],
       "proof_ledger_surface": "detailed-monitoring",
       "maturity": "implemented"
@@ -5256,7 +5256,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenButMarkPoolTelemetryUnknown"
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.DatabasePerformanceEndpointsTests.ConnectionTimeouts_KeepDatabaseHealthGreenWithKnownPoolUtilization"
       ],
       "proof_ledger_surface": "detailed-monitoring",
       "maturity": "implemented"
@@ -6026,7 +6026,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WhenSuccessful_IncludesContentHeaders",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WithStringCollectionId_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_WithValidParameters_ReturnsMap",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetCollectionMap_DuplicateStorageLayerBindings_ReturnsPng",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetCollectionMap_DuplicateStorageLayerBindings_RealRenderer_ReturnsPng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_EmptyCollectionId_ReturnsBadRequestOrNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_ErrorResponse_DoesNotExposeInternalDetails",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_FloatCollectionId_ReturnsNotFound",
@@ -6073,6 +6073,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetMapTileSets_TilingSchemeLinksResolve",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetMapTileSets_ValidCollection_ReturnsTileSetMetadata",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetMapTileSets_DuplicateStorageLayerBindings_ReturnsTileSets",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetMapTileSets_NegativeCollectionId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetMapTileSets_NonExistentCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetMapTileSets_NonIntegerCollectionId_ReturnsNotFound",
@@ -6153,6 +6154,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithMisalignedRasterCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithoutCollections_ReturnsMap",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsDuplicateStorageBindingEndpointTests.GetDatasetMap_DuplicateStorageLayerBindings_UnfilteredIncludesCollidingCollection_ReturnsPng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetDatasetMap_AllUnknownCollectionIds_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetDatasetMap_CollectionsExceedLimit_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetDatasetMap_CollectionsWithMalformedDelimiter_ReturnsBadRequest",
@@ -6304,6 +6306,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_IncludesRasterSurfaceProcesses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessList_ReturnsAtLeastOneProcess"
       ],
       "proof_ledger_surface": "ogc-api-processes",
@@ -6319,6 +6322,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_FirstSliceVectorProcess_ReturnsConcreteInputsAndOutputs",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_InvalidId_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_RasterSurfaceProcess_ReturnsDescription",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.ProcessDescription_ValidId_ReturnsDescription"
       ],
       "proof_ledger_surface": "ogc-api-processes",
@@ -7331,7 +7335,11 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OutOfRangeZarrCoordinate_ReturnsInvalidSubsetting",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OversizeZarrSlice_ReturnsInvalidParameterValue",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_UnavailableZarrReader_ReturnsOperationNotSupported",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithTiff_ReturnsOperationNotSupported"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithRangeSubset_ReturnsOperationNotSupported",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithTiff_ReturnsOperationNotSupported",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrOversizeEndpointsTests.Wcs_GetCoverage_OversizeNativeGridWithoutScaling_ReturnsInvalidParameterValueWithCoverageIdLocator",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrTrimEndpointsTests.Wcs_GetCoverage_AdvertisedExtentZarrTrim_RoundTripsToPng",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrTrimEndpointsTests.Wcs_GetCoverage_OverExtentZarrTrim_ClampsToCoverageAndReturnsPng"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -15244,6 +15252,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanEmptySteps_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanMissingPlanId_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PreferRespondSync_Returns422WithOgcExceptionType",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_InvalidEnumValue_Returns400",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeDocument_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeRaw_Returns501",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepMissingKind_Returns400",
@@ -15252,8 +15262,11 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnknownProcessId_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_UnsupportedArtifactKind_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_WithoutRespondAsync_DefaultsToAsync",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_RasterProcessDirect_CreatesSameJobAsPlanWrapped",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenCreateFails_DoesNotReturnCreated",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenQueuePersistenceFails_RollsBackCreatedJobUsingFreshVersionToken"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesExecutionSubmissionTests.Execute_WhenQueuePersistenceFails_RollsBackCreatedJobUsingFreshVersionToken",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_AnalyticPlanWithExecuteOnlyGrant_IsNotForbidden",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesMutatingTierAuthorizationTests.Execute_MutatingPlanWithExecuteOnlyGrant_ReturnsForbidden"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented"

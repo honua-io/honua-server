@@ -461,6 +461,14 @@ public readonly record struct BoundingBox
     /// WKID fallback delegates here, so the list also drives protocol axis-order
     /// decisions (WMS 1.3.0 BBOX, WFS 2.0 CRS, FES filter geometries).
     /// </summary>
+    /// <remarks>
+    /// This is a <b>static fallback-tier</b> classifier (#2794): <see cref="BoundingBox"/> is a
+    /// value type on hot geometry paths and cannot inject the async, registry-backed
+    /// <see cref="IGeographicSridClassifier"/>. It therefore answers from the static allowlist for
+    /// arbitrary codes the WKT could not classify. Call sites that can reach dependency injection
+    /// should prefer <see cref="IGeographicSridClassifier"/> so genuinely geographic codes outside
+    /// the static list resolve correctly from the live registry.
+    /// </remarks>
     internal static bool IsGeographicSrid(int? srid)
         => GeographicSridClassifier.IsGeographicSrid(srid);
 

@@ -87,7 +87,7 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
-        FeatureStreamMetrics.RecordReplayEventsDelivered(WebSocketTransport, delivered);
+        sessionManager?.RecordReplayEventsDelivered(WebSocketTransport, delivered);
         return cursor;
     }
 
@@ -98,6 +98,7 @@ internal static partial class FeatureStreamEndpoints
         int batchSize,
         ILogger logger,
         Guid sessionId,
+        FeatureStreamSessionManager sessionManager,
         CancellationToken cancellationToken,
         IStreamSubscriptionFilter? subscriptionFilter = null,
         string? subscriptionId = null)
@@ -143,7 +144,7 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
-        FeatureStreamMetrics.RecordReplayEventsDelivered(SseTransport, delivered);
+        sessionManager.RecordReplayEventsDelivered(SseTransport, delivered);
         return cursor;
     }
 }

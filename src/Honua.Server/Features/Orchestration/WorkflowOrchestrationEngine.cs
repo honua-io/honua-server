@@ -69,6 +69,22 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // the flat DAG the reconciler will rebuild from the stored definition each tick.
         var expanded = WorkflowDefinitionExpander.Expand(definition);
 
+        // #2798: gate the REQUESTING principal against the mutating-process execution tier
+        // BEFORE any step job is submitted. The reconcile loop submits step jobs under a
+        // synthesized orchestrator principal that carries role=admin and so bypasses the
+        // operator evaluator; without this pre-check an Execute-only operator could schedule
+        // a workflow whose compiled steps import, mutate, or write durable sinks and have
+        // every step execute without anyone facing the ExecuteMutatingProcess gate. Cron- and
+        // event-driven runs pass a system principal here (admin) and are gated at authoring
+        // time, so the admin bypass on that path is intentional. The check runs before the run
+        // is persisted so a denial leaves no orphaned run state.
+        foreach (var step in expanded.Steps)
+        {
+            await _jobService
+                .EnsurePlanExecutionAuthorizedAsync(step.Plan, principal, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var now = _clock.GetUtcNow();
         var runId = $"wf-{Guid.NewGuid():N}";
         var stepStates = expanded.Steps

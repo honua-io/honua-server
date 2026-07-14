@@ -27,7 +27,7 @@ public sealed class EsriConstructCapabilityRegistryTests
     [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeImageService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterSurface, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterSurface, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterConversion, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.GpDataManagement, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.GpUnsupported, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ManualReview, false, false, false)]

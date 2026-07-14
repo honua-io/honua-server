@@ -15,7 +15,8 @@ namespace Honua.Postgres.Tests.Features.Observability;
 
 /// <summary>
 /// Integration tests for <see cref="PostgresOpsHealthRollupStore"/> (#2553): the write/upsert,
-/// downsample, prune, and read paths against an isolated per-test schema mirroring migration 077.
+/// downsample, prune, and read paths against an isolated per-test schema mirroring migrations 077
+/// and 085.
 /// </summary>
 [Collection("Database")]
 public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
@@ -233,6 +234,7 @@ public sealed class PostgresOpsHealthRollupStoreTests(PostgresFixture fixture)
                 p95_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
                 p99_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
                 max_ms         DOUBLE PRECISION NOT NULL DEFAULT 0,
+                distribution   JSONB            NULL,
                 updated_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
                 CONSTRAINT ops_health_rollup_latency_pk PRIMARY KEY (replica_id, tier, bucket_start, protocol),
                 CONSTRAINT ops_health_rollup_latency_valid_tier CHECK (tier IN (0, 1, 2))

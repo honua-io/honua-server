@@ -101,8 +101,8 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot is not null &&
-            snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) &&
+        var resource = snapshot is null ? null : ResolveResourceForLayer(snapshot, layerId, request);
+        if (resource is not null &&
             HasGeometry(resource))
         {
             var styleJson = await ResolveExplicitStyleJsonAsync(styleId, cancellationToken).ConfigureAwait(false);
@@ -135,10 +135,15 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             return fallback;
         }
 
-        var geometryLayers = layerIds
-            .Where(layerId => snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) && HasGeometry(resource))
-            .Select(layerId => (layerId, snapshot.Index.ResourcesByStorageLayerId[layerId]))
-            .ToList();
+        var geometryLayers = new List<(int LayerId, MetadataV2Resource Resource)>(layerIds.Length);
+        foreach (var layerId in layerIds)
+        {
+            var resource = ResolveResourceForLayer(snapshot, layerId, request);
+            if (resource is not null && HasGeometry(resource))
+            {
+                geometryLayers.Add((layerId, resource));
+            }
+        }
 
         if (geometryLayers.Count == 0)
         {
@@ -198,19 +203,36 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
                 explicitStyleJson));
         }
 
-        var imageBytes = await RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync(
-            featureReader,
-            styleCatalog,
-            layers,
-            extent,
-            requestSrid,
-            request.Width,
-            request.Height,
-            RasterMapRenderingPipeline.MaxFeaturesPerLayer,
-            format,
-            request.Transparent,
-            ResolveBackgroundColor(request.BackgroundColor),
-            cancellationToken).ConfigureAwait(false);
+        byte[] imageBytes;
+        try
+        {
+            imageBytes = await RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync(
+                featureReader,
+                styleCatalog,
+                layers,
+                extent,
+                requestSrid,
+                request.Width,
+                request.Height,
+                RasterMapRenderingPipeline.MaxFeaturesPerLayer,
+                format,
+                request.Transparent,
+                ResolveBackgroundColor(request.BackgroundColor),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException &&
+                                   RasterRenderingUnavailableException.IsNativeLoadFailure(ex))
+        {
+            // The native SkiaSharp rasterizer could not be initialized on this runtime
+            // image (missing libSkiaSharp / fontconfig / freetype, or a wrong-arch native
+            // asset). Log the real cause for operators and translate it into a typed
+            // capability failure so callers (e.g. the MCP honua_render_map tool) surface an
+            // actionable failed_precondition instead of a generic internal error
+            // (honua-server#2770).
+            RasterMapRenderingPipelineLog.RenderingRuntimeUnavailable(
+                _logger, layers.Count, request.Width, request.Height, ex);
+            throw new RasterRenderingUnavailableException(ex);
+        }
 
         return new RasterResult
         {
@@ -258,6 +280,34 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     }
 
     private const int DefaultSrid = 4326;
+
+    /// <summary>
+    /// Resolves the resource for <paramref name="layerId"/>, preferring the handler-resolved
+    /// identity carried on <see cref="MapRenderRequest.ResolvedLayers"/> (looked up by
+    /// canonical resource id) so a colliding StorageLayerId does not re-resolve first-wins to
+    /// the wrong (e.g. raster) resource. Falls back to the first-wins storage-layer index when
+    /// no resolved identity is supplied (legacy callers) (#2799).
+    /// </summary>
+    private static MetadataV2Resource? ResolveResourceForLayer(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        MapRenderRequest request)
+    {
+        if (request.ResolvedLayers is { } resolved)
+        {
+            foreach (var entry in resolved.Where(entry => entry.LayerId == layerId))
+            {
+                if (snapshot.Index.ResourcesById.TryGetValue(entry.ResourceId, out var byId))
+                {
+                    return byId;
+                }
+            }
+        }
+
+        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byLayer)
+            ? byLayer
+            : null;
+    }
 
     private static bool HasGeometry(MetadataV2Resource resource)
         => resource.ReadGeometryType() != MetadataV2GeometryType.None ||

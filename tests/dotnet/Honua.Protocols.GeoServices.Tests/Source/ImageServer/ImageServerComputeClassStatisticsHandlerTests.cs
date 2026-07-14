@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -127,7 +126,7 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
 
         var result = await _handler.ComputeAsync(context, 99, values, CancellationToken.None);
 
-        (await ExecuteAndReadErrorCodeAsync(result, context)).Should().Be(404);
+        await AssertGeoServicesErrorAsync(context, result, 404);
     }
 
     [UnitTest]
@@ -156,7 +155,7 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
         // The over-budget AOI is rejected as a 400 (GeoServices code in the response body).
-        (await ExecuteAndReadErrorCodeAsync(result, context)).Should().Be(400);
+        await AssertGeoServicesErrorAsync(context, result, 400);
     }
 
     [UnitTest]
@@ -172,9 +171,9 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
 
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
-        // renderingRule is explicitly rejected (NotImplemented). The GeoServices error body maps
-        // HTTP 501 to code 500 (Esri has no 501 code), matching the endpoint test's 501/500 tolerance.
-        (await ExecuteAndReadErrorCodeAsync(result, context)).Should().BeOneOf(501, 500);
+        // renderingRule is explicitly rejected (NotImplemented). #2795: the GeoServices error body now
+        // passes HTTP 501 through as code 501 (distinct from a 500 server fault).
+        await AssertGeoServicesErrorAsync(context, result, 501);
     }
 
     [UnitTest]
@@ -189,17 +188,7 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
 
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
-        (await ExecuteAndReadErrorCodeAsync(result, context)).Should().Be(400);
-    }
-
-    // GeoServices errors are HTTP 200 with the code in the JSON body {"error":{"code":N,...}};
-    // execute the result and read that body code.
-    private static async Task<int> ExecuteAndReadErrorCodeAsync(IResult result, DefaultHttpContext context)
-    {
-        await result.ExecuteAsync(context);
-        context.Response.Body.Seek(0, SeekOrigin.Begin);
-        using var document = await JsonDocument.ParseAsync(context.Response.Body);
-        return document.RootElement.GetProperty("error").GetProperty("code").GetInt32();
+        await AssertGeoServicesErrorAsync(context, result, 400);
     }
 
     private static DefaultHttpContext CreateImageServerContext()

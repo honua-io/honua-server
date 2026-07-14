@@ -252,6 +252,12 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
         };
     }
 
+    // Static fallback-tier classification (#2794): this registry is a DI singleton seeded once from
+    // TileMatrixSetDefinitionOptions at construction, with no async context and a lifetime that
+    // cannot capture the scoped, registry-backed IGeographicSridClassifier. Custom operator-defined
+    // gridsets are config-authored and rare, so the static allowlist is an acceptable answer for the
+    // IsGeographic flag here; a genuinely geographic custom SRID outside the list only affects the
+    // advertised gridset metadata, not query axis order.
     private static bool IsGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeographicSrid(srid);
 }
