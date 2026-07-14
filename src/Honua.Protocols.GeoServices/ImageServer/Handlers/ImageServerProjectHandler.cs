@@ -169,6 +169,8 @@ internal sealed class ImageServerProjectHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid geometry input.");
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             ImageServerLog.ProjectFailed(_logger, ex, layerId);
@@ -240,6 +242,9 @@ internal sealed class ImageServerProjectHandler
                 "Image-coordinate-system projection into the requested outSR requires a configured coordinate transform service.");
         }
 
+        // Not rewritten as .Select: each iteration performs an awaited coordinate-transform
+        // call and can short-circuit the whole handler with an early 400 return, which a
+        // LINQ projection cannot express without materializing the async control flow.
         var projected = new List<JsonElement>(request.GeometryJsonStrings.Count);
         foreach (var geometryJson in request.GeometryJsonStrings)
         {

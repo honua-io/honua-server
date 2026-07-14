@@ -97,6 +97,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
         {
             throw;
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             ImageServerLog.ServiceInfoFailed(_logger, ex, layerId);
@@ -181,6 +184,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
         {
             throw;
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             ImageServerLog.IdentifyFailed(_logger, ex, layerId);
@@ -238,6 +244,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
         {
             throw;
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             ImageServerLog.CatalogQueryFailed(_logger, ex, layerId);
@@ -355,6 +364,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
             var parsed = new List<MapPoint>();
             if (geometriesElement.ValueKind == JsonValueKind.Array)
             {
+                // Not rewritten as .Where(...): TryReadPointGeometry uses the Try-pattern
+                // (bool + out point), so a LINQ equivalent would need an intermediate
+                // nullable projection that is harder to read than the loop.
                 foreach (var geometry in geometriesElement.EnumerateArray())
                 {
                     if (TryReadPointGeometry(geometry, fallbackSrid, out var point))

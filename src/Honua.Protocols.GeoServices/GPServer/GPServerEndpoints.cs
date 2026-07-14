@@ -533,6 +533,9 @@ internal static class GPServerEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: best-effort cleanup on a detached token after the
+            // request has already failed/timed out. This must never throw — the orphaned
+            // job leaking worker capacity is logged, not surfaced as a new failure.
             GPServerLog.OrphanedExecuteJobCancelFailed(logger, jobId, ex);
         }
     }

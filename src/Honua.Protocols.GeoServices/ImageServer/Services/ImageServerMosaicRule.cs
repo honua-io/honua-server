@@ -442,6 +442,10 @@ public readonly record struct ImageServerMosaicRule
 
     private static bool TryReadStringInsensitive(JsonElement element, string propertyName, out string? value)
     {
+        // Not rewritten as .Where(...): this is a first-match short-circuit that returns
+        // from within the loop as soon as a matching property is found, not a pure filter —
+        // a LINQ equivalent would still need to iterate to find the first match and would
+        // be harder to read than the loop.
         foreach (var property in element.EnumerateObject())
         {
             if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&

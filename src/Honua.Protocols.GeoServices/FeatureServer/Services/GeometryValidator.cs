@@ -195,6 +195,9 @@ internal sealed partial class GeometryValidator : IGeometryValidator
                 ValidationErrorCode.ValidationTimeout,
                 $"Topology validation timed out after {_options.ValidationTimeout.TotalSeconds} seconds");
         }
+        // Intentionally generic: the underlying topology validator can throw a wide range of
+        // provider/native-library exception types for malformed geometry; any failure here is
+        // logged and reported as a validation failure rather than propagating.
         catch (Exception ex)
         {
             LogTopologyValidationFailed(_logger, ex);
@@ -229,6 +232,9 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         {
             return GeometryRepairResult.Failed($"Repair timed out after {_options.ValidationTimeout.TotalSeconds} seconds");
         }
+        // Intentionally generic: the underlying topology validator can throw a wide range of
+        // provider/native-library exception types for malformed geometry; any failure here is
+        // logged and reported as a repair failure rather than propagating.
         catch (Exception ex)
         {
             LogGeometryRepairFailed(_logger, ex);
