@@ -389,9 +389,9 @@ internal sealed partial class TileOperationJobService(
     private static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
     {
         var operation = request.Operation.Trim().ToLowerInvariant();
-        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish"))
+        if (operation is not ("seed" or "warm" or "invalidate" or "purge" or "archive" or "publish" or "expire" or "delete"))
         {
-            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive, publish.", nameof(request));
+            throw new ArgumentException("Operation must be one of: seed, warm, invalidate, purge, archive, publish, expire, delete.", nameof(request));
         }
 
         return request with
@@ -399,7 +399,13 @@ internal sealed partial class TileOperationJobService(
             Operation = operation,
             TileMatrixSetId = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
                 ? "WebMercatorQuad"
-                : request.TileMatrixSetId.Trim()
+                : request.TileMatrixSetId.Trim(),
+            Style = string.IsNullOrWhiteSpace(request.Style)
+                ? "default"
+                : request.Style.Trim(),
+            Format = string.IsNullOrWhiteSpace(request.Format)
+                ? null
+                : request.Format.Trim().ToLowerInvariant()
         };
     }
 
@@ -704,10 +710,24 @@ internal sealed record TileOperationStartRequest
     public int? MaxTiles { get; init; }
 
     /// <summary>
-    /// Stable generation identifier for a resumable seed/warm run (issue #2661). Optional so all
-    /// existing seed/warm/invalidate/purge/archive/publish callers are unchanged; when absent the
-    /// in-process submission path stamps one, and a retry forwards it so the generation resumes
-    /// rather than restarting from zero.
+    /// Style identifier the cached tiles were rendered with. Optional; defaults to <c>default</c>
+    /// during normalization so existing callers are unchanged. Used by the bounded expire/delete
+    /// lifecycle operations (issue #2661) to scope the target key window to one style.
+    /// </summary>
+    public string? Style { get; init; }
+
+    /// <summary>
+    /// Output format (for example <c>png</c>, <c>jpg</c>, <c>pbf</c>) the cached tiles were written
+    /// as. Optional; when absent the bounded expire/delete lifecycle operations match every format
+    /// in the requested window.
+    /// </summary>
+    public string? Format { get; init; }
+
+    /// <summary>
+    /// Stable generation identifier for a resumable seed/warm/expire/delete run (issue #2661).
+    /// Optional so all existing seed/warm/invalidate/purge/archive/publish callers are unchanged;
+    /// when absent the in-process submission path stamps one, and a retry forwards it so the
+    /// generation resumes rather than restarting from zero.
     /// </summary>
     public string? GenerationId { get; init; }
 }

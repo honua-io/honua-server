@@ -106,6 +106,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/tile-operations/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/tile-operations/jobs/{jobId}/retry"),
         new("POST", "/api/v1/admin/tile-operations/evict"),
+        new("GET", "/api/v1/admin/tile-operations/cache/inventory"),
 
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),
