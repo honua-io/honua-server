@@ -20,8 +20,26 @@ internal static class SceneTilesetStaging
     /// configured output root, rooting a relative output root against the host
     /// content root.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="sceneId"/> is not a simple relative segment. Every current
+    /// caller already validates sceneId via <c>SceneDatasetValidator.TryValidateSceneId</c>
+    /// before reaching here, but this is a shared filesystem primitive reused by
+    /// three publish executors — this is a defense-in-depth guard (matching the
+    /// containment-check style used elsewhere in this assembly) so a validation
+    /// gap in a future caller can never let a rooted/escaping sceneId silently
+    /// drop <paramref name="contentRootPath"/>/<paramref name="outputRoot"/> via
+    /// <see cref="Path.Combine(string, string)"/>.
+    /// </exception>
     public static string ResolveOutputDirectory(string contentRootPath, string outputRoot, string sceneId)
     {
+        if (!IsSimpleSegment(sceneId))
+        {
+            throw new InvalidOperationException(
+                $"sceneId '{sceneId}' must be a simple relative segment (no path separators, rooted paths, or '..').");
+        }
+
+        // Reached only when outputRoot is confirmed relative above, so this combine
+        // can never drop contentRootPath.
         var rooted = Path.IsPathRooted(outputRoot)
             ? outputRoot
             : Path.Combine(contentRootPath, outputRoot);
@@ -34,13 +52,41 @@ internal static class SceneTilesetStaging
     /// sceneId (the canonical validator forbids leading dots/hyphens), letting
     /// concurrent publishes for the same sceneId stage independently.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="intentId"/> is not a simple relative segment. Every current
+    /// caller mints intentId itself via <c>Guid.NewGuid().ToString("N")</c>, but
+    /// this defense-in-depth guard closes the same class of gap as
+    /// <see cref="ResolveOutputDirectory"/> above for any future caller.
+    /// </exception>
     public static string ResolveStagingDirectory(string contentRootPath, string outputRoot, string intentId)
     {
+        if (!IsSimpleSegment(intentId))
+        {
+            throw new InvalidOperationException(
+                $"intentId '{intentId}' must be a simple relative segment (no path separators, rooted paths, or '..').");
+        }
+
+        // Reached only when outputRoot is confirmed relative above, so this combine
+        // can never drop contentRootPath.
         var rooted = Path.IsPathRooted(outputRoot)
             ? outputRoot
             : Path.Combine(contentRootPath, outputRoot);
         return Path.GetFullPath(Path.Combine(rooted, $".staging-{intentId}"));
     }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="value"/> is safe to
+    /// combine with a base directory: non-empty, contains no path separators or
+    /// <c>..</c> segment, and is not rooted/absolute. Mirrors the
+    /// <c>ArtifactNames.IsSimpleFileName</c> guard used for the same class of bug
+    /// in the custom-code execution harness.
+    /// </summary>
+    private static bool IsSimpleSegment(string? value) =>
+        !string.IsNullOrEmpty(value) &&
+        !value.Contains('/', StringComparison.Ordinal) &&
+        !value.Contains('\\', StringComparison.Ordinal) &&
+        !value.Contains("..", StringComparison.Ordinal) &&
+        !Path.IsPathRooted(value);
 
     /// <summary>
     /// Atomically promotes a fully-written staging directory to its final path.
@@ -81,6 +127,9 @@ internal static class SceneTilesetStaging
                 Directory.Delete(stagingDirectory, recursive: true);
             }
         }
+        // Intentionally generic: staging cleanup is best-effort and must never throw
+        // back into a publish/compensation flow; onError lets the caller log it for a
+        // janitor sweep instead.
         catch (Exception ex)
         {
             onError?.Invoke(ex);

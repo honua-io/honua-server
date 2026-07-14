@@ -36,11 +36,15 @@ internal static class ShapefileExportWriter
                 "Shapefile format does not support mixed geometry types (GeometryCollection).");
         }
 
+        // "honua-export" is a compile-time relative literal and Guid.NewGuid().ToString("N")
+        // is a fixed-format hex string (no separators, never rooted), so this combine cannot
+        // silently drop Path.GetTempPath().
         var scratchDir = Path.Combine(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
         try
         {
+            // "export.shp" is a compile-time relative literal, so it cannot be rooted.
             var shpPath = Path.Combine(scratchDir, "export.shp");
             var warnings = new List<string>();
             var skippedNullGeometry = 0;
@@ -114,7 +118,8 @@ internal static class ShapefileExportWriter
                 await File.WriteAllTextAsync(prjPath, prjWkt, cancellationToken).ConfigureAwait(false);
             }
 
-            // Create ZIP archive to temp file to avoid sync I/O on response body
+            // Create ZIP archive to temp file to avoid sync I/O on response body.
+            // "export.zip" is a compile-time relative literal, so it cannot be rooted.
             var zipPath = Path.Combine(scratchDir, "export.zip");
             {
                 await using var zipStream = File.Create(zipPath);
@@ -137,6 +142,8 @@ internal static class ShapefileExportWriter
         }
         finally
         {
+            // Intentionally generic: best-effort scratch-directory cleanup that must not
+            // mask the write result (success or failure) above it; log and move on.
             try { Directory.Delete(scratchDir, recursive: true); }
             catch (Exception ex)
             {

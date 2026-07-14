@@ -79,9 +79,10 @@ internal sealed class McpJobProgressBridge
             {
                 McpLog.ProgressBridgeStopped(_logger, sessionId, jobId, "cancelled");
             }
+            // Intentionally generic: this is a fire-and-forget background poll; it must never
+            // crash the host, so record the failure and stop.
             catch (Exception ex)
             {
-                // A background poll must never crash the host; record and stop.
                 McpLog.ResourceReadFailed(_logger, "jobs", jobId, ex);
             }
         });
@@ -116,10 +117,10 @@ internal sealed class McpJobProgressBridge
             {
                 throw;
             }
+            // Intentionally generic: the job vanished or the read failed; stop tracking rather
+            // than spinning. The client can still read honua://jobs/{id} directly.
             catch (Exception ex)
             {
-                // The job vanished or the read failed; stop tracking rather than
-                // spinning. The client can still read honua://jobs/{id} directly.
                 McpLog.ProgressBridgeJobReadFailed(_logger, sessionId, jobId, ex);
                 McpLog.ProgressBridgeStopped(_logger, sessionId, jobId, "job-unreadable");
                 return;
