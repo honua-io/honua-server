@@ -137,6 +137,8 @@ internal static class AdminStyleSuggestionEndpoints
             var payload = ApiResponse<StyleSuggestionResponse>.CreateSuccess(response);
             return Results.Json(payload, StyleSuggestionJsonContext.Default.ApiResponseStyleSuggestionResponse);
         }
+        // Intentional broad catch: this is the request-handling boundary for the style suggestion
+        // endpoint; the failure is logged and mapped to a generic admin problem response below.
         catch (Exception ex)
         {
             AdminStyleSuggestionLog.StyleSuggestionFailed(logger, layerId, ex.Message, ex);

@@ -368,6 +368,9 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: per-attempt loop probing replica health; one
+                // probe's failure is counted and the loop continues to the next attempt
+                // rather than aborting the health check.
                 failures++;
                 if (logger is not null)
                 {

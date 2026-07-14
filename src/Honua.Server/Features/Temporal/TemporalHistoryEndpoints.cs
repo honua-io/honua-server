@@ -72,6 +72,9 @@ internal static partial class TemporalHistoryEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: TemporalProblemMapping above
+            // handles known error types; anything else is logged and mapped to a generic
+            // problem response below.
             LogEndpointFailed(context, "temporal.capabilities", ex);
             return CreateGenericProblem(context);
         }
@@ -117,6 +120,9 @@ internal static partial class TemporalHistoryEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: TemporalProblemMapping above
+            // handles known error types; anything else is logged and mapped to a generic
+            // problem response below.
             LogEndpointFailed(context, "temporal.as-of", ex);
             return CreateGenericProblem(context);
         }

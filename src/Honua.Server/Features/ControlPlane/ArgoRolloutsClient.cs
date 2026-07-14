@@ -332,6 +332,10 @@ internal sealed partial class ArgoRolloutsClient(
         }
         catch (Exception readEx)
         {
+            // Intentional broad catch: this is a best-effort read of the failed response body
+            // purely for diagnostic logging; if the body can't be read for any reason, fall
+            // back to a placeholder rather than letting a secondary failure mask the original
+            // API error being reported below.
             body = $"<unreadable response body: {readEx.Message}>";
         }
 

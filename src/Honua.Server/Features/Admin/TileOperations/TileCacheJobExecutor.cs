@@ -124,6 +124,9 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         {
             throw;
         }
+        // Intentional broad catch: this is the tile cache job's execution boundary; any failure from
+        // the operation core is logged and recorded as a Failed job status below rather than
+        // propagated, so the job runner always observes a terminal outcome.
         catch (Exception ex)
         {
             Log.ExecutionFailed(_logger, job.OperationId, request.Operation, ex);

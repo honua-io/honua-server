@@ -120,9 +120,11 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         {
             throw;
         }
+        // Intentionally generic: this is a long-running background verification loop. A
+        // single failed pass (e.g. a transient database error) must not crash the host;
+        // retain the prior good/broken signal and retry on the next interval.
         catch (Exception ex)
         {
-            // Never let a verification failure crash the host; retain the prior signal and retry.
             LogVerificationFailed(_logger, ex);
         }
     }
@@ -138,6 +140,11 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         _lastReport = report;
         Interlocked.Exchange(ref _lastVerifiedAtTicks, DateTimeOffset.UtcNow.UtcTicks);
 
+        // Intentional shared static state: _chainBrokenGauge backs the OpenTelemetry observable
+        // gauge registered in the static constructor above, whose callback is a static lambda
+        // and therefore can only read a static field. This background service is registered as
+        // a singleton (one instance drives verification), so writing it from this instance
+        // method is safe; Interlocked keeps the write/read atomic for the gauge callback.
         if (report.Verified)
         {
             Interlocked.Exchange(ref _chainBrokenGauge, 0);

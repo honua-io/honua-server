@@ -451,12 +451,12 @@ internal sealed class DataAnnotationValidateOptions<
             var metadata = _validator.GetOptionsMetadata<TOptions>();
             _sectionName = metadata.SectionName;
         }
+        // Intentionally generic: best-effort metadata lookup. This constructor has no logger
+        // dependency (it is resolved as a plain IValidateOptions<TOptions> via DI), and an
+        // unregistered options type is an expected, benign case here — falling back to the
+        // type name still yields a usable section label for the validator below.
         catch
         {
-            // Best-effort metadata lookup: this constructor has no logger dependency (it is
-            // resolved as a plain IValidateOptions<TOptions> via DI), and an unregistered options
-            // type is an expected, benign case here — falling back to the type name still yields
-            // a usable section label for the validator below.
             _sectionName = typeof(TOptions).Name;
         }
     }

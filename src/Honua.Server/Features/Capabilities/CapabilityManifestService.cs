@@ -199,6 +199,9 @@ internal sealed class CapabilityManifestService(
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort environment snapshot lookup for the
+            // capability manifest; any failure is reported as an unavailable environment
+            // entry below rather than failing the whole manifest response.
             CapabilityManifestLog.EnvironmentSnapshotFailed(logger, environment, ex);
             return new CapabilityManifestEnvironment
             {
@@ -855,6 +858,8 @@ internal sealed class CapabilityManifestService(
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: per-backend loop probing capabilities; one
+                // backend's failure must not abort probing the remaining backends.
                 CapabilityManifestLog.BatchCapabilityProbeFailed(logger, backend.BackendName, ex);
             }
         }

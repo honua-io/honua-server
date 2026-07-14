@@ -85,6 +85,9 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
             }
             catch (Exception ex)
             {
+                // Intentional broad catch: per-attempt loop dispatching a field-collection
+                // automation action; a handler failure must not crash the background
+                // dispatcher, so it is converted to a retryable failure result instead.
                 LogHandlerThrew(_logger, actionType, invocation.InvocationId, attempt, ex);
                 result = FieldCollectionActionResult.Failure("Action handler threw.", retryable: true);
             }

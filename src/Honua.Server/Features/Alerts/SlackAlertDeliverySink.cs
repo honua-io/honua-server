@@ -104,6 +104,9 @@ internal sealed partial class SlackAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
+        // Intentional catch-all: this is a best-effort per-alert delivery attempt inside the
+        // alert dispatch pipeline; any unexpected failure (network, serialization, etc.) must
+        // be reported as a retryable delivery failure rather than throwing out of the sink.
         catch (Exception ex)
         {
             if (_logger is not null)

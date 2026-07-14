@@ -70,9 +70,10 @@ internal sealed partial class OpsJobTerminalCallback : IJobTerminalCallback
             var opsNotifier = scope.ServiceProvider.GetRequiredService<OpsNotificationService>();
             await opsNotifier.NotifyAsync(notification, cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: best-effort notification. A failed notification
+        // must not block the job terminal transition that raised it.
         catch (Exception ex)
         {
-            // Best-effort: a failed notification must not block the job terminal transition.
             LogNotifyFailed(_logger, job.OperationId, ex);
         }
     }

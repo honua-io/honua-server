@@ -322,6 +322,9 @@ internal static class DataEnrichmentRequestHandlers
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: this is the enrichment
+            // reader call boundary; the failure is logged and mapped to a generic error
+            // response below.
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             if (logger is not null)
             {

@@ -119,6 +119,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "list", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to list scene datasets.");
@@ -165,6 +167,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "register", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to register scene dataset.");
@@ -191,6 +195,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "get", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to retrieve scene dataset.");
@@ -218,6 +224,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "update.lookup", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to load scene dataset for update.");
@@ -260,6 +268,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "update", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to update scene dataset.");
@@ -291,6 +301,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "deactivate", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to deactivate scene dataset.");
@@ -351,6 +363,8 @@ internal static partial class SceneDatasetEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             SceneDatasetEndpointsLog.OperationFailed(logger, "resolve", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to resolve scene dataset.");

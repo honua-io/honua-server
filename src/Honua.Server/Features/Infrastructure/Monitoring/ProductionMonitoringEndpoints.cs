@@ -332,6 +332,8 @@ internal static class ProductionMonitoringEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic problem response below.
             MonitoringLog.ComprehensiveHealthEndpointFailed(logger, ex);
             return Results.Problem(
                 title: "Health check failed",
@@ -392,6 +394,8 @@ internal static class ProductionMonitoringEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic problem response below.
             MonitoringLog.DatabaseResilienceMetricsEndpointFailed(logger, ex);
             return Results.Problem(
                 title: "Database resilience metrics failed",

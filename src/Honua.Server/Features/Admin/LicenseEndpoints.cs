@@ -92,6 +92,8 @@ internal static partial class LicenseEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             LicenseLog.RetrieveLicenseStatusFailed(logger, ex);
             return TypedResults.Problem(
                 title: "License status retrieval failed",
@@ -139,6 +141,8 @@ internal static partial class LicenseEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             LicenseLog.UploadLicenseFailed(logger, ex);
             return TypedResults.Problem(
                 title: "License upload failed",
@@ -170,6 +174,8 @@ internal static partial class LicenseEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             LicenseLog.RetrieveEntitlementsFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Entitlement retrieval failed",

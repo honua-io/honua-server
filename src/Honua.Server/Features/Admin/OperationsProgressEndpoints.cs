@@ -394,6 +394,9 @@ internal static partial class OperationsProgressEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort job-queue cleanup after a cancel. A
+            // failure here must not fail the cancel request; the stale-claim reconciler
+            // repairs any leftover queue entry.
             Log.QueueRemovalFailed(
                 httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                     .CreateLogger(typeof(OperationsProgressEndpoints).FullName!),

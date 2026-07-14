@@ -92,6 +92,8 @@ internal static partial class FieldMaskPolicyEndpoints
             IReadOnlyList<FieldMaskPolicyResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<FieldMaskPolicyResponse>>.CreateSuccess(readOnly));
         }
+        // Intentional broad catch: this is the request-handling boundary for the field-mask policy
+        // list endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
@@ -119,6 +121,8 @@ internal static partial class FieldMaskPolicyEndpoints
 
             return TypedResults.Ok(ApiResponse<FieldMaskPolicyResponse>.CreateSuccess(ToResponse(policy)));
         }
+        // Intentional broad catch: this is the request-handling boundary for the field-mask policy
+        // get endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
@@ -165,6 +169,9 @@ internal static partial class FieldMaskPolicyEndpoints
             // Duplicate scope (unique-constraint violation) is a client error.
             return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
+        // Intentional broad catch: this is the request-handling boundary for the field-mask policy
+        // create endpoint (after the more specific InvalidOperationException case above); the
+        // failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
@@ -193,6 +200,8 @@ internal static partial class FieldMaskPolicyEndpoints
             FieldMaskPolicyLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Field-mask policy deleted"));
         }
+        // Intentional broad catch: this is the request-handling boundary for the field-mask policy
+        // delete endpoint; the failure is logged and mapped to a generic problem response below.
         catch (Exception ex)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);

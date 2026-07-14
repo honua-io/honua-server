@@ -52,6 +52,10 @@ internal sealed class GlobalExceptionMiddleware(
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: this is the outermost
+            // global exception middleware for the whole pipeline; any unhandled exception
+            // from downstream middleware/endpoints is logged and mapped to a
+            // protocol-appropriate error response below.
             // WEEK 5 FIX: Fast-path exception handling with categorization
             await HandleExceptionFastPath(context, ex);
         }

@@ -128,6 +128,8 @@ internal static partial class EnhancedPerformanceEndpoints
             var statistics = monitor.GetStatistics();
             return Results.Json(statistics, MetricsJsonContext.Default.QueryPerformanceStatistics);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -161,6 +163,8 @@ internal static partial class EnhancedPerformanceEndpoints
 
             return Results.Json(response, MetricsJsonContext.Default.SlowQueryResponse);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -185,6 +189,8 @@ internal static partial class EnhancedPerformanceEndpoints
             var statistics = detector.GetStatistics();
             return Results.Json(statistics, MetricsJsonContext.Default.ResourceTrackingStatistics);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -218,6 +224,8 @@ internal static partial class EnhancedPerformanceEndpoints
 
             return Results.Json(response, MetricsJsonContext.Default.ResourceLeakResponse);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -242,6 +250,8 @@ internal static partial class EnhancedPerformanceEndpoints
             var result = await detector.ScanForLeaksAsync();
             return Results.Json(result, MetricsJsonContext.Default.ResourceLeakScanResult);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -266,6 +276,8 @@ internal static partial class EnhancedPerformanceEndpoints
             var statistics = telemetry.GetStatistics();
             return Results.Json(statistics, MetricsJsonContext.Default.ExceptionStatistics);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -307,6 +319,8 @@ internal static partial class EnhancedPerformanceEndpoints
 
             return Results.Json(response, MetricsJsonContext.Default.ExceptionHistoryResponse);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -331,6 +345,8 @@ internal static partial class EnhancedPerformanceEndpoints
             var statistics = cacheManager.GetStatistics();
             return Results.Json(statistics, MetricsJsonContext.Default.QueryCacheStatistics);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -355,6 +371,8 @@ internal static partial class EnhancedPerformanceEndpoints
             var metrics = cacheManager.GetEffectivenessMetrics();
             return Results.Json(metrics, MetricsJsonContext.Default.CacheEffectivenessMetrics);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -393,6 +411,8 @@ internal static partial class EnhancedPerformanceEndpoints
 
             return Results.Json(response, MetricsJsonContext.Default.CacheInvalidationResponse);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -446,6 +466,8 @@ internal static partial class EnhancedPerformanceEndpoints
 
             return Results.Json(summary, MetricsJsonContext.Default.PerformanceSummaryResponse);
         }
+        // Intentional broad catch: this is the request-handling boundary for this
+        // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()

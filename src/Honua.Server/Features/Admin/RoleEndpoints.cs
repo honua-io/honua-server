@@ -111,6 +111,9 @@ internal static partial class RoleEndpoints
             IReadOnlyList<RoleResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<RoleResponse>>.CreateSuccess(readOnly));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // listing endpoint; the failure is logged and mapped to a generic error
+        // response below.
         catch (Exception ex)
         {
             RoleLog.ListRolesFailed(logger, ex);
@@ -150,6 +153,9 @@ internal static partial class RoleEndpoints
             return TypedResults.Created($"/api/v1/admin/roles/{created.RoleId}",
                 ApiResponse<RoleResponse>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // creation endpoint; the failure is logged and mapped to a generic error
+        // response below.
         catch (Exception ex)
         {
             RoleLog.CreateRoleFailed(logger, ex);
@@ -177,6 +183,9 @@ internal static partial class RoleEndpoints
 
             return TypedResults.Ok(ApiResponse<RoleResponse>.CreateSuccess(ToResponse(role)));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // retrieval endpoint; the failure is logged and mapped to a generic
+        // error response below.
         catch (Exception ex)
         {
             RoleLog.GetRoleFailed(logger, id, ex);
@@ -217,6 +226,9 @@ internal static partial class RoleEndpoints
             var result = await store.UpdateRoleAsync(updated, context.RequestAborted);
             return TypedResults.Ok(ApiResponse<RoleResponse>.CreateSuccess(ToResponse(result!)));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // update endpoint; the failure is logged and mapped to a generic error
+        // response below.
         catch (Exception ex)
         {
             RoleLog.UpdateRoleFailed(logger, id, ex);
@@ -245,6 +257,9 @@ internal static partial class RoleEndpoints
             RoleLog.RoleDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Role deleted"));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // deletion endpoint; the failure is logged and mapped to a generic error
+        // response below.
         catch (Exception ex)
         {
             RoleLog.DeleteRoleFailed(logger, id, ex);
@@ -281,6 +296,9 @@ internal static partial class RoleEndpoints
             IReadOnlyList<PermissionGrantResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PermissionGrantResponse>>.CreateSuccess(readOnly));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // permission retrieval endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             RoleLog.GetPermissionsFailed(logger, id, ex);
@@ -327,6 +345,9 @@ internal static partial class RoleEndpoints
             IReadOnlyList<PermissionGrantResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PermissionGrantResponse>>.CreateSuccess(readOnly));
         }
+        // Intentional catch-all request-handling boundary: this is the role
+        // permission update endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             RoleLog.SetPermissionsFailed(logger, id, ex);

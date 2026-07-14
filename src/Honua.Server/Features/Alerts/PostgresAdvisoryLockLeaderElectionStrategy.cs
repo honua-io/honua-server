@@ -63,10 +63,11 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
             IsLeader = true;
             return true;
         }
+        // Intentional catch-all: the acquire attempt itself errored (e.g. pool exhaustion /
+        // outage); we cannot tell whether a leader exists. Flag the fault so the evaluation
+        // loop can surface a no-leader stall instead of the exception escaping.
         catch (Exception ex)
         {
-            // The attempt itself errored (e.g. pool exhaustion / outage); we cannot tell whether a
-            // leader exists. Flag the fault so the evaluation loop can surface a no-leader stall.
             LastAcquireFaulted = true;
             PostgresAdvisoryLockLeaderElectionLog.AdvisoryLockAcquireFailed(_logger, ex);
             return false;

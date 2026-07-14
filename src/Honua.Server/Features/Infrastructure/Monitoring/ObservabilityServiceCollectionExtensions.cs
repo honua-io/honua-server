@@ -664,9 +664,11 @@ internal static class ObservabilityServiceCollectionExtensions
                 "license",
                 $"{status.Edition}:{status.ValidationState}:{(status.IsValid ? "1" : "0")}");
         }
+        // Intentional catch-all: this is a per-request output-cache-key resolver invoked
+        // on the request-handling path. Never let cache-key resolution fault a request;
+        // degrade to a sentinel key instead.
         catch
         {
-            // Never let cache-key resolution fault a request; degrade to a sentinel.
             return new KeyValuePair<string, string>("license", "<unknown>");
         }
     }

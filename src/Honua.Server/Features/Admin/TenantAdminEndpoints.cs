@@ -125,6 +125,8 @@ internal static partial class TenantAdminEndpoints
             IReadOnlyList<TenantResponse> response = tenants.Select(ToResponse).ToList().AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<TenantResponse>>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the tenant listing endpoint.
         catch (Exception ex)
         {
             Log.TenantOperationFailed(logger, "list", ex);
@@ -167,6 +169,8 @@ internal static partial class TenantAdminEndpoints
                 $"/api/v1/admin/tenants/{result.Tenant!.TenantId}",
                 ApiResponse<TenantResponse>.CreateSuccess(ToResponse(result.Tenant)));
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the tenant creation endpoint.
         catch (Exception ex)
         {
             Log.TenantOperationFailed(logger, "create", ex);
@@ -193,6 +197,8 @@ internal static partial class TenantAdminEndpoints
 
             return TypedResults.Ok(ApiResponse<TenantResponse>.CreateSuccess(ToResponse(tenant)));
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the tenant retrieval endpoint.
         catch (Exception ex)
         {
             Log.TenantOperationFailed(logger, "get", ex);
@@ -242,6 +248,9 @@ internal static partial class TenantAdminEndpoints
 
             return TypedResults.Ok(ApiResponse<TenantResponse>.CreateSuccess(ToResponse(result.Tenant!)));
         }
+        // Intentional catch-all request-handling boundary: shared handler for the
+        // suspend/resume/delete tenant lifecycle endpoints; logs and returns a
+        // generic 500 problem response.
         catch (Exception ex)
         {
             Log.TenantOperationFailed(logger, operation, ex);
@@ -273,6 +282,8 @@ internal static partial class TenantAdminEndpoints
             var response = new TenantUsageResponse { Records = mapped };
             return TypedResults.Ok(ApiResponse<TenantUsageResponse>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the tenant billing usage export endpoint.
         catch (Exception ex)
         {
             Log.TenantOperationFailed(logger, "usage", ex);

@@ -310,6 +310,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: this is the cluster analytics
+            // endpoint; the failure is logged and mapped to a generic error response below.
             if (logger != null)
             {
                 SpatialAnalyticsLog.RequestFailed(logger, ClusterOperation, layerId, ex.Message, ex);

@@ -77,6 +77,8 @@ internal static class CapabilityManifestEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the capability
+        // manifest endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             CapabilityManifestEndpointLogging.ManifestFailed(logger, ex);
