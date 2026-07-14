@@ -504,6 +504,9 @@ internal static class JobEndpoints
                 {
                     await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                 }
+                // Intentionally generic: this is best-effort queue cleanup for a job that is
+                // already cancelled; a removal failure must only be logged, not block the
+                // dismissal status reconciliation below.
                 catch (Exception ex)
                 {
                     OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
@@ -759,6 +762,9 @@ internal static class JobEndpoints
                     {
                         await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                     }
+                    // Intentionally generic: this is best-effort queue cleanup for a job that is
+                    // already terminal; a removal failure must only be logged, not block the
+                    // dismissal status reconciliation below.
                     catch (Exception ex)
                     {
                         OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);
@@ -808,6 +814,9 @@ internal static class JobEndpoints
                             {
                                 await jobQueue.RemoveAsync(jobId, context.RequestAborted).ConfigureAwait(false);
                             }
+                            // Intentionally generic: this is best-effort queue cleanup for a job
+                            // that was just cancelled; a removal failure must only be logged, not
+                            // block the dismissal status reconciliation below.
                             catch (Exception ex)
                             {
                                 OgcProcessesLog.QueueRemovalFailed(logger, jobId, ex);

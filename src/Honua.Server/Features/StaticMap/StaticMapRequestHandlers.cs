@@ -409,6 +409,8 @@ internal static partial class StaticMapEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for static map
+        // rendering; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             StaticMapLog.Failed(logger, serviceId, ex.Message, ex);

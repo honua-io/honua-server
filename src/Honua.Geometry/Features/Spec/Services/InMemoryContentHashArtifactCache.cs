@@ -140,6 +140,9 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
         var expiredEntries = _entries.Where(kvp =>
             kvp.Value.Reference.ExpiresAt is DateTimeOffset expiry && expiry <= asOf);
 
+        // Kept as an imperative loop (not a further Where): TryRemove below is a mutating,
+        // side-effecting call, not a pure predicate, so folding it into a LINQ filter would
+        // make the removal implicit and harder to follow.
         foreach (var kvp in expiredEntries)
         {
             // Conditional TryRemove: atomically removes only when the slot

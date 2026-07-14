@@ -93,15 +93,16 @@ public sealed class CloudSdkIsolationTests
                 continue;
             }
 
-            foreach (var trimmed in File.ReadLines(file).Select(line => line.TrimStart()))
-            {
-                if (trimmed.StartsWith("using Amazon.", StringComparison.Ordinal)
+            var bannedUsings = File.ReadLines(file)
+                .Select(line => line.TrimStart())
+                .Where(trimmed => trimmed.StartsWith("using Amazon.", StringComparison.Ordinal)
                     || trimmed.StartsWith("using Azure.", StringComparison.Ordinal)
                     || trimmed.StartsWith("using static Amazon.", StringComparison.Ordinal)
-                    || trimmed.StartsWith("using static Azure.", StringComparison.Ordinal))
-                {
-                    offenders.Add((file, trimmed));
-                }
+                    || trimmed.StartsWith("using static Azure.", StringComparison.Ordinal));
+
+            foreach (var trimmed in bannedUsings)
+            {
+                offenders.Add((file, trimmed));
             }
         }
 

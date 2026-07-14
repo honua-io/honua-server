@@ -196,6 +196,9 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         {
             _ = await _cloudFileStorage.DeleteAsync(cloudObjectKey, CancellationToken.None).ConfigureAwait(false);
         }
+        // Intentional: this is best-effort cleanup of an orphaned object after a lost quota
+        // lease; the lease-lost exception is thrown below regardless, so a cleanup failure
+        // must not mask or replace it — log and continue.
         catch (Exception ex)
         {
             CloudBackedTemporaryFileLog.SharedStorageCleanupAfterLeaseLossFailed(
@@ -273,6 +276,9 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
 
             return (data, metadata.ContentType);
         }
+        // Intentional: this is a read-path boundary over a heterogeneous cloud storage SDK
+        // (AWS/Azure/GCS); any provider-specific failure resolves to "file not found" rather
+        // than leaking provider internals to the caller.
         catch (Exception ex)
         {
             var provider = _cloudFileStorage.Provider;
@@ -298,6 +304,9 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         {
             return await CleanupExpiredTemporaryCloudFilesAsync(cancellationToken).ConfigureAwait(false);
         }
+        // Intentional: this is a background cleanup pass; a provider failure must not
+        // propagate to the caller (typically a timer/background service) — log and report
+        // zero files cleaned so the next scheduled pass retries.
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             CloudBackedTemporaryFileLog.SharedStorageCleanupFailed(
@@ -390,6 +399,10 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
                     _options.StorageFullRetryAfterSeconds);
             }
         }
+        // Intentional: the capacity check is best-effort admission control; a failure to
+        // even perform the check must not block the write it is guarding, so it is logged
+        // and the write proceeds unconstrained. Cancellation and the check's own
+        // over-capacity signal are excluded so both still propagate.
         catch (Exception ex) when (ex is not OperationCanceledException and not TemporaryStorageLimitExceededException)
         {
             CloudBackedTemporaryFileLog.SharedStorageCapacityCheckFailed(

@@ -106,6 +106,8 @@ internal static partial class VisibilityAnalysisEndpoints
                 VisibilityJsonContext.Default.LineOfSightRequest,
                 cancellationToken);
         }
+        // Intentional broad catch: this is the request-body parse boundary for the line-of-sight
+        // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
         catch (Exception ex)
         {
             if (logger is not null)
@@ -232,6 +234,8 @@ internal static partial class VisibilityAnalysisEndpoints
                 VisibilityJsonContext.Default.ViewshedRequest,
                 cancellationToken);
         }
+        // Intentional broad catch: this is the request-body parse boundary for the viewshed
+        // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
         catch (Exception ex)
         {
             if (logger is not null)

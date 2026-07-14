@@ -208,6 +208,9 @@ internal static class OgcGeoJsonGeometryShapeValidator
 
         for (var i = 0; i < firstOrdinates.Length; i++)
         {
+            // Exact equality is intentional: per GeoJSON (RFC 7946 SS3.1.6), a linear ring is
+            // closed when its first and last positions are the same literal authored values,
+            // not merely numerically close — this is a structural check, not a computed one.
             if (!firstOrdinates[i].TryGetDouble(out var firstValue) ||
                 !secondOrdinates[i].TryGetDouble(out var secondValue) ||
                 firstValue != secondValue)

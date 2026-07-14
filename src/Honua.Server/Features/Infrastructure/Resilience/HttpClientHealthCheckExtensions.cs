@@ -171,6 +171,9 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
                     ["cancelled"] = true
                 });
         }
+        // Intentional catch-all: this is a health-check probe boundary; any failure reaching
+        // the target service (network, protocol, or unexpected error) must be reported as a
+        // degraded health result rather than throwing out of the health-check pipeline.
         catch (Exception ex)
         {
             HttpClientHealthCheckLog.Failed(_logger, _serviceType, ex);
@@ -198,9 +201,11 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
             // we might need to track circuit breaker state more explicitly
             return null; // Circuit breaker state introspection is complex with Polly
         }
+        // Intentional catch-all: circuit-breaker state introspection is a best-effort
+        // diagnostic add-on to the health check; if it cannot be determined, continue with
+        // the health check itself rather than failing the probe.
         catch (Exception ex)
         {
-            // If we can't determine circuit breaker state, continue with health check
             HttpClientHealthCheckLog.CircuitBreakerStateCheckFailed(_logger, _serviceType, ex);
             return null;
         }

@@ -80,6 +80,9 @@ internal sealed class ExportJobService(
             {
                 await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
             }
+            // Intentionally generic: this is a rollback-of-a-rollback for the durable request
+            // cache; the original failure is about to be rethrown regardless, so any exception
+            // here must be logged and swallowed rather than replacing the original error.
             catch (Exception cleanupEx)
             {
                 ExportJobServiceLog.ProgressRollbackFailed(_logger, job.JobId, cleanupEx);
@@ -201,6 +204,9 @@ internal sealed class ExportJobService(
                 };
             await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, processingToken).ConfigureAwait(false);
 
+            // "honua-export" is a compile-time relative literal and job.JobId is always the
+            // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
+            // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
             var scratchDir = Path.Combine(Path.GetTempPath(), "honua-export", job.JobId);
             Directory.CreateDirectory(scratchDir);
             var shouldRequeue = false;
@@ -289,6 +295,10 @@ internal sealed class ExportJobService(
                     };
                     await _progressStore.SetProgressAsync(job.JobId, failed, _jobRetention, CancellationToken.None).ConfigureAwait(false);
                 }
+                // Intentionally generic: this is a best-effort attempt to persist the
+                // already-determined "Failed" status after the export itself failed; the
+                // progress store is an external dependency and any failure here must be
+                // logged, not allowed to mask or replace the original export failure.
                 catch (Exception progressEx)
                 {
                     ExportJobServiceLog.FailedStatusPersistenceFailed(_logger, job.JobId, progressEx);
@@ -348,6 +358,9 @@ internal sealed class ExportJobService(
             srsWkt = crs.Value.Wkt;
         }
 
+        // SanitizeExportFilename strips path separators, drive/colon characters, and
+        // traversal segments (FileUploadSecurity.SanitizeFileName), so baseName cannot be
+        // rooted and the Path.Combine calls below cannot silently drop scratchDir.
         var baseName = ExportEndpoints.SanitizeExportFilename(job.ServiceName, job.LayerName);
 
         switch (job.Format.ToLowerInvariant())
@@ -444,6 +457,10 @@ internal sealed class ExportJobService(
                 };
                 await _progressStore.SetProgressAsync(jobId, failed, _jobRetention, cancellationToken).ConfigureAwait(false);
             }
+            // Intentionally generic: this is a best-effort attempt to persist a "Failed"
+            // status for a job whose request metadata already went missing; the progress
+            // store is an external dependency and any failure here must be logged rather
+            // than thrown, since the caller is already cleaning up this job's state.
             catch (Exception ex)
             {
                 ExportJobServiceLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
@@ -552,6 +569,10 @@ internal sealed class ExportJobService(
                 .ConfigureAwait(false);
             return claimValue.IsNullOrEmpty;
         }
+        // Intentionally generic: the Redis client surfaces a wide range of transport/timeout
+        // exception types for a claim-key lookup; when the claim state cannot be determined,
+        // fail closed (treat the job as still actively leased/not eligible for recovery)
+        // rather than risk double-processing.
         catch (Exception ex)
         {
             ExportJobServiceLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);

@@ -378,6 +378,9 @@ internal static class CacheOperationsEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: best-effort Redis server-info probe for the admin
+            // diagnostics endpoint; any failure falls back to a minimal connected-state
+            // response below rather than failing the whole admin request.
             AdminLog.RedisInfoRetrievalFailed(logger, ex);
             return new RedisServerInfoResponse { IsConnected = redis.IsConnected };
         }

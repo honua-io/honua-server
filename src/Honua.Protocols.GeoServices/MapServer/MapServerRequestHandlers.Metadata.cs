@@ -480,9 +480,8 @@ internal static partial class MapServerEndpoints
         double? east = null;
         double? north = null;
 
-        foreach (var layer in layers)
+        foreach (var bbox in layers.Select(layer => layer.Resource.ReadBbox()))
         {
-            var bbox = layer.Resource.ReadBbox();
             if (bbox is null)
             {
                 continue;

@@ -136,6 +136,9 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    // Intentionally generic: this is a long-running background dispatch
+                    // loop. A single failed iteration must not kill the host's background
+                    // service; log, back off, and keep polling.
                     _storagePollFailing = true;
                     LogLoopFailed(_logger, ex);
                     await Task.Delay(_options.Dispatch.IdleDelay, stoppingToken).ConfigureAwait(false);

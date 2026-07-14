@@ -864,6 +864,11 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // Intentionally not `using var socket = ...`: on success the socket's ownership
+            // transfers to the returned NetworkStream (ownsSocket: true). A `using`
+            // declaration would dispose the socket during the `return` unwind, before the
+            // caller ever sees the stream, closing the connection out from under it. The
+            // `connected` flag makes disposal conditional on transfer *not* having happened.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 
@@ -883,10 +888,6 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
             }
             finally
             {
-                // Not converted to a `using` declaration: on success the socket's ownership
-                // transfers to the returned NetworkStream (ownsSocket: true), which disposes it
-                // when the stream is closed. An unconditional `using` here would dispose the
-                // socket immediately after return, breaking the stream it was just handed to.
                 if (!connected)
                 {
                     socket.Dispose();

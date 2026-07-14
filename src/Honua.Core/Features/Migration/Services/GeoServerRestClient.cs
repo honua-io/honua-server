@@ -384,13 +384,12 @@ internal sealed partial class GeoServerRestClient
 
         var workspaces = new List<GeoServerWorkspaceInfo>();
 
-        foreach (var workspaceElement in EnumerateCollectionItems(json.RootElement, "workspaces", "workspace"))
+        foreach (var workspaceName in EnumerateCollectionItems(json.RootElement, "workspaces", "workspace")
+            .Select(TryGetName)
+            .OfType<string>()
+            .Where(static name => name.Length > 0))
         {
-            var workspaceName = TryGetName(workspaceElement);
-            if (!string.IsNullOrEmpty(workspaceName))
-            {
-                workspaces.Add(await GetWorkspaceDetailsAsync(baseUrl, workspaceName, cancellationToken).ConfigureAwait(false));
-            }
+            workspaces.Add(await GetWorkspaceDetailsAsync(baseUrl, workspaceName, cancellationToken).ConfigureAwait(false));
         }
 
         return workspaces.ToArray();
@@ -429,13 +428,12 @@ internal sealed partial class GeoServerRestClient
                 BuildJsonUrl(baseUrl, $"workspaces/{EscapePathSegment(workspace.Name)}/datastores"),
                 cancellationToken).ConfigureAwait(false);
 
-            foreach (var dataStoreElement in EnumerateCollectionItems(json.RootElement, "dataStores", "dataStore"))
+            foreach (var dataStoreName in EnumerateCollectionItems(json.RootElement, "dataStores", "dataStore")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var dataStoreName = TryGetName(dataStoreElement);
-                if (!string.IsNullOrEmpty(dataStoreName))
-                {
-                    dataStores.Add(await GetDataStoreDetailsAsync(baseUrl, workspace.Name, dataStoreName, cancellationToken).ConfigureAwait(false));
-                }
+                dataStores.Add(await GetDataStoreDetailsAsync(baseUrl, workspace.Name, dataStoreName, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -503,13 +501,12 @@ internal sealed partial class GeoServerRestClient
                 BuildJsonUrl(baseUrl, $"workspaces/{EscapePathSegment(workspace.Name)}/coveragestores"),
                 cancellationToken).ConfigureAwait(false);
 
-            foreach (var coverageStoreElement in EnumerateCollectionItems(json.RootElement, "coverageStores", "coverageStore"))
+            foreach (var coverageStoreName in EnumerateCollectionItems(json.RootElement, "coverageStores", "coverageStore")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var coverageStoreName = TryGetName(coverageStoreElement);
-                if (!string.IsNullOrEmpty(coverageStoreName))
-                {
-                    coverageStores.Add(await GetCoverageStoreDetailsAsync(baseUrl, workspace.Name, coverageStoreName, cancellationToken).ConfigureAwait(false));
-                }
+                coverageStores.Add(await GetCoverageStoreDetailsAsync(baseUrl, workspace.Name, coverageStoreName, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -566,13 +563,12 @@ internal sealed partial class GeoServerRestClient
                 BuildJsonUrl(baseUrl, $"workspaces/{EscapePathSegment(workspace.Name)}/layers"),
                 cancellationToken).ConfigureAwait(false);
 
-            foreach (var layerElement in EnumerateCollectionItems(json.RootElement, "layers", "layer"))
+            foreach (var layerName in EnumerateCollectionItems(json.RootElement, "layers", "layer")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var layerName = TryGetName(layerElement);
-                if (!string.IsNullOrEmpty(layerName))
-                {
-                    layers.Add(await GetLayerDetailsAsync(baseUrl, workspace.Name, layerName, cancellationToken).ConfigureAwait(false));
-                }
+                layers.Add(await GetLayerDetailsAsync(baseUrl, workspace.Name, layerName, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -652,13 +648,12 @@ internal sealed partial class GeoServerRestClient
         // Get global layer groups
         using (var json = await GetRequiredJsonDocumentAsync(BuildJsonUrl(baseUrl, "layergroups"), cancellationToken).ConfigureAwait(false))
         {
-            foreach (var groupElement in EnumerateCollectionItems(json.RootElement, "layerGroups", "layerGroup"))
+            foreach (var groupName in EnumerateCollectionItems(json.RootElement, "layerGroups", "layerGroup")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var groupName = TryGetName(groupElement);
-                if (!string.IsNullOrEmpty(groupName))
-                {
-                    layerGroups.Add(await GetLayerGroupDetailsAsync(baseUrl, null, groupName, cancellationToken).ConfigureAwait(false));
-                }
+                layerGroups.Add(await GetLayerGroupDetailsAsync(baseUrl, null, groupName, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -669,13 +664,12 @@ internal sealed partial class GeoServerRestClient
                 BuildJsonUrl(baseUrl, $"workspaces/{EscapePathSegment(workspace.Name)}/layergroups"),
                 cancellationToken).ConfigureAwait(false);
 
-            foreach (var groupElement in EnumerateCollectionItems(json.RootElement, "layerGroups", "layerGroup"))
+            foreach (var groupName in EnumerateCollectionItems(json.RootElement, "layerGroups", "layerGroup")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var groupName = TryGetName(groupElement);
-                if (!string.IsNullOrEmpty(groupName))
-                {
-                    layerGroups.Add(await GetLayerGroupDetailsAsync(baseUrl, workspace.Name, groupName, cancellationToken).ConfigureAwait(false));
-                }
+                layerGroups.Add(await GetLayerGroupDetailsAsync(baseUrl, workspace.Name, groupName, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -730,13 +724,12 @@ internal sealed partial class GeoServerRestClient
         // Get global styles
         using (var json = await GetRequiredJsonDocumentAsync(BuildJsonUrl(baseUrl, "styles"), cancellationToken).ConfigureAwait(false))
         {
-            foreach (var styleElement in EnumerateCollectionItems(json.RootElement, "styles", "style"))
+            foreach (var styleName in EnumerateCollectionItems(json.RootElement, "styles", "style")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var styleName = TryGetName(styleElement);
-                if (!string.IsNullOrEmpty(styleName))
-                {
-                    styles.Add(await GetStyleDetailsAsync(baseUrl, null, styleName, includeStyleContent, cancellationToken).ConfigureAwait(false));
-                }
+                styles.Add(await GetStyleDetailsAsync(baseUrl, null, styleName, includeStyleContent, cancellationToken).ConfigureAwait(false));
             }
         }
 
@@ -747,13 +740,12 @@ internal sealed partial class GeoServerRestClient
                 BuildJsonUrl(baseUrl, $"workspaces/{EscapePathSegment(workspace.Name)}/styles"),
                 cancellationToken).ConfigureAwait(false);
 
-            foreach (var styleElement in EnumerateCollectionItems(json.RootElement, "styles", "style"))
+            foreach (var styleName in EnumerateCollectionItems(json.RootElement, "styles", "style")
+                .Select(TryGetName)
+                .OfType<string>()
+                .Where(static name => name.Length > 0))
             {
-                var styleName = TryGetName(styleElement);
-                if (!string.IsNullOrEmpty(styleName))
-                {
-                    styles.Add(await GetStyleDetailsAsync(baseUrl, workspace.Name, styleName, includeStyleContent, cancellationToken).ConfigureAwait(false));
-                }
+                styles.Add(await GetStyleDetailsAsync(baseUrl, workspace.Name, styleName, includeStyleContent, cancellationToken).ConfigureAwait(false));
             }
         }
 

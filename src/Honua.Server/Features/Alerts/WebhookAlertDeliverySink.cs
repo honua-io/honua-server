@@ -123,6 +123,9 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
         }
         catch (Exception ex)
         {
+            // Intentional catch-all: this is the delivery-sink boundary for a single alert
+            // dispatch attempt; the failure is mapped to a retryable delivery result below
+            // rather than propagating and failing the whole dispatch batch.
             return new AlertDeliveryResult
             {
                 Succeeded = false,

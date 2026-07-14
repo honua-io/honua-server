@@ -314,28 +314,13 @@ public sealed class DependencyInjectionLimitsTests
     /// Counts parameters that are injected via DI, excluding route parameters and query parameters.
     /// </summary>
     private static int CountInjectedParameters(ParameterInfo[] parameters)
-    {
-        var injectedCount = 0;
-
-        foreach (var paramType in parameters.Select(param => param.ParameterType))
-        {
-            if (IsPrimitiveOrRouteParameter(paramType))
-                continue;
-
-            if (paramType == typeof(HttpContext))
-                continue;
-
-            if (paramType == typeof(CancellationToken))
-                continue;
-
-            if (typeof(Delegate).IsAssignableFrom(paramType))
-                continue;
-
-            injectedCount++;
-        }
-
-        return injectedCount;
-    }
+        => parameters
+            .Select(param => param.ParameterType)
+            .Count(paramType =>
+                !IsPrimitiveOrRouteParameter(paramType)
+                && paramType != typeof(HttpContext)
+                && paramType != typeof(CancellationToken)
+                && !typeof(Delegate).IsAssignableFrom(paramType));
 
     /// <summary>
     /// Determines if a parameter type is a primitive or route parameter (not injected).

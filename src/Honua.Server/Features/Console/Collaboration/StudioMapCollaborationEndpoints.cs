@@ -87,6 +87,8 @@ internal static class StudioMapCollaborationEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             ConsoleEndpointsLog.EndpointFailed(logger, "collab.comments.list", ex);
             return Failure("Failed to list comment threads.");
         }
@@ -129,6 +131,8 @@ internal static class StudioMapCollaborationEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             ConsoleEndpointsLog.EndpointFailed(logger, "collab.comments.create", ex);
             return Failure("Failed to open comment thread.");
         }
@@ -172,6 +176,8 @@ internal static class StudioMapCollaborationEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             ConsoleEndpointsLog.EndpointFailed(logger, "collab.comments.reply", ex);
             return Failure("Failed to add reply.");
         }
@@ -211,6 +217,8 @@ internal static class StudioMapCollaborationEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             ConsoleEndpointsLog.EndpointFailed(logger, "collab.comments.resolve", ex);
             return Failure("Failed to update comment thread.");
         }
@@ -242,6 +250,8 @@ internal static class StudioMapCollaborationEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             ConsoleEndpointsLog.EndpointFailed(logger, "collab.activity.list", ex);
             return Failure("Failed to list activity feed.");
         }

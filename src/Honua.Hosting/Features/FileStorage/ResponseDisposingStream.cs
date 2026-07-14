@@ -40,6 +40,9 @@ internal sealed class ResponseDisposingStream : DelegatingStream
 
         _disposed = true;
 
+        // Not a `using`/`await using` declaration: `_response` is a plain IDisposable field
+        // that may also implement IAsyncDisposable at runtime, so the correct disposal path
+        // (sync vs. async) can only be chosen here with a runtime type check.
         try
         {
             await base.DisposeAsync().ConfigureAwait(false);

@@ -163,6 +163,9 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
 
             return QueryAdapterResult.Success(unifiedQuery, metadata);
         }
+        // Intentionally generic: this is the query-parameter adapter boundary between the
+        // protocol layer and the shared query pipeline; any unanticipated failure must map
+        // to a protocol-compliant validation failure rather than propagate as a 500.
         catch (Exception ex)
         {
             OgcFeaturesPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);

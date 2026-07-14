@@ -149,6 +149,9 @@ internal static partial class FeatureServerEndpoints
             return Task.FromResult(Results.Json(response, FeatureServerJsonContext.Default.FeatureServerResponse,
                 contentType: "application/json"));
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             FeatureServerLog.ServiceMetadataFailed(logger, service.Metadata.Name, ex.Message, ex);
@@ -335,6 +338,9 @@ internal static partial class FeatureServerEndpoints
             return Results.Json(response, FeatureServerJsonContext.Default.LayerResponse,
                 contentType: "application/json");
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             var resolvedLayerId = publication.LayerIndex

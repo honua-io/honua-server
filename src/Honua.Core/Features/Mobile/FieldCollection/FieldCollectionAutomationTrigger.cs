@@ -50,6 +50,8 @@ public sealed partial class FieldCollectionAutomationTrigger : IFieldCollectionA
         {
             throw;
         }
+        // Intentionally broad: automation-action lookup is best-effort (see class doc) and must
+        // never let an already-applied mobile push fail because of a store error.
         catch (Exception ex)
         {
             // Never let automation evaluation fail an already-applied push.
@@ -80,6 +82,8 @@ public sealed partial class FieldCollectionAutomationTrigger : IFieldCollectionA
             {
                 throw;
             }
+            // Intentionally broad: one invocation's dispatcher failure must not abort the
+            // remaining invocations or fail the already-applied mobile push.
             catch (Exception ex)
             {
                 LogEnqueueFailed(_logger, invocation.Action.Id, invocation.InvocationId, ex);

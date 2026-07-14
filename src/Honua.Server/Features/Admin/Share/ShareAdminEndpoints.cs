@@ -482,12 +482,12 @@ internal static class ShareAdminEndpoints
                 await jobQueue.EnqueueAsync(job.OperationId, OperationPriority.Normal, CancellationToken.None)
                     .ConfigureAwait(false);
             }
+            // Intentional broad catch: dispatch failed after the run was persisted, so this rolls the
+            // created job back to a terminal Failed state and marks the already-persisted run Failed
+            // so it never lingers as a Queued run no worker will execute. Use CancellationToken.None
+            // so this durable correction completes even if the client has disconnected.
             catch (Exception ex)
             {
-                // Dispatch failed after the run was persisted: roll the created job back to a terminal
-                // Failed state and mark the already-persisted run Failed so it never lingers as a
-                // Queued run no worker will execute. Use CancellationToken.None so this durable
-                // correction completes even if the client has disconnected.
                 await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                         jobStore,
                         job.OperationId,

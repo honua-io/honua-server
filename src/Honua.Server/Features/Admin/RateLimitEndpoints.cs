@@ -102,6 +102,8 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             RateLimitLog.ListPoliciesFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy listing failed",
@@ -151,6 +153,8 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             RateLimitLog.CreatePolicyFailed(logger, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy creation failed",
@@ -178,6 +182,8 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             RateLimitLog.GetPolicyFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy retrieval failed",
@@ -222,6 +228,8 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             RateLimitLog.UpdatePolicyFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy update failed",
@@ -250,6 +258,8 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             RateLimitLog.DeletePolicyFailed(logger, id, ex);
             return TypedResults.Problem(
                 title: "Rate limit policy deletion failed",
@@ -291,6 +301,8 @@ internal static partial class RateLimitEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // problem-details error response below.
             RateLimitLog.GetStatusFailed(logger, key, ex);
             return TypedResults.Problem(
                 title: "Rate limit status retrieval failed",

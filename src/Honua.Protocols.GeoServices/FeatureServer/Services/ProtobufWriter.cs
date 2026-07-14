@@ -167,6 +167,8 @@ internal ref struct ProtobufWriter
     /// <summary>Writes a double field (wire type 1).</summary>
     public void WriteDouble(int fieldNumber, double value)
     {
+        // Intentional exact comparison: proto3 wire format omits scalar fields equal to the
+        // type's zero default rather than approximately zero, so this must be exact equality.
         // ReSharper disable once CompareOfFloatsByEqualityOperator
         if (value == 0.0)
             return;
@@ -179,6 +181,8 @@ internal ref struct ProtobufWriter
     /// <summary>Writes a float field (wire type 5).</summary>
     public void WriteFloat(int fieldNumber, float value)
     {
+        // Intentional exact comparison: proto3 wire format omits scalar fields equal to the
+        // type's zero default rather than approximately zero, so this must be exact equality.
         // ReSharper disable once CompareOfFloatsByEqualityOperator
         if (value == 0.0f)
             return;

@@ -515,12 +515,9 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
                 break;
             case JsonObject obj:
-                foreach (var property in obj)
+                foreach (var property in obj.Where(p => p.Value is not null))
                 {
-                    if (property.Value is not null)
-                    {
-                        QuantizeCoordinates(property.Value, precision);
-                    }
+                    QuantizeCoordinates(property.Value!, precision);
                 }
 
                 break;

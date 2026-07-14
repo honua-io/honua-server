@@ -78,6 +78,8 @@ internal sealed class GeocodingHandler(
 
             return Task.FromResult<IResult>(Results.Json(response, GeocodingJsonContext.Default.GeocodeServerInfoResponse, contentType: JsonContentType));
         }
+        // Intentional broad catch: this is the request-handling boundary for the GeocodeServer
+        // metadata endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             GeocodingLog.OperationFailed(_logger, "metadata", "unknown", ex.Message, ex);
@@ -261,6 +263,8 @@ internal sealed class GeocodingHandler(
 
             return Results.Json(response, GeocodingJsonContext.Default.FindAddressCandidatesResponse, contentType: JsonContentType);
         }
+        // Intentional broad catch: this is the request-handling boundary for findAddressCandidates;
+        // the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             var providerName = ResolveProviderName(GetValue(values, "provider"));
@@ -397,6 +401,8 @@ internal sealed class GeocodingHandler(
 
             return Results.Json(response, GeocodingJsonContext.Default.ReverseGeocodeResponse, contentType: JsonContentType);
         }
+        // Intentional broad catch: this is the request-handling boundary for reverseGeocode;
+        // the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             var providerName = ResolveProviderName(GetValue(values, "provider"));
@@ -526,6 +532,8 @@ internal sealed class GeocodingHandler(
 
             return Results.Json(response, GeocodingJsonContext.Default.SuggestResponse, contentType: JsonContentType);
         }
+        // Intentional broad catch: this is the request-handling boundary for suggest;
+        // the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             var providerName = ResolveProviderName(GetValue(values, "provider"));
@@ -691,6 +699,8 @@ internal sealed class GeocodingHandler(
 
             return Results.Json(response, GeocodingJsonContext.Default.GeocodeAddressesResponse, contentType: JsonContentType);
         }
+        // Intentional broad catch: this is the request-handling boundary for geocodeAddresses;
+        // the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             GeocodingLog.OperationFailed(_logger, "geocodeAddresses", resolvedProviderName, ex.Message, ex);

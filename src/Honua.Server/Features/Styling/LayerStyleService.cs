@@ -229,6 +229,9 @@ internal sealed class LayerStyleService : ILayerStyleService
                 await _styleGraphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
             }
         }
+        // Intentional broad catch: this is a best-effort sync to the independent style catalog after
+        // the primary style write already succeeded; a sync failure here must not fail the caller's
+        // overall style update, so it is logged and swallowed.
         catch (Exception ex)
         {
             LayerStyleLog.StyleCatalogSyncFailed(_logger, storageLayerId, ex);

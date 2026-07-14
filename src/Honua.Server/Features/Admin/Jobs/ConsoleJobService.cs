@@ -473,6 +473,10 @@ internal sealed partial class ConsoleJobService(
             {
                 await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
             }
+            // Intentional catch-all: this is a per-callback loop invoking the
+            // registered terminal callbacks (best-effort and kind-guarded per the
+            // remarks above); one callback's failure must not stop the remaining
+            // callbacks from reconciling their stores.
             catch (Exception ex)
             {
                 TerminalCallbackFailed(logger, job.OperationId, ex);

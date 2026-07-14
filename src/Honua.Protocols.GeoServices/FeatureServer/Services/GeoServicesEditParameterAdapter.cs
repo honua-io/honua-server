@@ -99,6 +99,10 @@ internal sealed class GeoServicesEditParameterAdapter(
 
             return Task.FromResult(EditAdapterResult.Success(editRequest, transaction, metadata));
         }
+        // Intentionally generic: this is the protocol-to-canonical edit conversion
+        // boundary; any unexpected failure while translating caller-supplied geometry/
+        // attributes must map to a validation failure result rather than crash the
+        // shared edit pipeline or leak internals to the client.
         catch (Exception ex)
         {
             GeoServicesPreparedAdaptersLog.EditParameterConversionFailed(_logger, ex);

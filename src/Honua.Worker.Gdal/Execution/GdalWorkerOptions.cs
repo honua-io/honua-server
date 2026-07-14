@@ -28,6 +28,8 @@ internal sealed class GdalWorkerOptions
     /// job gets an isolated subdirectory that is deleted after execution.
     /// Defaults to the OS temp directory.
     /// </summary>
+    // Second segment is a fixed relative literal, so it can never be rooted and
+    // silently discard Path.GetTempPath().
     public string ScratchRoot { get; set; } = Path.Combine(Path.GetTempPath(), "honua-gdal-worker");
 
     /// <summary>

@@ -64,8 +64,9 @@ internal sealed partial class PostgresConnectionDriver : IConnectionDriver
         }
         catch (Exception ex)
         {
-            // Connection health probe: any failure means "unhealthy", not an exception the caller
-            // should handle — log for diagnostics and return the status instead.
+            // Intentionally generic: this is a connection-test probe (admin "test this connection")
+            // where any failure means "unhealthy", not an exception the caller should handle — log
+            // for diagnostics and return the status instead.
             LogProbeFailed(ex);
             return ConnectionHealthStatus.Unhealthy;
         }

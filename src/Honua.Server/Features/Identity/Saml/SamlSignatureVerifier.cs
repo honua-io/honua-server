@@ -196,12 +196,10 @@ internal static class SamlSignatureVerifier
         var prefixes = new List<string>();
         foreach (var list in signedElementParent.Descendants()
                      .Where(e => e.Name.LocalName == "InclusiveNamespaces")
-                     .Select(e => e.Attribute("PrefixList")?.Value))
+                     .Select(e => e.Attribute("PrefixList")?.Value)
+                     .Where(list => !string.IsNullOrWhiteSpace(list)))
         {
-            if (!string.IsNullOrWhiteSpace(list))
-            {
-                prefixes.AddRange(list.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-            }
+            prefixes.AddRange(list!.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         }
 
         return prefixes;

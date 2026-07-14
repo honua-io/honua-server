@@ -377,6 +377,10 @@ internal sealed partial class FeatureDataAccess
         {
             throw;
         }
+        // Intentionally broad: this is the top-level edit-batch error handler; any
+        // unexpected failure must still roll back the transaction (if any) and return a
+        // FeatureEditResult describing which operations succeeded before the failure,
+        // rather than letting the exception propagate past the batch boundary.
         catch (Exception ex)
         {
             Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
@@ -602,10 +606,11 @@ internal sealed partial class FeatureDataAccess
                             feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
                         return true;
                     }
+                    // Intentionally broad: per-operation failure in an ordered batch; sanitize via
+                    // GetSafeEditOperationError (avoids leaking SQL/provider internals) and let the
+                    // rest of the batch continue.
                     catch (Exception ex)
                     {
-                        // Per-operation failure in an ordered batch: sanitize via GetSafeEditOperationError
-                        // (avoids leaking SQL/provider internals) and let the rest of the batch continue.
                         createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
                         return false;
                     }
@@ -649,10 +654,10 @@ internal sealed partial class FeatureDataAccess
                         updateResults.Add(EditOperationResult.PreconditionFailed(feature.Id));
                         return false;
                     }
+                    // Intentionally broad: per-operation failure in an ordered batch; sanitize via
+                    // GetSafeEditOperationError and let the rest of the batch continue.
                     catch (Exception ex)
                     {
-                        // Per-operation failure in an ordered batch: sanitize via GetSafeEditOperationError
-                        // and let the rest of the batch continue.
                         updateResults.Add(EditOperationResult.Failure(
                             GetSafeEditOperationError(ex, "Update"),
                             objectId: feature.Id));
@@ -705,10 +710,10 @@ internal sealed partial class FeatureDataAccess
                         deleteResults.Add(EditOperationResult.PreconditionFailed(objectId));
                         return false;
                     }
+                    // Intentionally broad: per-operation failure in an ordered batch; sanitize via
+                    // GetSafeEditOperationError and let the rest of the batch continue.
                     catch (Exception ex)
                     {
-                        // Per-operation failure in an ordered batch: sanitize via GetSafeEditOperationError
-                        // and let the rest of the batch continue.
                         deleteResults.Add(EditOperationResult.Failure(
                             GetSafeEditOperationError(ex, "Delete"),
                             objectId: objectId));
@@ -1023,10 +1028,10 @@ internal sealed partial class FeatureDataAccess
                                 created.Id,
                                 feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
                     }
+                    // Intentionally broad: per-feature failure in an adaptive batch; sanitize via
+                    // GetSafeEditOperationError and let the remaining features in the batch continue.
                     catch (Exception ex)
                     {
-                        // Per-feature failure in an adaptive batch: sanitize via GetSafeEditOperationError
-                        // and let the remaining features in the batch continue.
                         return (
                             null,
                             EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
@@ -1068,10 +1073,10 @@ internal sealed partial class FeatureDataAccess
                 // batch items after a client abort, mirroring the update/delete path fixes.
                 throw;
             }
+            // Intentionally broad: per-feature failure in the row-by-row create path; sanitize
+            // via GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex)
             {
-                // Per-feature failure in the row-by-row create path: sanitize via
-                // GetSafeEditOperationError and let the rest of the batch continue.
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
             }
         }
@@ -1114,12 +1119,12 @@ internal sealed partial class FeatureDataAccess
         {
             throw;
         }
+        // Intentionally broad: adaptive bisection on any batch-insert failure, recursively split in
+        // half and retry each half so a single bad row can't fail the whole batch. No logging here
+        // by design — the recursion bottoms out at singleCreateAsync's single-row path, which
+        // sanitizes and reports the actual failing row via GetSafeEditOperationError.
         catch (Exception)
         {
-            // Adaptive bisection: on any batch-insert failure, recursively split in half and retry
-            // each half so a single bad row can't fail the whole batch. No logging here by design —
-            // the recursion bottoms out at singleCreateAsync's single-row path, which sanitizes and
-            // reports the actual failing row via GetSafeEditOperationError.
             var midpoint = features.Length / 2;
             var left = Slice(features, 0, midpoint);
             var right = Slice(features, midpoint, features.Length - midpoint);
@@ -1292,10 +1297,10 @@ internal sealed partial class FeatureDataAccess
             {
                 results.Add(EditOperationResult.PreconditionFailed(feature.Id));
             }
+            // Intentionally broad: per-row failure in the batch update path; sanitize via
+            // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex)
             {
-                // Per-row failure in the batch update path: sanitize via GetSafeEditOperationError
-                // and let the rest of the batch continue.
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             }
         }
@@ -1370,10 +1375,10 @@ internal sealed partial class FeatureDataAccess
             {
                 results.Add(EditOperationResult.PreconditionFailed(featureId));
             }
+            // Intentionally broad: per-row failure in the batch delete path; sanitize via
+            // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex)
             {
-                // Per-row failure in the batch delete path: sanitize via GetSafeEditOperationError
-                // and let the rest of the batch continue.
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: featureId));
             }
         }

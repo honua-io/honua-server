@@ -269,6 +269,9 @@ internal sealed class FormSubmissionService
             var timeoutResponse = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
             return Results.Json(timeoutResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
+        // Intentional catch-all request-handling boundary: this is the form
+        // submission-create endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
@@ -824,6 +827,9 @@ internal sealed class FormSubmissionService
             {
                 throw;
             }
+            // Intentional catch-all: this is a per-attachment loop where one
+            // attachment's upload failure must not abort the rest of the batch;
+            // the failure is recorded as a "failed" outcome for this item instead.
             catch (Exception ex)
             {
                 FormSubmissionLog.AttachmentUploadFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId, descriptor.FieldId ?? string.Empty);

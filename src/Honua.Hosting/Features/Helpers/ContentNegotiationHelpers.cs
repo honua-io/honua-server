@@ -71,6 +71,10 @@ internal static class ContentNegotiationHelpers
         var builder = ImmutableArray.CreateBuilder<AcceptMediaRange>();
         var order = 0;
 
+        // Not converted to `.Select(...)`: each entry requires multiple early `continue`s
+        // (blank segments, unparsable media types) plus a nested loop to find the `q=`
+        // parameter and a monotonically increasing `order` counter shared across both
+        // loops — a single projection cannot express the skips and shared mutable state.
         foreach (var rawHeader in acceptHeader)
         {
             if (string.IsNullOrWhiteSpace(rawHeader))

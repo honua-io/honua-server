@@ -68,6 +68,9 @@ internal static class DatabasePerformanceEndpoints
 
             return Results.Ok(response);
         }
+        // Intentional catch-all request-handling boundary: this is the query
+        // cache statistics endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()

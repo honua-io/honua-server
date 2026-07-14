@@ -98,6 +98,8 @@ internal static class ConsoleOpenDataPublicEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // dataset endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.dataset", ex);
@@ -130,6 +132,8 @@ internal static class ConsoleOpenDataPublicEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // data.json endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.data-json", ex);
@@ -161,6 +165,8 @@ internal static class ConsoleOpenDataPublicEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // Schema.org endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.schema-org", ex);
@@ -196,6 +202,8 @@ internal static class ConsoleOpenDataPublicEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // STAC catalog endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.stac.catalog", ex);
@@ -229,6 +237,8 @@ internal static class ConsoleOpenDataPublicEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // STAC collection endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.stac.collection", ex);
@@ -267,6 +277,8 @@ internal static class ConsoleOpenDataPublicEndpoints
         {
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // STAC item endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.stac.item", ex);

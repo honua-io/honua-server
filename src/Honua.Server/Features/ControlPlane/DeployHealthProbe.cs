@@ -163,10 +163,11 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
             {
                 throw;
             }
+            // Intentional catch-all: per-sample loop of a synthetic health-check gate. A
+            // timeout, connection reset, or transport failure is itself an unhealthy probe —
+            // the whole point of the gate is to catch a target that does not answer cleanly.
             catch (Exception)
             {
-                // A timeout, connection reset, or transport failure is an unhealthy probe — the whole
-                // point of the synthetic gate is to catch a target that does not answer cleanly.
                 failures++;
             }
         }
@@ -261,11 +262,12 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         {
             throw;
         }
+        // Intentional catch-all: this is the correctness gate for a deploy's golden-query
+        // probe. A timeout, reset, or transport failure means correctness could not be
+        // confirmed; treating that as a mismatch keeps the gate fail-safe — an unverifiable
+        // release is not auto-promoted.
         catch (Exception)
         {
-            // A timeout, reset, or transport failure means the correctness of the new release could not be
-            // confirmed. Treating that as a mismatch keeps the gate fail-safe: an unverifiable release is
-            // not auto-promoted.
             return new DeployGoldenQueryResult
             {
                 Matched = false,

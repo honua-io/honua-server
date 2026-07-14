@@ -36,6 +36,9 @@ internal sealed class ExportBackgroundService : BackgroundService
                     {
                         return;
                     }
+                    // Intentionally generic: this is a long-running background loop; a single
+                    // failed job must not kill the host or the queue-reading loop — log and
+                    // keep processing the next queued job.
                     catch (Exception ex)
                     {
                         ExportLog.AsyncExportFailed(_logger, jobId, ex);
@@ -48,6 +51,9 @@ internal sealed class ExportBackgroundService : BackgroundService
             {
                 return;
             }
+            // Intentionally generic: this is the outer restart boundary for the whole
+            // background worker loop; a failure while reading the job queue itself (as
+            // opposed to a single job) must not kill the host — log, back off, and retry.
             catch (Exception ex)
             {
                 ExportLog.BackgroundWorkerRestarting(_logger, ex);

@@ -178,6 +178,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             {
                 await transaction.RollbackAsync(cancellationToken);
             }
+            // Intentional catch-all: we are already inside the handler for a failed
+            // transaction. A failure while rolling back must not replace or mask the
+            // original exception, which is rethrown below; log it and continue.
             catch (Exception rollbackEx)
             {
                 DataIntegrityCoordinatorLog.CoordinatedTransactionRollbackFailed(_logger, operationId, rollbackEx);
@@ -312,6 +315,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                     await commit(cancellationToken);
                     DataIntegrityCoordinatorLog.OperationCommitted(_logger, type, key, _operationId);
                 }
+                // Intentional catch-all: per-item loop over registered file/cache commit
+                // actions. One operation's failure must not prevent the others from
+                // attempting to commit; failures are collected and raised together below.
                 catch (Exception ex)
                 {
                     DataIntegrityCoordinatorLog.OperationCommitFailed(_logger, type, key, _operationId, ex);
@@ -342,6 +348,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                     await rollback(cancellationToken);
                     DataIntegrityCoordinatorLog.OperationRolledBack(_logger, type, key, _operationId);
                 }
+                // Intentional catch-all: per-item loop over registered file/cache rollback
+                // actions. One operation's failure must not stop the remaining operations
+                // from also attempting to roll back; failures are collected and logged below.
                 catch (Exception ex)
                 {
                     DataIntegrityCoordinatorLog.OperationRollbackFailed(_logger, type, key, _operationId, ex);
@@ -354,6 +363,10 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             {
                 await DatabaseTransaction.RollbackAsync(cancellationToken);
             }
+            // Intentional catch-all: this is a best-effort rollback of the last remaining
+            // resource (the database transaction) after file/cache rollbacks above; the
+            // failure is collected with the others and reported via the summary log below
+            // rather than thrown, so callers still observe the outcome of all operations.
             catch (Exception ex)
             {
                 exceptions.Add(ex);
@@ -377,6 +390,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                         await RollbackAsync();
                     }
                 }
+                // Intentional catch-all: this is a best-effort rollback attempt during
+                // disposal. A failure here must not prevent the transaction from being
+                // disposed in the finally block below; log and continue.
                 catch (Exception ex)
                 {
                     DataIntegrityCoordinatorLog.TransactionDisposalFailed(_logger, _operationId, ex);
@@ -417,6 +433,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
 
                     DataIntegrityCoordinatorLog.DistributedLockReleased(_logger, _lockKey, _operationId);
                 }
+                // Intentional catch-all: this is a best-effort lock release during dispose.
+                // A failure here must not prevent the finally block below from decrementing
+                // the entry's ref count, which would otherwise leak the lock entry.
                 catch (Exception ex)
                 {
                     DataIntegrityCoordinatorLog.DistributedLockReleaseFailed(_logger, _lockKey, _operationId, ex);

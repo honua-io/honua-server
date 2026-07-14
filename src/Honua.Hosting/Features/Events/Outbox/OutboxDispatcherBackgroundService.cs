@@ -150,6 +150,9 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         {
             repository = scope.ServiceProvider.GetService<IFeatureChangeOutboxRepository>();
         }
+        // Intentional: this is one pass of a recurring background dispatch loop; a DI
+        // resolution failure must not kill the host — record the failure timestamp for the
+        // readiness probe and let the next scheduled pass retry.
         catch (Exception ex)
         {
             Log.RepositoryResolutionFailed(_logger, ex);
@@ -323,6 +326,9 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
                 ? MarkFailedOutcome.DeadLettered
                 : MarkFailedOutcome.Failed;
         }
+        // Intentional: this is a best-effort terminal-state update for an already-failed
+        // dispatch; a further failure here must not throw out of the dispatch loop — the
+        // row remains claimed and a later pass or claim-recovery retries it.
         catch (Exception ex)
         {
             Log.MarkFailedErrored(_logger, outboxId, ex);
@@ -364,6 +370,9 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             }
             _lastRecoveryPollSuccessAt = DateTimeOffset.UtcNow;
         }
+        // Intentional: claim recovery is a periodic housekeeping step within the dispatch
+        // loop; a failure must not stop dispatch of already-claimed rows — record the
+        // failure timestamp and let the next scheduled recovery interval retry.
         catch (Exception ex)
         {
             Log.RecoveryFailed(_logger, ex);
@@ -384,6 +393,9 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             _metrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount, backlog.OldestPendingAgeSeconds);
             _lastBacklogPollSuccessAt = DateTimeOffset.UtcNow;
         }
+        // Intentional: backlog metrics are diagnostics, not the dispatch critical path; a
+        // query failure must not stop the dispatcher — record the failure timestamp for
+        // the readiness probe and let the next pass retry.
         catch (Exception ex)
         {
             Log.BacklogQueryFailed(_logger, ex);

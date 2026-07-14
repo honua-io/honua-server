@@ -185,6 +185,8 @@ internal static class ConsoleActionEndpoints
             // server error — match the session-endpoint pattern.
             throw;
         }
+        // Intentional catch-all: this is the request-handling boundary for the action-check
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "actions.check", ex);

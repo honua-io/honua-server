@@ -357,7 +357,7 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         // Validate AdditionalRoleClaimTypes
         if (claimsMapping.AdditionalRoleClaimTypes != null)
         {
-            foreach (var claimType in claimsMapping.AdditionalRoleClaimTypes.Where(string.IsNullOrWhiteSpace))
+            foreach (var _ in claimsMapping.AdditionalRoleClaimTypes.Where(string.IsNullOrWhiteSpace))
             {
                 errors.Add("ClaimsMapping.AdditionalRoleClaimTypes cannot contain empty or whitespace-only entries");
             }

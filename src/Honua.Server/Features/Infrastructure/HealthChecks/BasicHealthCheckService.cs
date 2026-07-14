@@ -54,6 +54,9 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: this is the top-level health-check request boundary;
+            // any failure in a component check must be reported as an Unhealthy result
+            // below rather than throwing out of the health-check pipeline.
             stopwatch.Stop();
             BasicHealthCheckServiceLog.HealthCheckFailed(_logger, ex);
 
@@ -109,6 +112,8 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: per-component health probe; any failure is reported
+            // as an Unhealthy component result rather than aborting the overall health check.
             stopwatch.Stop();
             return new ComponentHealthResult
             {
@@ -144,6 +149,8 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
         }
         catch (Exception ex)
         {
+            // Intentional broad catch: per-component health probe; any failure is reported
+            // as a Degraded component result rather than aborting the overall health check.
             stopwatch.Stop();
             return new ComponentHealthResult
             {

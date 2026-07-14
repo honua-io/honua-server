@@ -928,16 +928,13 @@ internal sealed partial class SpecGroundingService
 
     private static string TryGetStringField(ObjectExpression properties, string key)
     {
-        foreach (var field in properties.Fields.Where(field => string.Equals(field.Key, key, StringComparison.Ordinal)))
-        {
-            if (field.Value is LiteralNode { Kind: SpecTypeKind.String } literal &&
-                !string.IsNullOrWhiteSpace(literal.String))
-            {
-                return literal.String!;
-            }
-        }
+        var literal = properties.Fields
+            .Where(field => string.Equals(field.Key, key, StringComparison.Ordinal))
+            .Select(field => field.Value)
+            .OfType<LiteralNode>()
+            .FirstOrDefault(node => node.Kind == SpecTypeKind.String && !string.IsNullOrWhiteSpace(node.String));
 
-        return string.Empty;
+        return literal?.String ?? string.Empty;
     }
 
     private static string ResolveSourceId(SpecDocument document, string baseId)

@@ -108,6 +108,9 @@ internal static partial class SceneAnalysisEndpoints
                 SceneAnalysisJsonContext.Default.SunShadowRequest,
                 cancellationToken);
         }
+        // Intentional broad catch: request-body deserialization can fail for many reasons
+        // (malformed JSON, unsupported content-type, client disconnect mid-read); all map
+        // uniformly to a 400 bad-request response.
         catch (Exception ex)
         {
             if (logger is not null)
@@ -238,6 +241,9 @@ internal static partial class SceneAnalysisEndpoints
                 SceneAnalysisJsonContext.Default.SliceRequest,
                 cancellationToken);
         }
+        // Intentional broad catch: request-body deserialization can fail for many reasons
+        // (malformed JSON, unsupported content-type, client disconnect mid-read); all map
+        // uniformly to a 400 bad-request response.
         catch (Exception ex)
         {
             if (logger is not null)

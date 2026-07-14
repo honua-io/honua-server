@@ -72,6 +72,8 @@ internal sealed partial class TileExportJobExecutor(
 
         var producer = matchingProducers[0];
 
+        // Safe Path.Combine: the second segment is a server-generated Guid-based file name,
+        // never caller input, so it can never be rooted.
         var temporaryPath = Path.Combine(Path.GetTempPath(), $"honua-tile-export-{Guid.NewGuid():N}.tmp");
         try
         {
@@ -125,6 +127,9 @@ internal sealed partial class TileExportJobExecutor(
         {
             throw;
         }
+        // Intentional: this is the job-execution boundary; any producer/storage failure not
+        // already handled above must resolve to a failed JobExecutionResult (per the
+        // canonical job runtime contract) rather than throw out of the executor.
         catch (Exception exception)
         {
             Log.ExecutionFailed(logger, context.OperationId, exception);

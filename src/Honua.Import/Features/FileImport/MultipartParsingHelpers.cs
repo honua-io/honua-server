@@ -50,6 +50,8 @@ internal static class MultipartParsingHelpers
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         try { File.Delete(path); }
+        // Intentionally generic: this is best-effort cleanup of a staged temp file; any
+        // failure (locked file, permissions, already gone) must not fail the caller.
         catch (Exception ex)
         {
             if (logger != null)

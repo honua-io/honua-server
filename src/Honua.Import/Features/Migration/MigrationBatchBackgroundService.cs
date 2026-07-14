@@ -59,6 +59,8 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
                 {
                     break;
                 }
+                // Intentionally generic: this is a long-running background polling loop; a
+                // single failed tick must not kill the host — log and keep polling.
                 catch (Exception ex)
                 {
                     Log.AdvanceLoopError(_logger, ex);
@@ -107,6 +109,8 @@ internal sealed partial class MigrationBatchBackgroundService : BackgroundServic
             {
                 throw;
             }
+            // Intentionally generic: one failed batch must not stop the others in this
+            // tick — log and continue advancing the remaining active batches.
             catch (Exception ex)
             {
                 Log.BatchAdvanceError(_logger, batchId, ex);

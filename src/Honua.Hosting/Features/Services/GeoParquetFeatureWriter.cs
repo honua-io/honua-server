@@ -128,7 +128,11 @@ public static partial class GeoParquetFeatureWriter
         try
         {
             using var stream = new MemoryStream();
-            using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder().StoreSchema();
+            // Construct and dispose the builder itself explicitly (rather than chaining off
+            // the fluent StoreSchema() return value) so the builder instance is always
+            // disposed even if StoreSchema() were ever changed to return a different object.
+            using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder();
+            arrowWriterPropertiesBuilder.StoreSchema();
             using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
             using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
             {

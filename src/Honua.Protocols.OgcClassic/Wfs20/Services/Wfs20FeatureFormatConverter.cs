@@ -92,6 +92,8 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
         }
         catch (Exception ex)
         {
+            // Intentionally generic: this is a best-effort GML geometry extraction step;
+            // any malformed/unexpected XML shape should log and yield null rather than fail.
             Wfs20Log.FeatureSerializationFailed(_logger, "gml-geometry-extract", ex.Message);
             return null;
         }

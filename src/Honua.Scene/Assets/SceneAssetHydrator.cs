@@ -214,6 +214,9 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         }
 
         var root = Path.GetFullPath(tempDirectory) + Path.DirectorySeparatorChar;
+        // Safe: relativePath was already rejected above when rooted or carrying a '..'
+        // segment; this combine, plus the StartsWith containment check below, IS the
+        // guard that closes the remaining symlink/encoding-trick gap.
         var combined = Path.GetFullPath(
             Path.Combine(tempDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         if (!combined.StartsWith(root, StringComparison.Ordinal))

@@ -512,6 +512,9 @@ internal static partial class MapServerEndpoints
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateBadRequest(context, InvalidIdentifyRequestMessage);
         }
+        // Intentionally generic: this is a top-level protocol request handler; any
+        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
+        // generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex)
         {
             MapServerLog.IdentifyFailed(logger, serviceId, ex.Message, ex);
@@ -1524,6 +1527,9 @@ internal static partial class MapServerEndpoints
         System.Collections.Immutable.ImmutableArray<Feature> features,
         string leftKeyField)
     {
+        // Not rewritten as .Where(...): the Try-pattern (TryGetValue / TryGetAttributeCaseInsensitive)
+        // needs to produce a correlated output (the resolved value) from a single pass, which a
+        // filter predicate can't express as clearly as the loop.
         var values = new List<object?>(features.Length);
         foreach (var feature in features)
         {

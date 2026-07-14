@@ -248,6 +248,7 @@ public sealed class ImportBackgroundServiceTests
                 await Task.Delay(TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
             }
 
+            // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
             lastObservedProgress.Should().NotBeNull();
             lastObservedProgress!.Status.Should().Be(
                 GeoservicesImportStatus.Queued,

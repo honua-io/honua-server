@@ -66,6 +66,9 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
                     CacheEmptyResults = true
                 });
         }
+        // Intentional: unlike the read-path methods in this file, a write failure is not
+        // degraded to a silent no-op — the caller needs to know its write did not durably
+        // land, so this logs for diagnosis and rethrows.
         catch (Exception ex)
         {
             SimpleQueryResultCacheLog.SetFailed(_logger, cacheKey, ex);

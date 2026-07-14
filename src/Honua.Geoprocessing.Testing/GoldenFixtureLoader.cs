@@ -124,6 +124,8 @@ public static class GoldenFixtureLoader
                         + $"'{relativePath}'; inputFiles must be relative to the manifest's directory.");
                 }
 
+                // relativePath was validated as non-rooted immediately above, so Path.Combine
+                // cannot silently drop `directory` here.
                 var path = Path.Combine(directory, relativePath);
                 if (!File.Exists(path))
                 {
@@ -141,6 +143,8 @@ public static class GoldenFixtureLoader
                 manifest.Tolerance.Coordinate ?? GoldenTolerance.Default.Coordinate,
                 manifest.Tolerance.Numeric ?? GoldenTolerance.Default.Numeric);
 
+        // manifest.Golden was validated as non-rooted above, so Path.Combine cannot silently
+        // drop `directory` here.
         return new GoldenFixture(
             manifest.Id,
             manifest.Process,
