@@ -146,6 +146,8 @@ internal sealed partial class GdalProximityJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Both second segments are fixed relative literal filenames, so they can
+            // never be rooted and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.tif");
             var outputPath = Path.Combine(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
@@ -164,6 +166,9 @@ internal sealed partial class GdalProximityJobExecutor(
                 // allocation mode. python3 Scripts/gdal_euclidean_allocation.py SRC DST
                 // [--band 1] --dist-units U [--max-distance D] [--values v,...] — keep
                 // the positional src/dst pair first so the optional flags follow.
+                // "Scripts" and AllocationScriptName are both fixed relative literals
+                // (the latter a private const), so neither can be rooted and silently
+                // discard AppContext.BaseDirectory.
                 var scriptPath = Path.Combine(AppContext.BaseDirectory, "Scripts", AllocationScriptName);
                 var allocArgs = new List<string>
                 {

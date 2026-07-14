@@ -110,6 +110,8 @@ internal sealed class OgcMapsTileSetHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcMapsLog.TileSetRetrievalFailed(_logger, ex, layerId);
@@ -178,6 +180,8 @@ internal sealed class OgcMapsTileSetHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcMapsLog.TileSetRetrievalFailed(_logger, ex, layerId);

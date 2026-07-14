@@ -152,6 +152,9 @@ internal sealed class OgcFeaturesEditParameterAdapter(
 
             return Task.FromResult(EditAdapterResult.Success(editRequest, transaction, metadata));
         }
+        // Intentionally generic: this is the edit-parameter adapter boundary between the
+        // protocol layer and the shared edit/transaction pipeline; any unanticipated failure
+        // must map to a protocol-compliant validation failure rather than propagate as a 500.
         catch (Exception ex)
         {
             OgcFeaturesPreparedAdaptersLog.EditParameterConversionFailed(_logger, ex);

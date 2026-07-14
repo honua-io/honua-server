@@ -59,6 +59,10 @@ internal static class GdalVsiPath
         }
 
         var root = Path.GetFullPath(directory);
+        // key is attacker-influenced (an object key from job configuration) but
+        // normalizedKey is validated immediately above to not be rooted, so it can
+        // never make Path.Combine here silently discard root; the containment check
+        // below is the actual escape guard.
         var combined = Path.GetFullPath(Path.Combine(root, normalizedKey));
         var rootPrefix = Path.EndsInDirectorySeparator(root)
             ? root

@@ -318,6 +318,8 @@ internal sealed class OgcCoveragesHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "collections", null);
@@ -380,6 +382,8 @@ internal sealed class OgcCoveragesHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "collection", collectionId);
@@ -438,6 +442,8 @@ internal sealed class OgcCoveragesHandler
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "schema", collectionId);
@@ -567,6 +573,9 @@ internal sealed class OgcCoveragesHandler
             telemetry.RecordException(ex);
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid coverage request.");
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the ArgumentException case above
+        // must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "coverage", collectionId);

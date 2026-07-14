@@ -173,6 +173,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Second segment is a fixed relative literal filename, so it can never be
+            // rooted and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.tif");
 
             // Bound the DECLARED pixel footprint before any gdalwarp/gdalinfo runs
@@ -205,6 +207,9 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                     continue;
                 }
 
+                // Both second segments are generated relative literals (an internal
+                // zero-based loop counter, never user input), so neither can be rooted
+                // and silently discard workspace.
                 var cutlinePath = Path.Combine(workspace, $"cutline-{zoneIndex}.geojson");
                 var clippedPath = Path.Combine(workspace, $"clipped-{zoneIndex}.tif");
                 var cutlineGeoJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(geometry);

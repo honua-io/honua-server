@@ -173,7 +173,11 @@ internal static class GdalOutputGridGuard
         // (8 bytes/pixel), mirroring TryAdmit; the width / height / pixel caps are the
         // primary bound and hold regardless of the true output band count / dtype.
         const long BytesPerFloat64Pixel = 8L;
-        if (pixels > options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
+        // Divide in double space (widen the long numerator) rather than truncating
+        // integer division first: MaxDecodedRasterBytes is not guaranteed to be a
+        // multiple of 8, and a floored integer threshold would reject a pixel count
+        // that is actually still within the configured byte budget.
+        if (pixels > (double)options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
         {
             error = $"estimated output grid size {Format(pixels)} pixels × 8 bytes/pixel (single-band Float64) exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
             return false;
