@@ -242,7 +242,9 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
             var feature = TestFeatureStore.CreateTestFeature(
                 id: i,
                 x: i % 100 * 0.01, // Spread across a 1x1 degree area
-                y: (i / 100) * 0.01, // Intentional integer division: row index for a 100-column x 50-row grid, mirroring the column index above
+                                   // codeql[cs/loss-of-precision]: intentional integer division — row index for a
+                                   // 100-column x 50-row grid, mirroring the column index above.
+                y: (i / 100) * 0.01,
                 attributes: new Dictionary<string, object?>
                 {
                     ["id"] = i,

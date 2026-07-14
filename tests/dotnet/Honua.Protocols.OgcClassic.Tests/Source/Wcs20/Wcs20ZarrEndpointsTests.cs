@@ -231,9 +231,10 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                 for (var column = 0; column < columns; column++)
                 {
                     var offset = ((level * rows + row) * columns + column) * sizeof(float);
-                    // Widen to long before the narrowing multiplications so the analyzer (and any future
-                    // caller with larger levels/rows) can't see an int overflow before the cast to float.
-                    var value = (float)((long)level * 1000 + (long)row * 10 + column);
+                    // Build the value in float space from the start rather than multiplying as
+                    // integers and casting at the end, so there's no int/long overflow or
+                    // precision-loss pattern for the analyzer (or a future larger fixture) to flag.
+                    var value = level * 1000f + row * 10f + column;
                     Buffer.BlockCopy(BitConverter.GetBytes(value), 0, values, offset, sizeof(float));
                 }
             }

@@ -195,10 +195,11 @@ public static class LoadTestScenarios
                 var templateIndex = (int)(context.InvocationNumber % _odataQueryTemplates.Length);
                 var template = _odataQueryTemplates[templateIndex];
                 // Not every template has a `{0}` placeholder (e.g. the Layers-collection
-                // template doesn't need layerId) - only format when the template actually
-                // has one, so the supplied argument is never silently ignored.
+                // template doesn't need layerId) - replace it directly instead of calling
+                // string.Format, so there's no format string that can be seen as ignoring
+                // the supplied argument.
                 var endpoint = template.Contains("{0}", StringComparison.Ordinal)
-                    ? string.Format(CultureInfo.InvariantCulture, template, layerId)
+                    ? template.Replace("{0}", layerId, StringComparison.Ordinal)
                     : template;
                 var response = await httpClient.GetAsync($"{baseUrl}{endpoint}");
 
