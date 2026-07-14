@@ -266,6 +266,11 @@ def _eval(node, fqn: str) -> bool:
         return all(_eval(c, fqn) for c in node[1])
     if kind != "clause":
         raise ValueError(f"unknown node kind {kind!r}")
+    # By this point kind == "clause": the "or"/"and" branches above already
+    # returned, and any other kind was rejected just above. `node` is therefore
+    # always the 4-tuple `("clause", prop, op, value)` from _parse_clause, never
+    # the 2-tuple shape `_parse_or`/`_parse_and` use for their own nodes
+    # (py/mismatched-multiple-assignment false positive).
     _, prop, op, value = node
     if prop != "FullyQualifiedName":
         # Trait/DisplayName clauses don't constrain class-level claiming; treat
