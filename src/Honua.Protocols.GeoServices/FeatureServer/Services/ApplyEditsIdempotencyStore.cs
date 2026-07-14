@@ -141,6 +141,9 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
                 if (bytes.Length == 1 && bytes[0] == 0xFF) return null; // pending sentinel
                 return Deserialize(bytes);
             }
+            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
+            // exceptions here; best-effort — a lookup failure simply means the retry is
+            // re-applied rather than deduped.
             catch (Exception ex)
             {
                 FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
@@ -167,9 +170,11 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             if (payload.Length == 1 && payload[0] == 0xFF) return null; // pending sentinel
             return Deserialize(payload);
         }
+        // Intentionally generic: the configured IDistributedCache implementation can throw a
+        // wide range of provider-specific exceptions; best-effort — a lookup failure simply
+        // means the retry is re-applied rather than deduped.
         catch (Exception ex)
         {
-            // Best-effort: a lookup failure simply means the retry is re-applied rather than deduped.
             FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
             return null;
         }
@@ -195,6 +200,8 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
                     ReservationWindow,
                     when: When.NotExists).ConfigureAwait(false);
             }
+            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
+            // exceptions here; fail-open rather than blocking the edit request.
             catch (Exception ex)
             {
                 FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
@@ -229,6 +236,9 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             {
                 await _redisDatabase.StringSetAsync(key, payload, DedupeWindow).ConfigureAwait(false);
             }
+            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
+            // exceptions here; best-effort — failing to record the response must not fail an
+            // already-applied edit.
             catch (Exception ex)
             {
                 FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
@@ -251,9 +261,11 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
                 AbsoluteExpirationRelativeToNow = DedupeWindow
             }, cancellationToken).ConfigureAwait(false);
         }
+        // Intentionally generic: the configured IDistributedCache implementation can throw a
+        // wide range of provider-specific exceptions; best-effort — failing to record the
+        // response must not fail an already-applied edit.
         catch (Exception ex)
         {
-            // Best-effort: failing to record the response must not fail an already-applied edit.
             FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
         }
 

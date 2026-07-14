@@ -196,6 +196,9 @@ internal static class GeometryServiceRequestParser
                         return ([], geometryType, $"Parameter 'geometries' exceeds the maximum of {maxGeometryCount} geometries.");
                     }
 
+                    // Not rewritten as .Select(...): the loop must fail fast (return a 400) as
+                    // soon as any single geometry exceeds maxGeometryJsonLength, which a pure
+                    // projection into the array would not short-circuit on.
                     var geometries = new string[geometryCount];
                     var i = 0;
                     foreach (var item in geomArray.EnumerateArray())
@@ -224,6 +227,9 @@ internal static class GeometryServiceRequestParser
                     return ([], null, $"Parameter 'geometries' exceeds the maximum of {maxGeometryCount} geometries.");
                 }
 
+                // Not rewritten as .Select(...): the loop must fail fast (return a 400) as
+                // soon as any single geometry exceeds maxGeometryJsonLength, which a pure
+                // projection into the array would not short-circuit on.
                 var geometries = new string[geometryCount];
                 var i = 0;
                 foreach (var item in root.EnumerateArray())
