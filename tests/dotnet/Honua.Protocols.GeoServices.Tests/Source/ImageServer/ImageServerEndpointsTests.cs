@@ -1601,6 +1601,97 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight()
+    {
+        // The raster models a 45° sun elevation. The two points are ~5 ground-meters apart (a 3-4-5
+        // triangle near the Web Mercator origin), so the shadow-height h = shadowLength · tan(45°)
+        // ≈ shadowLength ≈ 5 m. Both shadow operations use the same formula (ADR-0064, #2667).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    SensorName = "ShadowSensor",
+                    ExteriorOrientationJson = """{"sunElevation": 45.0, "sunAzimuth": 135.0}""",
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertShadowHeight(await getResponse.Content.ReadAsStringAsync());
+
+            using var postContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("measureOperation", "esriMensurationHeightFromTopAndTopShadow"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+                new KeyValuePair<string, string>("toGeometry", toGeometry),
+            ]);
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure", postContent);
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertShadowHeight(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var byServiceResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+            byServiceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertShadowHeight(await byServiceResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+
+        static void AssertShadowHeight(string body)
+        {
+            var measure = JsonSerializer.Deserialize(body, ImageServerJsonContext.Default.ImageServerMeasureResponse);
+            measure.Should().NotBeNull();
+            measure!.Height.Should().NotBeNull();
+            // tan(45°) = 1, so height ≈ the ~5 m shadow length (small spherical correction tolerated).
+            measure.Height!.Value.Should().BeApproximately(5.0, 0.05);
+            measure.SensorName.Should().Be("ShadowSensor");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_ShadowHeight_WithoutSunGeometry_ReturnsNotImplemented()
+    {
+        // The default substitute models no sun geometry, so shadow-based height is honestly 501
+        // (never a fabricated height), mirroring the DEM-height 501 discipline (ADR-0064).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            await response.AssertGeoServicesErrorAsync(501);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/computeTiePoints")]
     [Endpoint("POST /rest/services/{id}/ImageServer/computeTiePoints")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeTiePoints")]

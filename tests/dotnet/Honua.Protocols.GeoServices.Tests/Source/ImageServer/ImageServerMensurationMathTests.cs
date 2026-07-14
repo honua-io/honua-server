@@ -139,6 +139,37 @@ public sealed class ImageServerMensurationMathTests
     }
 
     [UnitTest]
+    public void ShadowHeightMeters_At45Degrees_EqualsShadowLength()
+    {
+        // tan(45°) = 1, so the object height equals the measured shadow length exactly.
+        ImageServerMensurationMath.ShadowHeightMeters(100d, 45d).Should().BeApproximately(100d, 1e-9);
+    }
+
+    [UnitTest]
+    public void ShadowHeightMeters_At30Degrees_IsShadowLengthTimesTan30()
+    {
+        // Independently computed: h = L·tan(30°) = 50 · 0.5773502691896257 = 28.867513459481287 m.
+        ImageServerMensurationMath.ShadowHeightMeters(50d, 30d)
+            .Should().BeApproximately(28.867513459481287d, 1e-9);
+    }
+
+    [UnitTest]
+    public void ShadowHeightMeters_At60Degrees_IsShadowLengthTimesTan60()
+    {
+        // Independently computed: h = L·tan(60°) = 200 · 1.7320508075688772 = 346.41016151377545 m.
+        ImageServerMensurationMath.ShadowHeightMeters(200d, 60d)
+            .Should().BeApproximately(346.41016151377545d, 1e-9);
+    }
+
+    [UnitTest]
+    public void ShadowHeightMeters_LowSunCastsLongShadow_ForModestHeight()
+    {
+        // A 10 m shadow under a low 15° sun implies a short object: h = 10·tan(15°) ≈ 2.679491924 m.
+        ImageServerMensurationMath.ShadowHeightMeters(10d, 15d)
+            .Should().BeApproximately(2.6794919243112270d, 1e-9);
+    }
+
+    [UnitTest]
     public void SignedAreaCentroid_LShapedPolygon_DiffersFromVertexMean()
     {
         // An L-shaped polygon: the true area centroid is not the mean of the vertices.

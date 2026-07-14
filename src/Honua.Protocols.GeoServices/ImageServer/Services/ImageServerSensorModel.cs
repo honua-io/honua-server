@@ -184,6 +184,84 @@ internal static class ImageServerSensorModel
         }
     }
 
+    /// <summary>
+    /// Reads the sun/illumination geometry from the exterior-orientation payload for shadow-based
+    /// height mensuration (ADR-0064). The sun elevation angle (degrees above the horizon) is read
+    /// from <c>sunElevation</c> (aliases <c>sun_elevation</c>, <c>sunElevationAngle</c>,
+    /// <c>solarElevation</c>, <c>sun_elevation_angle</c>) and the optional azimuth from
+    /// <c>sunAzimuth</c> (aliases <c>sun_azimuth</c>, <c>solarAzimuth</c>, <c>sun_azimuth_angle</c>).
+    /// When no explicit elevation is present but an illumination/look vector is
+    /// (<c>sunDirection</c> / <c>illuminationVector</c> / <c>sunVector</c> as <c>{x, y, z}</c>), the
+    /// elevation is derived from the vector as <c>asin(|z| / |v|)</c> and the azimuth (when absent)
+    /// from <c>atan2(x, y)</c>. Returns <c>null</c> when the payload is missing, malformed, carries
+    /// no sun geometry, or the resolved elevation is outside the open interval (0°, 90°) — callers
+    /// treat that as "sun geometry not modeled" and return an honest 501 rather than a fabricated
+    /// height.
+    /// </summary>
+    /// <param name="metadata">The raster's sensor metadata, or <c>null</c>.</param>
+    /// <returns>The parsed sun geometry, or <c>null</c> when none is modeled.</returns>
+    public static SunGeometry? TryReadSunGeometry(RasterSensorMetadata? metadata)
+    {
+        if (metadata?.ExteriorOrientationJson is not { Length: > 0 } json)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            double? elevation = TryReadAny(root, out var e, "sunElevation", "sun_elevation", "sunElevationAngle", "solarElevation", "sun_elevation_angle")
+                ? e
+                : null;
+            double? azimuth = TryReadAny(root, out var a, "sunAzimuth", "sun_azimuth", "solarAzimuth", "sun_azimuth_angle")
+                ? a
+                : null;
+
+            // Illumination / look vector fallback: derive the elevation (and azimuth when absent)
+            // from a {x, y, z} sun-direction vector when no explicit angle is supplied.
+            if (elevation is null &&
+                TryGetObject(root, out var vector, "sunDirection", "illuminationVector", "sunVector") &&
+                TryGetDouble(vector, "x", out var vx) &&
+                TryGetDouble(vector, "y", out var vy) &&
+                TryGetDouble(vector, "z", out var vz))
+            {
+                var magnitude = Math.Sqrt((vx * vx) + (vy * vy) + (vz * vz));
+                if (magnitude > 0)
+                {
+                    elevation = RadiansToDegrees(Math.Asin(Math.Clamp(Math.Abs(vz) / magnitude, -1d, 1d)));
+                    azimuth ??= NormalizeBearingDegrees(RadiansToDegrees(Math.Atan2(vx, vy)));
+                }
+            }
+
+            // Elevation must be a usable angle above the horizon; 0°/90° make tan(θ) degenerate,
+            // and out-of-range values are not honest sun geometry.
+            if (elevation is not { } elevationDegrees || elevationDegrees <= 0d || elevationDegrees >= 90d)
+            {
+                return null;
+            }
+
+            return new SunGeometry(elevationDegrees, azimuth);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static double RadiansToDegrees(double radians) => radians * 180d / Math.PI;
+
+    private static double NormalizeBearingDegrees(double degrees)
+    {
+        var normalized = degrees % 360d;
+        return normalized < 0d ? normalized + 360d : normalized;
+    }
+
     private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] names)
     {
         foreach (var name in names)
@@ -295,6 +373,17 @@ internal readonly record struct PhotogrammetricControlPoint(
     double ReferenceY,
     double? ReferenceZ,
     int? ReferenceSrid);
+
+/// <summary>
+/// Sun / illumination geometry parsed from a raster's exterior-orientation payload, backing
+/// shadow-based height mensuration (ADR-0064). <see cref="SunElevationDegrees"/> is the angle of
+/// the sun above the horizon (0°–90°, exclusive); <see cref="SunAzimuthDegrees"/> is the optional
+/// horizontal bearing of the sun in degrees clockwise from north (not required for the shadow-length
+/// height formula, which uses the measured ground shadow length directly).
+/// </summary>
+/// <param name="SunElevationDegrees">Sun elevation angle above the horizon in degrees.</param>
+/// <param name="SunAzimuthDegrees">Optional sun azimuth in degrees clockwise from north.</param>
+internal readonly record struct SunGeometry(double SunElevationDegrees, double? SunAzimuthDegrees);
 
 /// <summary>
 /// First-order RPC image↔ground model expressed through the standard RPC offset/scale
