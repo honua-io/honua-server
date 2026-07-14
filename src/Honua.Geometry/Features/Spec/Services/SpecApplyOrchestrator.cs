@@ -236,7 +236,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                     }
                 }, CancellationToken.None).ConfigureAwait(false);
             }
-            catch
+            catch (ChannelClosedException)
             {
                 // Writer may already be completed — ignore.
             }
@@ -281,7 +281,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
                     }
                 }, CancellationToken.None).ConfigureAwait(false);
             }
-            catch
+            catch (ChannelClosedException)
             {
                 // Ignore — writer may already be completed.
             }

@@ -102,6 +102,8 @@ internal static class FileGdbReader
         }
 
         var recordIndex = 0;
+        // layer.FileNumber is an int formatted as 8 hex digits, so this segment can never be
+        // rooted/absolute — Path.Combine cannot silently drop gdbPath here.
         var tablePath = Path.Combine(gdbPath, $"a{layer.FileNumber:x8}.gdbtable");
 
         if (!File.Exists(tablePath))
@@ -190,6 +192,8 @@ internal static class FileGdbReader
     /// </summary>
     internal static FileGdbLayerInfo[] DiscoverLayers(string gdbPath)
     {
+        // "a00000001.gdbtable" is a hardcoded literal, so this segment can never be
+        // rooted/absolute — Path.Combine cannot silently drop gdbPath here.
         var catalogPath = Path.Combine(gdbPath, "a00000001.gdbtable");
         if (File.Exists(catalogPath))
         {
@@ -259,6 +263,8 @@ internal static class FileGdbReader
 
                 // Probe the table file to check if it has a geometry field.
                 var fileNumber = objectId;
+                // fileNumber is an int formatted as 8 hex digits, so this segment can never be
+                // rooted/absolute — Path.Combine cannot silently drop gdbPath here.
                 var probeTablePath = Path.Combine(gdbPath, $"a{fileNumber:x8}.gdbtable");
                 if (!File.Exists(probeTablePath))
                 {

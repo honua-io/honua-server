@@ -34,6 +34,7 @@ public sealed class ApiExplorerEndpointTests : IAsyncLifetime
         // Assert
         response.Be200Ok();
         var contentType = response.Content.Headers.ContentType?.MediaType;
+        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
         contentType.Should().NotBeNull();
         contentType.Should().Be("text/html");
 

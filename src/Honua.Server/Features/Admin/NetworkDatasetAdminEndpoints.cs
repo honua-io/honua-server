@@ -112,6 +112,8 @@ internal static partial class NetworkDatasetAdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic 500 admin problem response below.
             NetworkDatasetAdminLog.OperationFailed(logger, "list", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to list network datasets.");
@@ -138,6 +140,8 @@ internal static partial class NetworkDatasetAdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic 500 admin problem response below.
             NetworkDatasetAdminLog.OperationFailed(logger, "get", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to retrieve network dataset.");
@@ -179,6 +183,8 @@ internal static partial class NetworkDatasetAdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic 500 admin problem response below.
             NetworkDatasetAdminLog.OperationFailed(logger, "register", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to register network dataset.");
@@ -206,6 +212,8 @@ internal static partial class NetworkDatasetAdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic 500 admin problem response below.
             NetworkDatasetAdminLog.OperationFailed(logger, "update.lookup", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to load network dataset for update.");
@@ -238,6 +246,8 @@ internal static partial class NetworkDatasetAdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic 500 admin problem response below.
             NetworkDatasetAdminLog.OperationFailed(logger, "update", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to update network dataset.");
@@ -265,6 +275,8 @@ internal static partial class NetworkDatasetAdminEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and maps any failure
+            // to a generic 500 admin problem response below.
             NetworkDatasetAdminLog.OperationFailed(logger, "delete", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to delete network dataset.");

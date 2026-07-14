@@ -263,6 +263,9 @@ internal static class CollectionsEndpoints
                 context,
                 "An error occurred while retrieving collections.");
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
@@ -387,6 +390,9 @@ internal static class CollectionsEndpoints
                 context,
                 "An error occurred while retrieving the collection.");
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
@@ -486,6 +492,9 @@ internal static class CollectionsEndpoints
                 context,
                 "An error occurred while retrieving the queryables schema.");
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);

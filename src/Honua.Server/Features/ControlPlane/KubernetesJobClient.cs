@@ -322,6 +322,9 @@ internal sealed partial class KubernetesJobClient(
         {
             body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: this is a best-effort read of the error response body for
+        // diagnostics; a failure to read it must not prevent the caller from surfacing the
+        // original API error, so a placeholder is substituted instead.
         catch (Exception readEx)
         {
             body = $"<unreadable response body: {readEx.Message}>";
@@ -359,10 +362,12 @@ internal sealed partial class KubernetesJobClient(
                         ValidateAgainstTrustedCas(leaf, presentedChain, errors, trustedRoots);
                 }
             }
+            // Intentional catch-all: best-effort CA bundle load at handler-creation time; a
+            // malformed bundle must not prevent handler construction. Fall back to the
+            // default OS trust store — the connection will still fail at the transport
+            // layer if the CA is genuinely untrusted.
             catch (Exception ex)
             {
-                // Fall back to the default OS trust store if the CA bundle is malformed;
-                // the connection will still fail at the transport layer if the CA is untrusted.
                 if (logger is not null)
                 {
                     Log.CaBundleLoadFailed(logger, ex, resolvedPath);
@@ -456,12 +461,11 @@ internal sealed partial class KubernetesJobClient(
         // discoverable on the client.
         if (presentedChain != null)
         {
-            foreach (var cert in presentedChain.ChainElements.Select(element => element.Certificate))
+            foreach (var cert in presentedChain.ChainElements
+                .Select(element => element.Certificate)
+                .Where(cert => cert != null && !ReferenceEquals(cert, leaf)))
             {
-                if (cert != null && !ReferenceEquals(cert, leaf))
-                {
-                    customChain.ChainPolicy.ExtraStore.Add(cert);
-                }
+                customChain.ChainPolicy.ExtraStore.Add(cert!);
             }
         }
 
@@ -482,9 +486,10 @@ internal sealed partial class KubernetesJobClient(
                 return string.IsNullOrEmpty(ns) ? null : ns;
             }
         }
+        // Intentional catch-all: best-effort read of the kubelet-projected namespace file;
+        // I/O failures are ignored and the adapter falls back to the configured default.
         catch (Exception ex)
         {
-            // Ignore I/O failures; the adapter falls back to the configured default.
             if (logger is not null)
             {
                 Log.InClusterNamespaceReadFailed(logger, ex);

@@ -690,14 +690,14 @@ internal sealed class Wcs20Handler
             return true;
         }
 
-        foreach (var publication in snapshot.Graph.Publications.Where(p => p.LayerIndex == layerId))
+        var resolved = snapshot.Graph.Publications
+            .Where(p => p.LayerIndex == layerId)
+            .Select(snapshot.ResolveResource)
+            .FirstOrDefault(candidate => candidate is not null);
+        if (resolved is not null)
         {
-            var resolved = snapshot.ResolveResource(publication);
-            if (resolved is not null)
-            {
-                resource = resolved;
-                return true;
-            }
+            resource = resolved;
+            return true;
         }
 
         resource = default!;

@@ -90,6 +90,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the open-data page read endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.get", ex);
@@ -146,6 +148,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the open-data page write endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.save", ex);
@@ -176,6 +180,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the open-data eligibility endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.eligibility", ex);
@@ -210,6 +216,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the DCAT export preview endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.dcat", ex);
@@ -237,6 +245,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the STAC publication status endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.stac.status", ex);
@@ -302,6 +312,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the STAC publish endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.stac.publish", ex);
@@ -329,6 +341,8 @@ internal static class ConsoleOpenDataEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the STAC unpublish endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.stac.unpublish", ex);

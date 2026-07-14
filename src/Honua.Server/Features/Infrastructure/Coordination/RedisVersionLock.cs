@@ -146,6 +146,9 @@ internal sealed partial class RedisVersionLock : IVersionLock
             {
                 await _renewalLoop.ConfigureAwait(false);
             }
+            // Intentional broad catch: RenewAsync already logs its own RedisException failures via
+            // Log.VersionLockRenewalError; this only needs to observe task completion so the lock
+            // release below always runs regardless of how the renewal loop ended.
             catch
             {
                 // Renewal-loop failures are already logged; release the lock regardless.

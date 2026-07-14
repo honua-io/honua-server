@@ -259,6 +259,8 @@ internal static class ContentPublicationEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content publish endpoint.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.publish", ex);
@@ -287,6 +289,8 @@ internal static class ContentPublicationEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content publication get endpoint.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.get", ex);
@@ -322,6 +326,8 @@ internal static class ContentPublicationEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the publication version get endpoint.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.version", ex);
@@ -363,6 +369,8 @@ internal static class ContentPublicationEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content republish endpoint.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.republish", ex);
@@ -404,6 +412,8 @@ internal static class ContentPublicationEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content rollback endpoint.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.rollback", ex);
@@ -457,6 +467,8 @@ internal static class ContentPublicationEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the publication policy update endpoint.
         catch (Exception ex)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.policy", ex);

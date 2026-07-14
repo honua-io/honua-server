@@ -214,12 +214,14 @@ internal sealed partial class RateLimitingMiddleware
 
             return CombineResults(subjectResult, endpointResult);
         }
+        // Intentional catch-all: this is the request-handling boundary for the rate-limit
+        // check (Redis/counter faults, etc.); allow the request through on failure rather
+        // than blocking legitimate traffic.
         catch (Exception ex)
         {
             var (keyFamily, keyHash) = SplitRateLimitKey(rateLimitKey);
             RateLimitingLog.RateLimitCheckFailed(_logger, keyFamily, keyHash, ex);
 
-            // Allow request if rate limiting fails to avoid blocking legitimate traffic
             return new RateLimitResult
             {
                 IsAllowed = true,

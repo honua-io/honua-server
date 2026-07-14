@@ -252,12 +252,18 @@ internal static class FeatureStreamArtifact
     {
         ArgumentNullException.ThrowIfNull(outputRootDirectory);
 
+        // Second segment is a fixed relative literal, so it can never be
+        // rooted and silently discard outputRootDirectory.
         var streamRoot = Path.Combine(outputRootDirectory, "streams");
         Directory.CreateDirectory(streamRoot);
 
         var safeProcess = SanitizeForFileName(processId);
         var safeOperation = SanitizeForFileName(operationId);
         var unique = Guid.NewGuid().ToString("N");
+        // safeOperation/safeProcess are already passed through SanitizeForFileName above,
+        // which keeps only [A-Za-z0-9-_] (everything else, including '/', '\', and ':',
+        // becomes '_'), so the interpolated second segment can never be rooted or contain
+        // a path separator.
         return Path.Combine(streamRoot, $"{safeOperation}.{safeProcess}.{unique}.ndjson");
     }
 

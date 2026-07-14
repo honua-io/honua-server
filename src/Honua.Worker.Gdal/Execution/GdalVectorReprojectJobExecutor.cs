@@ -109,6 +109,8 @@ internal sealed partial class GdalVectorReprojectJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Both second segments are fixed relative literal filenames, so they can
+            // never be rooted and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.geojson");
             var outputPath = Path.Combine(workspace, "output.geojson");
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);

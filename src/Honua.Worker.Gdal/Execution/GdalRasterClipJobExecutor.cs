@@ -123,6 +123,8 @@ internal sealed partial class GdalRasterClipJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // All three second segments are fixed relative literal filenames, so
+            // they can never be rooted and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.tif");
             var cutlinePath = Path.Combine(workspace, "cutline.geojson");
             var outputPath = Path.Combine(workspace, "output.tif");

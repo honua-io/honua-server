@@ -50,6 +50,9 @@ internal sealed class WorkflowEventTriggerBackgroundService(
             {
                 break;
             }
+            // Intentionally generic: this is a long-running background polling loop. A
+            // single failed tick (e.g. a transient store/probe failure) must not kill the
+            // host's background service; log and keep polling on the next tick.
             catch (Exception ex)
             {
                 OrchestrationLog.EventTriggerTickFailed(logger, ex);
@@ -102,6 +105,9 @@ internal sealed class WorkflowEventTriggerBackgroundService(
             {
                 throw;
             }
+            // Intentional catch-all: per-definition loop over event-triggered workflow
+            // definitions. One definition's trigger evaluation failing must not prevent the
+            // remaining definitions in this tick from being evaluated.
             catch (Exception ex)
             {
                 OrchestrationLog.EventTriggerTickFailed(logger, ex);
@@ -291,9 +297,11 @@ internal sealed class WorkflowEventTriggerBackgroundService(
             await TryReleaseClaimAsync(definition.WorkflowId, cursorKind, marker).ConfigureAwait(false);
             throw;
         }
+        // Intentional catch-all: run creation can fail for many transient reasons (engine,
+        // storage, dependency failures); release the claim and leave the cursor so the next
+        // tick retries the same marker instead of losing the fire attempt.
         catch (Exception ex)
         {
-            // Transient: release the claim and leave the cursor so the next tick retries the marker.
             OrchestrationLog.EventTriggerTickFailed(logger, ex);
             await TryReleaseClaimAsync(definition.WorkflowId, cursorKind, marker).ConfigureAwait(false);
             return false;
@@ -314,6 +322,9 @@ internal sealed class WorkflowEventTriggerBackgroundService(
                 .ReleaseTriggerClaimAsync(workflowId, cursorKind, marker, CancellationToken.None)
                 .ConfigureAwait(false);
         }
+        // Intentional catch-all: best-effort claim release after a failed or cancelled fire
+        // attempt; a failure here must not propagate, the claim simply expires via its own
+        // retention window instead.
         catch (Exception ex)
         {
             OrchestrationLog.EventTriggerTickFailed(logger, ex);

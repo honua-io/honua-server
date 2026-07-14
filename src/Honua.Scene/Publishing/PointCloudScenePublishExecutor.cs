@@ -153,6 +153,10 @@ internal sealed partial class PointCloudScenePublishExecutor
         try
         {
             Directory.CreateDirectory(stagingDirectory);
+            // Safe: "tileset.json" is a hardcoded literal, and tileset.Tiles' uri keys
+            // are deterministic "points_NNNN.pnts" names built from the quadtree node
+            // index by PointCloudTilesetBuilder — neither is derived from the uploaded
+            // LAS point data, so neither combine can be rooted.
             await File.WriteAllBytesAsync(
                 Path.Combine(stagingDirectory, "tileset.json"),
                 tileset.TilesetJsonBytes,

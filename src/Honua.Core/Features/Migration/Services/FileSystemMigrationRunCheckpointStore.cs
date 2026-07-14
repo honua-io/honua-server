@@ -118,6 +118,9 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
     private string PathFor(string runId)
     {
         var segment = SafePathSegment(runId);
+        // Path.Combine is safe here: SafePathSegment already strips '/', '\', and '..' from
+        // `segment`, so it can never look like a rooted path that would discard _rootDirectory.
+        // The containment check below is defense-in-depth in case that guarantee is ever weakened.
         var candidate = Path.GetFullPath(Path.Combine(_rootDirectory, $"{segment}.json"));
         // Containment check: reject any path that escapes the root directory (symlinks,
         // future encoding tricks, etc. are caught here even if SafePathSegment missed them).

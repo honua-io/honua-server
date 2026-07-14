@@ -87,6 +87,8 @@ internal static partial class PackageReviewEndpoints
         }
         catch (Exception ex)
         {
+            // Intentional catch-all request-handling boundary: logs and returns a generic
+            // admin problem-details response below.
             PackageReviewLog.PackageReviewFailed(logger, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,

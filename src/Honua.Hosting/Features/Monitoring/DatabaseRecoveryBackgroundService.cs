@@ -72,6 +72,11 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             {
                 return;
             }
+            // Intentional: this is the top-level retry loop for database recovery after a
+            // startup connectivity failure; any exception type from the recovery attempt
+            // (connection, auth, migration, or otherwise) must be classified via
+            // IsTransientConnectivityError below rather than crash the background service,
+            // so retries/backoff and the terminal "give up" path both stay reachable.
             catch (Exception ex)
             {
                 if (!StartupDatabaseResilience.IsTransientConnectivityError(ex))

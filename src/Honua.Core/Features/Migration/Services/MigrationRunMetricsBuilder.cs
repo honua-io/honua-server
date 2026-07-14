@@ -112,6 +112,10 @@ public static class MigrationRunMetricsBuilder
     {
         var observed = phases.ToHashSet(StringComparer.Ordinal);
         var ordered = new List<string>(observed.Count);
+
+        // Not rewritten as PreferredPhaseOrder.Where(observed.Remove): the condition itself
+        // mutates `observed`, removing each matched phase so the leftover loop below only
+        // enumerates phases that were not part of the preferred ordering.
         foreach (var preferred in PreferredPhaseOrder)
         {
             if (observed.Remove(preferred))

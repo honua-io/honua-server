@@ -111,9 +111,11 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         {
             throw;
         }
+        // Intentionally generic: this is a periodic background rollup flush. A single
+        // failed iteration (snapshot/persist outage) must never disturb serving; fail
+        // open by degrading to snapshot-only for this interval and keep sampling.
         catch (Exception ex)
         {
-            // Fail-open: a rollup outage must never disturb serving. Degrade to snapshot-only.
             FlushFailed(_logger, ex);
         }
     }
@@ -185,9 +187,10 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         {
             _flushSignal.Raise(snapshot);
         }
+        // Intentionally generic: this signals best-effort realtime subscribers after a
+        // flush. A misbehaving subscriber must not break the background sampler loop.
         catch (Exception ex)
         {
-            // A misbehaving subscriber must not break the sampler loop.
             FlushSubscriberFailed(_logger, ex);
         }
     }

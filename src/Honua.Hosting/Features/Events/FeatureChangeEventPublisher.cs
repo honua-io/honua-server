@@ -23,6 +23,9 @@ internal sealed partial class FeatureChangeEventPublisher(
         {
             throw;
         }
+        // Intentional: this is the best-effort publish path (see PublishStrictAsync below
+        // for the durable alternative) — a store failure is logged rather than propagated
+        // so a feature-change notification never fails the mutation that produced it.
         catch (Exception ex)
         {
             LogPublishFailed(_logger, ex);

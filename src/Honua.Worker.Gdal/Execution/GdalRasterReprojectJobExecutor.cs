@@ -93,6 +93,8 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
+            // Both second segments are fixed relative literal filenames, so they can
+            // never be rooted and silently discard workspace.
             var inputPath = Path.Combine(workspace, "input.tif");
             var outputPath = Path.Combine(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a

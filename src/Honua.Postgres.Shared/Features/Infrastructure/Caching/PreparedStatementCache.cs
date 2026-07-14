@@ -378,10 +378,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                     metrics,
                     cancellationToken).ConfigureAwait(false);
             }
+            // Intentionally generic: statement preparation is a best-effort optimization; on
+            // failure, log and fall back to unprepared execution rather than failing the
+            // caller's query.
             catch (Exception ex)
             {
-                // Statement preparation is a best-effort optimization: on failure, log and fall back
-                // to unprepared execution rather than failing the caller's query.
                 PreparedStatementCacheLog.PrepareFailed(_logger, statementHash, ex);
                 return null;
             }
@@ -535,10 +536,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
             _prepareSupported = !builder.Multiplexing;
         }
+        // Intentionally generic: a malformed/unparseable connection string defaults to
+        // "unsupported" so callers safely fall back to unprepared execution, but it is logged
+        // since this otherwise hides a real config problem.
         catch (Exception ex)
         {
-            // Malformed/unparseable connection string: default to "unsupported" so callers safely fall
-            // back to unprepared execution, but log it since this otherwise hides a real config problem.
             PreparedStatementCacheLog.PreparationSupportDetectionFailed(_logger, ex);
             _prepareSupported = false;
         }
@@ -707,6 +709,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
         var removedCount = 0;
 
+        // Not rewritten as .Where(...): TryRemoveCachedStatement performs the actual removal (a
+        // side effect) and yields the removed statement via 'out', which the loop body needs for
+        // disposal — the condition here is the work, not a pure filter predicate.
         foreach (var key in keysToRemove)
         {
             if (TryRemoveCachedStatement(key, out var statement) && statement != null)
@@ -945,6 +950,9 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 .Select(kvp => kvp.Key)
                 .ToList();
 
+            // Not rewritten as .Where(...): TryRemoveCachedStatement performs the actual removal
+            // (a side effect) and yields the removed statement via 'out', which the loop body
+            // needs for disposal — the condition here is the work, not a pure filter predicate.
             foreach (var key in expiredKeys)
             {
                 if (TryRemoveCachedStatement(key, out var expired) && expired != null)
@@ -969,10 +977,11 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 PreparedStatementCacheLog.CleanupCompleted(_logger, expiredKeys.Count, oldMetrics.Count);
             }
         }
+        // Intentionally generic: this runs on a background timer callback with no caller to
+        // observe a thrown exception; logging and continuing preserves the next scheduled
+        // cleanup tick.
         catch (Exception ex)
         {
-            // Runs on a background timer callback with no caller to observe a thrown exception;
-            // logging and continuing preserves the next scheduled cleanup tick.
             PreparedStatementCacheLog.CleanupFailed(_logger, ex);
         }
     }

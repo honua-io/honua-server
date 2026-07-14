@@ -34,6 +34,9 @@ internal static class SinkPathResolver
         try
         {
             var root = Path.GetFullPath(outputRootDirectory);
+            // requestedPath is already checked non-rooted above, so this combine cannot
+            // silently discard root; the canonicalized candidate is also re-validated
+            // against rootPrefix below to reject ".." traversal that escapes the root.
             var candidate = Path.GetFullPath(Path.Combine(root, requestedPath));
             var comparison = OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase

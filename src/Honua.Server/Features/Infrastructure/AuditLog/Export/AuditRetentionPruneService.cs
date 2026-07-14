@@ -90,9 +90,10 @@ internal sealed partial class AuditRetentionPruneService : BackgroundService
         {
             throw;
         }
+        // Intentionally generic: this is a periodic background retention sweep. A single
+        // failed tick must never crash the host; log and let the next timer tick retry.
         catch (Exception ex)
         {
-            // Never let a retention failure crash the host; the next tick retries.
             LogSweepFailed(_logger, ex);
         }
     }

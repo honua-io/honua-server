@@ -45,6 +45,9 @@ internal static class ConfigurationOptionsValidator
                 ConfigurationLog.ConfigurationValidated(logger, "All IOptions configurations are valid");
             }
         }
+        // Intentional broad catch: this is the top-level startup configuration validation
+        // pass; an unexpected exception from any individual options resolution must be
+        // recorded as a validation error rather than crashing the host during startup.
         catch (Exception ex)
         {
             errors.Add("Configuration validation failed due to an unexpected error. Check server logs for details.");
@@ -116,6 +119,9 @@ internal static class ConfigurationOptionsValidator
                 }
             }
         }
+        // Intentional broad catch: this is a per-options-group startup validation step;
+        // one group's unexpected failure must be recorded and the remaining validators
+        // must still run rather than aborting the whole startup validation pass.
         catch (Exception ex)
         {
             ConfigurationLog.ConfigurationError(logger, "OIDC options validation failed", ex);
@@ -158,6 +164,9 @@ internal static class ConfigurationOptionsValidator
                 errors.Add("Authentication:BasicCompatibility:RequireHttps must be true when Basic compatibility is enabled in production.");
             }
         }
+        // Intentional broad catch: this is a per-options-group startup validation step;
+        // one group's unexpected failure must be recorded and the remaining validators
+        // must still run rather than aborting the whole startup validation pass.
         catch (Exception ex)
         {
             ConfigurationLog.ConfigurationError(logger, "API key options validation failed", ex);
@@ -181,6 +190,9 @@ internal static class ConfigurationOptionsValidator
                 errors.Add("PerformanceMonitoring:MemorySamplingInterval must be greater than zero");
             }
         }
+        // Intentional broad catch: this is a per-options-group startup validation step;
+        // one group's unexpected failure must be recorded and the remaining validators
+        // must still run rather than aborting the whole startup validation pass.
         catch (Exception ex)
         {
             ConfigurationLog.ConfigurationError(logger, "Performance monitoring options validation failed", ex);
@@ -227,6 +239,9 @@ internal static class ConfigurationOptionsValidator
         {
             // AdaptiveSamplingOptions service not registered - skip validation
         }
+        // Intentional broad catch: this is a per-options-group startup validation step;
+        // one group's unexpected failure must be recorded and the remaining validators
+        // must still run rather than aborting the whole startup validation pass.
         catch (Exception ex)
         {
             ConfigurationLog.ConfigurationError(logger, "Adaptive sampling options validation failed", ex);

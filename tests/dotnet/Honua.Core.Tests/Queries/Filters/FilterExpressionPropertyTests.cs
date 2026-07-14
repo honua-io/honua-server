@@ -47,7 +47,9 @@ public class FilterExpressionPropertyTests
         }
         catch
         {
-            // If construction fails, that's also a valid outcome for some inputs
+            // Intentional broad catch: this is a property-based test generating arbitrary
+            // (possibly malformed) expression trees; construction failing is itself a valid
+            // outcome for some generated inputs, not a bug to diagnose by exception type.
             return true;
         }
     }
@@ -77,7 +79,8 @@ public class FilterExpressionPropertyTests
         }
         catch
         {
-            // If construction fails, that's also a valid outcome for some inputs.
+            // Intentional broad catch: same property-based rationale as the AND case above —
+            // construction failing is a valid outcome for some generated inputs.
             return true;
         }
     }
@@ -123,7 +126,9 @@ public class FilterExpressionPropertyTests
         }
         catch
         {
-            // Some values might not be valid literals
+            // Intentional broad catch: same property-based rationale as above — a generated
+            // value that isn't a valid literal is an expected outcome, expressed here as
+            // "only null is expected to be accepted-as-invalid".
             return value == null;
         }
     }

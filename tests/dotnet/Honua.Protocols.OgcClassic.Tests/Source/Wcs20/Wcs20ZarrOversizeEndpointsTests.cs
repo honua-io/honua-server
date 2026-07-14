@@ -169,6 +169,7 @@ public sealed class Wcs20ZarrOversizeEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             var data = Get(key);
+            // Ownership transfers to the returned Stream's caller, which disposes it after reading.
             return Task.FromResult<Stream>(new MemoryStream(
                 data,
                 checked((int)offset),

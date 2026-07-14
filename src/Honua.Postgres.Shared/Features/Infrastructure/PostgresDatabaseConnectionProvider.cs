@@ -91,11 +91,12 @@ internal sealed class PostgresDatabaseConnectionProvider(
                 "Database connection failed.",
                 ResiliencePolicyOptions.Default.RetryAfterSeconds);
         }
+        // Intentionally generic: this is the connection-open boundary, so any failure (auth,
+        // network, pool exhaustion, etc.) is mapped to the shared ServiceUnavailableException
+        // rather than propagated raw, giving callers/protocol adapters a consistent 503 without
+        // leaking driver/connection-string internals.
         catch (Exception ex)
         {
-            // Map any connection-open failure (auth, network, pool exhaustion, etc.) to the shared
-            // ServiceUnavailableException so callers/protocol adapters get a consistent 503 without
-            // leaking driver/connection-string internals.
             throw new ServiceUnavailableException("Database connection failed.", ex);
         }
 

@@ -123,7 +123,9 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
             }
         }
 
-        pointFeature.Should().NotBeNull("the seeded layer has point features");
+        // The loop above may leave pointFeature null if no point feature is seeded;
+        // the assertion below fails the test in that case before any further access.
+        pointFeature!.Should().NotBeNull("the seeded layer has point features");
         var confirmedPointFeature = pointFeature!;
         var x = confirmedPointFeature.Geometry!.X!.Value;
         var y = confirmedPointFeature.Geometry.Y!.Value;

@@ -144,6 +144,9 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
 
             try
             {
+                // Intentional: belt-and-braces even though TestConnectivityAsync already
+                // catches internally — a future change there must not reopen the async void
+                // timer-callback crash risk documented above.
                 await TestConnectivityAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -151,6 +154,8 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
                 Log.HealthCheckFailed(_logger, ex);
             }
         }
+        // Intentional: outermost guard for the async void timer callback above — catches
+        // anything the inner try/catch missed (including bugs in the disposed check itself).
         catch (Exception ex)
         {
             Log.UnhandledTimerException(_logger, nameof(PerformHealthCheck), ex);

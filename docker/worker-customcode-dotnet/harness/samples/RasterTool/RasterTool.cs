@@ -88,6 +88,7 @@ public sealed class RasterTool : IGeoprocessingTool
         }
         else
         {
+            // False positive: "scene.tif" is a fixed relative literal, never absolute.
             inputPath = Path.Combine(context.WorkDirectory, "scene.tif");
             context.Log.Info("no input staged; synthesizing a 2-band scene with OSGeo.GDAL");
             SynthesizeScene(inputPath, size);
@@ -127,6 +128,8 @@ public sealed class RasterTool : IGeoprocessingTool
         src.GetGeoTransform(transform);
         var projection = src.GetProjectionRef();
 
+        // False positive: outName was already validated by ArtifactNames.IsSimpleFileName
+        // above, so it is never rooted/absolute.
         var outPath = Path.Combine(context.WorkDirectory, outName);
         var driver = Gdal.GetDriverByName("GTiff");
         using (var dst = driver.Create(outPath, width, height, 1, DataType.GDT_Float32,

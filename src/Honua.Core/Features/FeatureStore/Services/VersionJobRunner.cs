@@ -185,6 +185,10 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
             await SaveTerminalStateAsync(contended).ConfigureAwait(false);
             Log.LockContended(_logger, job.Kind.ToString(), job.VersionId, job.JobId, null);
         }
+        // Intentional broad catch: this is the top-level boundary for a detached background job.
+        // Any unexpected failure must be recorded as a terminal job state rather than becoming an
+        // unobserved task exception; only a sanitized message is surfaced, provider internals
+        // never leak through the job record.
         catch (Exception ex)
         {
             // Surface a sanitized message only; provider internals never leak through the job record.

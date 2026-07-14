@@ -240,6 +240,9 @@ internal static class GeoServicesRequestValueHelpers
             return baseToken;
         }
 
+        // Not a `using`: .Token must outlive this method and stay valid for the rest of the
+        // request pipeline (it is cached in context.Items and returned to the caller), so
+        // disposal is deferred to the response's own lifetime via RegisterForDispose.
         var timeoutCts = new CancellationTokenSource(queryTimeout);
         var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(baseToken, timeoutCts.Token);
 

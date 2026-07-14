@@ -232,6 +232,8 @@ internal static partial class ScenePointCloudIngestEndpoints
         {
             return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
+        // Intentional catch-all: this is the request-handling boundary for the LAS point-cloud
+        // ingest endpoint; the failure is logged and mapped to a generic error response.
         catch (Exception ex)
         {
             ScenePointCloudIngestLog.IngestFailed(logger, ex);
@@ -393,6 +395,8 @@ internal static partial class ScenePointCloudIngestEndpoints
         {
             await invalidator.InvalidateSceneAsync(sceneId, cancellationToken).ConfigureAwait(false);
         }
+        // Intentional catch-all: cache invalidation is a best-effort follow-up to a
+        // successful ingest; a failure here must not fail the ingest response itself.
         catch (Exception ex)
         {
             ScenePointCloudIngestLog.CacheInvalidationFailed(logger, sceneId, ex);

@@ -192,6 +192,8 @@ internal static class CollectionsEndpoints
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcTilesCollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
@@ -275,6 +277,8 @@ internal static class CollectionsEndpoints
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             OgcTilesCollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);

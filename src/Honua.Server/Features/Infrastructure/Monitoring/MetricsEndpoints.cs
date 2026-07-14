@@ -102,6 +102,8 @@ public static class MetricsEndpoints
 
             return Results.Ok(healthMetrics);
         }
+        // Intentional broad catch: this is the request-handling boundary for the health metrics
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             MonitoringLog.HealthMetricsFailed(GetLogger(context), ex);
@@ -185,6 +187,8 @@ public static class MetricsEndpoints
 
             return Results.Ok(response);
         }
+        // Intentional broad catch: this is the request-handling boundary for the performance metrics
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             MonitoringLog.PerformanceMetricsFailed(GetLogger(context), ex);
@@ -224,6 +228,8 @@ public static class MetricsEndpoints
 
             return Results.Ok(databaseMetrics);
         }
+        // Intentional broad catch: this is the request-handling boundary for the database metrics
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             MonitoringLog.DatabaseMetricsFailed(GetLogger(context), ex);
@@ -264,6 +270,8 @@ public static class MetricsEndpoints
 
             return Results.Ok(cacheMetrics);
         }
+        // Intentional broad catch: this is the request-handling boundary for the cache metrics
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             MonitoringLog.CacheMetricsFailed(GetLogger(context), ex);
@@ -283,6 +291,8 @@ public static class MetricsEndpoints
             var memoryUsage = MemoryMonitor.GetMemoryUsage();
             return Results.Ok(memoryUsage);
         }
+        // Intentional broad catch: this is the request-handling boundary for the memory metrics
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             MonitoringLog.MemoryMetricsFailed(GetLogger(context), ex);
@@ -313,6 +323,8 @@ public static class MetricsEndpoints
             };
             return Results.Ok(metrics);
         }
+        // Intentional broad catch: this is the request-handling boundary for the streaming metrics
+        // endpoint; the failure is logged and mapped to a generic error response below.
         catch (Exception ex)
         {
             MonitoringLog.StreamingMetricsFailed(GetLogger(context), ex);

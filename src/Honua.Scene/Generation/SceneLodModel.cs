@@ -88,6 +88,11 @@ public sealed class SceneTileTree
 
     private static int ComputeMaxDepth(SceneTileNode node)
     {
+        // Not a candidate for .Where(...): this is a running-max reduction, not a
+        // filter — the if-condition reads the very `max` accumulator its own body
+        // mutates, so a Where(c => c > max) would be technically equivalent only by
+        // relying on LINQ's per-item lazy evaluation ordering, which is more
+        // confusing than the plain loop it would replace.
         var max = node.Depth;
         foreach (var childMax in node.Children.Select(ComputeMaxDepth))
         {

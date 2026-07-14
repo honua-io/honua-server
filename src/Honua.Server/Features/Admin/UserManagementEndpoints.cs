@@ -125,6 +125,9 @@ internal static partial class UserManagementEndpoints
             UserManagementLog.UsersListed(logger, response.Users.Count, response.TotalCount);
             return TypedResults.Ok(ApiResponse<UserListResponse>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: this is the user
+        // listing endpoint; the failure is logged and mapped to a generic error
+        // response below.
         catch (Exception ex)
         {
             UserManagementLog.ListUsersFailed(logger, ex);
@@ -152,6 +155,9 @@ internal static partial class UserManagementEndpoints
 
             return TypedResults.Ok(ApiResponse<UserResponse>.CreateSuccess(ToResponse(user)));
         }
+        // Intentional catch-all request-handling boundary: this is the user
+        // retrieval endpoint; the failure is logged and mapped to a generic
+        // error response below.
         catch (Exception ex)
         {
             UserManagementLog.GetUserFailed(logger, id, ex);
@@ -181,6 +187,9 @@ internal static partial class UserManagementEndpoints
             UserManagementLog.UserRolesUpdated(logger, id, request.Roles.Count);
             return TypedResults.Ok(ApiResponse<UserResponse>.CreateSuccess(ToResponse(updated)));
         }
+        // Intentional catch-all request-handling boundary: this is the user
+        // role update endpoint; the failure is logged and mapped to a generic
+        // error response below.
         catch (Exception ex)
         {
             UserManagementLog.UpdateUserRolesFailed(logger, id, ex);
@@ -209,6 +218,9 @@ internal static partial class UserManagementEndpoints
             UserManagementLog.UserDeprovisioned(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("User deprovisioned"));
         }
+        // Intentional catch-all request-handling boundary: this is the user
+        // deprovisioning endpoint; the failure is logged and mapped to a
+        // generic error response below.
         catch (Exception ex)
         {
             UserManagementLog.DeprovisionUserFailed(logger, id, ex);
@@ -253,6 +265,9 @@ internal static partial class UserManagementEndpoints
             UserManagementLog.EffectivePermissionsResolved(logger, id, response.Permissions.Count);
             return TypedResults.Ok(ApiResponse<EffectivePermissionsResponse>.CreateSuccess(response));
         }
+        // Intentional catch-all request-handling boundary: this is the
+        // effective-permissions resolution endpoint; the failure is logged and
+        // mapped to a generic error response below.
         catch (Exception ex)
         {
             UserManagementLog.ResolveEffectivePermissionsFailed(logger, id, ex);

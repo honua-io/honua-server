@@ -115,8 +115,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         }
         catch (Exception ex)
         {
-            // Map any source-scan failure (network, malformed capabilities, etc.) to a sanitized
-            // failure result rather than leaking source-URL/provider internals to the caller.
+            // Intentionally broad: this is the top-level source-scan boundary. Any failure
+            // (network, malformed capabilities, etc.) must map to a sanitized failure result
+            // rather than leaking source-URL/provider internals to the caller.
             Log.InventoryScanFailed(_logger, safeSourceUrl, ex);
             return CreateFailureResult(request, jobId, "Failed to scan WFS source for migration planning.", stopwatch.Elapsed);
         }
@@ -206,8 +207,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             }
             catch (Exception ex)
             {
-                // Per-feature-type failure: log and record it as manual-review so the rest of the
-                // selected resources continue importing instead of aborting the whole run.
+                // Intentionally broad: this is the per-feature-type import boundary — one resource's
+                // failure is recorded as manual-review so the rest of the selected resources continue
+                // importing instead of aborting the whole run.
                 Log.FeatureTypeImportFailed(_logger, resource.Name, ex);
                 perFeatureType.Add(new OgcWfsImportedFeatureType
                 {

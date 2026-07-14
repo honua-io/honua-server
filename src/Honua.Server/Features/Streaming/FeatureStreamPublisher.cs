@@ -40,6 +40,9 @@ internal sealed partial class FeatureStreamPublisher(
             await QueueRetryAsync(durableRequest).ConfigureAwait(false);
             return;
         }
+        // Intentional catch-all: this is the best-effort publish path; any durable-append
+        // failure (transient store fault, serialization, etc.) must fall back to the retry
+        // queue rather than throwing out of the publisher.
         catch (Exception ex)
         {
             LogPublishFailed(_logger, ex);

@@ -307,6 +307,9 @@ public sealed class ConfigurationDiscoveryService
                         var value = prop.GetValue(instance);
                         values[prop.Name] = RedactConfigurationValue(prop, value);
                     }
+                    // Intentional catch-all: per-property loop over reflected configuration
+                    // properties for the admin diagnostics view. One property's getter
+                    // throwing must not abort the rest of the properties being read.
                     catch (Exception ex)
                     {
                         ConfigurationDiscoveryLog.PropertyValueReadFailed(_logger, type.FullName ?? type.Name, prop.Name, ex);
@@ -327,6 +330,10 @@ public sealed class ConfigurationDiscoveryService
                 }
             }
         }
+        // Intentional catch-all: this is a best-effort configuration-value extraction for
+        // the admin discovery/diagnostics surface. A failure here (e.g. DI resolution or
+        // configuration binding throwing) must not break the overall discovery listing;
+        // log it and return whatever values were already collected.
         catch (Exception ex)
         {
             ConfigurationDiscoveryLog.ValueExtractionError(_logger, type.FullName ?? type.Name, ex.Message);
@@ -372,6 +379,9 @@ public sealed class ConfigurationDiscoveryService
         try
         {
             var assembly = type.Assembly;
+            // Not attacker/user-controlled: assembly.GetName().Name comes from an already-loaded
+            // .NET assembly, not external input, so it cannot be a rooted path that would cause
+            // Path.Combine to silently discard AppContext.BaseDirectory.
             var assemblyPath = Path.Combine(AppContext.BaseDirectory, $"{assembly.GetName().Name}.dll");
 
             if (File.Exists(assemblyPath))
@@ -532,6 +542,8 @@ public sealed class ConfigurationDiscoveryService
                         });
                     }
                 }
+                // Intentional catch-all: per-secret-reference loop; one reference failing to
+                // resolve/validate must not abort validation of the remaining references.
                 catch (Exception ex)
                 {
                     ConfigurationDiscoveryLog.SecretReferenceValidationFailed(_logger, MaskSecretReference(secretRef), ex);
@@ -545,6 +557,9 @@ public sealed class ConfigurationDiscoveryService
                 }
             }
         }
+        // Intentional catch-all: this is a best-effort secret-validation summary for the
+        // admin diagnostics surface. A failure here (e.g. scanning configuration or resolving
+        // the secret provider) must not crash the caller; report it as an issue instead.
         catch (Exception ex)
         {
             ConfigurationDiscoveryLog.SecretValidationFailed(_logger, ex);

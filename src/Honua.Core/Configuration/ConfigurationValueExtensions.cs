@@ -71,6 +71,8 @@ public static class ConfigurationValueExtensions
 
     private static T ConvertValue<T>(string value, string key)
     {
+        // Nullable.GetUnderlyingType returns null only when T is not a Nullable<T>; the
+        // `?? typeof(T)` fallback guarantees targetType is always non-null below.
         var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
         if (targetType == typeof(string))
         {

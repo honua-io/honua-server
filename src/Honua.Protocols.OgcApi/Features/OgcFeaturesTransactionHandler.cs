@@ -258,9 +258,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         && (preparedOperation.Feature?.Geometry is { Length: > 0 }
                             || (preparedOperation.OperationKind == BatchOperationKind.Update
                                 && preparedOperation.ExistingHadGeometry));
-                    // Best-effort: the edit is already committed, so a publish failure must
-                    // not fail the request or stop events for the remaining operations
-                    // (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
                     try
                     {
                         await _mutationEventService.PublishAsync(
@@ -277,6 +274,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                                 : preparedOperation?.Feature,
                             geometryChanged: inlineGeometryChanged).ConfigureAwait(false);
                     }
+                    // Intentionally generic: the edit is already committed, so a publish failure
+                    // must not fail the request or stop events for the remaining operations
+                    // (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
                     catch (Exception publishEx)
                     {
                         Log.FeatureChangePublishFailed(_logger, layerId, objectId, publishEx);
@@ -305,6 +305,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure must map to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             Log.BatchTransactionFailed(_logger, collectionId, ex);
@@ -571,8 +573,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 // value the outbox scope used so consumers see a consistent contract:
                 // any Replace that overwrites or clears a non-null existing geometry
                 // reports GeometryChanged=true, while null-to-null replace stays false.
-                // Best-effort: the edit is already committed, so a publish failure must
-                // not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
                 try
                 {
                     await _mutationEventService.PublishAsync(
@@ -586,6 +586,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         serviceProtocol: OgcFeaturesProtocolName,
                         geometryChanged: geometryChangedForReplace).ConfigureAwait(false);
                 }
+                // Intentionally generic: the edit is already committed, so a publish failure
+                // must not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
                 catch (Exception publishEx)
                 {
                     Log.FeatureChangePublishFailed(_logger, layerId, updated.Value.Id, publishEx);
@@ -627,6 +629,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             Log.ReplaceFeatureFailed(_logger, collectionId, ex);
@@ -905,8 +910,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 var response = ToOgcFeature(responseFeature.Value, resource, inputCrs.AxisOrder, updateLinks);
 
                 await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
-                // Best-effort: the edit is already committed, so a publish failure must
-                // not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
                 try
                 {
                     await _mutationEventService.PublishAsync(
@@ -920,6 +923,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         serviceProtocol: OgcFeaturesProtocolName,
                         geometryChanged: patchRequest.HasGeometry).ConfigureAwait(false);
                 }
+                // Intentionally generic: the edit is already committed, so a publish failure
+                // must not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
                 catch (Exception publishEx)
                 {
                     Log.FeatureChangePublishFailed(_logger, layerId, updated.Value.Id, publishEx);
@@ -961,6 +966,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         {
             throw;
         }
+        // Intentionally generic: this is the top-level request handler boundary; any
+        // unanticipated failure not already handled by the specific catches above must map
+        // to a generic 500 rather than crash the request.
         catch (Exception ex)
         {
             Log.PatchFeatureFailed(_logger, collectionId, ex);
@@ -1191,6 +1199,9 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         400));
             }
         }
+        // Intentionally generic: this prepares a single operation within a batch transaction;
+        // any unanticipated failure must be reported as that operation's own batch-item error
+        // rather than aborting or crashing the entire batch request.
         catch (Exception ex)
         {
             Log.BatchOperationFailed(_logger, layerId.ToString(), operation.Id ?? "unknown", ex);

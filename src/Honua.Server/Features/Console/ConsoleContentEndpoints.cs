@@ -135,6 +135,8 @@ internal static class ConsoleContentEndpoints
             // instead of masking it as a 500.
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content list endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.list", ex);
@@ -177,6 +179,8 @@ internal static class ConsoleContentEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content get endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.get", ex);
@@ -231,6 +235,8 @@ internal static class ConsoleContentEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content create endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.create", ex);
@@ -301,6 +307,8 @@ internal static class ConsoleContentEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content update endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.update", ex);
@@ -373,6 +381,8 @@ internal static class ConsoleContentEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content patch endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.patch", ex);
@@ -402,6 +412,8 @@ internal static class ConsoleContentEndpoints
         {
             throw;
         }
+        // Intentional catch-all request-handling boundary: logs and returns a generic
+        // 500 problem response for the content delete endpoint.
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.delete", ex);

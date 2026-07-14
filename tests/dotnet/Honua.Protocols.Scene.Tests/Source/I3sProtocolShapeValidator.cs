@@ -158,7 +158,7 @@ internal static class I3sProtocolShapeValidator
                 }
                 else
                 {
-                    foreach (var child in children.EnumerateArray()
+                    foreach (var _ in children.EnumerateArray()
                         .Where(c => c.ValueKind != JsonValueKind.Number || c.GetInt32() < 0))
                     {
                         violations.Add($"node[{index}].children must be non-negative integer indices.");

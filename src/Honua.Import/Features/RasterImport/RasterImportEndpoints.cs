@@ -264,6 +264,8 @@ internal static partial class RasterImportEndpoints
                     {
                         await progressStore.SetProgressAsync(p.OperationId, p, TimeSpan.FromHours(1), CancellationToken.None);
                     }
+                    // Intentionally generic: this is a fire-and-forget progress update; a failure to
+                    // persist progress must not fail or interrupt the underlying raster import.
                     catch (Exception ex)
                     {
                         Log.ProgressUpdateFailed(progressLogger, p.OperationId, ex);
@@ -301,6 +303,9 @@ internal static partial class RasterImportEndpoints
             await AdminResponseWriter.WriteErrorAsync(
                 context, InvalidRasterImportRequestMessage, StatusCodes.Status400BadRequest);
         }
+        // Intentionally generic: this is the endpoint's last-resort boundary; any unexpected
+        // failure not already handled above must be mapped to a generic 500 rather than
+        // propagating raw exception details to the client.
         catch (Exception ex)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<RasterImportEndpointsLog>>();
@@ -505,6 +510,9 @@ internal static partial class RasterImportEndpoints
         CancellationToken cancellationToken)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "honua-raster-staging");
+        // The second segment is a generated GUID plus only the *extension* portion of the
+        // (already-sanitized) upload name — Path.GetExtension never returns a rooted path,
+        // so this can never silently drop tempDir.
         var tempFilePath = Path.Combine(tempDir, $"{Guid.NewGuid()}{Path.GetExtension(safeFileName)}");
 
         try

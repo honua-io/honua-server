@@ -1227,7 +1227,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         var form = new List<KeyValuePair<string, string>>
         {
             new("username", credentials.Username!),
-            new("password", credentials.Password ?? string.Empty),
+            new("password", credentials.Password!),
             new("f", "json"),
             new("expiration", "60")
         };

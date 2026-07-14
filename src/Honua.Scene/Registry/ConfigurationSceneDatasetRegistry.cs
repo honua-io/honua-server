@@ -66,6 +66,10 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             return false;
         }
 
+        // Safe: this combine only runs in the branch where entry.AssetRoot is already
+        // confirmed relative above, so it can never drop contentRoot. entry.AssetRoot
+        // itself comes from static SceneDatasetOptions configuration (appsettings),
+        // not from a runtime request.
         var assetRoot = Path.IsPathRooted(entry.AssetRoot)
             ? entry.AssetRoot
             : Path.Combine(contentRoot, entry.AssetRoot);

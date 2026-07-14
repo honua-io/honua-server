@@ -30,6 +30,9 @@ internal sealed class TileOperationBackgroundService(
                     {
                         return;
                     }
+                    // Intentional catch-all: this is a per-job loop inside the background tile
+                    // worker; one queued job's failure must not stop the worker from draining
+                    // the rest of the queue.
                     catch (Exception ex)
                     {
                         TileOperationLog.BackgroundJobProcessingFailed(_logger, jobId, ex);
@@ -42,6 +45,9 @@ internal sealed class TileOperationBackgroundService(
             {
                 return;
             }
+            // Intentionally generic: this is a long-running background worker loop. A
+            // failure reading the queue must not kill the host's background service;
+            // log, back off, and restart the worker loop.
             catch (Exception ex)
             {
                 TileOperationLog.BackgroundWorkerRestarting(_logger, ex);

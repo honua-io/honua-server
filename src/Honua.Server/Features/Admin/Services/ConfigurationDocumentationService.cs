@@ -217,6 +217,8 @@ public sealed class ConfigurationDocumentationService
     private ConfigurationSection BuildFileStorageSection()
     {
         var defaults = new CloudStorageOptions();
+        // Path.Combine is safe here: the second segment is a fixed relative literal, never
+        // an externally-supplied/rooted path.
         var defaultLocalBasePath = Path.Combine(Path.GetTempPath(), "honua-storage");
 
         return new ConfigurationSection
@@ -494,6 +496,8 @@ public sealed class ConfigurationDocumentationService
             Description = "Temporary export and artifact file storage configuration. Shared cloud-backed temporary files require Redis coordination so quotas remain correct across replicas.",
             Properties =
             [
+                // Path.Combine is safe here: the second segment is a fixed relative literal,
+                // never an externally-supplied/rooted path.
                 BuildProperty("TemporaryFiles:StorageDirectory", "TemporaryFiles__StorageDirectory", "string",
                     "Base directory for temporary file storage", Path.Combine(Path.GetTempPath(), "honua-temp")),
                 BuildProperty("TemporaryFiles:DefaultExpiration", "TemporaryFiles__DefaultExpiration", "timespan",

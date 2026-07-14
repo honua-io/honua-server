@@ -102,10 +102,10 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
         catch (Exception ex)
         {
-            // The data was already committed and published. If reconciliation itself errors out we do
-            // not fail the import — we record the gate as unavailable and let the run complete, since
-            // a reconciliation-infrastructure failure is not evidence of a faithless import. Operators
-            // can re-run reconciliation out of band.
+            // Intentionally broad: the data was already committed and published. If reconciliation
+            // itself errors out we do not fail the import — we record the gate as unavailable and let
+            // the run complete, since a reconciliation-infrastructure failure is not evidence of a
+            // faithless import. Operators can re-run reconciliation out of band.
             Log.ReconciliationGateUnavailable(_logger, request.TableName, ex);
             return GeoservicesReconciliationGateOutcome.Skipped;
         }

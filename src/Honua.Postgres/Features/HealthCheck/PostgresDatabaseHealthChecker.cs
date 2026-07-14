@@ -44,10 +44,10 @@ internal sealed partial class PostgresDatabaseHealthChecker(
         {
             throw;
         }
+        // Intentionally generic: a health check must never throw regardless of the underlying
+        // failure — any exception means "unhealthy", so log for diagnostics and return false.
         catch (Exception ex)
         {
-            // Health-check probe: any failure means "unhealthy", not an exception the caller should
-            // handle — log for diagnostics and return false.
             Log.HealthCheckFailed(_logger, ex);
             return false;
         }

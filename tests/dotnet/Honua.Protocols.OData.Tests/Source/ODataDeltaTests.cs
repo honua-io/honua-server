@@ -29,6 +29,8 @@ public sealed class ODataDeltaTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // All segments are relative literal path fragments (not user input), so none can be
+        // rooted and silently drop earlier arguments.
         _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
@@ -240,6 +242,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
             break;
         }
 
+        // FluentAssertions' NotBeNullOrWhiteSpace() is a null-safe extension method, not a dereference.
         deltaLink.Should().NotBeNullOrWhiteSpace();
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
@@ -294,6 +297,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
             break;
         }
 
+        // FluentAssertions' NotBeNullOrWhiteSpace() is a null-safe extension method, not a dereference.
         deltaLink.Should().NotBeNullOrWhiteSpace();
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);

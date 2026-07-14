@@ -351,6 +351,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_timeout");
             Log.BackgroundRefreshTimeout(_logger, item.Key);
         }
+        // Intentional: this is a fire-and-forget background refresh callback; any failure
+        // (provider error, callback bug) must not crash the refresh loop, so it is logged,
+        // counted, and backed off instead of propagating.
         catch (Exception ex)
         {
             SetRetryBackoff(item.Key);
@@ -577,6 +580,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         {
             await redisTask.ConfigureAwait(false);
         }
+        // Intentional: per the XML doc above, this wrapper must never fault or cancel so the
+        // fire-and-forget task can be safely awaited during drain; any Redis failure is logged
+        // and swallowed here.
         catch (Exception ex)
         {
             Log.RedisOperationFailed(_logger, operation, key, ex);
@@ -636,6 +642,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             // Also handle local state
             NotifyLocalInvalidation(key);
         }
+        // Intentional: dispatching the fire-and-forget invalidation script is best-effort;
+        // any failure to even schedule it still falls back to local invalidation so
+        // correctness on this node is preserved.
         catch (Exception ex)
         {
             Log.RedisOperationFailed(_logger, "NotifyInvalidation", key, ex);
@@ -730,6 +739,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             var server = _redisDb.Multiplexer.GetServer(_redisDb.Multiplexer.GetEndPoints().First());
             return (int)server.Keys(database: _redisDb.Database, pattern: pattern).Count();
         }
+        // Intentional: a Redis SCAN failure for the metrics gauge degrades to the local
+        // pending-key count rather than failing the caller (this is diagnostics, not the
+        // critical path).
         catch (Exception ex)
         {
             Log.QueueDepthCheckFailed(_logger, ex);
@@ -791,6 +803,9 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                 Log.RemoteInvalidationReceived(_logger, key);
             }
         }
+        // Intentional: this is the Redis pub/sub message handler; a malformed or
+        // unexpected message must not tear down the subscription, so it is logged and
+        // dropped rather than propagated.
         catch (Exception ex)
         {
             Log.InvalidationProcessingFailed(_logger, message, ex);

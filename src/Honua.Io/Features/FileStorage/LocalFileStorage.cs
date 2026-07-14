@@ -37,6 +37,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         _basePath = string.IsNullOrWhiteSpace(_options.BasePath)
             ? Directory.GetCurrentDirectory()
             : Path.TrimEndingDirectorySeparator(_options.BasePath);
+        // ".metadata" is a compile-time relative literal, so it cannot be rooted and this
+        // combine can never silently drop _basePath.
         _metadataPath = Path.Combine(_basePath, ".metadata");
         _fileIndex = new ConcurrentDictionary<string, CloudFile>();
 
@@ -218,6 +220,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 progressMessage,
                 resultMessage);
         }
+        // Intentionally generic: this is the top-level boundary for the upload operation
+        // (after the specific cancellation/argument catches above) and must convert any
+        // remaining failure — filesystem, hashing, or downstream progress-store errors —
+        // into a reported failed-upload result instead of throwing out of the API.
         catch (Exception ex)
         {
             if (progressWriter != null)
@@ -305,6 +311,10 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             FileStorageLog.FileDeleted(Logger, fileId);
             return true;
         }
+        // Intentionally generic: the try block spans two independent failure domains
+        // (local filesystem deletes and the external progress store), and any failure from
+        // either must roll back the in-memory index consistently and report a single bool
+        // result rather than throwing out of a best-effort delete.
         catch (Exception ex)
         {
             FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
@@ -468,6 +478,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                     }
                 }
             }
+            // Intentionally generic: this is best-effort startup metadata loading over every
+            // file in the metadata directory; a single corrupt or unreadable metadata file
+            // must not abort loading the rest or prevent storage from initializing.
             catch (Exception ex)
             {
                 FileStorageLog.MetadataLoadFailed(Logger, ex, file);
@@ -544,6 +557,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
         ValidateFolderPath(folder);
 
+        // folder was just validated above to be relative (not rooted, no ".." segments),
+        // so this combine cannot silently drop storageName.
         return Path.Combine(folder, storageName);
     }
 
