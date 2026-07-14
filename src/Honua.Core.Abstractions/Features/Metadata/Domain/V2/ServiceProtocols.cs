@@ -107,12 +107,7 @@ public static class ServiceProtocols
             return true;
         }
 
-        foreach (var enabled in service.Protocols.Where(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)))
-        {
-            return true;
-        }
-
-        return false;
+        return service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

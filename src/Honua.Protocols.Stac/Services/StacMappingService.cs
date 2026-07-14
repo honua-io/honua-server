@@ -199,6 +199,10 @@ internal sealed class StacMappingService
                 geometry = ConvertGeometryToGeoJsonElement(parsed) ?? JsonNullElement;
                 bbox = TryBuildBboxFromGeometry(parsed, geometrySrid ?? resource.ReadSrid() ?? 4326);
             }
+            // Intentionally generic: NTS WKB reading can throw a range of format/argument
+            // exceptions for malformed geometry bytes. Geometry is optional in the STAC item
+            // response, so a parse failure degrades to an explicit JSON-null geometry rather
+            // than failing the whole item mapping.
             catch
             {
                 // WKB parsing failure — keep geometry as explicit JSON null.
