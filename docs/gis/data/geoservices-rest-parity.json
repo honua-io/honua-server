@@ -1230,7 +1230,7 @@
         "multidimensional cube ingestion",
         "transformed per-slice exports (JPEG/TIFF, reprojection, advanced interpolation, and renderingRule) for registered Zarr cubes; native-CRS nearest-neighbor grayscale PNG exportImage plus identify/getSamples are implemented",
         "transformed or multi-coordinate registered-Zarr slice output in classic WCS GetCoverage (native-CRS nearest-neighbor grayscale PNG coordinate slices are implemented)",
-        "full WCS CRS extension advertisement beyond native coverage CRS values",
+        "full WCS CRS extension advertisement/validation beyond the bounded transformable set (native coverage CRS plus default WGS84/WebMercator identifiers)",
         "WMTS non-WebMercator matrix sets",
         "richer image child resources"
       ],
@@ -1973,7 +1973,7 @@
           {
             "name": "GetCapabilities",
             "status": "implemented",
-            "notes": "Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, Contents coverage summaries, and ServiceMetadata CRS extension values derived from visible coverage native CRSs. ACCEPTVERSIONS, ACCEPTFORMATS, and SECTIONS are validated."
+            "notes": "Returns WCS 2.0.1 XML with OWS service metadata, operations metadata, WCS service metadata, Contents coverage summaries, and ServiceMetadata crs:crsSupported advertisement values (in the xs:any Extension slot) covering each visible coverage's native CRS plus the default WGS84/WebMercator identifiers the CRS registry can resolve. The advertisement is additive: no CRS-extension conformance class is declared, so the document stays valid for the WCS core ETS. ACCEPTVERSIONS, ACCEPTFORMATS, and SECTIONS are validated."
           },
           {
             "name": "DescribeCoverage",
@@ -1983,7 +1983,7 @@
           {
             "name": "GetCoverage",
             "status": "partial",
-            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster, plus RANGESUBSET band selection, the Scaling extension (SCALESIZE, SCALEFACTOR, SCALEAXES, SCALEEXTENT - at most one operator per request, applied to the subset-trimmed base grid), and phenomenonTime temporal subsetting (slice or trim against the coverage acquisition time; non-intersecting windows return InvalidSubsetting). Single-axis SUBSET fills the omitted axis from the stored raster extent only when the subsetting CRS is native; non-native SUBSETTINGCRS/BBOXCRS callers must supply both axes or use BBOX. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
+            "notes": "Accepts exactly one bare integer COVERAGEID. Supports image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, and OUTPUTCRS over the primary raster (each client-supplied CRS is validated against the coverage's advertised transformable set; a parseable but non-transformable value returns 400 OutputCrs-NotSupported or SubsettingCrs-NotSupported per OGC 11-053r1 rather than a downstream error), plus RANGESUBSET band selection, the Scaling extension (SCALESIZE, SCALEFACTOR, SCALEAXES, SCALEEXTENT - at most one operator per request, applied to the subset-trimmed base grid), and phenomenonTime temporal subsetting (slice or trim against the coverage acquisition time; non-intersecting windows return InvalidSubsetting). Single-axis SUBSET fills the omitted axis from the stored raster extent only when the subsetting CRS is native; non-native SUBSETTINGCRS/BBOXCRS callers must supply both axes or use BBOX. Known unsupported WCS extensions return 501 OWS ExceptionReport XML; unknown GetCoverage parameters return 400."
           }
         ]
       },
@@ -2000,7 +2000,7 @@
         "Service info exposes timeInfo when the layer metadata declares temporal fields or raster catalog items carry acquisition timestamps.",
         "Rendered ImageServer byte output still depends on the PostGIS raster output drivers configured in the database.",
         "WCS GetCoverage uses the selected layer's primary raster and opts out of exact response output caching for ad hoc coverage trims.",
-        "WCS GetCapabilities advertises native CRS values for visible coverages, not every transformable output CRS.",
+        "WCS GetCapabilities advertises the bounded transformable CRS set (each visible coverage's native CRS plus the default WGS84/WebMercator identifiers the CRS registry resolves), not the full spatial_ref_sys transformable set; the same set gates GetCoverage OUTPUTCRS/SUBSETTINGCRS/BBOXCRS validation.",
         "WCS single-axis SUBSET fills the omitted axis from the stored raster extent only for native-CRS subsets; callers using a non-native SUBSETTINGCRS/BBOXCRS must supply both axes or use BBOX.",
         "WCS Scaling extension factors (SCALEFACTOR/SCALEAXES) resolve against the subset-trimmed base grid in the coverage native CRS; for a non-native SUBSETTINGCRS/BBOXCRS the full native grid is used as the scaling base since the trimmed pixel span is not derivable in the adapter.",
         "WCS phenomenonTime subsetting filters the primary raster's acquisition instant. A single coordinate-valued additional-axis selection on a readable registered Zarr coverage is served as a bounded native-CRS nearest-neighbor grayscale PNG; TIFF/JPEG, reprojection, advanced interpolation, and multi-coordinate trims are rejected explicitly.",
