@@ -16,6 +16,15 @@ internal static class Wcs20Utilities
 
     internal const string WcsNamespace = "http://www.opengis.net/wcs/2.0";
     internal const string OwsNamespace = "http://www.opengis.net/ows/2.0";
+
+    /// <summary>
+    /// WCS 2.0 CRS extension (OGC 11-053r1) namespace. Only its
+    /// <c>crsSupported</c> advertisement values are emitted (inside the
+    /// ServiceMetadata <c>xs:any</c> Extension slot); the CRS-extension
+    /// conformance class itself is intentionally not advertised, so the
+    /// document stays valid for the WCS core ETS.
+    /// </summary>
+    internal const string CrsNamespace = "http://www.opengis.net/wcs/crs/1.0";
     internal const string GmlNamespace = "http://www.opengis.net/gml/3.2";
     internal const string GmlcovNamespace = "http://www.opengis.net/gmlcov/1.0";
     internal const string SweNamespace = "http://www.opengis.net/swe/2.0";
@@ -62,6 +71,15 @@ internal static class Wcs20Utilities
 
     internal static readonly ImmutableArray<string> SupportedVersions =
         ImmutableArray.Create(Version);
+
+    /// <summary>
+    /// EPSG SRIDs always offered as transformable output/subsetting CRS values
+    /// (in addition to each coverage's native CRS), provided the CRS registry can
+    /// resolve them. WGS84 geographic and WebMercator match the OGC API Coverages
+    /// default identifier set so advertisement and validation agree across adapters.
+    /// </summary>
+    internal static readonly ImmutableArray<int> DefaultCrsIdentifiers =
+        ImmutableArray.Create(4326, 3857);
 
     internal static class Operations
     {
@@ -137,5 +155,17 @@ internal static class Wcs20Utilities
 
         /// <summary>WCS 2.0 Interpolation extension exception for an unsupported method.</summary>
         internal const string InterpolationMethodNotSupported = "InterpolationMethodNotSupported";
+
+        /// <summary>
+        /// WCS 2.0 CRS extension (OGC 11-053r1) exception for a well-formed but
+        /// non-transformable <c>OUTPUTCRS</c> value.
+        /// </summary>
+        internal const string OutputCrsNotSupported = "OutputCrs-NotSupported";
+
+        /// <summary>
+        /// WCS 2.0 CRS extension (OGC 11-053r1) exception for a well-formed but
+        /// non-transformable <c>SUBSETTINGCRS</c>/<c>BBOXCRS</c> value.
+        /// </summary>
+        internal const string SubsettingCrsNotSupported = "SubsettingCrs-NotSupported";
     }
 }

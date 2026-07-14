@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -33,6 +34,7 @@ internal sealed class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
     private static readonly XNamespace Ows = Wcs20Utilities.OwsNamespace;
+    private static readonly XNamespace Crs = Wcs20Utilities.CrsNamespace;
     private static readonly XNamespace Gml = Wcs20Utilities.GmlNamespace;
     private static readonly XNamespace Gmlcov = Wcs20Utilities.GmlcovNamespace;
     private static readonly XNamespace Swe = Wcs20Utilities.SweNamespace;
@@ -75,15 +77,18 @@ internal sealed class Wcs20Handler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly Wcs20CoverageBackend _coverageBackend;
+    private readonly ICrsRegistry _crsRegistry;
     private readonly ILogger<Wcs20Handler> _logger;
 
     public Wcs20Handler(
         IMetadataV2GraphProvider graphProvider,
         Wcs20CoverageBackend coverageBackend,
+        ICrsRegistry crsRegistry,
         ILogger<Wcs20Handler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _coverageBackend = coverageBackend ?? throw new ArgumentNullException(nameof(coverageBackend));
+        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -215,7 +220,16 @@ internal sealed class Wcs20Handler
             return coverageResult.Error;
         }
 
-        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, sections);
+        // Advertise the transformable output/subsetting CRS values (native coverage
+        // CRSs plus the default identifiers, filtered to what the registry can resolve)
+        // in the ServiceMetadata Extension slot. Single source of truth with GetCoverage
+        // validation so what is advertised is exactly what is accepted.
+        var supportedCrs = await ResolveSupportedCrsAsync(
+                coverageResult.Coverages.Select(GetNativeSrid),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var document = BuildCapabilitiesDocument(context, coverageResult.Coverages, supportedCrs.Uris, sections);
         return Xml(document);
     }
 
@@ -330,11 +344,21 @@ internal sealed class Wcs20Handler
         var additionalAxes = await ResolveAdditionalDimensionAxesAsync(
             coverage.Coverage.Value.LayerId, cancellationToken).ConfigureAwait(false);
 
+        // Bounded set of transformable output/subsetting CRS values for this coverage,
+        // resolved from the same source of truth advertised in GetCapabilities. A
+        // parseable OUTPUTCRS/SUBSETTINGCRS/BBOXCRS outside this set is rejected with a
+        // protocol-correct 400 rather than reaching ST_Transform with an unknown SRID.
+        var supportedCrs = await ResolveSupportedCrsAsync(
+                [GetNativeSrid(coverage.Coverage.Value)],
+                cancellationToken)
+            .ConfigureAwait(false);
+
         if (!TryResolveCoverageQuery(
                 context.Request.Query,
                 coverage.Coverage.Value.Raster,
                 additionalAxes,
                 outputFormat,
+                supportedCrs.Srids,
                 out var query,
                 out var sliceBounds,
                 out var sliceWidth,
@@ -776,6 +800,56 @@ internal sealed class Wcs20Handler
         return raster;
     }
 
+    private static int? GetNativeSrid(WcsCoverage coverage)
+    {
+        var srid = coverage.Raster.Extent?.Srid ?? coverage.Raster.Srid;
+        return srid is > 0 ? srid : null;
+    }
+
+    /// <summary>
+    /// Resolves the bounded set of transformable CRS values for the supplied coverage
+    /// native SRIDs. Seeds each native CRS plus the default identifiers (WGS84, WebMercator),
+    /// keeps only those the CRS registry can resolve (== transformable via ST_Transform),
+    /// and returns both the SRID set (for GetCoverage validation) and the ordered EPSG-URI
+    /// list (for GetCapabilities advertisement) so the two always agree.
+    /// </summary>
+    private async Task<WcsSupportedCrs> ResolveSupportedCrsAsync(
+        IEnumerable<int?> nativeSrids,
+        CancellationToken cancellationToken)
+    {
+        var seeds = new List<int>();
+        void AddSeed(int? candidate)
+        {
+            if (candidate is > 0 && !seeds.Contains(candidate.Value))
+            {
+                seeds.Add(candidate.Value);
+            }
+        }
+
+        foreach (var nativeSrid in nativeSrids)
+        {
+            AddSeed(nativeSrid);
+        }
+
+        foreach (var defaultSrid in Wcs20Utilities.DefaultCrsIdentifiers)
+        {
+            AddSeed(defaultSrid);
+        }
+
+        var srids = new HashSet<int>();
+        var uris = new List<string>();
+        foreach (var seed in seeds)
+        {
+            if (await _crsRegistry.IsSridSupportedAsync(seed, cancellationToken).ConfigureAwait(false))
+            {
+                srids.Add(seed);
+                uris.Add(CreateEpsgUri(seed));
+            }
+        }
+
+        return new WcsSupportedCrs(srids, uris);
+    }
+
     private static IResult? ValidateCommonParameters(HttpContext context, string operation)
     {
         var service = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Service);
@@ -840,6 +914,7 @@ internal sealed class Wcs20Handler
     private static XDocument BuildCapabilitiesDocument(
         HttpContext context,
         IReadOnlyCollection<WcsCoverage> coverages,
+        IReadOnlyList<string> supportedCrsUris,
         IReadOnlySet<string>? sections)
     {
         var rootChildren = new List<object>();
@@ -876,10 +951,26 @@ internal sealed class Wcs20Handler
 
         if (IncludesSection(sections, "ServiceMetadata"))
         {
-            rootChildren.Add(new XElement(Wcs + "ServiceMetadata",
+            var serviceMetadataChildren = new List<object>
+            {
                 new XElement(Wcs + "formatSupported", Wcs20Utilities.TiffContentType),
                 new XElement(Wcs + "formatSupported", Wcs20Utilities.PngContentType),
-                new XElement(Wcs + "formatSupported", Wcs20Utilities.JpegContentType)));
+                new XElement(Wcs + "formatSupported", Wcs20Utilities.JpegContentType),
+            };
+
+            // WCS 2.0 CRS extension (OGC 11-053r1): advertise the transformable
+            // output/subsetting CRS values inside the ServiceMetadata Extension slot.
+            // wcsAll.xsd models Extension as xs:any, so this is purely additive and
+            // keeps the document valid for the WCS core ETS. The CRS-extension
+            // conformance class itself is deliberately NOT advertised (no ows:Profile
+            // or OperationsMetadata entry) — advertisement values only.
+            if (supportedCrsUris.Count > 0)
+            {
+                serviceMetadataChildren.Add(new XElement(Wcs + "Extension",
+                    supportedCrsUris.Select(uri => new XElement(Crs + "crsSupported", uri))));
+            }
+
+            rootChildren.Add(new XElement(Wcs + "ServiceMetadata", serviceMetadataChildren));
         }
 
         if (IncludesSection(sections, "Contents"))
@@ -1064,6 +1155,7 @@ internal sealed class Wcs20Handler
         RasterInfo raster,
         IReadOnlyList<ZarrAxis> additionalAxes,
         RasterFormat outputFormat,
+        IReadOnlySet<int> supportedSrids,
         out RasterQuery rasterQuery,
         out RasterExtent? sliceBounds,
         out int sliceWidth,
@@ -1081,7 +1173,7 @@ internal sealed class Wcs20Handler
         sliceSelections = [];
         error = default;
 
-        if (!TryResolveRequestCrs(query, raster, out var subsettingCrs, out var outputSrid, out error))
+        if (!TryResolveRequestCrs(query, raster, supportedSrids, out var subsettingCrs, out var outputSrid, out error))
         {
             return false;
         }
@@ -2097,9 +2189,17 @@ internal sealed class Wcs20Handler
             $"RANGESUBSET field '{token}' is not a valid coverage band. Use band1..bandN.",
             Wcs20Utilities.Parameters.RangeSubset);
 
-    private static bool TryResolveRequestCrs(
+    // Resolves SUBSETTINGCRS/BBOXCRS/OUTPUTCRS into the canonical subsetting CRS and the
+    // output SRID. A client-supplied CRS is validated in two stages: it must parse
+    // (malformed -> InvalidParameterValue) and, when explicitly supplied, must be a
+    // member of the coverage's transformable CRS set advertised in GetCapabilities
+    // (parseable-but-unsupported -> OutputCrs-NotSupported / SubsettingCrs-NotSupported,
+    // OGC 11-053r1). The native CRS default is never rejected on membership grounds.
+    // Kept internal + static for direct unit testing with a substituted supported set.
+    internal static bool TryResolveRequestCrs(
         IQueryCollection query,
         RasterInfo raster,
+        IReadOnlySet<int> supportedSrids,
         out CrsDefinition subsettingCrs,
         out int? outputSrid,
         out WcsParameterError error)
@@ -2130,13 +2230,29 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var effectiveSubsettingCrs = subsettingCrsValue ?? bboxCrsValue ?? nativeSrid.Value.ToString(CultureInfo.InvariantCulture);
+        // Only a client-supplied subsetting/bbox CRS is validated against the supported
+        // set; when neither is present the native CRS is used implicitly and always allowed.
+        var suppliedSubsettingCrs = subsettingCrsValue ?? bboxCrsValue;
+        var subsettingCrsLocator = !string.IsNullOrWhiteSpace(subsettingCrsValue)
+            ? Wcs20Utilities.Parameters.SubsettingCrs
+            : Wcs20Utilities.Parameters.BBoxCrs;
+
+        var effectiveSubsettingCrs = suppliedSubsettingCrs ?? nativeSrid.Value.ToString(CultureInfo.InvariantCulture);
         if (!SpatialReferenceHelpers.TryParseCrsDefinition(effectiveSubsettingCrs, out subsettingCrs))
         {
             error = new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
                 "SUBSETTINGCRS must be a supported CRS identifier.",
-                Wcs20Utilities.Parameters.SubsettingCrs);
+                subsettingCrsLocator);
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(suppliedSubsettingCrs) && !supportedSrids.Contains(subsettingCrs.Srid))
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.SubsettingCrsNotSupported,
+                $"'{suppliedSubsettingCrs}' is not a supported subsetting CRS for this coverage.",
+                subsettingCrsLocator);
             return false;
         }
 
@@ -2148,6 +2264,15 @@ internal sealed class Wcs20Handler
                 error = new WcsParameterError(
                     Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
                     "OUTPUTCRS must be a supported CRS identifier.",
+                    Wcs20Utilities.Parameters.OutputCrs);
+                return false;
+            }
+
+            if (!supportedSrids.Contains(outputCrs.Srid))
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.OutputCrsNotSupported,
+                    $"'{outputCrsValue}' is not a supported output CRS for this coverage.",
                     Wcs20Utilities.Parameters.OutputCrs);
                 return false;
             }
@@ -2699,6 +2824,7 @@ internal sealed class Wcs20Handler
     {
         yield return new XAttribute(XNamespace.Xmlns + "wcs", Wcs20Utilities.WcsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "ows", Wcs20Utilities.OwsNamespace);
+        yield return new XAttribute(XNamespace.Xmlns + "crs", Wcs20Utilities.CrsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "gml", Wcs20Utilities.GmlNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "gmlcov", Wcs20Utilities.GmlcovNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "swe", Wcs20Utilities.SweNamespace);
@@ -2775,5 +2901,7 @@ internal sealed class Wcs20Handler
 
     private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 
-    private readonly record struct WcsParameterError(string ExceptionCode, string Detail, string Locator);
+    internal readonly record struct WcsParameterError(string ExceptionCode, string Detail, string Locator);
+
+    private readonly record struct WcsSupportedCrs(IReadOnlySet<int> Srids, IReadOnlyList<string> Uris);
 }
