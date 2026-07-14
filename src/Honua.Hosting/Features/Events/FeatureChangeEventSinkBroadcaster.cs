@@ -105,6 +105,9 @@ internal sealed partial class FeatureChangeEventSinkBroadcaster
         {
             // Host shutdown; not a delivery failure.
         }
+        // Intentional: sinks are fanned out via Task.WhenAll in PublishAsync above; one
+        // sink's failure must not fault the others or the caller, so it is recorded and
+        // logged rather than propagated.
         catch (Exception ex)
         {
             FeatureChangeEventSinkMetrics.Failed.Add(1, tag);
