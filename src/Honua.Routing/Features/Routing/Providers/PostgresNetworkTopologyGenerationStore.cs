@@ -17,7 +17,7 @@ internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyG
 {
     private const string SelectColumns =
         "dataset_id, generation, source_revision, state, row_version, srid, " +
-        "created_at, updated_at, activated_at, failure_code";
+        "created_at, updated_at, activated_at, failure_code, edge_table, vertex_table";
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 
@@ -173,7 +173,11 @@ internal sealed class PostgresNetworkTopologyGenerationStore : INetworkTopologyG
         row.GetFieldValue<DateTimeOffset>(6),
         row.GetFieldValue<DateTimeOffset>(7),
         row.IsNull(8) ? null : row.GetFieldValue<DateTimeOffset>(8),
-        row.IsNull(9) ? null : row.GetFieldValue<string>(9));
+        row.IsNull(9) ? null : row.GetFieldValue<string>(9))
+    {
+        EdgeTable = row.IsNull(10) ? null : row.GetFieldValue<string>(10),
+        VertexTable = row.IsNull(11) ? null : row.GetFieldValue<string>(11),
+    };
 }
 
 /// <summary>

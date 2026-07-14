@@ -33,7 +33,7 @@ internal sealed class PostgresNetworkTopologyEditStore : INetworkTopologyEditSto
 {
     private const string GenerationColumns =
         "dataset_id, generation, source_revision, state, row_version, srid, " +
-        "created_at, updated_at, activated_at, failure_code";
+        "created_at, updated_at, activated_at, failure_code, edge_table, vertex_table";
 
     private readonly IDatabaseSessionFactory _sessionFactory;
 

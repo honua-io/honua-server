@@ -225,7 +225,16 @@ public enum ExecutionJobKind
     /// <summary>
     /// Durable map or imagery tile-package export workload.
     /// </summary>
-    TileExport
+    TileExport,
+
+    /// <summary>
+    /// Isolated shadow-topology rebuild workload for a non-active network-topology
+    /// generation (#2718): stages a generation-scoped pgRouting-shaped edge/vertex shadow
+    /// topology from its staged content edits, validates graph integrity, and transitions
+    /// the generation from <c>dirty</c> to <c>ready</c> (or <c>failed</c>) without ever
+    /// touching the active solve tables.
+    /// </summary>
+    NetworkTopologyRebuild
 }
 
 /// <summary>

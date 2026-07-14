@@ -15,6 +15,15 @@ public static partial class NetworkTopologyLifecycle
     /// <paramref name="current"/>. Active generations can only be retired; content
     /// writers therefore cannot mutate the live solve target.
     /// </summary>
+    /// <remarks>
+    /// <c>Retired -&gt; Active</c> is the rollback-only transition (#2719): promotion always
+    /// enters <c>Active</c> from <c>Ready</c> (a freshly built and validated candidate), while
+    /// rollback re-activates a previously active, now-retired generation whose physical
+    /// artifacts are still present. The two paths share this one state machine so both are
+    /// subject to the same compare-and-swap discipline, but callers must apply their own
+    /// additional preconditions (evidence digest for promotion; artifact-existence and
+    /// retention checks for rollback) before invoking <see cref="TryTransition"/>.
+    /// </remarks>
     public static bool CanTransition(
         NetworkTopologyGenerationState current,
         NetworkTopologyGenerationState target) => (current, target) switch
@@ -26,6 +35,7 @@ public static partial class NetworkTopologyLifecycle
             (NetworkTopologyGenerationState.Ready, NetworkTopologyGenerationState.Active) => true,
             (NetworkTopologyGenerationState.Ready, NetworkTopologyGenerationState.Failed) => true,
             (NetworkTopologyGenerationState.Active, NetworkTopologyGenerationState.Retired) => true,
+            (NetworkTopologyGenerationState.Retired, NetworkTopologyGenerationState.Active) => true,
             (NetworkTopologyGenerationState.Failed, NetworkTopologyGenerationState.Dirty) => true,
             (NetworkTopologyGenerationState.Failed, NetworkTopologyGenerationState.Retired) => true,
             _ => false,

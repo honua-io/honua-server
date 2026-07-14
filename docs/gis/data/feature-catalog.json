@@ -2564,6 +2564,34 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-api-v1-admin-network-datasets-id-generations-generation-rebuild-attempt",
+      "route": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.GetRebuildAttempt_Missing_Returns404",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.Rebuild_EndToEnd_BuildsShadowTopologyAndCompletesGeneration"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-network-datasets-id-promotions",
+      "route": "/api/v1/admin/network-datasets/{id}/promotions",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.ListHistory_AfterPromotion_IncludesEntry",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.ListHistory_Anonymous_IsDenied"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-v1-admin-oauth-clients",
       "route": "/api/v1/admin/oauth-clients",
       "method": "GET",
@@ -13451,6 +13479,55 @@
         "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_StaleRowVersion_Returns409",
         "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_Success_EmitsSanitizedAuditLogAndTelemetrySpan",
         "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_ValidRestriction_ThenDeleteReferencedEdge_Returns400WithoutDeleting"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-generations-generation-rebuild",
+      "route": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.Rebuild_StaleFencingToken_RejectsCheckpointWrite",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.Reconciler_ExpiredLease_OrphansAttemptAndCleansUpArtifacts",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_DirtyGeneration_TransitionsToBuildingAndReturns202",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_GenerationNotDirty_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_SecondActiveAttempt_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_StaleRowVersion_Returns409"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-promote",
+      "route": "/api/v1/admin/network-datasets/{id}/promote",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_CandidateNotReady_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_ConcurrentCandidates_OnlyOneWins",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_MissingIdempotencyKey_Returns400",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_ReadyCandidate_ActivatesAndRetiresOld",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_SameIdempotencyKeyReplayed_ReturnsSameResultWithoutDoublePromoting"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-rollback",
+      "route": "/api/v1/admin/network-datasets/{id}/rollback",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Rollback_ToNonRetiredGeneration_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Rollback_ToRetiredGeneration_Reactivates"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"

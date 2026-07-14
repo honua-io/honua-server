@@ -80,6 +80,12 @@ public static class ServiceCollectionExtensions
             // edit endpoints no-op when these are absent.
             services.AddScoped<INetworkTopologyGenerationStore, PostgresNetworkTopologyGenerationStore>();
             services.AddScoped<INetworkTopologyEditStore, PostgresNetworkTopologyEditStore>();
+
+            // Durable isolated shadow-topology rebuild attempts and their multi-node
+            // fencing lease (#2718/#2720), and atomic generation promotion/rollback (#2719).
+            services.AddScoped<INetworkTopologyRebuildStore, PostgresNetworkTopologyRebuildStore>();
+            services.AddScoped<NetworkTopologyShadowTopologyBuilder>();
+            services.AddScoped<INetworkTopologyPromotionStore, PostgresNetworkTopologyPromotionStore>();
         }
 
         // Resolve the selected provider. The Routing:Provider key remains the

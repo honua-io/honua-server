@@ -21,6 +21,7 @@ public sealed class NetworkTopologyLifecycleTests
     [InlineData(NetworkTopologyGenerationState.Ready, NetworkTopologyGenerationState.Active)]
     [InlineData(NetworkTopologyGenerationState.Ready, NetworkTopologyGenerationState.Failed)]
     [InlineData(NetworkTopologyGenerationState.Active, NetworkTopologyGenerationState.Retired)]
+    [InlineData(NetworkTopologyGenerationState.Retired, NetworkTopologyGenerationState.Active)]
     [InlineData(NetworkTopologyGenerationState.Failed, NetworkTopologyGenerationState.Dirty)]
     [InlineData(NetworkTopologyGenerationState.Failed, NetworkTopologyGenerationState.Retired)]
     public void CanTransition_LegalTransition_ReturnsTrue(
@@ -36,6 +37,7 @@ public sealed class NetworkTopologyLifecycleTests
     [InlineData(NetworkTopologyGenerationState.Dirty, NetworkTopologyGenerationState.Active)]
     [InlineData(NetworkTopologyGenerationState.Building, NetworkTopologyGenerationState.Active)]
     [InlineData(NetworkTopologyGenerationState.Retired, NetworkTopologyGenerationState.Dirty)]
+    [InlineData(NetworkTopologyGenerationState.Retired, NetworkTopologyGenerationState.Building)]
     [InlineData(NetworkTopologyGenerationState.Ready, NetworkTopologyGenerationState.Dirty)]
     public void CanTransition_UnsafeTransition_ReturnsFalse(
         NetworkTopologyGenerationState current,

@@ -3126,6 +3126,105 @@ sql:
               ON DELETE CASCADE,
           CHECK (result_state IN ('draft', 'dirty', 'building', 'ready', 'active', 'failed', 'retired'))
       );
+  # Durable shadow-topology rebuild attempts (#2718) and multi-node fencing lease (#2720).
+  # Mirrors migration 087_CreateNetworkTopologyRebuildAttempts.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_rebuild_attempts (
+          dataset_id                TEXT        NOT NULL,
+          generation                BIGINT      NOT NULL,
+          attempt                   BIGINT      NOT NULL,
+          state                     TEXT        NOT NULL,
+          operation_id              TEXT        NOT NULL,
+          expected_row_version      BIGINT      NOT NULL,
+          expected_source_revision  BIGINT      NOT NULL,
+          shadow_edge_table         TEXT,
+          shadow_vertex_table       TEXT,
+          evidence_digest           TEXT,
+          failure_code              TEXT,
+          owner_id                  TEXT,
+          fencing_token             BIGINT      NOT NULL DEFAULT 0,
+          lease_expires_at          TIMESTAMPTZ,
+          last_heartbeat_at         TIMESTAMPTZ,
+          created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+          completed_at              TIMESTAMPTZ,
+          CONSTRAINT network_topology_rebuild_attempts_pk
+              PRIMARY KEY (dataset_id, generation, attempt),
+          CONSTRAINT network_topology_rebuild_attempts_generation_fk
+              FOREIGN KEY (dataset_id, generation)
+              REFERENCES honua.network_topology_generations (dataset_id, generation)
+              ON DELETE CASCADE,
+          CONSTRAINT network_topology_rebuild_attempts_positive_attempt
+              CHECK (attempt > 0),
+          CONSTRAINT network_topology_rebuild_attempts_nonnegative_token
+              CHECK (fencing_token >= 0),
+          CONSTRAINT network_topology_rebuild_attempts_valid_state
+              CHECK (state IN ('building', 'ready', 'failed')),
+          CONSTRAINT network_topology_rebuild_attempts_failure_code_shape
+              CHECK (failure_code IS NULL OR failure_code ~ '^[a-z][a-z0-9_.-]{0,63}$'),
+          CONSTRAINT network_topology_rebuild_attempts_failure_state
+              CHECK ((state = 'failed') = (failure_code IS NOT NULL)),
+          CONSTRAINT network_topology_rebuild_attempts_ready_evidence
+              CHECK (state <> 'ready' OR (shadow_edge_table IS NOT NULL AND shadow_vertex_table IS NOT NULL AND evidence_digest IS NOT NULL))
+      );
+  - |
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_network_topology_rebuild_attempts_active
+          ON honua.network_topology_rebuild_attempts (dataset_id, generation)
+          WHERE state = 'building';
+  - |
+      CREATE INDEX IF NOT EXISTS ix_network_topology_rebuild_attempts_generation
+          ON honua.network_topology_rebuild_attempts (dataset_id, generation, attempt DESC);
+  - |
+      CREATE INDEX IF NOT EXISTS ix_network_topology_rebuild_attempts_expired_leases
+          ON honua.network_topology_rebuild_attempts (lease_expires_at)
+          WHERE state = 'building';
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_rebuild_checkpoints (
+          dataset_id   TEXT        NOT NULL,
+          generation   BIGINT      NOT NULL,
+          attempt      BIGINT      NOT NULL,
+          stage        TEXT        NOT NULL,
+          status       TEXT        NOT NULL,
+          detail       TEXT,
+          updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT network_topology_rebuild_checkpoints_pk
+              PRIMARY KEY (dataset_id, generation, attempt, stage),
+          CONSTRAINT network_topology_rebuild_checkpoints_attempt_fk
+              FOREIGN KEY (dataset_id, generation, attempt)
+              REFERENCES honua.network_topology_rebuild_attempts (dataset_id, generation, attempt)
+              ON DELETE CASCADE,
+          CONSTRAINT network_topology_rebuild_checkpoints_valid_stage
+              CHECK (stage IN ('snapshot', 'build', 'analyze', 'validate', 'cleanup')),
+          CONSTRAINT network_topology_rebuild_checkpoints_valid_status
+              CHECK (status IN ('pending', 'in_progress', 'completed', 'failed'))
+      );
+  # Immutable active-generation promotion/rollback history (#2719).
+  # Mirrors migration 088_CreateNetworkTopologyPromotions.
+  - |
+      CREATE TABLE IF NOT EXISTS honua.network_topology_promotions (
+          promotion_id      TEXT        NOT NULL PRIMARY KEY,
+          dataset_id        TEXT        NOT NULL,
+          from_generation   BIGINT,
+          to_generation     BIGINT      NOT NULL,
+          kind              TEXT        NOT NULL,
+          actor             TEXT        NOT NULL,
+          reason            TEXT,
+          idempotency_key   TEXT        NOT NULL,
+          evidence_digest   TEXT,
+          promoted_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT network_topology_promotions_dataset_fk
+              FOREIGN KEY (dataset_id) REFERENCES honua.network_datasets (id) ON DELETE CASCADE,
+          CONSTRAINT network_topology_promotions_valid_kind
+              CHECK (kind IN ('promote', 'rollback')),
+          CONSTRAINT network_topology_promotions_positive_to_generation
+              CHECK (to_generation > 0)
+      );
+  - |
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_network_topology_promotions_idempotency
+          ON honua.network_topology_promotions (dataset_id, idempotency_key);
+  - |
+      CREATE INDEX IF NOT EXISTS ix_network_topology_promotions_dataset_history
+          ON honua.network_topology_promotions (dataset_id, promoted_at DESC);
   # Tile-cache catalog (#1016 slice 4) + package-import serving columns (#1269).
   # Mirrors migrations 033_CreateTileCacheCatalog + 067_AddTileCachePackageImport so
   # the WMTS exporter sink and the .tpk/.tpkx/.vtpk import + serving binding have their
