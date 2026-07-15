@@ -807,6 +807,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-well-known-oauth-protected-resource-mcp",
+      "route": "/.well-known/oauth-protected-resource/mcp",
+      "method": "GET",
+      "family": "MCP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_DerivesAuthorizationServersFromEveryConfiguredAuthority",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithNoAuthorizationServerConfigured_IsAbsent",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithOidcConfigured_ReturnsRfc9728Document"
+      ],
+      "proof_ledger_surface": "mcp-operator",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-enrich-catalog",
       "route": "/api/enrich/catalog",
       "method": "GET",
@@ -7344,8 +7359,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_UnknownCoverage_ReturnsNoSuchCoverageException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_WithBareIntegerCoverageId_ReturnsCoverageDescription",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_WithProjectedRaster_ListsNativeCrsWithoutContradiction",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_ImageServerRoute_ReturnsCoverageXml",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_WithProjectedRaster_DoesNotAdvertiseUnsupportedCrsExtension",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_WithProjectedRaster_AdvertisesTransformableOutputCrsValues",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_AdditionalDimensionAxis_ReturnsInvalidAxisLabelException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_AdditionalDimensionWithSpatialAndTemporal_ReturnsInvalidAxisLabelException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_DuplicateSubsetAxis_ReturnsInvalidAxisLabelException",
@@ -7373,7 +7389,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithScaleSize_SetsOutputDimensions",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithSubsetFormatAndOutputCrs_ReturnsRasterBytes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnknownRangeSubsetField_ReturnsException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedBboxCrs_ReturnsSubsettingCrsNotSupported",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedInterpolation_ReturnsException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedOutputCrs_ReturnsOutputCrsNotSupported",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_WithUnsupportedSubsettingCrs_ReturnsSubsettingCrsNotSupported",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_NumericImageServerRoute_ReturnsRegisteredZarrSlicePng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OutOfRangeZarrCoordinate_ReturnsInvalidSubsetting",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_OversizeZarrSlice_ReturnsInvalidParameterValue",
