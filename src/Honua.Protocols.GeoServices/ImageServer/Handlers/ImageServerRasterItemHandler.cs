@@ -75,6 +75,47 @@ internal sealed class ImageServerRasterItemHandler
                 ImageServerJsonContext.Default.HistogramsResourceResponse), entries.Length);
         }, cancellationToken);
 
+    public Task<IResult> GetImageSupportDataAsync(HttpContext context, int layerId, long rasterId, CancellationToken cancellationToken)
+        => ExecuteAsync(context, layerId, rasterId, "raster-item-image-support-data", async raster =>
+        {
+            // Adapt to the shared sensor-metadata companion rather than a new data pathway.
+            // A raster item only carries image support data when its sensor/camera/orientation
+            // row is modeled; plain COGs have none, so report not-available honestly instead of
+            // fabricating an empty support-data document.
+            var sensorMetadata = await _rasterStore.GetSensorMetadataAsync(new[] { raster.Id }, cancellationToken);
+            if (!sensorMetadata.TryGetValue(raster.Id, out var metadata))
+            {
+                return (StandardErrorHelpers.CreateNotFound(
+                    context, "Image support data is not available for this raster item."), 0);
+            }
+
+            var response = new RasterItemImageSupportDataResponse
+            {
+                RasterId = raster.Id,
+                Name = raster.Name,
+                SensorName = metadata.SensorName,
+                CameraModel = metadata.CameraModel,
+                HasInteriorOrientation = !string.IsNullOrWhiteSpace(metadata.InteriorOrientationJson),
+                HasExteriorOrientation = !string.IsNullOrWhiteSpace(metadata.ExteriorOrientationJson),
+                HasRationalPolynomialCoefficients = !string.IsNullOrWhiteSpace(metadata.RpcJson),
+                DemSource = metadata.DemSource,
+            };
+
+            return (Results.Json(response, ImageServerJsonContext.Default.RasterItemImageSupportDataResponse), 1);
+        }, cancellationToken);
+
+    public Task<IResult> GetRasterFileAsync(HttpContext context, int layerId, long rasterId, CancellationToken cancellationToken)
+        => ExecuteAsync(context, layerId, rasterId, "raster-item-raster-file", raster =>
+            // Honua stores raster pixels in the provider (PostGIS raster / analytic stores) rather
+            // than referencing a downloadable source raster file, so there is no source file path to
+            // stream. The raster item is confirmed to exist (ExecuteAsync resolved it), so this is a
+            // precise capability-honest not-available response rather than a missing-item 404.
+            Task.FromResult<(IResult Result, int Count)>((
+                StandardErrorHelpers.CreateNotFound(
+                    context,
+                    "The source raster file is not available for download from this image service."),
+                0)), cancellationToken);
+
     private async Task<IResult> ExecuteAsync(
         HttpContext context,
         int layerId,

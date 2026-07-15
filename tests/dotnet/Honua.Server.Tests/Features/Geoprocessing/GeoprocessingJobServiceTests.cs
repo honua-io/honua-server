@@ -8,6 +8,8 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -17,6 +19,7 @@ using Honua.Protocols.GeoServices.GPServer;
 using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.TestKit.Helpers;
@@ -546,6 +549,167 @@ public sealed class GeoprocessingJobServiceTests
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
+
+    // -----------------------------------------------------------------------
+    // Approval lane: gated plan -> persisted proposal -> resume (ADR-0064, #2814)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ApprovalRequiredWithGateway_PersistsProposalAndCarriesProposalId()
+    {
+        // When a gated plan meets the approval gate AND the durable proposal surface
+        // is available, the submission persists an AwaitingApproval proposal reusing
+        // the shared control-plane gateway and surfaces its id for the honua://
+        // proposals/{id} resume path — instead of dead-ending (ADR-0064, #2814).
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
+
+        var gateway = Substitute.For<IOperationGateway>();
+        OperationGatewayRequest? captured = null;
+        gateway
+            .CreateApprovalProposalAsync(Arg.Do<OperationGatewayRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = new GuardrailDecision(
+                    GuardrailTier.RequiresApproval, OperationClass.Geoprocess, HonuaEdition.Enterprise, "test"),
+                ProposalId = "gp-proposal-1",
+            }));
+
+        var sut = CreateServiceWithGateway(gateway);
+
+        var act = async () => await sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), "idem-1", CreatePrincipal());
+
+        var thrown = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
+        thrown.ProposalId.Should().Be("gp-proposal-1");
+
+        // No job was created — the plan is parked as a proposal, not executed.
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        // The proposal carries the Geoprocess kind, the idempotency key, and a
+        // non-empty execution payload the resume path can replay.
+        captured.Should().NotBeNull();
+        captured!.Kind.Should().Be(OperationClass.Geoprocess);
+        captured.IdempotencyKey.Should().Be("idem-1");
+        captured.ExecutionPayload.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ApprovalRequiredWithoutGateway_StillHardFails()
+    {
+        // With no durable proposal surface registered the classifier still fails
+        // closed, but there is no resume record: submission hard-fails as before and
+        // carries no proposalId.
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Is<OperatorAuthorizationRequest>(r => r.IsDestructive))
+            .Returns(ApprovalRequirement.Required("operator.destructive.process", "destructive-action-requires-approval"));
+
+        var act = async () => await _sut.SubmitJobAsync(CreateDeleteFeaturesPlan(), null, CreatePrincipal());
+
+        var thrown = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
+        thrown.ProposalId.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task ResumeApprovedJob_ExecutesGatedPlan_BypassingApprovalAndMutatingGates()
+    {
+        // Approving the proposal resumes execution: the plan is submitted through the
+        // normal pipeline with the approval and mutating-process gates bypassed
+        // (they were satisfied at proposal-creation time), attributing the job to the
+        // original submitter recorded in the payload.
+        _approvalEvaluator
+            .Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.Required("operator.destructive.process", "would-block-if-not-bypassed"));
+        DenyMutatingProcessPermission();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-resume",
+            RequestedBy = "subject-123",
+        };
+
+        var job = await _sut.ResumeApprovedJobAsync(payload);
+
+        job.Status.Should().Be(ExecutionJobStatus.Queued);
+        job.Audit.RequestedBy.Should().Be("subject-123");
+        await _jobStore.Received().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task GeoprocessOperationExecutor_ExecuteAsync_RoundTripsPayloadAndResumesPlan()
+    {
+        // The gateway resolves this executor by OperationClass.Geoprocess on approval;
+        // ExecuteAsync must deserialize the persisted payload and resume the plan.
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var record = CreateJobRecord("job-resumed", ExecutionJobStatus.Queued);
+        jobService.ResumeApprovedJobAsync(Arg.Any<GeoprocessExecutionPayload>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(record));
+
+        var provider = new ServiceCollection()
+            .AddSingleton(jobService)
+            .BuildServiceProvider();
+
+        var executor = new GeoprocessOperationExecutor(provider);
+        executor.OperationClass.Should().Be(OperationClass.Geoprocess);
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = CreateDeleteFeaturesPlan(),
+            IdempotencyKey = "idem-x",
+            RequestedBy = "subject-123",
+        };
+
+        var operationId = await executor.ExecuteAsync(
+            new OperationGatewayRequest { Kind = OperationClass.Geoprocess },
+            payload.Serialize());
+
+        operationId.Should().Be("job-resumed");
+        await jobService.Received().ResumeApprovedJobAsync(
+            Arg.Is<GeoprocessExecutionPayload>(p =>
+                p.RequestedBy == "subject-123" &&
+                p.IdempotencyKey == "idem-x" &&
+                p.Plan.Steps.Count == 1),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task GeoprocessOperationExecutor_ExecuteAsync_MalformedPayload_Throws()
+    {
+        var executor = new GeoprocessOperationExecutor(new ServiceCollection().BuildServiceProvider());
+
+        var act = async () => await executor.ExecuteAsync(
+            new OperationGatewayRequest { Kind = OperationClass.Geoprocess }, executionPayload: "not-json");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*payload is missing or malformed*");
+    }
+
+    private GeoprocessingJobService CreateServiceWithGateway(IOperationGateway gateway)
+        => new(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            operationGateway: gateway);
 
     [UnitTest]
     [Operation(Operations.Create)]

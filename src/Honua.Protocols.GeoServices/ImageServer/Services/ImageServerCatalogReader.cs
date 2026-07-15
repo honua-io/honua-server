@@ -166,17 +166,22 @@ internal sealed class ImageServerCatalogQuery
 internal sealed record ImageServerCatalogOrderBy(string Field, bool Descending);
 
 /// <summary>
-/// Spatial filter applied against raster footprint extents. The bounding box is
-/// expressed in <see cref="Srid"/>; when the footprint SRID differs the reader
-/// transforms the filter box into the footprint SRID before the intersect test
-/// so the comparison stays in a single coordinate system.
+/// Spatial filter applied against raster footprints. The bounding box
+/// (<see cref="XMin"/>..<see cref="YMax"/>) is expressed in <see cref="Srid"/> and is always used as
+/// the index-eligible envelope pre-filter. When <see cref="Geometry"/> (WKB) is supplied together with
+/// a non-envelope <see cref="Relation"/>, the provider additionally applies the exact spatial
+/// predicate against the footprint geometry. When the footprint SRID differs the provider transforms
+/// the box and geometry into the footprint SRID before the test so the comparison stays in a single
+/// coordinate system.
 /// </summary>
 internal sealed record ImageServerCatalogSpatialFilter(
     double XMin,
     double YMin,
     double XMax,
     double YMax,
-    int? Srid);
+    int? Srid,
+    byte[]? Geometry = null,
+    RasterCatalogSpatialRelation Relation = RasterCatalogSpatialRelation.EnvelopeIntersects);
 
 /// <summary>
 /// Default <see cref="IImageServerCatalogReader"/> built on <see cref="IRasterStore"/>.
@@ -234,7 +239,8 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
         {
             if (!RasterCatalogSpatialPredicate.TryCreate(
                     spatialFilter.XMin, spatialFilter.YMin, spatialFilter.XMax, spatialFilter.YMax,
-                    spatialFilter.Srid, out var built, out var predicateError))
+                    spatialFilter.Srid, out var built, out var predicateError,
+                    spatialFilter.Geometry, spatialFilter.Relation))
             {
                 throw new ImageServerCatalogFilterException(predicateError);
             }
