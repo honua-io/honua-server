@@ -18,7 +18,11 @@ public sealed class GmlFormatReaderTests
     [InlineData("urn:ogc:def:crs:EPSG::4326", 4326)]
     [InlineData("urn:ogc:def:crs:EPSG::25832", 25832)]
     [InlineData("http://www.opengis.net/gml/srs/epsg.xml#4326", 4326)]
-    [InlineData("CRS84", null)]
+    // OGC CRS84 (WGS 84 long/lat) resolves to EPSG:4326 across its URN, short, and URL forms.
+    [InlineData("CRS84", 4326)]
+    [InlineData("urn:ogc:def:crs:OGC:1.3:CRS84", 4326)]
+    [InlineData("CRS:84", 4326)]
+    [InlineData("http://www.opengis.net/def/crs/OGC/1.3/CRS84", 4326)]
     [InlineData("", null)]
     [InlineData(null, null)]
     public void ParseSrsNameToSrid_ReturnsExpectedSrid(string? srsName, int? expected)
@@ -310,6 +314,168 @@ public sealed class GmlFormatReaderTests
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // CRS-dependent axis order (#2745)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task ReadStreamingAsync_UrnGeographicCrs_SwapsLatLonToLonLat()
+    {
+        // urn:ogc:def:crs:EPSG::4326 carries the authority axis order (latitude, longitude), so
+        // ordinates written "lat lon" must be swapped into the internal lon/lat (X=lon, Y=lat).
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf"
+              srsName="urn:ogc:def:crs:EPSG::4326">
+              <gml:featureMember>
+                <sf:Site>
+                  <sf:geometry>
+                    <gml:Point>
+                      <gml:pos>37.5 -122.1</gml:pos>
+                    </gml:Point>
+                  </sf:geometry>
+                </sf:Site>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var point = (Point)features.Should().ContainSingle().Subject.Geometry!;
+        point.X.Should().BeApproximately(-122.1, 0.0001, "longitude must land on X after the swap");
+        point.Y.Should().BeApproximately(37.5, 0.0001, "latitude must land on Y after the swap");
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_ShortEpsgGeographicCrs_DoesNotSwap()
+    {
+        // The legacy short form EPSG:4326 is long/lat by convention (the ogr/QGIS default), so
+        // ordinates written "lon lat" pass through unswapped.
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf"
+              srsName="EPSG:4326">
+              <gml:featureMember>
+                <sf:Site>
+                  <sf:geometry>
+                    <gml:Point>
+                      <gml:pos>-122.1 37.5</gml:pos>
+                    </gml:Point>
+                  </sf:geometry>
+                </sf:Site>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var point = (Point)features.Should().ContainSingle().Subject.Geometry!;
+        point.X.Should().BeApproximately(-122.1, 0.0001);
+        point.Y.Should().BeApproximately(37.5, 0.0001);
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_UrnProjectedCrs_DoesNotSwap()
+    {
+        // ETRS89 / UTM zone 32N (25832) is projected easting/northing; even in URN form the axes
+        // are not swapped, so easting stays on X and northing on Y.
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf"
+              srsName="urn:ogc:def:crs:EPSG::25832">
+              <gml:featureMember>
+                <sf:Site>
+                  <sf:geometry>
+                    <gml:Point>
+                      <gml:pos>500000 5600000</gml:pos>
+                    </gml:Point>
+                  </sf:geometry>
+                </sf:Site>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var point = (Point)features.Should().ContainSingle().Subject.Geometry!;
+        point.X.Should().BeApproximately(500000, 0.0001, "easting must stay on X for a projected CRS");
+        point.Y.Should().BeApproximately(5600000, 0.0001, "northing must stay on Y for a projected CRS");
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_Crs84Urn_DoesNotSwap()
+    {
+        // CRS84 is explicitly long/lat even in URN form, so ordinates written "lon lat" are kept.
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf"
+              srsName="urn:ogc:def:crs:OGC:1.3:CRS84">
+              <gml:featureMember>
+                <sf:Site>
+                  <sf:geometry>
+                    <gml:Point>
+                      <gml:pos>-122.1 37.5</gml:pos>
+                    </gml:Point>
+                  </sf:geometry>
+                </sf:Site>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var point = (Point)features.Should().ContainSingle().Subject.Geometry!;
+        point.X.Should().BeApproximately(-122.1, 0.0001);
+        point.Y.Should().BeApproximately(37.5, 0.0001);
+    }
+
+    [Fact]
+    public async Task ReadStreamingAsync_UrnGeographicCrs_SwapsPolygonRing()
+    {
+        // The swap must reach ring coordinates of an areal geometry, not just points, and must be
+        // applied exactly once (no double-swap through the Polygon container).
+        const string gml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection
+              xmlns:wfs="http://www.opengis.net/wfs"
+              xmlns:gml="http://www.opengis.net/gml"
+              xmlns:sf="http://example.com/sf"
+              srsName="urn:ogc:def:crs:EPSG::4326">
+              <gml:featureMember>
+                <sf:Zone>
+                  <sf:geometry>
+                    <gml:Polygon>
+                      <gml:exterior>
+                        <gml:LinearRing>
+                          <gml:posList>37.0 -122.0 37.0 -121.0 38.0 -121.0 38.0 -122.0 37.0 -122.0</gml:posList>
+                        </gml:LinearRing>
+                      </gml:exterior>
+                    </gml:Polygon>
+                  </sf:geometry>
+                </sf:Zone>
+              </gml:featureMember>
+            </wfs:FeatureCollection>
+            """;
+
+        var features = await CollectAsync(gml);
+
+        var polygon = (Polygon)features.Should().ContainSingle().Subject.Geometry!;
+        // All longitudes are in [-122,-121] (X) and latitudes in [37,38] (Y) after the swap.
+        polygon.Coordinates.Should().OnlyContain(c => c.X <= -121.0 && c.X >= -122.0 && c.Y >= 37.0 && c.Y <= 38.0);
+    }
 
     private static async Task<List<NetTopologySuite.Features.IFeature>> CollectAsync(string gml)
     {
