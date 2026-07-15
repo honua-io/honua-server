@@ -155,6 +155,32 @@ public class ImageServerEndpointsTests
         return store;
     }
 
+    private static IRasterStore CreateRpcRasterStoreSubstitute()
+    {
+        // A raster carrying an offset/scale RPC sensor model so the image-CS transformation warp
+        // (#1881/#2840) has an image<->ground mapping to apply: image (0,0) -> ground (-120, 35).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    SensorName = "TestSensor",
+                    RpcJson = """
+                    {
+                        "sampleOffset": 0, "lineOffset": 0,
+                        "longOffset": -120.0, "latOffset": 35.0,
+                        "sampleScale": 1, "lineScale": 1,
+                        "longScale": 0.001, "latScale": 0.001
+                    }
+                    """,
+                },
+            });
+
+        return store;
+    }
+
     private static IRasterStore CreateSamplingRasterStoreSubstitute()
     {
         var store = CreateRasterStoreSubstitute();
@@ -2183,6 +2209,77 @@ public class ImageServerEndpointsTests
             var geometry = json.RootElement.GetProperty("geometries")[0];
             geometry.GetProperty("x").GetDouble().Should().BeApproximately(-120.0, 1e-6);
             geometry.GetProperty("y").GetDouble().Should().BeApproximately(35.0, 1e-6);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithImageCoordinateSystemTransformation_ComposesWarpWithReprojectionAndDiffersFromNoTransformation()
+    {
+        // #2840 round trip: the image-CS warp (image sample/line -> WGS84 ground) is composed with
+        // the ground -> outSR reprojection. Requesting the transformation must move the geometry to
+        // the warped/reprojected location, which differs from the untransformed reprojection of the
+        // same input coordinate.
+        var store = CreateRpcRasterStoreSubstitute();
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            // Image origin (0,0) warps to ground (-120, 35), then reprojects into Web Mercator (3857).
+            const string imageGeometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""";
+            var warpResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&outSR=3857&transformation=image&geometries={Uri.EscapeDataString(imageGeometries)}");
+
+            warpResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var warpJson = JsonDocument.Parse(await warpResponse.Content.ReadAsStringAsync());
+            var warped = warpJson.RootElement.GetProperty("geometries")[0];
+            var warpedX = warped.GetProperty("x").GetDouble();
+            var warpedY = warped.GetProperty("y").GetDouble();
+
+            // Web Mercator of (-120, 35): ~(-13358338.9, 4163881.1).
+            warpedX.Should().BeApproximately(-13358338.9, 1.0);
+            warpedY.Should().BeApproximately(4163881.1, 1.0);
+
+            // Same input coordinate (0,0) reprojected 4326 -> 3857 without the transformation stays
+            // at the map origin; the transformation result must differ.
+            const string mapGeometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+            var plainResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={Uri.EscapeDataString(mapGeometries)}");
+
+            plainResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var plainJson = JsonDocument.Parse(await plainResponse.Content.ReadAsStringAsync());
+            var plain = plainJson.RootElement.GetProperty("geometries")[0];
+            plain.GetProperty("x").GetDouble().Should().BeApproximately(0.0, 1e-6);
+
+            warpedX.Should().NotBeApproximately(plain.GetProperty("x").GetDouble(), 1.0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithImageCoordinateSystemTransformation_AndUnsupportedDatumTransformation_Returns400()
+    {
+        // #2840: when the image-CS warp is composed with an unsupported datumTransformation for the
+        // ground(4326) -> outSR leg, the request is rejected with a precise 400 rather than silently
+        // dropping the requested transformation. WKID 108001 does not connect 4326 -> 3857.
+        var store = CreateRpcRasterStoreSubstitute();
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&outSR=3857&transformation=image&datumTransformation=108001&geometries={Uri.EscapeDataString(geometries)}");
+
+            await response.AssertGeoServicesErrorAsync(400);
         }
         finally
         {
