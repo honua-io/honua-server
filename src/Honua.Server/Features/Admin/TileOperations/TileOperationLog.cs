@@ -48,4 +48,16 @@ internal static partial class TileOperationLog
         int x,
         int y,
         Exception exception);
+
+    [LoggerMessage(EventId = 9217, Level = LogLevel.Information, Message = "Resuming tile-cache generation {GenerationId} from {CompletedBlocks} completed metatile blocks with {FailedUnitCount} failed units (attempt {Attempt}).")]
+    public static partial void GenerationResumed(ILogger logger, string generationId, int completedBlocks, int failedUnitCount, int attempt);
+
+    [LoggerMessage(EventId = 9218, Level = LogLevel.Warning, Message = "Failed to load the tile-cache generation checkpoint for generation {GenerationId}; seeding the full grid.")]
+    public static partial void CheckpointLoadFailed(ILogger logger, string generationId, Exception exception);
+
+    [LoggerMessage(EventId = 9219, Level = LogLevel.Warning, Message = "Failed to persist the tile-cache generation checkpoint for generation {GenerationId}; resume state may be stale.")]
+    public static partial void CheckpointSaveFailed(ILogger logger, string generationId, Exception exception);
+
+    [LoggerMessage(EventId = 9220, Level = LogLevel.Warning, Message = "Failed to delete the completed tile-cache generation checkpoint for generation {GenerationId}; it will self-expire.")]
+    public static partial void CheckpointDeleteFailed(ILogger logger, string generationId, Exception exception);
 }
