@@ -281,6 +281,9 @@ are never advertised.
 ## Sources and upkeep
 
 - Machine-readable parity export: [`docs/gis/data/geoservices-rest-parity.json`](../../gis/data/geoservices-rest-parity.json) — update it in the same PR as any GeoServices route or behavior change.
+- **What is enforced.** `GeoServicesParityMatrixDriftTests` (in `Honua.Architecture.Tests`) fails the build when: an operation classified Implemented/Partial/Stub names a route that is not served; an operation recorded Not implemented *is* served; or an `evidence` path does not resolve to a real file. Do not satisfy it by relabelling a status — `Stub` is a deliberate, honest category and must keep its meaning.
+- **What is not enforced (read this before trusting a status).** The gate checks that a claimed route *exists*, never that its status is the *right* one. Nothing mechanically stops a `Partial` whose parameter coverage has since regressed, or a `Stub` mislabelled `Implemented`. Those remain human review, anchored by `lastReviewed` in the JSON and the release checklist. The route roster here is also still hand-maintained and therefore still duplicates the generated [`feature-catalog.json`](../../gis/data/feature-catalog.json); deriving it instead is tracked by [#2861](https://github.com/honua-io/honua-server/issues/2861).
+- **Not to be confused with** the `parity-scorecard-*` workflows/tests, which measure *data-import fidelity* across ten dataset cases and never read this matrix.
 - [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md), [run geoprocessing](../../guides/query-analyze/run-geoprocessing.md), [authentication](../../guides/secure/authentication.md) — drill-downs for the services not detailed on this page.
 - [Supported clients](clients.md) — which Esri clients are certified against this surface.
 - Release owners verify this page during the [release checklist](../../internal/contributor/RELEASE_CHECKLIST.md).
