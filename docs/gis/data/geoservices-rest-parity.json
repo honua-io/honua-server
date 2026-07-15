@@ -744,7 +744,7 @@
       },
       "knownLimitations": [
         "GeoJSON output requires EPSG:4326-compatible output behavior.",
-        "GeoParquet writes WKB geometry and always strips M values.",
+        "GeoParquet writes WKB geometry with a GeoParquet 1.1 covering bbox column for spatial pruning, and always strips M values.",
         "Binary query formats do not all expose runtime-computed attributes such as KNN distance.",
         "Replica synchronization is MVP-level and not a full ArcGIS enterprise offline replacement."
       ]
