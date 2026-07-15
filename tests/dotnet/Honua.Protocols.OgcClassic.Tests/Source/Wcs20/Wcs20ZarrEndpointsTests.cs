@@ -309,6 +309,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         public Task<ZarrRasterSliceReadResult> ReadAsync(
             int layerId,
             ZarrRasterSliceReadRequest request,
+            ICoordinateTransformService? coordinateTransform = null,
             CancellationToken cancellationToken = default)
             // Exact equality is intentional: both sides are integer-valued doubles (the request
             // literal "666" is parsed straight to 666.0 with no arithmetic in between), so this is
@@ -320,6 +321,6 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                     "temperature",
                     request.Selections.Count,
                     "No configured range reader is available for the registered multidimensional coverage."))
-                : inner.ReadAsync(layerId, request, cancellationToken);
+                : inner.ReadAsync(layerId, request, coordinateTransform, cancellationToken);
     }
 }

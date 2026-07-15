@@ -327,6 +327,24 @@ internal sealed class PostgresRasterStore : IRasterStore
             cteParts.Add($"filter_env AS MATERIALIZED (SELECT {filterGeom} AS geom)");
             fromClause += " CROSS JOIN filter_env fe";
             whereClauses.Add("ST_Envelope(rd.raster) && fe.geom");
+
+            // Exact predicate: an explicit (non-envelope) relationship on a real geometry refines the
+            // index-eligible envelope pre-filter with the corresponding PostGIS relate against the
+            // footprint rectangle. The `&&` box above keeps the GiST index eligible; the exact test
+            // then removes footprints whose bounding box overlaps but whose geometry does not satisfy
+            // the requested relationship.
+            if (predicate.Geometry is { Length: > 0 } shapeWkb &&
+                predicate.Relation != RasterCatalogSpatialRelation.EnvelopeIntersects)
+            {
+                parameters.Add(("@fgeom", shapeWkb));
+                var shapeGeom = predicate.Srid is not null
+                    ? $"ST_Transform(ST_GeomFromWKB(@fgeom, @fsrid), COALESCE({layerSridExpr}, @fsrid))"
+                    : $"ST_GeomFromWKB(@fgeom, COALESCE({layerSridExpr}, 0))";
+
+                cteParts.Add($"filter_shape AS MATERIALIZED (SELECT {shapeGeom} AS geom)");
+                fromClause += " CROSS JOIN filter_shape fs";
+                whereClauses.Add(ExactSpatialPredicateSql(predicate.Relation));
+            }
         }
 
         if (query.ObjectIds is { } objectIds)
@@ -376,6 +394,19 @@ internal sealed class PostgresRasterStore : IRasterStore
         var ctePrefix = "WITH " + string.Join(",\n", cteParts);
         return (ctePrefix, parameters);
     }
+
+    /// <summary>
+    /// Maps a non-envelope <see cref="RasterCatalogSpatialRelation"/> to the PostGIS relate applied
+    /// against the footprint rectangle (<c>ST_Envelope(rd.raster)</c>) and the exact filter geometry.
+    /// Esri semantics: the relationship reads "footprint &lt;relation&gt; query geometry".
+    /// </summary>
+    private static string ExactSpatialPredicateSql(RasterCatalogSpatialRelation relation) => relation switch
+    {
+        RasterCatalogSpatialRelation.Contains => "ST_Contains(ST_Envelope(rd.raster), fs.geom)",
+        RasterCatalogSpatialRelation.Within => "ST_Within(ST_Envelope(rd.raster), fs.geom)",
+        RasterCatalogSpatialRelation.Overlaps => "ST_Overlaps(ST_Envelope(rd.raster), fs.geom)",
+        _ => "ST_Intersects(ST_Envelope(rd.raster), fs.geom)",
+    };
 
     private static string BuildCatalogCommandText(string ctePrefix, RasterCatalogQuery query, bool includeAggregate)
     {
