@@ -162,6 +162,10 @@ internal static class FeatureRegistrationExtensions
         // (honua-server#1827/#1787). On a Redis-less profile this is a no-op, so the lean
         // API-only and Community editions never start an unconditional worker.
         services.AddJobWorker(configuration);
+        // Durable isolated shadow-topology rebuild worker + self-healing reconciler
+        // (#2718/#2720). Self-gates on the routing rebuild store (Postgres-only) and the
+        // execution-job store (Redis-gated) both being registered above.
+        Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildServiceCollectionExtensions.AddNetworkTopologyRebuildJobs(services);
         services.AddAnalysisContent(configuration);
         services.AddTemporalHistory();
         services.AddAnalysisReporting(configuration);
@@ -279,6 +283,9 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapI3sSceneServerEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapNetworkDatasetAdminEndpoints();
+        endpoints.MapNetworkTopologyEditAdminEndpoints();
+        Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpoints.MapNetworkTopologyRebuildAdminEndpoints(endpoints);
+        Honua.Server.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpoints.MapNetworkTopologyPromotionAdminEndpoints(endpoints);
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapVisibilityAnalysisEndpoints();
