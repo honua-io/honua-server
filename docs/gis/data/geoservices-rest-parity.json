@@ -1271,7 +1271,7 @@
         "storage-backed exportTiles (ZIP + Esri exploded-cache TPK)",
         "computeCacheInfo (dynamic cache metadata)",
         "legend",
-        "computeClass (raster function chain validation)",
+        "renderingRule chain validation (internal; applied via exportImage/identify, no computeClass route)",
         "exportImage Stretch renderingRule (MinMax/StandardDeviation/PercentClip)",
         "exportImage Colormap renderingRule (explicit [value, r, g, b] stops, named ColorrampName, or inline algorithmic/multipart Colorramp object)",
         "colormap resource (returns the active renderer's colormap resolved from renderingRule; not-available response otherwise)",
@@ -1950,7 +1950,7 @@
           {
             "name": "renderingRule",
             "status": "implemented",
-            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400."
+            "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400. Chain planning/validation is internal (there is no computeClass route): the planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise, unless the document overrides outputPixelType."
           },
           {
             "name": "bandIds, noData, noDataInterpretation",
@@ -2098,18 +2098,6 @@
             "name": "renderingRule",
             "status": "partial",
             "notes": "An explicit Colormap renderingRule produces one legend swatch per colour stop. Other renderer overrides remain deferred; without a Colormap the response uses a 5-class equal-interval ramp keyed off the resolved layer mosaic's band-1 statistics."
-          }
-        ],
-        "computeClass": [
-          {
-            "name": "renderingRule (or rasterFunction alias)",
-            "status": "implemented",
-            "notes": "JSON-encoded raster function chain document. The planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise unless the document overrides outputPixelType."
-          },
-          {
-            "name": "f",
-            "status": "partial",
-            "notes": "Only json and pjson are supported."
           }
         ],
         "wcs": [
