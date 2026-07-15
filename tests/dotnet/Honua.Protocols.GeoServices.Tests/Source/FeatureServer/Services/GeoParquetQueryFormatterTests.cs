@@ -59,7 +59,7 @@ public sealed class GeoParquetQueryFormatterTests
         batch.Should().NotBeNull();
         batch!.Length.Should().Be(1);
         batch.Schema.FieldsList.Select(f => f.Name)
-            .Should().Equal("objectid", "geometry", "name", "population");
+            .Should().Equal("objectid", "geometry", "name", "population", "bbox");
 
         reader.Schema.Metadata.Should().ContainKey("geo");
         using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
@@ -102,7 +102,7 @@ public sealed class GeoParquetQueryFormatterTests
         batch.Should().NotBeNull();
         batch!.Length.Should().Be(1);
         batch.Schema.FieldsList.Select(f => f.Name)
-            .Should().Equal("objectid", "geometry", "name", "population");
+            .Should().Equal("objectid", "geometry", "name", "population", "bbox");
 
         reader.Schema.Metadata.Should().ContainKey("geo");
         using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
@@ -282,7 +282,7 @@ public sealed class GeoParquetQueryFormatterTests
 
         batch.Should().NotBeNull();
         batch!.Schema.FieldsList.Select(f => f.Name)
-            .Should().Equal("objectid", "geometry", "name");
+            .Should().Equal("objectid", "geometry", "name", "bbox");
     }
 
     [Fact]
@@ -576,7 +576,7 @@ public sealed class GeoParquetQueryFormatterTests
 
         batch.Should().NotBeNull();
         batch!.Schema.FieldsList.Select(f => f.Name)
-            .Should().Equal("objectid", "geometry", "name")
+            .Should().Equal("objectid", "geometry", "name", "bbox")
             .And.NotContain("distance",
                 "runtime fields not in outFields should be excluded, matching JSON/GeoJSON behavior");
     }
@@ -817,6 +817,142 @@ public sealed class GeoParquetQueryFormatterTests
         var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
         geomCol.GetProperty("geometry_types").EnumerateArray().First().GetString()
             .Should().Be("Point", "2D geometry should not advertise Z even when returnZ=true");
+    }
+
+    [Fact]
+    public void FormatAsGeoParquet_GeoMetadata_DeclaresCoveringBbox()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(-157.8583, 21.3069),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+
+        // GeoParquet 1.1 covering.bbox maps each ordinate to the [column, field] path of the bbox struct.
+        var covering = geomCol.GetProperty("covering").GetProperty("bbox");
+        AssertCoveringPath(covering, "xmin");
+        AssertCoveringPath(covering, "ymin");
+        AssertCoveringPath(covering, "xmax");
+        AssertCoveringPath(covering, "ymax");
+
+        // The referenced bbox column exists as a struct with the four ordinate fields.
+        var bboxField = reader.Schema.GetFieldByName("bbox");
+        bboxField.Should().NotBeNull();
+        var structType = bboxField.DataType.Should().BeOfType<Apache.Arrow.Types.StructType>().Subject;
+        structType.Fields.Select(f => f.Name).Should().Equal("xmin", "ymin", "xmax", "ymax");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_PerRowBbox_EqualsGeometryEnvelope()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        // A line string so xmin != xmax and ymin != ymax, proving a real envelope is stored.
+        var coordinates = new[] { new Coordinate(-122.5, 37.1), new Coordinate(-122.1, 37.9) };
+        var line = new LineString(coordinates) { SRID = 4326 };
+        var feature = Feature.Create(
+            1,
+            new WKBWriter().Write(line),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        var bbox = (StructArray)batch!.Column("bbox");
+        bbox.IsNull(0).Should().BeFalse();
+
+        var expected = line.EnvelopeInternal;
+        BboxOrdinate(bbox, "xmin", 0).Should().Be(expected.MinX);
+        BboxOrdinate(bbox, "ymin", 0).Should().Be(expected.MinY);
+        BboxOrdinate(bbox, "xmax", 0).Should().Be(expected.MaxX);
+        BboxOrdinate(bbox, "ymax", 0).Should().Be(expected.MaxY);
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_NullOrEmptyGeometry_ProducesNullBbox()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        var withGeometry = Feature.Create(
+            1,
+            CreatePointWkb(10.0, 20.0),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var withoutGeometry = Feature.Create(
+            2,
+            geometry: null,
+            new Dictionary<string, object?> { ["objectid"] = 2L }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(2, [withGeometry, withoutGeometry]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        var bbox = (StructArray)batch!.Column("bbox");
+
+        bbox.IsNull(0).Should().BeFalse("row with geometry must have a bbox");
+        BboxOrdinate(bbox, "xmin", 0).Should().Be(10.0);
+        BboxOrdinate(bbox, "ymax", 0).Should().Be(20.0);
+
+        bbox.IsNull(1).Should().BeTrue("row without geometry must have a null bbox");
+        BboxOrdinate(bbox, "xmin", 1).Should().BeNull();
+        BboxOrdinate(bbox, "ymin", 1).Should().BeNull();
+        BboxOrdinate(bbox, "xmax", 1).Should().BeNull();
+        BboxOrdinate(bbox, "ymax", 1).Should().BeNull();
+    }
+
+    private static void AssertCoveringPath(JsonElement covering, string ordinate)
+    {
+        var path = covering.GetProperty(ordinate).EnumerateArray().Select(e => e.GetString()).ToArray();
+        path.Should().Equal("bbox", ordinate);
+    }
+
+    private static double? BboxOrdinate(StructArray bbox, string ordinate, int row)
+    {
+        var index = ordinate switch
+        {
+            "xmin" => 0,
+            "ymin" => 1,
+            "xmax" => 2,
+            "ymax" => 3,
+            _ => throw new ArgumentOutOfRangeException(nameof(ordinate))
+        };
+        return ((DoubleArray)bbox.Fields[index]).GetValue(row);
     }
 
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)

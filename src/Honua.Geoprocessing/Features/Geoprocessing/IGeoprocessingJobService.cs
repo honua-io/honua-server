@@ -73,6 +73,30 @@ internal interface IGeoprocessingJobService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Resumes an approved destructive/sink plan whose submission was previously
+    /// gated and persisted as an <c>AwaitingApproval</c> operation proposal
+    /// (ADR-0064, #2814). Called by the operation gateway's approval path
+    /// (<c>ApplyApprovedProposalAsync</c>) via <see cref="GeoprocessOperationExecutor"/>.
+    /// The approval and mutating-process authorization gates were already satisfied
+    /// when the proposal was created, so this re-submits the plan through the normal
+    /// job pipeline with those gates bypassed, attributing the job to the original
+    /// submitter recorded in the payload.
+    /// </summary>
+    /// <param name="payload">The persisted plan submission to replay.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// A default implementation throws <see cref="NotSupportedException"/> so the many
+    /// hand-rolled adapter test doubles that implement this interface do not each need
+    /// to stub the approval-resume path they never exercise; the production
+    /// <see cref="GeoprocessingJobService"/> provides the real implementation.
+    /// </remarks>
+    Task<ExecutionJobRecord> ResumeApprovedJobAsync(
+        GeoprocessExecutionPayload payload,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "This geoprocessing job service does not support resuming approved plans.");
+
+    /// <summary>
     /// Retrieves a job record by identifier.
     /// </summary>
     Task<ExecutionJobRecord> GetJobAsync(

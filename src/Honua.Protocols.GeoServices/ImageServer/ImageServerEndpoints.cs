@@ -209,6 +209,31 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404);
 
+        group.MapGet("/{rasterId:long}/imageSupportData", GetRasterItemImageSupportData)
+            .WithDisplayName("Get Raster Item Image Support Data")
+            .WithName("GetImageServerRasterItemImageSupportData")
+            .WithSummary("Get one raster item's sensor/support data")
+            .WithDescription("Returns the Esri-shaped imageSupportData (sensor/camera/orientation support) for the raster item; returns a not-available response when the item carries no modeled support data")
+            .Produces<RasterItemImageSupportDataResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapGet("/{rasterId:long}/thumbnail", GetRasterItemThumbnail)
+            .WithDisplayName("Get Raster Item Thumbnail")
+            .WithName("GetImageServerRasterItemThumbnail")
+            .WithSummary("Render one raster item as a thumbnail image")
+            .WithDescription("Renders a small thumbnail of the raster item through the shared export pipeline; honours f=json for an href envelope")
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(200, contentType: "image/png")
+            .Produces(400)
+            .Produces(404);
+        group.MapGet("/{rasterId:long}/rasterFile", GetRasterItemRasterFile)
+            .WithDisplayName("Get Raster Item Raster File")
+            .WithName("GetImageServerRasterItemRasterFile")
+            .WithSummary("Download one raster item's source file")
+            .WithDescription("Returns the source raster file when a downloadable path is available; Honua stores raster pixels in the provider and returns a precise not-available response")
+            .Produces(400)
+            .Produces(404);
+
         group.MapGet("/find", FindGet)
             .WithDisplayName("Find Image Catalog Items (GET)")
             .WithName("ImageServerFindGet")
@@ -755,6 +780,28 @@ internal static class ImageServerEndpoints
             .WithName("GetImageServerRasterItemHistogramsByService")
             .WithSummary("Get one raster item's band histograms")
             .Produces<HistogramsResourceResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/{rasterId:long}/imageSupportData", GetRasterItemImageSupportDataByService)
+            .WithDisplayName("Get Raster Item Image Support Data by Service")
+            .WithName("GetImageServerRasterItemImageSupportDataByService")
+            .WithSummary("Get one raster item's sensor/support data")
+            .Produces<RasterItemImageSupportDataResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapGet("/{rasterId:long}/thumbnail", GetRasterItemThumbnailByService)
+            .WithDisplayName("Get Raster Item Thumbnail by Service")
+            .WithName("GetImageServerRasterItemThumbnailByService")
+            .WithSummary("Render one raster item as a thumbnail image")
+            .Produces<ExportImageResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(200, contentType: "image/png")
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapGet("/{rasterId:long}/rasterFile", GetRasterItemRasterFileByService)
+            .WithDisplayName("Get Raster Item Raster File by Service")
+            .WithName("GetImageServerRasterItemRasterFileByService")
+            .WithSummary("Download one raster item's source file")
             .Produces(400)
             .Produces(404);
 
@@ -1707,6 +1754,73 @@ internal static class ImageServerEndpoints
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await ExecuteRasterItemMetadataAsync(
             resolution.LayerId, rasterId, f, context, execute, cancellationToken);
+    }
+
+    private static Task<IResult> GetRasterItemImageSupportData(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataAsync(id, rasterId, f, context, handler.GetImageSupportDataAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemImageSupportDataByService(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataByServiceAsync(
+            serviceId, rasterId, f, context, handler.GetImageSupportDataAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemRasterFile(
+        int id,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataAsync(id, rasterId, f, context, handler.GetRasterFileAsync, cancellationToken);
+
+    private static Task<IResult> GetRasterItemRasterFileByService(
+        string serviceId,
+        long rasterId,
+        string? f,
+        HttpContext context,
+        ImageServerRasterItemHandler handler,
+        CancellationToken cancellationToken = default)
+        => ExecuteRasterItemMetadataByServiceAsync(
+            serviceId, rasterId, f, context, handler.GetRasterFileAsync, cancellationToken);
+
+    private static async Task<IResult> GetRasterItemThumbnail(
+        int id,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        return await handler.ExportImageAsync(context, id, CreateRasterItemThumbnailRequest(values, rasterId), cancellationToken);
+    }
+
+    private static async Task<IResult> GetRasterItemThumbnailByService(
+        string serviceId,
+        long rasterId,
+        HttpContext context,
+        ImageServerExportHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetRasterItemThumbnail(
+            resolution.LayerId, rasterId, context, handler, cancellationToken);
     }
 
     /// <summary>
@@ -3228,6 +3342,38 @@ internal static class ImageServerEndpoints
             MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
             RenderingRule = request.RenderingRule,
             F = request.F,
+        };
+    }
+
+    // Thumbnail is a small rendered preview of one raster item. It reuses the shared export
+    // pipeline (no new data pathway): the item is locked via mosaicRule and a small default size
+    // is applied when the client does not request one. Unlike the item image resource, thumbnail
+    // defaults to returning image bytes (f=image) so the resource behaves like the Esri thumbnail
+    // preview, while still honouring an explicit f=json/pjson for an href envelope.
+    private const string DefaultThumbnailSize = "200,200";
+
+    private static ExportImageRequest CreateRasterItemThumbnailRequest(
+        IReadOnlyDictionary<string, StringValues> values,
+        long rasterId)
+    {
+        var request = CreateExportImageRequest(values);
+        return new ExportImageRequest
+        {
+            Bbox = request.Bbox,
+            Size = request.Size ?? DefaultThumbnailSize,
+            ImageSr = request.ImageSr,
+            BboxSr = request.BboxSr,
+            Format = request.Format,
+            PixelType = request.PixelType,
+            NoData = request.NoData,
+            NoDataInterpretation = request.NoDataInterpretation,
+            Interpolation = request.Interpolation,
+            Compression = request.Compression,
+            CompressionQuality = request.CompressionQuality,
+            BandIds = request.BandIds,
+            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
+            RenderingRule = request.RenderingRule,
+            F = GetString(values, "f") ?? InlineImageFormat,
         };
     }
 
