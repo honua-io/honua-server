@@ -164,13 +164,45 @@ ingress and planner configuration:
 | **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (still fixture unless a live planner is on) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 | **Live planner** | `PlanAnalysis:Enabled=true` (+ provider) or `WorkflowGeneration:Enabled=true` | Follows whichever streaming profile above is set | `engine:"live"` — plans compiled from your intent | See [Turn on the live MCP planner](mcp-live-planner.md). Combine with the streaming profile for push progress. |
 
-All three profiles advertise the identical `tools/list`, `resources/list`, and
-`prompts/list`. The difference is operational: whether progress is pushed or
-polled, and whether a plan is compiled from your intent or replayed as a demo.
-The read-only pre-flight tools (`honua_validate_plan`, `honua_dry_run_plan`)
-report the same execution reality in every profile — including that a job runs a
-single process, so multi-step or sync-only plans are flagged rather than silently
-under-executed.
+These three profiles change only *how* the surface behaves, not *which* tools and
+resources it advertises: the progress-delivery and live-planner switches leave
+`tools/list`, `resources/list`, and `prompts/list` unchanged. The difference is
+operational — whether progress is pushed or polled, and whether a plan is compiled
+from your intent or replayed as a demo. The read-only pre-flight tools
+(`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in
+every profile — including that a job runs a single process, so multi-step or
+sync-only plans are flagged rather than silently under-executed.
+
+### Which tools and resources appear (capability gating)
+
+A second, independent axis *does* change the advertised roster: several tools and
+resources are gated on the host having composed the canonical service that backs
+them, so `tools/list` / `resources/list` never advertise a capability that could
+only fail at invocation time. The single-node Postgres server profile
+(`docker compose up`) wires all of the rows below except where a switch is noted;
+minimal or serverless-function compositions may omit the data provider, the
+promotion stores, or a geocode/route provider. Ask the running server what it
+actually exposes with `honua_list_capabilities` — the table is the pre-connection
+map, that tool is the runtime source of truth.
+
+| Surface | Config / composition gate | Default (Postgres server profile) | When absent |
+|---|---|---|---|
+| Server-push `GET /mcp` SSE stream | `Mcp:ServerInitiatedStreamEnabled=true` | Off — `GET /mcp` → `405`, clients poll `honua://jobs/{jobId}` | Off by default; see the profile table above |
+| Published-operation tools (operations toolset projected as `tools/call`) | `Mcp:PublishOperations:Enabled=true` **and** operations toolset composed | Off — not advertised | Off by default |
+| Promotion resources (`honua://published-services/…`, `honua://deployments/…`, map/app packages, promotion index) | Canonical publishing + deployment persistence (`IPublishedServiceStore` + `IDeploymentStore`) composed | Advertised (Postgres persistence is wired) | Omitted in compositions without canonical promotion stores |
+| Analysis report resource (`honua://jobs/{jobId}/report`) | `Reporting:Enabled=true` (`IAnalysisReportService`) | Advertised | Omitted when reporting is disabled |
+| Geocode tools (`honua_geocode_address`, `honua_geocode_addresses`) | A geocode provider is composed (`IGeocodeCoordinatorService`; server profile wires the Nominatim provider by default) | Advertised | Omitted when no geocode provider is composed |
+| Route tool (`honua_solve_route`) | A routing provider is selected (`Routing:Provider` → `IRoutingProvider`; `pgrouting` needs Postgres) | Advertised | Omitted when no routing provider is selected |
+| Catalog / query / render / style tools (`honua_list_layers`, `honua_query_features`, `honua_describe_layer`, `honua_render_map`, style tools) | Metadata v2 graph — and, for query/render, a feature reader / raster renderer — composed by the data provider | Advertised | Omitted in compositions without a data provider |
+| Dataset ingest (`honua_ingest_dataset`) | Import service (`IFileImportService`) composed | Advertised | Omitted without an import-capable provider |
+| Platform-ops observability + deploy tools (`honua_ops_health`, `honua_ops_findings`, `honua_deploy_operations`, …) | Ops-observability / platform-ops readers composed | Advertised | Omitted in minimal hosts |
+
+The `honua_plan_analysis`, `honua_validate_plan`, `honua_dry_run_plan`,
+`honua_execute_plan`, `honua_cancel_job`, `honua_list_jobs`, grounding, and
+`honua_list_capabilities` tools, plus the job/workspace/process-catalog/feature-catalog
+resources, are advertised in **every** composition — they depend only on the job
+runtime and embedded catalogs that are always present. No feature-edit tool is ever
+advertised, in any profile, by design (ADR-0028).
 
 ## Next steps
 

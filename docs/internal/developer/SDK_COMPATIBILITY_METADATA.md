@@ -46,9 +46,9 @@ Example response fragment:
       "features": {
         "metadataResources": true,
         "manifestExport": true,
-        "manifestApply": true,
-        "manifestDryRun": true,
-        "manifestPrune": true
+        "manifestApply": false,
+        "manifestDryRun": false,
+        "manifestPrune": false
       }
     }
   }

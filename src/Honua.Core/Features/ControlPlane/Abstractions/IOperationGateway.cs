@@ -204,6 +204,28 @@ public interface IOperationGateway
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Persists an <see cref="OperationProposalStatus.AwaitingApproval"/> proposal for
+    /// an operation whose approval requirement was already decided by an upstream,
+    /// domain-specific gate (for example the geoprocessing destructive-plan gate),
+    /// bypassing the edition guardrail ladder. Reuses the same durable proposal store,
+    /// <c>operation.proposed</c> audit, pending notification, and idempotency handling
+    /// as the ladder-routed approval path, so the resulting proposal is surfaced and
+    /// resolved through the same <c>honua://proposals/{id}</c> resource and
+    /// <see cref="ApplyApprovedProposalAsync"/> / <see cref="RejectProposalAsync"/>
+    /// path. Used when the caller has already determined the operation must be gated
+    /// and only needs it persisted for human resolution (ADR-0064, #2814).
+    /// </summary>
+    /// <param name="request">Neutral operation request carrying the execution payload.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="OperationGatewayOutcome.ProposalCreated"/> result carrying the
+    /// proposal identifier.
+    /// </returns>
+    Task<OperationGatewayResult> CreateApprovalProposalAsync(
+        OperationGatewayRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Applies a previously created proposal once a human approves it, handing the
     /// stored execution payload to the registered executor. The proposal must be
     /// in <see cref="OperationProposalStatus.AwaitingApproval"/>.

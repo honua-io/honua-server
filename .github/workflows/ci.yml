@@ -75,10 +75,15 @@ env:
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '20'
   # honua-sdk-js ref for MCP certification and LLM smoke tests.
-  # IMPORTANT: for release-evidence certification this MUST be pinned to a
-  # specific tag or commit SHA so results are reproducible for a given server
-  # commit. While set to a branch name like 'trunk' the lane is useful for
-  # development but certification artifacts are not release-grade evidence.
+  # STATUS (#2807): this pinned commit does NOT yet contain the
+  # `test:certification`, `test:certification:artifact`, or `test:llm-smoke`
+  # scripts (they are honua-sdk-js #484 work), so the mcp-certification /
+  # mcp-llm-smoke lanes skip cleanly and produce NO certification artifact
+  # today. Do not read the pin as evidence that the MCP surface is certified.
+  # IMPORTANT: once the scripts land, re-pin this to the SDK tag or commit SHA
+  # that contains them so results are reproducible release-grade evidence for a
+  # given server commit. A branch name like 'trunk' is useful for development
+  # but its artifacts are not release-grade evidence.
   # workflow_dispatch `sdk_ref` overrides this value for manual replays.
   MCP_SDK_REF: '404242df3cbf10f707ee9137405bf93b3de0012d'
 
