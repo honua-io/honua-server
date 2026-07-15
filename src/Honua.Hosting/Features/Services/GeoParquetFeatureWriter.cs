@@ -28,6 +28,15 @@ public static partial class GeoParquetFeatureWriter
 {
     // Constants for GeoParquet format
     private const string GeometryColumnName = "geometry";
+
+    // GeoParquet 1.1 spatial-pruning covering column (a per-row bounding box) so a reader can
+    // skip row groups whose bbox does not intersect a query window without decoding geometry.
+    private const string BboxColumnName = "bbox";
+    private const string BboxXMinFieldName = "xmin";
+    private const string BboxYMinFieldName = "ymin";
+    private const string BboxXMaxFieldName = "xmax";
+    private const string BboxYMaxFieldName = "ymax";
+
     private const string GeoParquetVersion = "1.1.0";
     private const string GeometryEncoding = "WKB";
     private const string GeoMetadataKey = "geo";
@@ -86,10 +95,11 @@ public static partial class GeoParquetFeatureWriter
         var runtimeFields = DetectRuntimeFields(features, resource);
 
         BinaryArray? geometryArray = null;
+        StructArray? bboxArray = null;
         bool anyGeometryHasZ = false;
         if (returnGeometry && HasGeometry(resource))
         {
-            (geometryArray, anyGeometryHasZ) = BuildGeometryArray(
+            (geometryArray, bboxArray, anyGeometryHasZ) = BuildGeometryArray(
                 features,
                 srid,
                 returnZ,
@@ -108,6 +118,7 @@ public static partial class GeoParquetFeatureWriter
             schema,
             returnGeometry,
             geometryArray,
+            bboxArray,
             resolvedObjectIdFieldName,
             fieldsToInclude,
             logger);
@@ -253,6 +264,13 @@ public static partial class GeoParquetFeatureWriter
             }
         }
 
+        // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
+        // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
+        if (returnGeometry && HasGeometry(resource))
+        {
+            schemaFields.Add(new Field(BboxColumnName, CreateBboxStructType(), nullable: true));
+        }
+
         var schema = new Schema(schemaFields, BuildGeoParquetMetadata(resource, returnGeometry, outputSrid, advertiseZ, isEmpty));
         return (schema, fieldsToInclude, objectIdFieldName);
     }
@@ -280,7 +298,13 @@ public static partial class GeoParquetFeatureWriter
         var geometryTypesPart = isEmpty
             ? "[]"
             : $"[\"{MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), advertiseZ)}\"]";
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}}}}}}}";
+
+        // GeoParquet 1.1 "covering" declares the per-row bbox column used for spatial pruning.
+        // The paths point at the fields of the emitted `bbox` struct column so a reader can map
+        // xmin/ymin/xmax/ymax without decoding geometry (honua-server#2843).
+        var coveringPart =
+            $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{BboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{BboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{BboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{BboxColumnName}"",""{BboxYMaxFieldName}""]}}}}";
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{coveringPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 
@@ -462,6 +486,7 @@ public static partial class GeoParquetFeatureWriter
         Schema schema,
         bool returnGeometry,
         BinaryArray? geometryArray,
+        StructArray? bboxArray,
         string objectIdFieldName,
         List<MetadataV2Field> fieldsToInclude,
         ILogger? logger = null)
@@ -477,6 +502,10 @@ public static partial class GeoParquetFeatureWriter
             else if (field.Name == GeometryColumnName && returnGeometry && geometryArray != null)
             {
                 arrays.Add(geometryArray);
+            }
+            else if (field.Name == BboxColumnName && returnGeometry && bboxArray != null)
+            {
+                arrays.Add(bboxArray);
             }
             else
             {
@@ -553,9 +582,12 @@ public static partial class GeoParquetFeatureWriter
     }
 
     /// <summary>
-    /// Builds binary array for WKB geometry data and tracks whether any geometry retains Z coordinates.
+    /// Builds the WKB geometry array and the parallel GeoParquet 1.1 covering bbox column,
+    /// and tracks whether any geometry retains Z coordinates. The per-row bbox is the envelope
+    /// of the emitted (output-SRID, limit-applied) geometry so it stays consistent with the WKB;
+    /// null / empty geometries yield a null bbox row.
     /// </summary>
-    private static (BinaryArray array, bool anyHasZ) BuildGeometryArray(
+    private static (BinaryArray array, StructArray bbox, bool anyHasZ) BuildGeometryArray(
         ImmutableArray<Feature> features,
         int outputSrid,
         bool returnZ,
@@ -564,11 +596,17 @@ public static partial class GeoParquetFeatureWriter
         ILogger? logger = null)
     {
         var builder = new BinaryArray.Builder();
+        var xMinBuilder = new DoubleArray.Builder();
+        var yMinBuilder = new DoubleArray.Builder();
+        var xMaxBuilder = new DoubleArray.Builder();
+        var yMaxBuilder = new DoubleArray.Builder();
+        var bboxValidity = new ArrowBuffer.BitmapBuilder();
+        var bboxNullCount = 0;
         var anyHasZ = false;
 
         foreach (var feature in features)
         {
-            var (wkb, hasZ) = ProcessGeometryCore(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
+            var (wkb, envelope, hasZ) = ProcessGeometryCore(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
             anyHasZ |= hasZ;
             if (wkb != null && wkb.Length > 0)
             {
@@ -578,9 +616,66 @@ public static partial class GeoParquetFeatureWriter
             {
                 builder.AppendNull();
             }
+
+            if (envelope != null && !envelope.IsNull)
+            {
+                xMinBuilder.Append(envelope.MinX);
+                yMinBuilder.Append(envelope.MinY);
+                xMaxBuilder.Append(envelope.MaxX);
+                yMaxBuilder.Append(envelope.MaxY);
+                bboxValidity.Append(true);
+            }
+            else
+            {
+                xMinBuilder.AppendNull();
+                yMinBuilder.AppendNull();
+                xMaxBuilder.AppendNull();
+                yMaxBuilder.AppendNull();
+                bboxValidity.Append(false);
+                bboxNullCount++;
+            }
         }
 
-        return (builder.Build(), anyHasZ);
+        var bboxArray = BuildBboxStructArray(
+            features.Length,
+            xMinBuilder.Build(),
+            yMinBuilder.Build(),
+            xMaxBuilder.Build(),
+            yMaxBuilder.Build(),
+            bboxValidity.Build(),
+            bboxNullCount);
+
+        return (builder.Build(), bboxArray, anyHasZ);
+    }
+
+    /// <summary>
+    /// Arrow struct type for the GeoParquet covering bbox column: four double ordinate fields.
+    /// A single definition is reused for both the schema field and the array so the declared
+    /// column type and the data match exactly.
+    /// </summary>
+    private static StructType CreateBboxStructType() => new(new List<Field>
+    {
+        new Field(BboxXMinFieldName, new DoubleType(), nullable: true),
+        new Field(BboxYMinFieldName, new DoubleType(), nullable: true),
+        new Field(BboxXMaxFieldName, new DoubleType(), nullable: true),
+        new Field(BboxYMaxFieldName, new DoubleType(), nullable: true)
+    });
+
+    /// <summary>
+    /// Assembles the covering bbox <see cref="StructArray"/> from its four ordinate child arrays
+    /// and a validity bitmap that marks rows with null / empty geometry as null.
+    /// </summary>
+    private static StructArray BuildBboxStructArray(
+        int length,
+        DoubleArray xMin,
+        DoubleArray yMin,
+        DoubleArray xMax,
+        DoubleArray yMax,
+        ArrowBuffer nullBitmap,
+        int nullCount)
+    {
+        var children = new IArrowArray[] { xMin, yMin, xMax, yMax };
+        return new StructArray(CreateBboxStructType(), length, children, nullBitmap, nullCount);
     }
 
     /// <summary>
@@ -603,11 +698,11 @@ public static partial class GeoParquetFeatureWriter
         long featureId = 0,
         ILogger? logger = null)
     {
-        var (wkb, _) = ProcessGeometryCore(geometryBytes, outputSrid, geometryLimits, returnZ, returnM, featureId, logger);
+        var (wkb, _, _) = ProcessGeometryCore(geometryBytes, outputSrid, geometryLimits, returnZ, returnM, featureId, logger);
         return wkb;
     }
 
-    private static (byte[]? wkb, bool hasZ) ProcessGeometryCore(
+    private static (byte[]? wkb, Envelope? envelope, bool hasZ) ProcessGeometryCore(
         byte[]? geometryBytes,
         int outputSrid,
         GeometryLimits geometryLimits,
@@ -618,7 +713,7 @@ public static partial class GeoParquetFeatureWriter
     {
         if (geometryBytes == null || geometryBytes.Length == 0)
         {
-            return (null, false);
+            return (null, null, false);
         }
 
         Geometry? geometry;
@@ -633,19 +728,19 @@ public static partial class GeoParquetFeatureWriter
                 Log.GeoParquetCorruptGeometry(logger, featureId, geometryBytes.Length, ex);
             }
 
-            return (null, false);
+            return (null, null, false);
         }
 
         if (geometry == null)
         {
-            return (null, false);
+            return (null, null, false);
         }
 
         geometry.SRID = outputSrid;
         geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits);
         if (geometry == null)
         {
-            return (null, false);
+            return (null, null, false);
         }
 
         // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
@@ -653,7 +748,12 @@ public static partial class GeoParquetFeatureWriter
 
         var hasZ = GeometryHasZ(geometry);
         var writer = GetWkbWriter(hasZ);
-        return (writer.Write(geometry), hasZ);
+
+        // Envelope of the emitted geometry (output SRID, limits applied) feeds the covering bbox
+        // column so the stored bbox exactly matches the WKB. Empty geometries have a null envelope
+        // and therefore a null bbox row.
+        var envelope = geometry.EnvelopeInternal;
+        return (writer.Write(geometry), envelope, hasZ);
     }
 
     /// <summary>
