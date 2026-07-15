@@ -41,6 +41,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
     public async Task<ZarrRasterSliceReadResult> ReadAsync(
         int layerId,
         ZarrRasterSliceReadRequest request,
+        ICoordinateTransformService? coordinateTransform = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -82,32 +83,86 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
 
         var registration = resolution.Registration!;
         var metadata = registration.Metadata!;
-        if (request.InputSrid is { } srid && metadata.Srid > 0 && srid != metadata.Srid)
+        var nativeSrid = metadata.Srid;
+        var inputSrid = request.InputSrid ?? nativeSrid;
+        var outputSrid = request.OutputSrid ?? inputSrid;
+
+        // Reprojection is required when the request window is expressed in a non-native CRS,
+        // or the caller asked for a non-native output CRS. Without a transform service the
+        // reader can only serve the native grid, so a reprojection request is rejected the
+        // same way a non-native input SR always was.
+        var needsReprojection = (inputSrid != nativeSrid && request.Bounds is not null) || outputSrid != nativeSrid;
+        if (needsReprojection && coordinateTransform is null)
         {
             return Finish(
                 ZarrRasterSliceReadStatus.InvalidSelection,
                 request.Selections.Count,
-                error: $"Slice bounds must use the coverage spatial reference EPSG:{metadata.Srid}; reprojection is not supported.",
+                error: $"Slice bounds must use the coverage spatial reference EPSG:{nativeSrid}; reprojection is not supported.",
                 activity: activity);
         }
 
-        var requestedBounds = request.Bounds ?? metadata.Extent;
-        if (!Intersects(requestedBounds, metadata.Extent))
+        RasterExtent outputExtent;
+        RasterExtent nativeReadBounds;
+        if (!needsReprojection)
         {
-            return Finish(
-                ZarrRasterSliceReadStatus.OutsideCoverage,
-                request.Selections.Count,
-                error: "The requested bounds do not intersect the coverage extent.",
-                activity: activity);
-        }
+            var requestedBounds = request.Bounds ?? metadata.Extent;
+            if (!Intersects(requestedBounds, metadata.Extent))
+            {
+                return Finish(
+                    ZarrRasterSliceReadStatus.OutsideCoverage,
+                    request.Selections.Count,
+                    error: "The requested bounds do not intersect the coverage extent.",
+                    activity: activity);
+            }
 
-        // Clamp an over-extent trim to the intersection with the coverage extent instead
-        // of requiring full containment. This matches the plain IRasterStore GetCoverage
-        // path (over-extent trims answer the intersection, exercised by CITE) and lets a
-        // client that echoes the DescribeCoverage-advertised extent — which can round a
-        // hair outside the Zarr metadata extent — read the intersection rather than 404.
-        // Only an empty intersection (guarded above) surfaces InvalidSubsetting.
-        var bounds = Clamp(requestedBounds, metadata.Extent);
+            // Clamp an over-extent trim to the intersection with the coverage extent instead
+            // of requiring full containment. This matches the plain IRasterStore GetCoverage
+            // path (over-extent trims answer the intersection, exercised by CITE) and lets a
+            // client that echoes the DescribeCoverage-advertised extent — which can round a
+            // hair outside the Zarr metadata extent — read the intersection rather than 404.
+            nativeReadBounds = Clamp(requestedBounds, metadata.Extent);
+            outputExtent = nativeReadBounds;
+        }
+        else
+        {
+            var requestWindow = request.Bounds ?? metadata.Extent;
+            var windowSrid = request.Bounds is not null ? inputSrid : nativeSrid;
+            var projectedOutput = await TransformExtentAsync(
+                    coordinateTransform!, requestWindow, windowSrid, outputSrid, cancellationToken)
+                .ConfigureAwait(false);
+            if (projectedOutput is not { } computedOutput)
+            {
+                return Finish(
+                    ZarrRasterSliceReadStatus.InvalidSelection,
+                    request.Selections.Count,
+                    error: $"The requested output spatial reference EPSG:{outputSrid} could not be resolved for reprojection.",
+                    activity: activity);
+            }
+
+            outputExtent = computedOutput;
+            var projectedNative = await TransformExtentAsync(
+                    coordinateTransform!, outputExtent, outputSrid, nativeSrid, cancellationToken)
+                .ConfigureAwait(false);
+            if (projectedNative is not { } computedNative)
+            {
+                return Finish(
+                    ZarrRasterSliceReadStatus.InvalidSelection,
+                    request.Selections.Count,
+                    error: $"The requested window could not be reprojected into the coverage spatial reference EPSG:{nativeSrid}.",
+                    activity: activity);
+            }
+
+            if (!Intersects(computedNative, metadata.Extent))
+            {
+                return Finish(
+                    ZarrRasterSliceReadStatus.OutsideCoverage,
+                    request.Selections.Count,
+                    error: "The requested bounds do not intersect the coverage extent.",
+                    activity: activity);
+            }
+
+            nativeReadBounds = Clamp(computedNative, metadata.Extent);
+        }
 
         if (!TryResolveSelections(
                 metadata,
@@ -126,11 +181,14 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         }
 
         activity?.SetTag("honua.slice.variable", variable);
+        activity?.SetTag("honua.output.srid", outputSrid);
+        activity?.SetTag("honua.output.resampling", request.Resampling.ToString());
         activity?.SetTag(
             "honua.slice.dimensions",
             string.Join(',', request.Selections.Select(static selection => selection.Dimension)));
 
-        var tileBounds = new ZarrTileBounds(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax);
+        var tileBounds = new ZarrTileBounds(
+            nativeReadBounds.XMin, nativeReadBounds.YMin, nativeReadBounds.XMax, nativeReadBounds.YMax);
         if (!ZarrTileSlicePlanner.TryPlan(
                 metadata,
                 variable,
@@ -163,31 +221,58 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                     cancellationToken)
                 .ConfigureAwait(false);
             var fillValue = TryConvertFillValue(slice.Plan.Array.FillValue);
-            var png = ZarrTileRenderer.Render(
+
+            // Map each output pixel centre to a coordinate in the output CRS, then warp the
+            // whole grid back into the native CRS in one batch transform so the renderer can
+            // sample the source grid. When the output CRS is native this is the identity grid.
+            var (sampleX, sampleY) = BuildSampleGrid(outputExtent, request.OutputWidth, request.OutputHeight);
+            if (outputSrid != nativeSrid)
+            {
+                var warped = await coordinateTransform!
+                    .TransformPointsAsync(sampleX, sampleY, outputSrid, nativeSrid, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!warped)
+                {
+                    return Finish(
+                        ZarrRasterSliceReadStatus.InvalidSelection,
+                        request.Selections.Count,
+                        variable,
+                        error: $"The slice could not be reprojected from EPSG:{outputSrid} to the coverage spatial reference EPSG:{nativeSrid}.",
+                        activity: activity);
+                }
+            }
+
+            var stretchRange = ResolveStretchRange(request.Stretch);
+            var rgba = ZarrTileRenderer.RenderRgba(
                 subset,
                 slice,
                 request.OutputWidth,
                 request.OutputHeight,
-                colormap: null,
-                fillValue: fillValue);
+                sampleX,
+                sampleY,
+                request.Resampling,
+                request.Colormap,
+                stretchRange,
+                fillValue);
+            var png = PngEncoder.Encode(rgba, request.OutputWidth, request.OutputHeight);
             var raster = new RasterResult
             {
                 Data = png,
                 ContentType = "image/png",
                 Width = request.OutputWidth,
                 Height = request.OutputHeight,
-                Srid = metadata.Srid,
-                Extent = bounds,
+                Srid = outputSrid,
+                Extent = outputExtent,
                 BandCount = 1,
                 PixelType = subset.DataType,
                 GeoTransform =
                 [
-                    bounds.XMin,
-                    (bounds.XMax - bounds.XMin) / request.OutputWidth,
+                    outputExtent.XMin,
+                    (outputExtent.XMax - outputExtent.XMin) / request.OutputWidth,
                     0,
-                    bounds.YMax,
+                    outputExtent.YMax,
                     0,
-                    -(bounds.YMax - bounds.YMin) / request.OutputHeight,
+                    -(outputExtent.YMax - outputExtent.YMin) / request.OutputHeight,
                 ],
             };
 
@@ -197,7 +282,8 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 request.Selections.Count,
                 variable,
                 raster,
-                activity: activity);
+                activity: activity,
+                rgba: rgba);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -213,6 +299,83 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                 error: "The multidimensional slice could not be read and rendered from its backing store.",
                 activity: activity);
         }
+    }
+
+    // Reprojects an extent between spatial references, returning it unchanged when the
+    // source and target SRIDs match (identity) so the native path never touches the
+    // authoritative transform service. Returns null when the transform cannot be performed.
+    private static async Task<RasterExtent?> TransformExtentAsync(
+        ICoordinateTransformService transform,
+        RasterExtent extent,
+        int fromSrid,
+        int toSrid,
+        CancellationToken cancellationToken)
+    {
+        if (fromSrid == toSrid)
+        {
+            return extent with { Srid = toSrid };
+        }
+
+        var result = await transform
+            .TransformExtentAsync(extent.XMin, extent.YMin, extent.XMax, extent.YMax, fromSrid, toSrid, cancellationToken)
+            .ConfigureAwait(false);
+        if (result is not { } bounds)
+        {
+            return null;
+        }
+
+        return new RasterExtent
+        {
+            XMin = bounds.MinX,
+            YMin = bounds.MinY,
+            XMax = bounds.MaxX,
+            YMax = bounds.MaxY,
+            Srid = toSrid,
+        };
+    }
+
+    // Row-major output-CRS pixel-centre coordinates for a width x height raster spanning the
+    // output extent (north-up: row 0 is the northern edge).
+    private static (double[] X, double[] Y) BuildSampleGrid(RasterExtent extent, int width, int height)
+    {
+        var xs = new double[checked(width * height)];
+        var ys = new double[xs.Length];
+        var spanX = extent.XMax - extent.XMin;
+        var spanY = extent.YMax - extent.YMin;
+        for (var py = 0; py < height; py++)
+        {
+            var cy = extent.YMax - (((py + 0.5) / height) * spanY);
+            var rowOffset = py * width;
+            for (var px = 0; px < width; px++)
+            {
+                var index = rowOffset + px;
+                xs[index] = extent.XMin + (((px + 0.5) / width) * spanX);
+                ys[index] = cy;
+            }
+        }
+
+        return (xs, ys);
+    }
+
+    // Derives an explicit display range from a rendering-rule stretch. Explicit per-band
+    // statistics (Esri Statistics on the first selected band) are honoured directly; other
+    // stretch types fall back to the renderer's auto min/max ramp (null), which equals the
+    // MinMax stretch over the slice.
+    private static (double Min, double Max)? ResolveStretchRange(RasterStretch? stretch)
+    {
+        if (stretch is not { } value)
+        {
+            return null;
+        }
+
+        if (value.StatisticsMin is { Length: > 0 } mins &&
+            value.StatisticsMax is { Length: > 0 } maxes &&
+            double.IsFinite(mins[0]) && double.IsFinite(maxes[0]) && maxes[0] > mins[0])
+        {
+            return (mins[0], maxes[0]);
+        }
+
+        return null;
     }
 
     private static bool TryValidateRequest(ZarrRasterSliceReadRequest request, out string? error)
@@ -401,7 +564,8 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         string? variable = null,
         RasterResult? raster = null,
         string? error = null,
-        Activity? activity = null)
+        Activity? activity = null,
+        byte[]? rgba = null)
     {
         activity?.SetTag("honua.slice.status", status.ToString());
         if (status == ZarrRasterSliceReadStatus.Success)
@@ -413,6 +577,6 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             activity?.SetStatus(ActivityStatusCode.Error, error);
         }
 
-        return new ZarrRasterSliceReadResult(status, raster, variable, dimensionCount, error);
+        return new ZarrRasterSliceReadResult(status, raster, variable, dimensionCount, error, rgba);
     }
 }

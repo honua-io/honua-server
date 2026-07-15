@@ -938,6 +938,137 @@ public class ImageServerCatalogQueryHandlerTests
             .Should().BeEquivalentTo([100L]);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_IntersectsPolygonGeometry_PushesExactPredicateToProvider()
+    {
+        // An explicit (non-envelope) geometry with the default intersects relationship must be
+        // translated into an exact provider-side predicate: the neutral query carries the WKB
+        // geometry and an Intersects relation, not merely the envelope box (#2839).
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Polygon (rings) covering only the eastern footprint's envelope.
+            ["geometry"] = "{\"rings\":[[[2,-1],[8,-1],[8,1],[2,1],[2,-1]]]}",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["spatialRel"] = "esriSpatialRelIntersects",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L]);
+
+        await _rasterStore.Received(1).QueryCatalogAsync(
+            1,
+            Arg.Is<RasterCatalogQuery>(q =>
+                q.SpatialPredicate.HasValue &&
+                q.SpatialPredicate.Value.Geometry != null &&
+                q.SpatialPredicate.Value.Geometry!.Length > 0 &&
+                q.SpatialPredicate.Value.Relation == RasterCatalogSpatialRelation.Intersects),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_EnvelopeGeometry_UsesEnvelopeOnlyPredicate()
+    {
+        // A bbox/envelope geometry is a windowing request and must stay envelope-only: the neutral
+        // query carries no exact geometry and the envelope-intersects relation (#2839, bbox rule).
+        SetupLayerWithRasters([CreateRaster(200, "east", xMin: 1, yMin: -5, xMax: 10, yMax: 5)]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"xmin\":2,\"ymin\":-1,\"xmax\":8,\"ymax\":1}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["spatialRel"] = "esriSpatialRelIntersects",
+        };
+
+        var context = CreateImageServerContext();
+        _ = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        await _rasterStore.Received(1).QueryCatalogAsync(
+            1,
+            Arg.Is<RasterCatalogQuery>(q =>
+                q.SpatialPredicate.HasValue &&
+                q.SpatialPredicate.Value.Geometry == null &&
+                q.SpatialPredicate.Value.Relation == RasterCatalogSpatialRelation.EnvelopeIntersects),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_IntersectsGeometryWithWhere_CombinesSpatialAndAttributeFilter()
+    {
+        // A spatial geometry combined with a non-spatial where must apply both filters: the spatial
+        // predicate is pushed to the provider and the attribute where is evaluated over the bounded set.
+        SetupLayerWithRasters([
+            CreateRaster(100, "west", xMin: -10, yMin: -5, xMax: -1, yMax: 5),
+            CreateRaster(200, "east-a", xMin: 1, yMin: -5, xMax: 5, yMax: 5, bandCount: 1),
+            CreateRaster(300, "east-b", xMin: 4, yMin: -5, xMax: 9, yMax: 5, bandCount: 3),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Polygon covering both eastern footprints; where narrows to the multi-band one.
+            ["geometry"] = "{\"rings\":[[[2,-2],[8,-2],[8,2],[2,2],[2,-2]]]}",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["where"] = "BandCount = 3",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([300L]);
+
+        await _rasterStore.Received(1).QueryCatalogAsync(
+            1,
+            Arg.Is<RasterCatalogQuery>(q =>
+                q.SpatialPredicate.HasValue &&
+                q.SpatialPredicate.Value.Geometry != null &&
+                q.SpatialPredicate.Value.Relation == RasterCatalogSpatialRelation.Intersects),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Operation(Operations.Pagination)]
+    public async Task QueryCatalogAsync_SpatialFilterWithPaging_ReturnsBoundedWindow()
+    {
+        // Paging over a spatially-filtered result: the polygon selects all four footprints, then the
+        // offset/limit window is applied over the filtered set.
+        SetupLayerWithRasters([
+            CreateRaster(100, "a", xMin: 0, yMin: -1, xMax: 2, yMax: 1),
+            CreateRaster(200, "b", xMin: 2, yMin: -1, xMax: 4, yMax: 1),
+            CreateRaster(300, "c", xMin: 4, yMin: -1, xMax: 6, yMax: 1),
+            CreateRaster(400, "d", xMin: 6, yMin: -1, xMax: 8, yMax: 1),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"rings\":[[[-1,-2],[9,-2],[9,2],[-1,2],[-1,-2]]]}",
+            ["geometryType"] = "esriGeometryPolygon",
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "2",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result.Should().BeOfType<JsonHttpResult<CatalogQueryResponse>>().Which;
+        jsonResult.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().BeEquivalentTo([200L, 300L]);
+        jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
+    }
+
     private void SetupLayerWithRasters(RasterInfo[] rasters, ICoordinateTransformService? filterTransform = null)
     {
         // The reader now drives the neutral IRasterStore.QueryCatalogAsync pushdown contract. The
