@@ -1601,6 +1601,120 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeTiePoints")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/computeTiePoints")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeTiePoints")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeTiePoints")]
+    [Operation(Operations.Query)]
+    public async Task ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints()
+    {
+        // The raster carries two pre-registered control points in its exterior-orientation payload.
+        // computeTiePoints must pass them through verbatim (no feature matching): sourcePoints are
+        // the image/pixel coordinates and targetPoints the reference/ground coordinates (ADR-0064).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    ExteriorOrientationJson = """
+                        {
+                          "controlPoints": [
+                            { "imagePoint": { "x": 512.0, "y": 384.0 },
+                              "referencePoint": { "x": -117.161, "y": 32.716, "z": 104.2, "spatialReference": { "wkid": 4326 } } },
+                            { "imagePoint": { "x": 1024.0, "y": 768.0 },
+                              "referencePoint": { "x": -117.155, "y": 32.720 } }
+                          ]
+                        }
+                        """,
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints?f=json");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await getResponse.Content.ReadAsStringAsync());
+
+            using var postContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+            ]);
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints",
+                postContent);
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var serviceGetResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/computeTiePoints?f=json");
+            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await serviceGetResponse.Content.ReadAsStringAsync());
+
+            using var servicePostContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+            ]);
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/computeTiePoints",
+                servicePostContent);
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await servicePostResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+
+        static void AssertTiePoints(string body)
+        {
+            var response = JsonSerializer.Deserialize(
+                body,
+                ImageServerJsonContext.Default.ImageServerComputeTiePointsResponse);
+            response.Should().NotBeNull();
+            response!.TiePoints.Should().NotBeNull();
+            response.TiePoints.SourcePoints.Should().HaveCount(2);
+            response.TiePoints.TargetPoints.Should().HaveCount(2);
+
+            // Pass-through is exact (ADR-0064 numerical-fixture expectation).
+            response.TiePoints.SourcePoints[0].X.Should().Be(512.0);
+            response.TiePoints.SourcePoints[0].Y.Should().Be(384.0);
+            response.TiePoints.TargetPoints[0].X.Should().Be(-117.161);
+            response.TiePoints.TargetPoints[0].Y.Should().Be(32.716);
+            response.TiePoints.TargetPoints[0].Z.Should().Be(104.2);
+            response.TiePoints.TargetPoints[0].SpatialReference!.Wkid.Should().Be(4326);
+            // Reference point without an explicit SR inherits the raster SRID (4326).
+            response.TiePoints.TargetPoints[1].SpatialReference!.Wkid.Should().Be(4326);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeTiePoints")]
+    [Operation(Operations.Query)]
+    public async Task ComputeTiePoints_NoControlPoints_ReturnsNotImplemented()
+    {
+        // The default substitute models no sensor metadata / control points. Automatic feature
+        // matching is out of scope by design, so the honest answer is 501 — never a fabricated or
+        // empty tie-point set (ADR-0064), mirroring the DEM-height 501 discipline.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints?f=json");
+
+            await response.AssertGeoServicesErrorAsync(501);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer")]
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfo_WithMeasureRoute_AdvertisesBasicMensuration()

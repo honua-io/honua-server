@@ -67,6 +67,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerRasterMetadataHandler>();
         services.AddScoped<ImageServerCoordinateMetadataHandler>();
         services.AddScoped<ImageServerProjectHandler>();
+        services.AddScoped<ImageServerComputeTiePointsHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
 
         // Durable tile-export raster producer + source fence (#2707). Registered as singletons so
