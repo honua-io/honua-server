@@ -68,6 +68,12 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerCoordinateMetadataHandler>();
         services.AddScoped<ImageServerProjectHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
+
+        // Durable tile-export raster producer + source fence (#2707). Registered as singletons so
+        // the singleton TileExport job executor can hold them; each resolves the scoped raster store
+        // and metadata graph from a per-job scope via IServiceScopeFactory.
+        services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportPackageProducer, Tiles.ImageServerTileExportProducer>();
+        services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportSourceFence, Tiles.ImageServerTileExportSourceFence>();
         services.AddScoped<ImageServerFindHandler>();
         services.AddScoped<ImageServerMeasureHandler>();
         services.AddScoped<ImageServerWmtsHandler>();

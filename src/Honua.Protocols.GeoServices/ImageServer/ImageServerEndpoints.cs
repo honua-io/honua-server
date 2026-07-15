@@ -422,6 +422,26 @@ internal static class ImageServerEndpoints
             .Produces(404)
             .Produces(503);
 
+        // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle (#2707).
+        group.MapGet("/jobs/{jobId}", ExportTilesJobStatus)
+            .WithName("ImageServerExportTilesJobStatus")
+            .WithSummary("Get async exportTiles job status")
+            .Produces<ImageServerExportTilesJobStatusResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(404)
+            .Produces(503);
+        group.MapPost("/jobs/{jobId}/cancel", ExportTilesJobCancel)
+            .WithName("ImageServerExportTilesJobCancel")
+            .WithSummary("Cancel an async exportTiles job")
+            .Produces<ImageServerExportTilesJobStatusResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapGet("/jobs/{jobId}/results/out_service_url", ExportTilesJobResult)
+            .WithName("ImageServerExportTilesJobResult")
+            .WithSummary("Get async exportTiles job result package URL")
+            .Produces<ImageServerExportTilesJobResultResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         // Raster key properties metadata
         group.MapGet("/keyProperties", KeyPropertiesGet)
             .WithDisplayName("Get Key Properties")
@@ -934,6 +954,25 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(503);
+
+        serviceGroup.MapGet("/jobs/{jobId}", ExportTilesJobStatusByService)
+            .WithName("ImageServerExportTilesJobStatusByService")
+            .WithSummary("Get async exportTiles job status")
+            .Produces<ImageServerExportTilesJobStatusResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(404)
+            .Produces(503);
+        serviceGroup.MapPost("/jobs/{jobId}/cancel", ExportTilesJobCancelByService)
+            .WithName("ImageServerExportTilesJobCancelByService")
+            .WithSummary("Cancel an async exportTiles job")
+            .Produces<ImageServerExportTilesJobStatusResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapGet("/jobs/{jobId}/results/out_service_url", ExportTilesJobResultByService)
+            .WithName("ImageServerExportTilesJobResultByService")
+            .WithSummary("Get async exportTiles job result package URL")
+            .Produces<ImageServerExportTilesJobResultResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
 
         serviceGroup.MapGet("/keyProperties", KeyPropertiesGetByService)
             .WithDisplayName("Get Key Properties by Service")
@@ -2561,6 +2600,72 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await ExportTilesPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesJobStatus(
+        int id,
+        string jobId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        return layerError ?? await handler.GetJobStatusAsync(context, id, jobId, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesJobStatusByService(
+        string serviceId,
+        string jobId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ExportTilesJobStatus(resolution.LayerId, jobId, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesJobCancel(
+        int id,
+        string jobId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        return layerError ?? await handler.CancelJobAsync(context, id, jobId, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesJobCancelByService(
+        string serviceId,
+        string jobId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ExportTilesJobCancel(resolution.LayerId, jobId, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesJobResult(
+        int id,
+        string jobId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        return layerError ?? await handler.GetJobResultAsync(context, id, jobId, cancellationToken);
+    }
+
+    private static async Task<IResult> ExportTilesJobResultByService(
+        string serviceId,
+        string jobId,
+        HttpContext context,
+        ImageServerExportTilesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ExportTilesJobResult(resolution.LayerId, jobId, context, handler, cancellationToken);
     }
 
     /// <summary>

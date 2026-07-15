@@ -110,6 +110,32 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .AllowAnonymous();
 
+        // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle (#2706).
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/jobs/{jobId}",
+                static (HttpContext context, string serviceId, string jobId) => HandleExportTilesJobStatus(context, serviceId, jobId))
+            .WithDisplayName("Get Export Map Tiles Job Status")
+            .WithName("MapServerExportTilesJobStatus")
+            .WithSummary("Get async exportTiles job status")
+            .WithDescription("Returns the ArcGIS job status envelope for a durable MapServer exportTiles job")
+            .WithTags("MapServer");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel",
+                static (HttpContext context, string serviceId, string jobId) => HandleExportTilesJobCancel(context, serviceId, jobId))
+            .WithDisplayName("Cancel Export Map Tiles Job")
+            .WithName("MapServerExportTilesJobCancel")
+            .WithSummary("Cancel an async exportTiles job")
+            .WithDescription("Cancels a durable MapServer exportTiles job and returns its updated status envelope")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
+        endpoints.MapGet("/rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url",
+                static (HttpContext context, string serviceId, string jobId) => HandleExportTilesJobResult(context, serviceId, jobId))
+            .WithDisplayName("Get Export Map Tiles Job Result")
+            .WithName("MapServerExportTilesJobResult")
+            .WithSummary("Get async exportTiles job result package URL")
+            .WithDescription("Returns the signed output package URL for a completed durable MapServer exportTiles job")
+            .WithTags("MapServer");
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateKml",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleGenerateKml(context))
             .WithDisplayName("Generate KML")
