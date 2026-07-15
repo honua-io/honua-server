@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
@@ -649,6 +650,7 @@ public class ImageServerExportHandlerTests
         _zarrRasterSliceReader.ReadAsync(
                 1,
                 Arg.Any<ZarrRasterSliceReadRequest>(),
+                Arg.Any<ICoordinateTransformService?>(),
                 Arg.Any<CancellationToken>())
             .Returns(new ZarrRasterSliceReadResult(
                 ZarrRasterSliceReadStatus.Success,
@@ -683,9 +685,145 @@ public class ImageServerExportHandlerTests
                 slice.OutputWidth == 4 &&
                 slice.OutputHeight == 3 &&
                 slice.InputSrid == 4326 &&
+                slice.OutputSrid == 4326 &&
                 slice.Selections.Count == 1),
+            Arg.Any<ICoordinateTransformService?>(),
             Arg.Any<CancellationToken>());
         await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimReprojected_ThreadsOutputSridToSliceReader()
+    {
+        // #2717: exportImage of a Zarr slice now supports reprojection between bboxSR and imageSR.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(bboxSr: "4326", imageSr: "3857");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await _zarrRasterSliceReader.Received(1).ReadAsync(
+            1,
+            Arg.Is<ZarrRasterSliceReadRequest>(slice => slice.InputSrid == 4326 && slice.OutputSrid == 3857),
+            Arg.Any<ICoordinateTransformService?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimJpeg_ReturnsInlineJpeg()
+    {
+        // #2717: JPEG output is now supported for multidimensional Zarr slices.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(format: "jpeg", responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.ContentType.Should().Be("image/jpeg");
+        context.Response.Body.Length.Should().BeGreaterThan(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimTiff_ReturnsInlineTiff()
+    {
+        // #2717: TIFF output is now supported for multidimensional Zarr slices.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(format: "tiff", responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.ContentType.Should().Be("image/tiff");
+        // Baseline TIFF little-endian magic: "II" 0x2A00.
+        context.Response.Body.Position = 0;
+        using var reader = new BinaryReader(context.Response.Body);
+        var header = reader.ReadBytes(4);
+        header[0].Should().Be((byte)'I');
+        header[1].Should().Be((byte)'I');
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimBilinearInterpolation_ThreadsResamplingToSliceReader()
+    {
+        // #2717: bilinear/cubic interpolation is now supported for multidimensional Zarr slices.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(interpolation: "RSP_BilinearInterpolation");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await _zarrRasterSliceReader.Received(1).ReadAsync(
+            1,
+            Arg.Is<ZarrRasterSliceReadRequest>(slice => slice.Resampling == ResamplingAlgorithm.Bilinear),
+            Arg.Any<ICoordinateTransformService?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimColormapRenderingRule_ThreadsColormapToSliceReader()
+    {
+        // #2717: Stretch + Colormap rendering rules are now supported for Zarr slices.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(
+            renderingRule: """{"rasterFunction":"Colormap","rasterFunctionArguments":{"Colormap":[[0,0,0,0],[255,255,255,255]]}}""");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await _zarrRasterSliceReader.Received(1).ReadAsync(
+            1,
+            Arg.Is<ZarrRasterSliceReadRequest>(slice => slice.Colormap != null),
+            Arg.Any<ICoordinateTransformService?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimStretchRenderingRule_ThreadsStretchToSliceReader()
+    {
+        // #2717: Stretch rendering rules are now supported for Zarr slices.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(
+            renderingRule: """{"rasterFunction":"Stretch","rasterFunctionArguments":{"StretchType":5}}""");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await _zarrRasterSliceReader.Received(1).ReadAsync(
+            1,
+            Arg.Is<ZarrRasterSliceReadRequest>(slice => slice.Stretch != null),
+            Arg.Any<ICoordinateTransformService?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_MultidimBandArithmeticRenderingRule_ReturnsNotImplemented()
+    {
+        // Band-oriented raster functions do not apply to a single-variable Zarr slice.
+        SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
+
+        var context = CreateImageServerContext();
+        var request = CreateMultidimRequest(
+            renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":3,\"BandIndexes\":[2,3]}}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        await _zarrRasterSliceReader.DidNotReceiveWithAnyArgs()
+            .ReadAsync(default, default!, default, default);
     }
 
     [UnitTest]
@@ -1198,6 +1336,68 @@ public class ImageServerExportHandlerTests
         _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
             .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
     }
+
+    private void SetupMultidimSliceReader(RasterResult raster, byte[]? rgba)
+    {
+        _zarrRasterSliceReader.ReadAsync(
+                1,
+                Arg.Any<ZarrRasterSliceReadRequest>(),
+                Arg.Any<ICoordinateTransformService?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ZarrRasterSliceReadResult(
+                ZarrRasterSliceReadStatus.Success,
+                raster,
+                "temperature",
+                1,
+                null,
+                rgba));
+        SetupTemporaryStorage();
+    }
+
+    private static RasterResult CreateMultidimRasterResult() => new()
+    {
+        Data = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+        ContentType = "image/png",
+        Width = 4,
+        Height = 3,
+        Srid = 4326,
+        Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+    };
+
+    // A 4x3 RGBA buffer (48 bytes) matching CreateMultidimRasterResult so JPEG/TIFF re-encode.
+    private static byte[] CreateMultidimRgba()
+    {
+        var rgba = new byte[4 * 3 * 4];
+        for (var i = 0; i < rgba.Length; i += 4)
+        {
+            rgba[i] = 10;
+            rgba[i + 1] = 120;
+            rgba[i + 2] = 240;
+            rgba[i + 3] = 255;
+        }
+
+        return rgba;
+    }
+
+    private static ExportImageRequest CreateMultidimRequest(
+        string format = "png",
+        string? bboxSr = "4326",
+        string? imageSr = "4326",
+        string? interpolation = null,
+        string? renderingRule = null,
+        string responseFormat = "json") => new()
+        {
+            Bbox = "-180,-90,180,90",
+            BboxSr = bboxSr,
+            ImageSr = imageSr,
+            Size = "4,3",
+            Format = format,
+            Interpolation = interpolation,
+            RenderingRule = renderingRule,
+            MultidimensionalDefinition =
+                "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333]}]",
+            F = responseFormat,
+        };
 
     private static ExportImageRequest CreateRequest(
         string? bbox = null,

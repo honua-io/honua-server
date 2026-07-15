@@ -807,6 +807,12 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("policyRef")]
     public string? PolicyRef { get; set; }
 
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
+
+    [JsonPropertyName("resourceUri")]
+    public string? ResourceUri { get; set; }
+
     [JsonPropertyName("conflictingJobId")]
     public string? ConflictingJobId { get; set; }
 

@@ -90,7 +90,14 @@ internal static class McpErrorMapper
             {
                 Code = Codes.FailedPrecondition,
                 ApprovalRequired = true,
-                PolicyRef = approvalEx.PolicyRef
+                PolicyRef = approvalEx.PolicyRef,
+                // When the gated plan was persisted as a proposal (ADR-0064, #2814),
+                // surface its id and the honua://proposals/{id} resume resource so an
+                // agent can poll until a human resolves it instead of dead-ending.
+                ProposalId = approvalEx.ProposalId,
+                ResourceUri = approvalEx.ProposalId == null
+                    ? null
+                    : McpResourceUris.ProposalUri(approvalEx.ProposalId)
             }
         },
 

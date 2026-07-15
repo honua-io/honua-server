@@ -208,6 +208,14 @@ public sealed class PlanAnalysisToolTests
         reason.Should().NotBeNullOrWhiteSpace();
         reason.Should().Contain("fixture", "the miss reason must disclose fixture (demo) mode");
         reason.Should().ContainAny("live", "provider", "PlanAnalysis", "WorkflowGeneration");
+
+        // #2815: an unmatched intent is the genuine fixture-mode dead-end. The tool must
+        // still hand back an actionable next step (hand-author from the process catalog and
+        // validate) so an agent is never left with a bare "rejected" and nowhere to go.
+        var nextSteps = body.GetProperty("nextSteps").GetString();
+        nextSteps.Should().NotBeNullOrWhiteSpace();
+        nextSteps.Should().Contain("honua_validate_plan");
+        nextSteps.Should().Contain("honua://catalog/processes");
     }
 
     [UnitTest]

@@ -191,6 +191,7 @@ public sealed class Wcs20ZarrOversizeEndpointsTests : IAsyncLifetime
         public Task<ZarrRasterSliceReadResult> ReadAsync(
             int layerId,
             ZarrRasterSliceReadRequest request,
+            ICoordinateTransformService? coordinateTransform = null,
             CancellationToken cancellationToken = default)
             => throw new InvalidOperationException(
                 "The oversize guard must reject the request before any Zarr slice read.");

@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -52,6 +53,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly GeoprocessingJobArtifactService _artifacts;
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
+    private readonly IOperationGateway? _operationGateway;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -68,7 +70,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
-        IOptions<LimitsOptions>? limitsOptions = null)
+        IOptions<LimitsOptions>? limitsOptions = null,
+        IOperationGateway? operationGateway = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -81,6 +84,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _jobStore = jobStore;
+        _operationGateway = operationGateway;
     }
 
     /// <summary>
@@ -107,7 +111,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IScopedJobTokenIssuer? scopedJobTokenIssuer = null,
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
-        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null)
+        IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
+        IOperationGateway? operationGateway = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -122,7 +127,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions)
+            limitsOptions,
+            operationGateway)
     {
     }
 
@@ -260,11 +266,29 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return result;
     }
 
-    public async Task<ExecutionJobRecord> SubmitJobAsync(
+    public Task<ExecutionJobRecord> SubmitJobAsync(
         AnalysisPlan plan,
         string? idempotencyKey,
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata = null,
+        CancellationToken cancellationToken = default)
+        => SubmitJobCoreAsync(plan, idempotencyKey, principal, protocolMetadata, resumingApproved: false, cancellationToken);
+
+    /// <summary>
+    /// Shared submit pipeline for both the caller-initiated submit path and the
+    /// approval-resume path. When <paramref name="resumingApproved"/> is true the
+    /// caller is the operation gateway replaying a proposal that already cleared the
+    /// baseline execute, mutating-process, and approval gates at proposal-creation
+    /// time; those gates are therefore bypassed here so the resumed submission is not
+    /// re-denied against the reconstructed submitter principal (ADR-0064, #2814).
+    /// Structural, executability, and catalog validation always run.
+    /// </summary>
+    private async Task<ExecutionJobRecord> SubmitJobCoreAsync(
+        AnalysisPlan plan,
+        string? idempotencyKey,
+        ClaimsPrincipal principal,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        bool resumingApproved,
         CancellationToken cancellationToken = default)
     {
         // Centralize submit-path authorization here so every adapter (GPServer,
@@ -273,11 +297,14 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // (#2263). Adapters that already call EnsureCallerAuthorizedAsync before
         // submit stay correct — this evaluation is idempotent and never
         // double-fails an authorized caller.
-        await _authorizer.EnsureAuthorizedAsync(
-            principal,
-            OperatorResourceType.Process,
-            OperatorOperation.Execute,
-            cancellationToken).ConfigureAwait(false);
+        if (!resumingApproved)
+        {
+            await _authorizer.EnsureAuthorizedAsync(
+                principal,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         ValidatePlanStructure(plan);
         EnsurePlanExecutable(plan);
@@ -297,11 +324,16 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             // policies (the prior custom-code-specific who-gate fired only under
             // RepoPolicy.Open). This runs at submission time, before the job is accepted,
             // and is ADDITIVE to the repo-allowlist/signing gates the submit gate enforces.
-            await _authorizer.EnsureAuthorizedAsync(
-                principal,
-                OperatorResourceType.Process,
-                OperatorOperation.ExecuteCustomCode,
-                cancellationToken).ConfigureAwait(false);
+            // The approval lane never persists a custom-code proposal, so resumingApproved
+            // is always false here.
+            if (!resumingApproved)
+            {
+                await _authorizer.EnsureAuthorizedAsync(
+                    principal,
+                    OperatorResourceType.Process,
+                    OperatorOperation.ExecuteCustomCode,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
         else
         {
@@ -313,7 +345,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // plan carries no executable mutating Geoprocess step, so running this for both
         // branches closes the gap where a mutating catalog step smuggled onto a custom-code
         // submission would never face the ExecuteMutatingProcess gate (#2798).
-        if (ContainsMutatingProcess(plan))
+        if (!resumingApproved && ContainsMutatingProcess(plan))
         {
             await _authorizer.EnsureAuthorizedAsync(
                 principal,
@@ -322,7 +354,12 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 cancellationToken).ConfigureAwait(false);
         }
 
-        EnsureApproved(principal, plan);
+        if (!resumingApproved)
+        {
+            await EnsureApprovedAsync(
+                principal, plan, idempotencyKey, protocolMetadata, isCustomCode, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         var jobStore = RequireJobStore();
         var now = DateTimeOffset.UtcNow;
@@ -855,7 +892,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             ?? principal.FindFirst("sub")?.Value
             ?? principal.Identity?.Name;
 
-    private void EnsureApproved(ClaimsPrincipal principal, AnalysisPlan plan)
+    private async Task EnsureApprovedAsync(
+        ClaimsPrincipal principal,
+        AnalysisPlan plan,
+        string? idempotencyKey,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        bool isCustomCode,
+        CancellationToken cancellationToken)
     {
         var approvalGatedProcessId = ProcessDestructiveClassifier.FindFirstApprovalGatedProcessId(plan, _processCatalog);
         if (approvalGatedProcessId != null)
@@ -877,8 +920,82 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             return;
         }
 
-        GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, approval.PolicyRef ?? "unknown");
-        throw new GeoprocessingApprovalRequiredException(approval.PolicyRef ?? "unknown");
+        var policyRef = approval.PolicyRef ?? "unknown";
+        GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, policyRef);
+
+        // Persist an AwaitingApproval proposal reusing the shared control-plane
+        // proposal/gateway surface so the gated plan is resumable via
+        // honua://proposals/{id} instead of dead-ending (ADR-0064, #2814). A
+        // custom-code submission is never persisted as a proposal — the resume path
+        // cannot re-mint its scoped callback token without the live principal — so it
+        // continues to hard-fail. When the durable proposal surface is unavailable
+        // (lightweight hosts / Redis-free configs) submission also hard-fails.
+        if (_operationGateway == null || isCustomCode)
+        {
+            throw new GeoprocessingApprovalRequiredException(policyRef);
+        }
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = plan,
+            IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey,
+            RequestedBy = ResolvePrincipalId(principal),
+            Metadata = protocolMetadata == null
+                ? null
+                : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal),
+        };
+
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Geoprocess,
+            RequestedBy = payload.RequestedBy,
+            Reason = approvalGatedProcessId == null
+                ? "Destructive geoprocessing plan requires approval."
+                : $"Geoprocessing plan step '{approvalGatedProcessId}' requires approval.",
+            IdempotencyKey = payload.IdempotencyKey,
+            ExecutionPayload = payload.Serialize(),
+            Plan = GeoprocessOperationExecutor.BuildPlanSummary(payload, executionPayload: null),
+        };
+
+        var result = await _operationGateway
+            .CreateApprovalProposalAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
+        throw new GeoprocessingApprovalRequiredException(policyRef, detail: null, proposalId: result.ProposalId);
+    }
+
+    public async Task<ExecutionJobRecord> ResumeApprovedJobAsync(
+        GeoprocessExecutionPayload payload,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(payload.Plan);
+
+        // The approval and mutating-process gates were satisfied when the proposal
+        // was created; re-run the submission with those gates bypassed, attributing
+        // the job to the original submitter recorded in the payload. A synthetic
+        // principal carrying only the submitter identity preserves job ownership and
+        // partition-scoped admission without re-deriving the submitter's roles.
+        var principal = BuildResumePrincipal(payload.RequestedBy);
+        return await SubmitJobCoreAsync(
+                payload.Plan,
+                payload.IdempotencyKey,
+                principal,
+                payload.Metadata,
+                resumingApproved: true,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static ClaimsPrincipal BuildResumePrincipal(string? requestedBy)
+    {
+        var claims = new List<Claim>();
+        if (!string.IsNullOrWhiteSpace(requestedBy))
+        {
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, requestedBy));
+        }
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "GeoprocessingApprovalResume"));
     }
 
     private static string? ResolvePartitionKey(Dictionary<string, string> specParams)

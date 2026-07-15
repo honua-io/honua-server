@@ -185,8 +185,11 @@ internal sealed class ImageServerProjectHandler
     /// Projects geometries between image (pixel sample/line) space and map space using the
     /// resolved raster's RPC sensor model (#1881). The supplied geometries are interpreted as
     /// image coordinates and mapped to ground (longitude/latitude, EPSG:4326), then reprojected
-    /// into <c>outSR</c> when it differs and a transform service is available. Returns 400 when
-    /// the raster carries no RPC metadata (the image CS is genuinely unsupported for that raster).
+    /// into <c>outSR</c> when it differs and a transform service is available. The image-CS warp
+    /// composes with a client-supplied <c>datumTransformation</c> on the ground -&gt; <c>outSR</c>
+    /// leg (#2840); an unknown/inapplicable transformation is rejected with a precise 400 instead
+    /// of being silently dropped. Returns 400 when the raster carries no RPC metadata (the image CS
+    /// is genuinely unsupported for that raster).
     /// </summary>
     private async Task<IResult> ProjectImageCoordinatesAsync(
         HttpContext context,
@@ -242,6 +245,24 @@ internal sealed class ImageServerProjectHandler
                 "Image-coordinate-system projection into the requested outSR requires a configured coordinate transform service.");
         }
 
+        // Compose the image-CS warp with the requested datum transformation: the RPC sensor model
+        // maps image (sample/line) space to WGS84 ground, and the ground -> outSR reprojection then
+        // honors the client-supplied datumTransformation (both warps apply when outSR sits on a
+        // different datum). An unknown/inapplicable transformation is rejected with a precise 400
+        // rather than silently dropped, matching the datumTransformation contract on the map path.
+        DatumTransformationSelection? datumSelection = null;
+        if (reprojectToOut && !_projection.TryResolveDatumTransformation(
+                GetString(values, "datumTransformation"),
+                GroundSrid,
+                outSrid.Value,
+                out datumSelection,
+                out var datumTransformationError))
+        {
+            var error = datumTransformationError ?? "Invalid datumTransformation.";
+            ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+            return StandardErrorHelpers.CreateBadRequest(context, error);
+        }
+
         // Not rewritten as .Select: each iteration performs an awaited coordinate-transform
         // call and can short-circuit the whole handler with an early 400 return, which a
         // LINQ projection cannot express without materializing the async control flow.
@@ -266,7 +287,7 @@ internal sealed class ImageServerProjectHandler
             {
                 var transformResult = await _projection.TransformExtentAsync(
                     longitude, latitude, longitude, latitude,
-                    GroundSrid, outSrid.Value, cancellationToken).ConfigureAwait(false);
+                    GroundSrid, outSrid.Value, datumSelection, cancellationToken).ConfigureAwait(false);
                 if (transformResult is null)
                 {
                     return StandardErrorHelpers.CreateBadRequest(
