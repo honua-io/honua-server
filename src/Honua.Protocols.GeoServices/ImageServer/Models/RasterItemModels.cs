@@ -56,3 +56,45 @@ public sealed class RasterItemInfoResponse
     [JsonPropertyName("maxPyramidLevel")]
     public int MaxPyramidLevel { get; init; }
 }
+
+/// <summary>
+/// Esri-shaped <c>imageSupportData</c> child resource for one raster catalog item. Reflects the
+/// sensor/camera/orientation support data hydrated from the raster store's sensor-metadata
+/// companion, matching the auxiliary support files (RPC, interior/exterior orientation) an Esri
+/// image service advertises alongside a raster. Only items that carry modeled support data expose
+/// this resource; items without it receive a precise not-available response instead.
+/// </summary>
+public sealed class RasterItemImageSupportDataResponse
+{
+    /// <summary>Catalog identifier of the raster item the support data belongs to.</summary>
+    [JsonPropertyName("rasterId")]
+    public long RasterId { get; init; }
+
+    /// <summary>Raster item name.</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>Human-readable sensor name (for example <c>WorldView-3</c>), when modeled.</summary>
+    [JsonPropertyName("sensorName")]
+    public string? SensorName { get; init; }
+
+    /// <summary>Camera/instrument model identifier, when modeled.</summary>
+    [JsonPropertyName("cameraModel")]
+    public string? CameraModel { get; init; }
+
+    /// <summary>Whether interior-orientation support data (focal length, principal point) is present.</summary>
+    [JsonPropertyName("hasInteriorOrientation")]
+    public bool HasInteriorOrientation { get; init; }
+
+    /// <summary>Whether exterior-orientation support data (camera position/look vector) is present.</summary>
+    [JsonPropertyName("hasExteriorOrientation")]
+    public bool HasExteriorOrientation { get; init; }
+
+    /// <summary>Whether a Rational Polynomial Coefficients (RPC) image-to-ground model is present.</summary>
+    [JsonPropertyName("hasRationalPolynomialCoefficients")]
+    public bool HasRationalPolynomialCoefficients { get; init; }
+
+    /// <summary>Identifier of the DEM the height-mensuration path can sample, when associated.</summary>
+    [JsonPropertyName("demSource")]
+    public string? DemSource { get; init; }
+}
