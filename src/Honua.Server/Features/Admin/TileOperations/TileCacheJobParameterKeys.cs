@@ -55,6 +55,12 @@ internal static class TileCacheJobParameterKeys
     /// </summary>
     public const string Compression = "honua.tilecache.compression";
 
+    /// <summary>Style identifier the cached tiles were rendered with (bounded expire/delete window, #2661).</summary>
+    public const string Style = "honua.tilecache.style";
+
+    /// <summary>Output format the cached tiles were written as (bounded expire/delete window, #2661).</summary>
+    public const string Format = "honua.tilecache.format";
+
     /// <summary>
     /// Stable generation identifier for a resumable seed/warm run (issue #2661). Optional; when
     /// absent the worker uses the execution job's operation id (which durable retries preserve) so

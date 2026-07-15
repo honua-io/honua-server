@@ -74,6 +74,16 @@ internal static class TileCacheExecutionSpecBuilder
                 request.MaxTiles.Value.ToString(CultureInfo.InvariantCulture);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Style))
+        {
+            parameters[TileCacheJobParameterKeys.Style] = request.Style;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Format))
+        {
+            parameters[TileCacheJobParameterKeys.Format] = request.Format;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.GenerationId))
         {
             parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
@@ -210,6 +220,8 @@ internal static class TileCacheExecutionSpecBuilder
 
         parameters.TryGetValue(TileCacheJobParameterKeys.ServiceId, out var serviceId);
         parameters.TryGetValue(TileCacheJobParameterKeys.TileMatrixSetId, out var tileMatrixSetId);
+        parameters.TryGetValue(TileCacheJobParameterKeys.Style, out var style);
+        parameters.TryGetValue(TileCacheJobParameterKeys.Format, out var format);
         parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
         if (parameters.TryGetValue(TileCacheJobParameterKeys.SchemaName, out var schema)
             && !string.IsNullOrWhiteSpace(schema))
@@ -227,9 +239,30 @@ internal static class TileCacheExecutionSpecBuilder
             TileMatrixSetId = string.IsNullOrWhiteSpace(tileMatrixSetId) ? null : tileMatrixSetId,
             Bbox = bbox,
             MaxTiles = maxTiles,
+            Style = string.IsNullOrWhiteSpace(style) ? null : style,
+            Format = string.IsNullOrWhiteSpace(format) ? null : format,
             GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
         };
 
         return true;
+    }
+
+    /// <summary>
+    /// Builds the replica-safety partition key for a tile-cache generation window (issue #2661).
+    /// Concurrent seed/warm/expire/delete jobs that target the same
+    /// <c>(service, gridset, style)</c> window share this key so the execution runtime serializes
+    /// them under an exclusive lease and two replicas cannot mutate the same window at once.
+    /// </summary>
+    public static string BuildPartitionKey(TileOperationStartRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var serviceSegment = string.IsNullOrWhiteSpace(request.ServiceId) ? "_" : request.ServiceId.Trim();
+        var gridsetSegment = string.IsNullOrWhiteSpace(request.TileMatrixSetId)
+            ? "WebMercatorQuad"
+            : request.TileMatrixSetId.Trim();
+        var styleSegment = string.IsNullOrWhiteSpace(request.Style) ? "default" : request.Style.Trim();
+
+        return $"tilecache:{serviceSegment}:{gridsetSegment}:{styleSegment}";
     }
 }

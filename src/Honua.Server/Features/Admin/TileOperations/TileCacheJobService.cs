@@ -79,6 +79,14 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
+            // Replica safety (issue #2661): serialize concurrent generations of the same
+            // (service, gridset, style) window under an exclusive lease so two backend workers
+            // never seed/expire/delete the same key window at once.
+            Concurrency = new OperationConcurrencyPolicy
+            {
+                PartitionKey = TileCacheExecutionSpecBuilder.BuildPartitionKey(request),
+                RequiresExclusiveLease = true
+            },
             Spec = spec
         };
 
