@@ -213,6 +213,10 @@ internal static class PrintingToolsRequestHandlers
                 renderExtent, webMap.MapOptions.Scale.Value, imageWidth, imageHeight, dpi, extentSrid);
         }
 
+        // Derived from the scale-adjusted extent so a mapOptions.scale request gates its styles at
+        // the scale it actually renders at.
+        var renderZoom = RenderZoom.FromExtent(renderExtent, imageWidth, imageHeight, extentSrid);
+
         // Create a composite surface for all layers
         using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
         var canvas = surface.Canvas;
@@ -245,12 +249,12 @@ internal static class PrintingToolsRequestHandlers
             {
                 using var opacityPaint = new SKPaint { Color = SKColors.White.WithAlpha((byte)(resolved.OperationalLayer.Opacity.Value * 255)) };
                 var count = canvas.SaveLayer(opacityPaint);
-                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, renderGeometryType);
+                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, renderGeometryType, renderZoom);
                 canvas.RestoreToCount(count);
             }
             else
             {
-                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, renderGeometryType);
+                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, renderGeometryType, renderZoom);
             }
         }
 

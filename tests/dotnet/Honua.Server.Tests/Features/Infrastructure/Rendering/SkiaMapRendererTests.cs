@@ -32,7 +32,8 @@ public class SkiaMapRendererTests
             256,
             transparent: true,
             backgroundColor: null,
-            MetadataV2GeometryType.Point);
+            MetadataV2GeometryType.Point,
+            RenderZoom.NotDerivable("unit test"));
 
         result.Should().NotBeEmpty();
         // PNG magic bytes
@@ -65,7 +66,8 @@ public class SkiaMapRendererTests
             256,
             transparent: true,
             backgroundColor: null,
-            MetadataV2GeometryType.Point);
+            MetadataV2GeometryType.Point,
+            RenderZoom.NotDerivable("unit test"));
 
         result.Should().NotBeEmpty();
         result[0].Should().Be(0x89); // PNG header
@@ -85,7 +87,8 @@ public class SkiaMapRendererTests
             100,
             transparent: false,
             backgroundColor: SKColors.White,
-            MetadataV2GeometryType.None);
+            MetadataV2GeometryType.None,
+            RenderZoom.NotDerivable("unit test"));
 
         result.Should().NotBeEmpty();
     }
@@ -115,7 +118,8 @@ public class SkiaMapRendererTests
             256,
             transparent: true,
             backgroundColor: null,
-            MetadataV2GeometryType.Point);
+            MetadataV2GeometryType.Point,
+            RenderZoom.NotDerivable("unit test"));
 
         result.Should().NotBeEmpty();
     }
@@ -142,7 +146,8 @@ public class SkiaMapRendererTests
             64,
             transparent: true,
             backgroundColor: null,
-            MetadataV2GeometryType.Point);
+            MetadataV2GeometryType.Point,
+            RenderZoom.NotDerivable("unit test"));
 
         HasNonTransparentPixel(result).Should().BeFalse();
     }
@@ -170,7 +175,7 @@ public class SkiaMapRendererTests
             transparent: true,
             backgroundColor: null,
             MetadataV2GeometryType.Point,
-            zoom: 4);
+            RenderZoom.At(4));
         var visible = renderer.RenderMap(
             [feature],
             styleLayers,
@@ -180,7 +185,7 @@ public class SkiaMapRendererTests
             transparent: true,
             backgroundColor: null,
             MetadataV2GeometryType.Point,
-            zoom: 6);
+            RenderZoom.At(6));
 
         HasNonTransparentPixel(hidden).Should().BeFalse();
         HasNonTransparentPixel(visible).Should().BeTrue();
@@ -237,7 +242,7 @@ public class SkiaMapRendererTests
         using var renderer = new SkiaMapRenderer();
         var extent = new SkiaMapRenderer.RenderExtent(0, 0, 1, 1);
 
-        var act = () => renderer.RenderMap([], [], extent, width, 10, true, null, MetadataV2GeometryType.None);
+        var act = () => renderer.RenderMap([], [], extent, width, 10, true, null, MetadataV2GeometryType.None, RenderZoom.NotDerivable("unit test"));
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .Which.ParamName.Should().Be("imageWidth");
@@ -386,7 +391,7 @@ public class SkiaMapRendererTests
         renderer.Dispose();
 
         var extent = new SkiaMapRenderer.RenderExtent(0, 0, 1, 1);
-        var act = () => renderer.RenderMap([], [], extent, 10, 10, true, null, MetadataV2GeometryType.None);
+        var act = () => renderer.RenderMap([], [], extent, 10, 10, true, null, MetadataV2GeometryType.None, RenderZoom.NotDerivable("unit test"));
 
         act.Should().Throw<ObjectDisposedException>();
     }
