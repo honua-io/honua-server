@@ -102,6 +102,22 @@ OPENAPI_BASE_REF=origin/trunk ./scripts/ci/validate-openapi-contracts.sh
 
 4. Verify write-path behavior against your automation workflows (publish/update/import operations).
 
+## Removed Contract Paths
+
+Endpoints removed from the published admin OpenAPI spec because they were already
+removed at runtime (spec-vs-route honesty corrections, not live-surface removals).
+`validate-openapi-contracts.sh` reports these as breaking by design — they are
+acknowledged intentional removals; a maintainer greens the governance lane by
+running with `OPENAPI_ALLOW_BREAKING_CHANGES=true`.
+
+| Removed path/schema | Removed at runtime in | Correction | Replacement |
+|---|---|---|---|
+| `POST /api/v1/admin/manifest/apply` (`ManifestApplyRequest`, `ApiResponseManifestApplyResult`, `ManifestApplyResult`, `ManifestApplySummary`, `ManifestApplyEntry`) | #1035 metadata cutover | #2822 | GitOps release manifests; no mutating manifest-apply route remains |
+| `GET /api/v1/admin/manifest` (`ApiResponseMetadataManifest`, `MetadataManifest`) | #1035 metadata cutover | #2822 | Read-only `GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` and `GET /api/v1/capabilities/manifest` |
+
+Clients calling these paths already receive `404`; removing them from the spec
+prevents generated SDKs from emitting calls that cannot succeed.
+
 ## Deprecation Rules
 
 Deprecations must follow `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`:
