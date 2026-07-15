@@ -30,6 +30,16 @@ public enum OperationClass
     /// Seed or bootstrap operation that materializes catalog/sample state.
     /// </summary>
     Seed = 3,
+
+    /// <summary>
+    /// A destructive or sink/write geoprocessing plan submission whose approval
+    /// requirement was decided upstream by the geoprocessing destructive-plan gate
+    /// (<c>ProcessDestructiveClassifier</c>). Routed through the shared operation
+    /// proposal/gateway surface so a gated plan is persisted as an
+    /// <c>AwaitingApproval</c> proposal and resumed on approval, rather than
+    /// dead-ending at submission (ADR-0064, #2814).
+    /// </summary>
+    Geoprocess = 4,
 }
 
 /// <summary>

@@ -60,7 +60,10 @@ internal sealed class GeoprocessingAuthorizationException : Exception
 }
 
 /// <summary>
-/// Raised when an approval gate blocks the operation.
+/// Raised when an approval gate blocks the operation. When a durable operation
+/// proposal was persisted for the gated plan (ADR-0064, #2814), <see cref="ProposalId"/>
+/// carries the proposal identifier so an adapter can surface the
+/// <c>honua://proposals/{id}</c> resume path instead of dead-ending the caller.
 /// </summary>
 internal sealed class GeoprocessingApprovalRequiredException : Exception
 {
@@ -69,11 +72,22 @@ internal sealed class GeoprocessingApprovalRequiredException : Exception
     /// </summary>
     public string PolicyRef { get; }
 
-    public GeoprocessingApprovalRequiredException(string policyRef, string? detail = null)
+    /// <summary>
+    /// Identifier of the persisted <c>AwaitingApproval</c> proposal for the gated plan,
+    /// when the approval lane persisted one. Null when no proposal was created (for
+    /// example when the durable proposal surface is unavailable and the submission
+    /// hard-fails). Adapters surface a <c>honua://proposals/{id}</c> resume path from it.
+    /// </summary>
+    public string? ProposalId { get; }
+
+    public GeoprocessingApprovalRequiredException(string policyRef, string? detail = null, string? proposalId = null)
         : base($"This operation requires approval (policy: {policyRef}). " +
-               (detail ?? "Use ValidatePlan to check approval requirements before submission."))
+               (proposalId != null
+                   ? $"A proposal was created and is awaiting approval (proposalId: {proposalId})."
+                   : detail ?? "Use ValidatePlan to check approval requirements before submission."))
     {
         PolicyRef = policyRef;
+        ProposalId = proposalId;
     }
 }
 
