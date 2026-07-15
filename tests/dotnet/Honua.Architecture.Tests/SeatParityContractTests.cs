@@ -338,7 +338,9 @@ public sealed class SeatParityContractTests
     private static string FindTypeSource(string repoRoot, string fullTypeName)
     {
         var typeName = fullTypeName[(fullTypeName.LastIndexOf('.') + 1)..];
-        var serverRoot = ArchitectureTestHelpers.CombinePath(repoRoot, "src", "Honua.Server");
+        // Registered executors may live in any src assembly (e.g. the geoprocessing executor lives in
+        // Honua.Geoprocessing, not Honua.Server), so search the whole src tree for the type source.
+        var serverRoot = ArchitectureTestHelpers.CombinePath(repoRoot, "src");
         var source = Directory.EnumerateFiles(serverRoot, "*.cs", SearchOption.AllDirectories)
             .Select(File.ReadAllText)
             .FirstOrDefault(source => source.Contains("class " + typeName, StringComparison.Ordinal)
