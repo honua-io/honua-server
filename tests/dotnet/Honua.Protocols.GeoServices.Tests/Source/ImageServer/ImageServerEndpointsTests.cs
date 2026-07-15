@@ -2618,13 +2618,16 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
+            // Compact Cache V2 / TPKX now negotiates the durable async path (#2707) rather than the
+            // old "unsupported" rejection: a single-level request is instead rejected by the TPKX
+            // validation, which requires at least two zoom levels.
             var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=compact";
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportTiles?{query}");
 
             var content = await response.Content.ReadAsStringAsync();
             await response.AssertGeoServicesErrorAsync(400);
-            content.Should().Contain("compact");
+            content.ToLowerInvariant().Should().Contain("zoom levels");
         }
         finally
         {

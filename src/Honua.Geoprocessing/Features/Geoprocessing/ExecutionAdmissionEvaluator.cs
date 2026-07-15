@@ -282,6 +282,16 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             return value;
         }
 
+        // Fall back to the first-class concurrency partition. Jobs whose spec carries an exact,
+        // closed parameter contract (for example durable tile-export jobs) cannot stamp the
+        // admission partition into Spec.Parameters without breaking that contract, so they record
+        // it on OperationConcurrencyPolicy.PartitionKey instead. Ordinary jobs leave this null, so
+        // their partition resolution is unchanged.
+        if (!string.IsNullOrEmpty(job.Concurrency.PartitionKey))
+        {
+            return job.Concurrency.PartitionKey;
+        }
+
         return null;
     }
 
@@ -292,6 +302,15 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             && parsed > 0)
         {
             return parsed;
+        }
+
+        // Fall back to the first-class admission cost. Jobs whose spec carries an exact, closed
+        // parameter contract (for example durable tile-export jobs) cannot stamp the admission cost
+        // into Spec.Parameters without breaking that contract, so they pin it on the record instead.
+        // Ordinary jobs leave this null, so their cost resolution is unchanged.
+        if (job.AdmissionCostWeight is { } pinned && pinned > 0)
+        {
+            return pinned;
         }
 
         return 1.0; // Assume a standard-cost job when unlabeled.

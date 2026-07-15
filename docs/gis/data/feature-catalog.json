@@ -7545,7 +7545,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WithCompactStorageFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SingleZoomLevel_ReturnsError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitsDurableJobAndProjectsStatus"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -7618,6 +7620,33 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithOgcCrsUri_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithReturnCatalogItems_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithSrid_ReturnsSuccessOrNotFound"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-jobs-jobid",
+      "route": "/rest/services/{id}/ImageServer/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitsDurableJobAndProjectsStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.JobStatus_UnknownJob_ReturnsSanitizedNotFound"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-jobs-jobid-results-out-service-url",
+      "route": "/rest/services/{id}/ImageServer/jobs/{jobId}/results/out_service_url",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9233,6 +9262,32 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-imageserver-jobs-jobid",
+      "route": "/rest/services/{serviceId}/ImageServer/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-jobs-jobid-results-out-service-url",
+      "route": "/rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-imageserver-keyproperties",
       "route": "/rest/services/{serviceId}/ImageServer/keyProperties",
       "method": "GET",
@@ -9817,6 +9872,32 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithMalformedPointPair_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithProjectedMapExtent_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerQueryLimitsTests.MapServer_Identify_WithConfiguredMaxRecordCount_AppliesGlobalCap"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-mapserver-jobs-jobid",
+      "route": "/rest/services/{serviceId}/MapServer/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-mapserver-jobs-jobid-results-out-service-url",
+      "route": "/rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url",
+      "method": "GET",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"
@@ -15895,6 +15976,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-id-imageserver-jobs-jobid-cancel",
+      "route": "/rest/services/{id}/ImageServer/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-id-imageserver-keyproperties",
       "route": "/rest/services/{id}/ImageServer/keyProperties",
       "method": "POST",
@@ -17088,6 +17182,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-serviceid-imageserver-jobs-jobid-cancel",
+      "route": "/rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-serviceid-imageserver-keyproperties",
       "route": "/rest/services/{serviceId}/ImageServer/keyProperties",
       "method": "POST",
@@ -17337,6 +17444,19 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_Post_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithOversizedGeometry_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-rest-services-serviceid-mapserver-jobs-jobid-cancel",
+      "route": "/rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"

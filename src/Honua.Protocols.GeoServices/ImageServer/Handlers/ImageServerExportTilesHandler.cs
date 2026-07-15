@@ -18,8 +18,10 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Tiles;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Microsoft.AspNetCore.Http;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -59,17 +61,20 @@ internal sealed class ImageServerExportTilesHandler
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerExportTilesHandler> _logger;
     private readonly ICloudFileStorage? _storage;
+    private readonly ITileExportJobService? _tileExportJobService;
 
     public ImageServerExportTilesHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger<ImageServerExportTilesHandler> logger,
-        ICloudFileStorage? storage = null)
+        ICloudFileStorage? storage = null,
+        ITileExportJobService? tileExportJobService = null)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _storage = storage;
+        _tileExportJobService = tileExportJobService;
     }
 
     /// <summary>
@@ -120,6 +125,14 @@ internal sealed class ImageServerExportTilesHandler
             HonuaTelemetry.Protocols.ImageServer,
             layerId.ToString(CultureInfo.InvariantCulture));
         scope.WithTag(HonuaTelemetry.Tags.Operation, "exportTiles");
+
+        // Explicit Compact Cache V2 / TPKX negotiation submits a durable asynchronous job and
+        // returns an ArcGIS { jobId, jobStatus } envelope. All other requests keep the existing
+        // synchronous flat-ZIP / exploded-TPK behavior byte-for-byte.
+        if (IsCompactV2Requested(values) && _tileExportJobService is not null)
+        {
+            return await SubmitDurableExportAsync(context, layerId, values, cancellationToken).ConfigureAwait(false);
+        }
 
         var (plan, error) = await TryBuildExportTilesPlanAsync(context, layerId, values, cancellationToken)
             .ConfigureAwait(false);
@@ -920,4 +933,295 @@ internal sealed class ImageServerExportTilesHandler
 
     private static string? GetString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
+
+    // -----------------------------------------------------------------------
+    // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) — #2707
+    // -----------------------------------------------------------------------
+
+    private const string CompactV2StorageMode = "esriMapCacheStorageModeCompactV2";
+
+    /// <summary>
+    /// Detects an explicit Compact Cache V2 negotiation via the official
+    /// <c>storageFormatType=esriMapCacheStorageModeCompactV2</c> parameter or the documented
+    /// compatible TPKX aliases on <c>storageFormat</c>/<c>exportBy</c>.
+    /// </summary>
+    private static bool IsCompactV2Requested(IReadOnlyDictionary<string, StringValues> values)
+    {
+        var storageFormatType = GetString(values, "storageFormatType");
+        if (!string.IsNullOrWhiteSpace(storageFormatType)
+            && string.Equals(storageFormatType.Trim(), CompactV2StorageMode, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var storageFormat = GetString(values, "storageFormat") ?? GetString(values, "exportBy");
+        return storageFormat?.Trim().ToLowerInvariant() is "tpkx" or "compact" or "compactv2";
+    }
+
+    /// <summary>
+    /// Builds and submits a durable tile-export job for a Compact Cache V2 request, returning the
+    /// ArcGIS <c>{ jobId, jobStatus: "esriJobSubmitted" }</c> envelope. Validation, ownership,
+    /// admission, and store-availability failures surface through the shared sanitized mapping.
+    /// </summary>
+    private async Task<IResult> SubmitDurableExportAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        CancellationToken cancellationToken)
+    {
+        var (plan, error) = await TryBuildDurableExportPlanAsync(context, layerId, values, cancellationToken).ConfigureAwait(false);
+        if (error is not null)
+        {
+            return error;
+        }
+
+        try
+        {
+            var job = await _tileExportJobService!.SubmitAsync(
+                plan!,
+                idempotencyKey: GetString(values, "idempotencyKey"),
+                correlationId: context.TraceIdentifier,
+                context.User,
+                cancellationToken).ConfigureAwait(false);
+            ImageServerLog.ExportTilesRequested(_logger, layerId, plan!.ZoomLevels.Length);
+            return TypedResults.Json(
+                new ImageServerExportTilesJobSubmitResponse { JobId = job.OperationId },
+                ImageServerJsonContext.Default.ImageServerExportTilesJobSubmitResponse);
+        }
+        catch (Exception exception) when (TileExportAdapterResults.TryMap(context, exception) is { } mapped)
+        {
+            return mapped;
+        }
+    }
+
+    /// <summary>Projects a durable tile-export job's status onto the ArcGIS Image Service status envelope.</summary>
+    public async Task<IResult> GetJobStatusAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+    {
+        if (_tileExportJobService is null)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "Asynchronous tile-export jobs are not available.");
+        }
+
+        try
+        {
+            var job = await _tileExportJobService
+                .GetStatusAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Json(
+                new ImageServerExportTilesJobStatusResponse
+                {
+                    JobId = job.OperationId,
+                    JobStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status),
+                    PercentComplete = job.PercentComplete,
+                    Messages = BuildJobMessages(job),
+                },
+                ImageServerJsonContext.Default.ImageServerExportTilesJobStatusResponse);
+        }
+        catch (Exception exception) when (TileExportAdapterResults.TryMap(context, exception) is { } mapped)
+        {
+            return mapped;
+        }
+    }
+
+    /// <summary>Cancels a durable tile-export job scoped to the submitting principal and this image service.</summary>
+    public async Task<IResult> CancelJobAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+    {
+        if (_tileExportJobService is null)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "Asynchronous tile-export jobs are not available.");
+        }
+
+        try
+        {
+            await _tileExportJobService.CancelAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+            var job = await _tileExportJobService.GetStatusAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Json(
+                new ImageServerExportTilesJobStatusResponse
+                {
+                    JobId = job.OperationId,
+                    JobStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status),
+                    PercentComplete = job.PercentComplete,
+                    Messages = BuildJobMessages(job),
+                },
+                ImageServerJsonContext.Default.ImageServerExportTilesJobStatusResponse);
+        }
+        catch (Exception exception) when (TileExportAdapterResults.TryMap(context, exception) is { } mapped)
+        {
+            return mapped;
+        }
+    }
+
+    /// <summary>Returns the ArcGIS <c>results/out_service_url</c> for a completed durable tile-export job.</summary>
+    public async Task<IResult> GetJobResultAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
+    {
+        if (_tileExportJobService is null)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "Asynchronous tile-export jobs are not available.");
+        }
+
+        try
+        {
+            var result = await _tileExportJobService
+                .GetResultAsync(jobId, ScopeFor(layerId), context.User, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Json(
+                new ImageServerExportTilesJobResultResponse
+                {
+                    JobId = jobId,
+                    Results = new ImageServerExportTilesJobResults
+                    {
+                        OutServiceUrl = new ImageServerExportTilesJobResultValue
+                        {
+                            Value = result.DownloadUrl,
+                            ExpiresAt = result.ExpiresAt,
+                        },
+                    },
+                },
+                ImageServerJsonContext.Default.ImageServerExportTilesJobResultResponse);
+        }
+        catch (Exception exception) when (TileExportAdapterResults.TryMap(context, exception) is { } mapped)
+        {
+            return mapped;
+        }
+    }
+
+    private static TileExportJobScope ScopeFor(int layerId)
+        => new(TileExportSourceKind.Raster, layerId.ToString(CultureInfo.InvariantCulture));
+
+    private static IReadOnlyList<ImageServerExportTilesJobMessage> BuildJobMessages(
+        Honua.Core.Features.ControlPlane.Domain.ExecutionJobRecord job)
+        => job.Status == Honua.Core.Features.ControlPlane.Domain.ExecutionJobStatus.Failed
+            && !string.IsNullOrWhiteSpace(job.ErrorMessage)
+                ? [new ImageServerExportTilesJobMessage { Type = "esriJobMessageTypeError", Description = job.ErrorMessage }]
+                : [];
+
+    private async Task<(TileExportJobPlan? Plan, IResult? Error)> TryBuildDurableExportPlanAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+        {
+            return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
+        }
+
+        if (!RasterParsingHelpers.TryParseRasterFormat(GetString(values, "format"), out var rasterFormat)
+            || !TryResolveDurableImageFormat(rasterFormat, out var tileImageFormat))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context, "Compact Cache V2 tile export supports only png or jpeg tile formats."));
+        }
+
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
+        }
+
+        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+        if (editionError is not null)
+        {
+            return (null, editionError);
+        }
+
+        var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        if (!TryParseExportTileLevels(
+                GetString(values, "levels"),
+                GetString(values, "minZoom"),
+                GetString(values, "maxZoom"),
+                limits,
+                out var requestedZooms,
+                out _,
+                out _,
+                out var levelsError))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, levelsError ?? "Invalid levels parameter."));
+        }
+
+        if (requestedZooms.Length < 2)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context, "Compact Cache V2 tile export requires at least two zoom levels."));
+        }
+
+        if (!TryParseExportTilesMaxTiles(GetString(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
+        }
+
+        if (!TryParseExportTilesExtent(
+                GetString(values, "exportExtent") ?? GetString(values, "bbox"),
+                GetString(values, "exportExtentSR") ?? GetString(values, "bboxSR"),
+                out var sourceExtent,
+                out var sourceSrid,
+                out var extentError))
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(context, extentError ?? "Invalid exportExtent parameter."));
+        }
+
+        var extentTransform = await TryTransformExtentAsync(
+            context, sourceExtent, sourceSrid, CoreSpatialReference.WGS84.Wkid, cancellationToken).ConfigureAwait(false);
+        if (!extentTransform.IsSuccess)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(
+                context, extentTransform.Error ?? "Invalid exportExtent spatial reference."));
+        }
+
+        var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
+        var mosaicRuleRaw = GetString(values, "mosaicRule");
+        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRuleRaw);
+        var timeRaw = GetString(values, "time");
+
+        var descriptor = new TileExportRasterSourceDescriptor(
+            snapshot.Revision,
+            layerId.ToString(CultureInfo.InvariantCulture),
+            string.IsNullOrWhiteSpace(mosaicRuleRaw) ? mergeStrategy.ToString() : mosaicRuleRaw.Trim(),
+            string.IsNullOrWhiteSpace(timeRaw) ? null : timeRaw.Trim(),
+            BuildRasterFingerprint(mergeStrategy, mosaicRuleRaw, timeRaw, tileImageFormat));
+
+        var plan = new TileExportJobPlan
+        {
+            SourceKind = TileExportSourceKind.Raster,
+            ResourceId = layerId.ToString(CultureInfo.InvariantCulture),
+            Source = descriptor,
+            ZoomLevels = [.. requestedZooms],
+            West = bounds[0],
+            South = bounds[1],
+            East = bounds[2],
+            North = bounds[3],
+            TileImageFormat = tileImageFormat,
+            PackageFormat = TileExportPackageFormat.Tpkx,
+            MaxTiles = maxTiles,
+            MaxArtifactBytes = 1024L * 1024 * 1024,
+            RetentionSeconds = ResolveRetentionSeconds(context),
+        };
+
+        return (plan, null);
+    }
+
+    private static bool TryResolveDurableImageFormat(RasterFormat format, out string tileImageFormat)
+    {
+        tileImageFormat = format switch
+        {
+            RasterFormat.PNG => "PNG",
+            RasterFormat.JPEG => "JPEG",
+            _ => string.Empty,
+        };
+        return tileImageFormat.Length > 0;
+    }
+
+    private static int ResolveRetentionSeconds(HttpContext context)
+    {
+        var ttl = context.RequestServices.GetService<IOptions<CloudStorageOptions>>()?.Value.DefaultTimeToLive;
+        var seconds = ttl is { } value && value > TimeSpan.Zero ? (long)value.TotalSeconds : 86_400L;
+        return (int)Math.Clamp(seconds, 60L, 7L * 24 * 60 * 60);
+    }
+
+    private static string BuildRasterFingerprint(RasterMergeStrategy mergeStrategy, string? mosaicRule, string? time, string format)
+    {
+        var canonical = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{mergeStrategy}|{mosaicRule ?? string.Empty}|{time ?? string.Empty}|{format}");
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexStringLower(hash.AsSpan(0, 16));
+    }
 }
