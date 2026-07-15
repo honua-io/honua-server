@@ -919,6 +919,142 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/imageSupportData")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/imageSupportData")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new()
+                {
+                    RasterDataId = 100,
+                    SensorName = "WorldView-3",
+                    CameraModel = "WV110",
+                    RpcJson = "{\"rowNum\":1}",
+                    DemSource = "dem-layer",
+                    CreatedAt = DateTimeOffset.UtcNow,
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("rasterId").GetInt64().Should().Be(100);
+            body.GetProperty("sensorName").GetString().Should().Be("WorldView-3");
+            body.GetProperty("cameraModel").GetString().Should().Be("WV110");
+            body.GetProperty("hasRationalPolynomialCoefficients").GetBoolean().Should().BeTrue();
+            body.GetProperty("hasInteriorOrientation").GetBoolean().Should().BeFalse();
+            body.GetProperty("demSource").GetString().Should().Be("dem-layer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/imageSupportData")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemImageSupportData_WithoutSensorMetadata_ReturnsNotAvailableError()
+    {
+        // The default substitute returns an empty sensor-metadata dictionary, so the item carries
+        // no image support data and the resource must report not-available honestly.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/thumbnail")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/thumbnail")]
+    [Operation(Operations.Export)]
+    public async Task GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage()
+    {
+        var store = CreateMultiRasterStoreSubstitute();
+        var selectedRasterIds = new List<long>();
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                selectedRasterIds.Add(call.ArgAt<long>(1));
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47],
+                    ContentType = "image/png",
+                    Width = 200,
+                    Height = 200,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            // Default (no f): thumbnail returns image bytes.
+            var imageResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/200/thumbnail");
+            imageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            imageResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            // f=json returns the href envelope.
+            var jsonResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/200/thumbnail?f=json");
+            jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            jsonResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            var envelope = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync()).RootElement;
+            envelope.GetProperty("href").GetString().Should().NotBeNullOrWhiteSpace();
+
+            selectedRasterIds.Should().OnlyContain(id => id == 200);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/rasterFile")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/rasterFile")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError()
+    {
+        // Honua stores raster pixels in the provider with no downloadable source file, so rasterFile
+        // must be a precise capability-honest not-available response rather than a raw error.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/rasterFile?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/info")]
     [Operation(Operations.GetServiceInfo)]
     public async Task GetRasterItemInfo_UnknownRaster_ReturnsNotFoundError()
