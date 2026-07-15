@@ -137,7 +137,8 @@ internal sealed class SkiaMapRenderer : IDisposable
         MapLibreStyleLayer styleLayer,
         MetadataV2GeometryType geometryType,
         int width = 20,
-        int height = 20)
+        int height = 20,
+        ImmutableDictionary<string, object?>? properties = null)
     {
         ValidatePositiveDimension(width, nameof(width));
         ValidatePositiveDimension(height, nameof(height));
@@ -146,14 +147,37 @@ internal sealed class SkiaMapRenderer : IDisposable
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.Transparent);
 
-        var emptyProps = ImmutableDictionary<string, object?>.Empty;
+        DrawLegendSwatch(canvas, styleLayer, geometryType, width, height, properties);
+
+        return EncodeSurface(surface);
+    }
+
+    /// <summary>
+    /// Draws a legend swatch for a style layer onto an existing canvas, in the
+    /// rectangle from the canvas origin to <paramref name="width"/> x <paramref name="height"/>.
+    /// Callers composing multi-entry legends translate the canvas per entry.
+    ///
+    /// <paramref name="properties"/> are the feature attributes the style layer is
+    /// resolved against. Passing the attributes that select a data-driven branch
+    /// (see <see cref="LegendClassifier"/>) is what keeps a swatch identical to the
+    /// paint GetMap would apply to a feature carrying those attributes.
+    /// </summary>
+    internal static void DrawLegendSwatch(
+        SKCanvas canvas,
+        MapLibreStyleLayer styleLayer,
+        MetadataV2GeometryType geometryType,
+        int width,
+        int height,
+        ImmutableDictionary<string, object?>? properties = null)
+    {
+        var featureProps = properties ?? ImmutableDictionary<string, object?>.Empty;
         var padding = 2f;
 
         switch (styleLayer.Type)
         {
             case "fill":
                 {
-                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, emptyProps);
+                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, featureProps);
                     using var fillPaint = new SKPaint
                     {
                         Style = SKPaintStyle.Fill,
@@ -178,7 +202,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 }
             case "line":
                 {
-                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, emptyProps);
+                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, featureProps);
                     using var linePaint = new SKPaint
                     {
                         Style = SKPaintStyle.Stroke,
@@ -200,7 +224,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 }
             case "circle":
                 {
-                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, emptyProps);
+                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, featureProps);
                     var radius = Math.Min(circleStyle.Radius, Math.Min(width, height) / 2f - padding);
                     using var circlePaint = new SKPaint
                     {
@@ -231,8 +255,6 @@ internal sealed class SkiaMapRenderer : IDisposable
                     break;
                 }
         }
-
-        return EncodeSurface(surface);
     }
 
     private static void RenderDefaultLegendSwatch(SKCanvas canvas, MetadataV2GeometryType geometryType, int width, int height, float padding)

@@ -2098,7 +2098,8 @@
       "operationKeys": [
         "WMS-1.3.0::GetCapabilities",
         "WMS-1.3.0::GetMap",
-        "WMS-1.3.0::GetFeatureInfo"
+        "WMS-1.3.0::GetFeatureInfo",
+        "WMS-1.3.0::GetLegendGraphic"
       ],
       "proofs": [
         {
@@ -2161,7 +2162,8 @@
       "operationKeys": [
         "WMS-1.1.1::GetCapabilities",
         "WMS-1.1.1::GetMap",
-        "WMS-1.1.1::GetFeatureInfo"
+        "WMS-1.1.1::GetFeatureInfo",
+        "WMS-1.1.1::GetLegendGraphic"
       ],
       "proofs": [
         {

@@ -67,9 +67,11 @@ public static class OperationRegistry
         new(Wms13, "GetCapabilities"),
         new(Wms13, "GetMap"),
         new(Wms13, "GetFeatureInfo"),
+        new(Wms13, "GetLegendGraphic"),
         new(Wms111, "GetCapabilities"),
         new(Wms111, "GetMap"),
         new(Wms111, "GetFeatureInfo"),
+        new(Wms111, "GetLegendGraphic"),
 
         // WMTS 1.0.0 operations (KVP, RESTful, and GeoServices compatibility aliases)
         new(Wmts10, "GetCapabilities"),
