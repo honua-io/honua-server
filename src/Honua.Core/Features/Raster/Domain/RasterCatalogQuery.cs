@@ -24,27 +24,73 @@ public sealed class RasterCatalogValidationException : Exception
 }
 
 /// <summary>
-/// Validated axis-aligned spatial predicate applied against raster footprint extents by the
-/// neutral raster-catalog query contract. The predicate is an <b>envelope-intersects</b> test:
-/// a footprint matches when its extent's bounding box overlaps this box (edge contact counts as
-/// a match), mirroring the Esri <c>esriSpatialRelEnvelopeIntersects</c> semantics at
-/// footprint-extent granularity. This is intentionally <b>not</b> an exact-geometry predicate.
+/// Spatial relationship a <see cref="RasterCatalogSpatialPredicate"/> applies against raster
+/// footprints. <see cref="EnvelopeIntersects"/> is the default bounding-box windowing test; the
+/// remaining members request an <b>exact</b> geometry predicate (evaluated provider-side against the
+/// footprint geometry) and require <see cref="RasterCatalogSpatialPredicate.Geometry"/> to be set.
+/// </summary>
+public enum RasterCatalogSpatialRelation
+{
+    /// <summary>Footprint bounding box overlaps the filter box (edge contact matches). Default.</summary>
+    EnvelopeIntersects = 0,
+
+    /// <summary>Footprint geometry intersects the exact filter geometry.</summary>
+    Intersects,
+
+    /// <summary>Footprint geometry contains the exact filter geometry.</summary>
+    Contains,
+
+    /// <summary>Footprint geometry lies within the exact filter geometry.</summary>
+    Within,
+
+    /// <summary>Footprint geometry overlaps the exact filter geometry.</summary>
+    Overlaps,
+}
+
+/// <summary>
+/// Validated spatial predicate applied against raster footprints by the neutral raster-catalog query
+/// contract. The axis-aligned box (<see cref="XMin"/>..<see cref="YMax"/>) is always present and is
+/// used as the index-eligible <b>envelope-intersects</b> pre-filter: a footprint qualifies when its
+/// extent's bounding box overlaps this box (edge contact counts as a match), mirroring the Esri
+/// <c>esriSpatialRelEnvelopeIntersects</c> semantics.
 /// </summary>
 /// <remarks>
-/// When <see cref="Srid"/> differs from a footprint's SRID the implementation transforms this box
-/// into the footprint SRID (PostGIS via <c>ST_Transform</c>; the in-memory fallback via the shared
-/// CRS pipeline) before the overlap test, so the comparison always stays in a single coordinate
-/// system.
+/// <para>
+/// When <see cref="Geometry"/> is supplied (WKB) and <see cref="Relation"/> is not
+/// <see cref="RasterCatalogSpatialRelation.EnvelopeIntersects"/>, an <b>exact</b> predicate
+/// (<c>ST_Intersects</c>/<c>ST_Contains</c>/<c>ST_Within</c>/<c>ST_Overlaps</c>) is additionally
+/// applied against the footprint geometry provider-side, with the box acting as the index pre-filter.
+/// This honours the repository's spatial-semantics rule: envelope/viewport <c>bbox</c> windowing uses
+/// the envelope-only test, while explicit <c>Intersects</c>/<c>Contains</c> relations on non-envelope
+/// geometries use the exact relationship. The in-memory reference fallback (no geometry engine)
+/// conservatively evaluates the envelope-intersects box only, which is a superset of every exact
+/// relation's match set.
+/// </para>
+/// <para>
+/// When <see cref="Srid"/> differs from a footprint's SRID the implementation transforms the box (and
+/// the exact geometry) into the footprint SRID (PostGIS via <c>ST_Transform</c>; the in-memory
+/// fallback via the shared CRS pipeline) before the test, so the comparison always stays in a single
+/// coordinate system.
+/// </para>
 /// </remarks>
 public readonly record struct RasterCatalogSpatialPredicate
 {
-    private RasterCatalogSpatialPredicate(double xMin, double yMin, double xMax, double yMax, int? srid)
+    private RasterCatalogSpatialPredicate(
+        double xMin,
+        double yMin,
+        double xMax,
+        double yMax,
+        int? srid,
+        byte[]? geometry,
+        RasterCatalogSpatialRelation relation)
     {
         XMin = xMin;
         YMin = yMin;
         XMax = xMax;
         YMax = yMax;
         Srid = srid;
+        Geometry = geometry;
+        Relation = relation;
     }
 
     /// <summary>Minimum X of the filter box.</summary>
@@ -66,6 +112,21 @@ public readonly record struct RasterCatalogSpatialPredicate
     public int? Srid { get; }
 
     /// <summary>
+    /// Optional exact filter geometry as WKB, expressed in <see cref="Srid"/>. When set together with
+    /// a non-envelope <see cref="Relation"/>, providers apply an exact spatial predicate against the
+    /// footprint geometry (with the box as the index pre-filter). <see langword="null"/> requests the
+    /// envelope-only test.
+    /// </summary>
+    public byte[]? Geometry { get; }
+
+    /// <summary>
+    /// Spatial relationship to apply. <see cref="RasterCatalogSpatialRelation.EnvelopeIntersects"/>
+    /// (the default) uses the box only; other values require <see cref="Geometry"/> and request an
+    /// exact provider-side predicate.
+    /// </summary>
+    public RasterCatalogSpatialRelation Relation { get; }
+
+    /// <summary>
     /// Creates a validated predicate, throwing <see cref="RasterCatalogValidationException"/> when
     /// the input is not a finite, well-ordered box or the SRID is negative.
     /// </summary>
@@ -74,10 +135,19 @@ public readonly record struct RasterCatalogSpatialPredicate
     /// <param name="xMax">Maximum X.</param>
     /// <param name="yMax">Maximum Y.</param>
     /// <param name="srid">Optional SRID; must be positive when supplied.</param>
+    /// <param name="geometry">Optional exact filter geometry (WKB) in <paramref name="srid"/>.</param>
+    /// <param name="relation">Spatial relationship to apply. Defaults to envelope-intersects.</param>
     /// <returns>The validated predicate.</returns>
-    public static RasterCatalogSpatialPredicate Create(double xMin, double yMin, double xMax, double yMax, int? srid)
+    public static RasterCatalogSpatialPredicate Create(
+        double xMin,
+        double yMin,
+        double xMax,
+        double yMax,
+        int? srid,
+        byte[]? geometry = null,
+        RasterCatalogSpatialRelation relation = RasterCatalogSpatialRelation.EnvelopeIntersects)
     {
-        if (!TryCreate(xMin, yMin, xMax, yMax, srid, out var predicate, out var error))
+        if (!TryCreate(xMin, yMin, xMax, yMax, srid, out var predicate, out var error, geometry, relation))
         {
             throw new RasterCatalogValidationException(error);
         }
@@ -88,7 +158,8 @@ public readonly record struct RasterCatalogSpatialPredicate
     /// <summary>
     /// Attempts to create a validated predicate. Rejects non-finite coordinates (NaN/Infinity),
     /// inverted boxes (<c>xMin &gt; xMax</c> or <c>yMin &gt; yMax</c>), and non-positive SRIDs
-    /// without throwing.
+    /// without throwing. A non-envelope <paramref name="relation"/> requires a non-null
+    /// <paramref name="geometry"/>.
     /// </summary>
     /// <param name="xMin">Minimum X.</param>
     /// <param name="yMin">Minimum Y.</param>
@@ -97,6 +168,8 @@ public readonly record struct RasterCatalogSpatialPredicate
     /// <param name="srid">Optional SRID; must be positive when supplied.</param>
     /// <param name="predicate">The validated predicate on success.</param>
     /// <param name="error">A storage-agnostic error message on failure.</param>
+    /// <param name="geometry">Optional exact filter geometry (WKB) in <paramref name="srid"/>.</param>
+    /// <param name="relation">Spatial relationship to apply. Defaults to envelope-intersects.</param>
     /// <returns><see langword="true"/> when the input is valid; otherwise <see langword="false"/>.</returns>
     public static bool TryCreate(
         double xMin,
@@ -105,7 +178,9 @@ public readonly record struct RasterCatalogSpatialPredicate
         double yMax,
         int? srid,
         out RasterCatalogSpatialPredicate predicate,
-        out string error)
+        out string error,
+        byte[]? geometry = null,
+        RasterCatalogSpatialRelation relation = RasterCatalogSpatialRelation.EnvelopeIntersects)
     {
         predicate = default;
         error = string.Empty;
@@ -130,7 +205,13 @@ public readonly record struct RasterCatalogSpatialPredicate
             return false;
         }
 
-        predicate = new RasterCatalogSpatialPredicate(xMin, yMin, xMax, yMax, srid);
+        if (relation != RasterCatalogSpatialRelation.EnvelopeIntersects && geometry is not { Length: > 0 })
+        {
+            error = "An exact spatial relationship requires a filter geometry.";
+            return false;
+        }
+
+        predicate = new RasterCatalogSpatialPredicate(xMin, yMin, xMax, yMax, srid, geometry, relation);
         return true;
     }
 

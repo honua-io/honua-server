@@ -87,6 +87,92 @@ public sealed class PostgresRasterStoreCatalogQueryTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task QueryCatalogAsync_ExactIntersects_ExcludesBboxOverlapButGeometryMiss()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreCatalogQueryTests));
+        try
+        {
+            await CreateIndexedRasterTableAsync(schema);
+            // Footprint sits in the lower-left corner [0,4] x [0,4].
+            var tile = await InsertRasterAsync(schema, "corner", 0, 4);
+            var store = CreateStore(schema);
+
+            // A thin diagonal triangle whose bounding box (0..10 x 0..10) overlaps the footprint, but
+            // whose geometry hugs the upper-right and never touches the [0,4]x[0,4] rectangle.
+            var triangle = TriangleWkb(
+                (6, 0), (10, 0), (10, 10));
+            var envelope = new[] { 0.0, 0.0, 10.0, 10.0 };
+
+            var envelopeQuery = new RasterCatalogQuery
+            {
+                SpatialPredicate = RasterCatalogSpatialPredicate.Create(
+                    envelope[0], envelope[1], envelope[2], envelope[3], 4326),
+                Limit = 10,
+            };
+            var exactQuery = new RasterCatalogQuery
+            {
+                SpatialPredicate = RasterCatalogSpatialPredicate.Create(
+                    envelope[0], envelope[1], envelope[2], envelope[3], 4326,
+                    triangle, RasterCatalogSpatialRelation.Intersects),
+                Limit = 10,
+            };
+
+            var envelopePage = await store.QueryCatalogAsync(LayerId, envelopeQuery);
+            var exactPage = await store.QueryCatalogAsync(LayerId, exactQuery);
+
+            // Envelope-intersects keeps the footprint (bounding boxes overlap)...
+            envelopePage.Rasters.Select(r => r.Id).Should().Equal(tile);
+            // ...but the exact ST_Intersects against the triangle drops it.
+            exactPage.Rasters.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task QueryCatalogAsync_ExactIntersects_KeepsGeometryHit()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreCatalogQueryTests));
+        try
+        {
+            await CreateIndexedRasterTableAsync(schema);
+            var tile = await InsertRasterAsync(schema, "corner", 0, 4);
+            var store = CreateStore(schema);
+
+            // A triangle that clearly overlaps the [0,4]x[0,4] footprint.
+            var triangle = TriangleWkb((0, 0), (4, 0), (0, 4));
+            var query = new RasterCatalogQuery
+            {
+                SpatialPredicate = RasterCatalogSpatialPredicate.Create(
+                    0, 0, 10, 10, 4326, triangle, RasterCatalogSpatialRelation.Intersects),
+                Limit = 10,
+            };
+
+            var page = await store.QueryCatalogAsync(LayerId, query);
+
+            page.Rasters.Select(r => r.Id).Should().Equal(tile);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private static byte[] TriangleWkb((double X, double Y) a, (double X, double Y) b, (double X, double Y) c)
+    {
+        var factory = new NetTopologySuite.Geometries.GeometryFactory();
+        return new NetTopologySuite.IO.WKBWriter().Write(factory.CreatePolygon(
+        [
+            new NetTopologySuite.Geometries.Coordinate(a.X, a.Y),
+            new NetTopologySuite.Geometries.Coordinate(b.X, b.Y),
+            new NetTopologySuite.Geometries.Coordinate(c.X, c.Y),
+            new NetTopologySuite.Geometries.Coordinate(a.X, a.Y),
+        ]));
+    }
+
+    [IntegrationTest]
     public async Task QueryCatalogAsync_Paging_ReturnsBoundedWindowWithTotalCount()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreCatalogQueryTests));

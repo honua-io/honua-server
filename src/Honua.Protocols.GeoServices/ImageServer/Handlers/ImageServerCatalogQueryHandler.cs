@@ -6,6 +6,8 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
@@ -306,12 +308,14 @@ internal sealed class ImageServerCatalogQueryHandler
 
     /// <summary>
     /// Parses the Esri spatial query parameters (<c>geometry</c>, <c>geometryType</c>,
-    /// <c>inSR</c>, <c>spatialRel</c>) into an axis-aligned filter box. The catalog reader
-    /// filters footprints by envelope intersection, so only the envelope of the supplied
-    /// geometry is retained; <c>spatialRel</c> is validated against the supported relationships
-    /// (intersects / envelope-intersects / contains / within / overlaps), which all reduce to
-    /// envelope overlap at the footprint-extent granularity. <c>inSR</c> sets the filter SRID;
-    /// when omitted, the geometry's embedded spatial reference (or the catalog's native SRID)
+    /// <c>inSR</c>, <c>spatialRel</c>) into the canonical raster-catalog spatial filter. The
+    /// geometry's axis-aligned envelope is always retained as the index-eligible pre-filter box;
+    /// per the repository's spatial-semantics rule, <c>bbox</c>/envelope windowing
+    /// (<c>esriGeometryEnvelope</c> or <c>esriSpatialRelEnvelopeIntersects</c>) uses the
+    /// envelope-only test, while explicit relationships (<c>Intersects</c>/<c>Contains</c>/
+    /// <c>Within</c>/<c>Overlaps</c>) on a non-envelope geometry additionally carry the exact
+    /// geometry (WKB) so the provider evaluates the exact predicate. <c>inSR</c> sets the filter
+    /// SRID; when omitted, the geometry's embedded spatial reference (or the catalog's native SRID)
     /// is assumed.
     /// </summary>
     private static bool TryParseSpatialFilter(
@@ -336,7 +340,8 @@ internal sealed class ImageServerCatalogQueryHandler
             return false;
         }
 
-        if (!IsSupportedSpatialRelationship(GetString(values, "spatialRel"), out var spatialRelError))
+        var spatialRelRaw = GetString(values, "spatialRel");
+        if (!IsSupportedSpatialRelationship(spatialRelRaw, out var spatialRelError))
         {
             error = spatialRelError;
             return false;
@@ -364,9 +369,109 @@ internal sealed class ImageServerCatalogQueryHandler
         // Precedence: explicit inSR, then the geometry's embedded spatialReference.
         var filterSrid = inSrid ?? envelope.Srid;
 
+        // Decide envelope-only vs exact. An envelope-shaped geometry (or an explicit
+        // envelope-intersects relationship) is a windowing request that reduces to the bbox test, so
+        // it stays envelope-only. Any other geometry with an explicit relationship carries the exact
+        // WKB so the provider applies ST_Intersects/ST_Contains/ST_Within/ST_Overlaps.
+        var relation = MapSpatialRelation(spatialRelRaw);
+        byte[]? exactGeometry = null;
+        if (relation != RasterCatalogSpatialRelation.EnvelopeIntersects &&
+            !IsEnvelopeShaped(normalizedGeometry))
+        {
+            if (!TryConvertGeometryToWkb(normalizedGeometry, filterSrid, out exactGeometry, out var wkbError))
+            {
+                error = wkbError;
+                return false;
+            }
+        }
+        else
+        {
+            relation = RasterCatalogSpatialRelation.EnvelopeIntersects;
+        }
+
         spatialFilter = new ImageServerCatalogSpatialFilter(
-            envelope.XMin, envelope.YMin, envelope.XMax, envelope.YMax, filterSrid);
+            envelope.XMin, envelope.YMin, envelope.XMax, envelope.YMax, filterSrid, exactGeometry, relation);
         return true;
+    }
+
+    /// <summary>
+    /// Maps the Esri <c>spatialRel</c> token to the canonical raster-catalog relation. A null or
+    /// unspecified relationship defaults to <c>Intersects</c> (ArcGIS default); the value has already
+    /// been validated by <see cref="IsSupportedSpatialRelationship"/>.
+    /// </summary>
+    private static RasterCatalogSpatialRelation MapSpatialRelation(string? spatialRel)
+        => spatialRel?.ToLowerInvariant() switch
+        {
+            "esrispatialrelenvelopeintersects" => RasterCatalogSpatialRelation.EnvelopeIntersects,
+            "esrispatialrelcontains" => RasterCatalogSpatialRelation.Contains,
+            "esrispatialrelwithin" => RasterCatalogSpatialRelation.Within,
+            "esrispatialreloverlaps" => RasterCatalogSpatialRelation.Overlaps,
+            _ => RasterCatalogSpatialRelation.Intersects,
+        };
+
+    /// <summary>
+    /// True when the supplied geometry JSON is an axis-aligned envelope (<c>xmin/ymin/xmax/ymax</c>),
+    /// whose exact predicate is identical to the bounding-box test, so it is kept envelope-only.
+    /// </summary>
+    private static bool IsEnvelopeShaped(string geometryJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(geometryJson);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                   root.TryGetProperty("xmin", out _) &&
+                   root.TryGetProperty("ymin", out _) &&
+                   root.TryGetProperty("xmax", out _) &&
+                   root.TryGetProperty("ymax", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Converts the normalized Esri geometry JSON into WKB via the shared GeoServices geometry
+    /// converter (the same path FeatureServer spatial filters use), so no geometry/geodesy logic is
+    /// reimplemented here. Returns a 400-mappable error string on malformed geometry.
+    /// </summary>
+    private static bool TryConvertGeometryToWkb(
+        string geometryJson,
+        int? filterSrid,
+        out byte[]? wkb,
+        out string? error)
+    {
+        wkb = null;
+        error = null;
+
+        GeoServicesGeometry? geometry;
+        try
+        {
+            geometry = JsonSerializer.Deserialize(geometryJson, FeatureServerJsonContext.Default.GeoServicesGeometry);
+        }
+        catch (JsonException)
+        {
+            error = "geometry must be valid JSON.";
+            return false;
+        }
+
+        if (geometry is null)
+        {
+            error = "Invalid geometry.";
+            return false;
+        }
+
+        try
+        {
+            wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, filterSrid);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            error = "Invalid geometry.";
+            return false;
+        }
     }
 
     /// <summary>
