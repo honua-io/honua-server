@@ -197,6 +197,105 @@ public class ImageServerSensorModelTests
     }
 
     [UnitTest]
+    public void TryReadSunGeometry_WithCamelCaseElevationAndAzimuth_ReturnsBoth()
+    {
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"sunElevation": 45.0, "sunAzimuth": 137.5}""",
+        };
+
+        var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
+        sun.Should().NotBeNull();
+        sun!.Value.SunElevationDegrees.Should().Be(45.0);
+        sun.Value.SunAzimuthDegrees.Should().Be(137.5);
+    }
+
+    [UnitTest]
+    public void TryReadSunGeometry_WithSnakeCaseElevation_ParsesWithoutAzimuth()
+    {
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"sun_elevation": 62.0}""",
+        };
+
+        var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
+        sun.Should().NotBeNull();
+        sun!.Value.SunElevationDegrees.Should().Be(62.0);
+        sun.Value.SunAzimuthDegrees.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryReadSunGeometry_WithSolarElevationAlias_Parses()
+    {
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"solarElevation": 30.0, "solarAzimuth": 200.0}""",
+        };
+
+        var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
+        sun.Should().NotBeNull();
+        sun!.Value.SunElevationDegrees.Should().Be(30.0);
+        sun.Value.SunAzimuthDegrees.Should().Be(200.0);
+    }
+
+    [UnitTest]
+    public void TryReadSunGeometry_WithIlluminationVector_DerivesElevationAndAzimuth()
+    {
+        // Vector (1, 0, 1): |v| = sqrt(2), elevation = asin(1/sqrt(2)) = 45°, azimuth = atan2(1, 0) = 90°.
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"sunDirection": {"x": 1.0, "y": 0.0, "z": 1.0}}""",
+        };
+
+        var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
+        sun.Should().NotBeNull();
+        sun!.Value.SunElevationDegrees.Should().BeApproximately(45.0, 1e-9);
+        sun.Value.SunAzimuthDegrees.Should().BeApproximately(90.0, 1e-9);
+    }
+
+    [UnitTest]
+    public void TryReadSunGeometry_WithOutOfRangeElevation_ReturnsNull()
+    {
+        // 0° and 90° make the shadow-height tangent degenerate; out-of-range angles are not honest.
+        ImageServerSensorModel.TryReadSunGeometry(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"sunElevation": 0.0}""",
+        }).Should().BeNull();
+        ImageServerSensorModel.TryReadSunGeometry(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"sunElevation": 90.0}""",
+        }).Should().BeNull();
+        ImageServerSensorModel.TryReadSunGeometry(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"sunElevation": 120.0}""",
+        }).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryReadSunGeometry_WithNoMetadataOrSunGeometry_ReturnsNull()
+    {
+        ImageServerSensorModel.TryReadSunGeometry(null).Should().BeNull();
+        ImageServerSensorModel.TryReadSunGeometry(new RasterSensorMetadata { RasterDataId = 1 }).Should().BeNull();
+        ImageServerSensorModel.TryReadSunGeometry(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = """{"offNadirAngle": 5}""",
+        }).Should().BeNull();
+        ImageServerSensorModel.TryReadSunGeometry(new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            ExteriorOrientationJson = "{not-json",
+        }).Should().BeNull();
+    }
+
+    [UnitTest]
     public void ReadControlPoints_WithNoMetadataOrControlPoints_ReturnsEmpty()
     {
         ImageServerSensorModel.ReadControlPoints(null).Should().BeEmpty();

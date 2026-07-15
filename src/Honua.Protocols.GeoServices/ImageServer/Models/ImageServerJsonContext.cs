@@ -63,6 +63,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(ImageServerComputeTiePointsResponse))]
 [JsonSerializable(typeof(ImageServerTiePointSet))]
 [JsonSerializable(typeof(ImageServerTiePoint))]
+[JsonSerializable(typeof(CalculateVolumeResponse))]
+[JsonSerializable(typeof(CalculateVolumeResult))]
 [JsonSerializable(typeof(ImageServerExportTilesEstimateResponse))]
 [JsonSerializable(typeof(ImageServerExportTilesResponse))]
 [JsonSerializable(typeof(ImageServerExportTilesFileInfo))]
