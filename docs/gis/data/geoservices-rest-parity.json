@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-06-13",
+  "lastReviewed": "2026-07-15",
   "canonicalDocs": {
     "landingPage": "docs/reference/compatibility/geoservices-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -9,6 +9,7 @@
     "operation": [
       "implemented",
       "partial",
+      "stub",
       "not_implemented"
     ],
     "parameter": [
@@ -62,25 +63,26 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/AttachmentEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Query.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Edits.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.TemporalExtent.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Tiles.cs",
-          "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsEndpoints.cs",
-          "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Clusters.cs",
-          "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.SpatialJoin.cs",
-          "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.BufferAggregate.cs",
-          "src/Honua.Server/Features/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Density.cs"
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/AttachmentEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Query.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Edits.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.TemporalExtent.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Tiles.cs",
+          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.NotImplementedService.cs",
+          "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs",
+          "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Clusters.cs",
+          "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers.SpatialJoin.cs",
+          "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers.BufferAggregate.cs",
+          "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Density.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerQueryParameterTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerReplicationTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerMaintenanceTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerTemporalExtentEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/MvtTileTemporalEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryParameterTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicationTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMaintenanceTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerTemporalExtentEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/MvtTileTemporalEndpointTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsOgcTests.cs",
           "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsEditionGateTests.cs",
@@ -440,33 +442,45 @@
           },
           {
             "name": "Add Attachment",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment",
             "methods": [
               "POST"
             ],
             "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/addAttachment"
-            ]
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment"
+            ],
+            "notes": "Multipart form-data upload against one feature. The operation is per-feature: the route carries {featureId}."
           },
           {
             "name": "Update Attachment",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment",
             "methods": [
               "POST"
             ],
             "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateAttachment"
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment"
             ]
           },
           {
             "name": "Delete Attachments",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments",
             "methods": [
               "POST"
             ],
             "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteAttachments"
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments"
             ]
+          },
+          {
+            "name": "Query Attachment Infos",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"
+            ],
+            "notes": "Returns one feature's attachmentInfos collection."
           },
           {
             "name": "Download Attachment",
@@ -503,93 +517,143 @@
               "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"
             ],
             "notes": "Supports objectIds plus attachmentTypes, keywords, size, definitionExpression, returnMetadata, and returnUrl facets; globalIds are rejected with a GeoServices 400 because Honua uses integer object IDs."
-          }
-        ],
-        "partial": [],
-        "notImplemented": [
-          {
-            "name": "Cleanup Change Tracking",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/cleanupChangeTracking",
-            "methods": [
-              "POST"
-            ]
           },
           {
             "name": "Query Contingent Values",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/queryContingentValues",
             "methods": [
               "GET"
-            ]
-          },
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/queryContingentValues"
+            ],
+            "notes": "Serves per-layer contingent value definitions from the canonical Metadata v2 graph (contingentValueGroups). Layers with none, and services with none, return an empty contingentValuesDefinitions collection. The same definition is surfaced on layer metadata as contingentValuesDefinition. Automated import of contingent values from Esri sources is deferred."
+          }
+        ],
+        "partial": [],
+        "stub": [
           {
             "name": "Shared Templates and child operations",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/sharedTemplates",
             "methods": [
               "GET",
               "POST"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/sharedTemplates",
+              "GET /rest/services/{serviceId}/FeatureServer/sharedTemplates/query",
+              "POST /rest/services/{serviceId}/FeatureServer/sharedTemplates/add",
+              "POST /rest/services/{serviceId}/FeatureServer/sharedTemplates/update",
+              "POST /rest/services/{serviceId}/FeatureServer/sharedTemplates/delete"
+            ],
+            "notes": "Routes exist and return the spec-shaped document. Honua has no standalone shared-template store: reads return an empty templates collection and mutations return HTTP 400 rather than fabricating success."
           },
           {
             "name": "HTML Popup",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/htmlPopup",
             "methods": [
               "GET"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/htmlPopup"
+            ],
+            "notes": "Route exists and returns the spec-shaped document; no author-defined pop-up store exists, so the content is empty."
           },
           {
             "name": "Image",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/image",
             "methods": [
               "GET"
-            ]
-          },
-          {
-            "name": "Cleanup Assets",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets",
-            "methods": [
-              "GET"
-            ]
-          },
-          {
-            "name": "Convert 3D",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/convert3D",
-            "methods": [
-              "GET"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/image"
+            ],
+            "notes": "Route exists and returns the spec-shaped document; no service-level feature-image store exists."
           },
           {
             "name": "Has Assets",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets",
             "methods": [
               "GET"
-            ]
-          },
-          {
-            "name": "Query 3D",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/query3D",
-            "methods": [
-              "GET"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets"
+            ],
+            "notes": "Route exists; no layer asset store, so it reports false."
           },
           {
             "name": "Query Assets",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets",
             "methods": [
               "GET"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets"
+            ],
+            "notes": "Route exists; no layer asset store, so it returns an empty result."
           },
           {
-            "name": "Update Metadata",
-            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update",
+            "name": "Cleanup Assets",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets",
             "methods": [
-              "POST"
-            ]
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets"
+            ],
+            "notes": "Route exists; no layer asset store, so the mutation returns HTTP 400 rather than reporting a fabricated cleanup."
           },
           {
             "name": "Upload Assets",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets",
             "methods": [
               "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets"
+            ],
+            "notes": "Route exists; no layer asset store, so the mutation returns HTTP 400."
+          },
+          {
+            "name": "Convert 3D",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/convert3D",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/convert3D"
+            ],
+            "notes": "Route exists; no 3D conversion pipeline, so the conversion returns HTTP 400."
+          },
+          {
+            "name": "Query 3D",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/query3D",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/query3D"
+            ],
+            "notes": "Route exists; no 3D pipeline, so it returns an empty result."
+          },
+          {
+            "name": "Update Metadata",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update",
+            "methods": [
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update"
+            ],
+            "notes": "Route exists; the Esri metadata-document mutation surface is not backed by the canonical Metadata v2 graph, so it returns HTTP 400. Layer metadata is authored through the Honua admin API."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "Cleanup Change Tracking",
+            "esriPath": "/rest/services/{serviceId}/FeatureServer/cleanupChangeTracking",
+            "methods": [
+              "POST"
             ]
           }
         ]
@@ -783,10 +847,10 @@
         "queryRelatedRecords"
       ],
       "knownGaps": [
-        "Esri compact TPKX cache and async exportTiles job child resources",
+        "Esri compact/generated tile-cache management (seeding, expiry, quota) for the MapServer tile cache",
         "queryAnalytic",
-        "dynamicLayers workspace joins and dynamic query tables (dataSource.type other than table)",
-        "image/KML-image/job child resources",
+        "dynamicLayers queryTable (raw SQL) data sources",
+        "image and KML-image child resources",
         "additional Esri child resources"
       ],
       "evidence": {
@@ -1037,6 +1101,20 @@
               "POST /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords"
             ],
             "notes": "Layer-scoped adapter that delegates to the FeatureServer queryRelatedRecords handler."
+          },
+          {
+            "name": "Export Tiles job child resources",
+            "esriPath": "/rest/services/{serviceId}/MapServer/jobs/{jobId}",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/jobs/{jobId}",
+              "POST /rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel",
+              "GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url"
+            ],
+            "notes": "Durable asynchronous exportTiles job lifecycle (#2688): status, cancel, and the out_service_url result resource. A Compact Cache V2 / TPKX exportTiles request submits the job; these resources report and cancel it."
           }
         ],
         "partial": [
@@ -1064,7 +1142,7 @@
               "GET /rest/services/{serviceId}/MapServer/exportTiles",
               "POST /rest/services/{serviceId}/MapServer/exportTiles"
             ],
-            "notes": "Exports bounded WebMercatorQuad PNG tiles to configured cloud file storage. storageFormat=zip (default) writes a flat {z}/{x}/{y}.png ZIP; storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi). Compact TPKX (storageFormat=tpkx/compact) is rejected with 400 and deferred; async exportTiles job child resources (submitJob/jobs/{id}) are deferred."
+            "notes": "Exports bounded WebMercatorQuad PNG tiles to configured cloud file storage. storageFormat=zip (default) writes a flat {z}/{x}/{y}.png ZIP and storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi); both are synchronous. Compact Cache V2 / TPKX (storageFormatType=esriMapCacheStorageModeCompactV2, or storageFormat=tpkx/compact/compactv2) submits a durable asynchronous job and returns the ArcGIS { jobId, jobStatus } envelope; the package is a real Esri TPKX 1.0 archive of Compact Cache V2 .bundle files. It requires the durable tile-export job runtime (an execution job store); when that is unavailable the request is rejected rather than silently downgraded. Partial because the export stays bounded to WebMercatorQuad and gdbVersion-style parameters are ignored."
           },
           {
             "name": "Dynamic Layer or Table resource",
@@ -1110,13 +1188,6 @@
           {
             "name": "KML image child resource",
             "esriPath": "/rest/services/{serviceId}/MapServer/kml/mapImage.kmz",
-            "methods": [
-              "GET"
-            ]
-          },
-          {
-            "name": "Job child resource",
-            "esriPath": "/rest/services/{serviceId}/MapServer/jobs/{jobId}",
             "methods": [
               "GET"
             ]
@@ -1172,7 +1243,7 @@
       "knownLimitations": [
         "WMTS GetTile/GetCapabilities serve the WebMercatorQuad and WorldCRS84Quad gridsets; WMTS GetFeatureInfo remains WebMercatorQuad-only.",
         "Layer queries inherit the FeatureServer query contract, including its format behavior.",
-        "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package.",
+        "MapServer tile GET storage is a loose-object cache, not an Esri compact cache or tile package; exportTiles can produce a TPK or a Compact Cache V2 / TPKX package, but the live tile cache itself is not an Esri compact cache.",
         "dynamicLayers and the dynamicLayer child resource support source.type=mapLayer, allowlisted source.type=dataLayer workspace data layers (resolved to published resources on an allowlisted workspace), allowlisted dataSource.type=joinTable joins (left-outer/inner, materialized application-side and surfaced through identify and the dynamicLayer metadata with right-source fields qualified as table.field, both layers' access policies enforced), definitionExpression, and drawingInfo.renderer overrides; dynamic query tables (dataSource.type=queryTable, raw SQL) remain unimplemented.",
         "Advanced rendering parameters such as maxAllowableOffset and geometryPrecision are accepted but not yet applied."
       ]
@@ -1224,11 +1295,10 @@
         "richer image child resources (imageSupportData, thumbnail, rasterFile)"
       ],
       "knownGaps": [
-        "sensor/DEM-backed ImageServer height and 3D mensuration",
-        "Esri compact TPKX cache and async exportTiles job child resources",
+        "shadow-based and photogrammetric height and the remaining 3D mensuration operations (DEM-backed height is supported)",
         "Esri compact/generated tile-cache management",
         "catalog mutation",
-        "camera/orientation-ranked ImageServer find",
+        "multi-factor camera-model find scoring and per-request tunable weighting (single-factor off-nadir orientation ranking is supported)",
         "multidimensional cube ingestion",
         "full WCS CRS extension advertisement/validation beyond the bounded transformable set (native coverage CRS plus default WGS84/WebMercator identifiers)",
         "WMTS non-WebMercator matrix sets"
@@ -1418,6 +1488,23 @@
               "GET /rest/services/{id}/ImageServer/rasterAttributeTable"
             ],
             "notes": "Returns a spec-shaped raster attribute table document; non-applicable layers return an empty table."
+          },
+          {
+            "name": "Export Tiles job child resources",
+            "esriPath": "/rest/services/{id}/ImageServer/jobs/{jobId}",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/jobs/{jobId}",
+              "POST /rest/services/{id}/ImageServer/jobs/{jobId}/cancel",
+              "GET /rest/services/{id}/ImageServer/jobs/{jobId}/results/out_service_url",
+              "GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}",
+              "POST /rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel",
+              "GET /rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url"
+            ],
+            "notes": "Durable asynchronous exportTiles job lifecycle (#2688): status, cancel, and the out_service_url result resource, on both the numeric-layer and service-name routes."
           }
         ],
         "partial": [
@@ -1621,16 +1708,7 @@
               "GET /rest/services/{serviceId}/ImageServer/exportTiles",
               "POST /rest/services/{serviceId}/ImageServer/exportTiles"
             ],
-            "notes": "Exports bounded WebMercatorQuad image tiles to configured cloud file storage (local, S3, Azure Blob). storageFormat=zip (default) writes a flat {z}/{x}/{y}.ext ZIP; storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi). Compact TPKX (storageFormat=tpkx/compact) is rejected with 400 and deferred; async exportTiles job child resources are deferred."
-          }
-        ],
-        "notImplemented": [
-          {
-            "name": "Add Rasters",
-            "esriPath": "/rest/services/{id}/ImageServer/addRasters",
-            "methods": [
-              "POST"
-            ]
+            "notes": "Exports bounded WebMercatorQuad image tiles to configured cloud file storage (local, S3, Azure Blob). storageFormat=zip (default) writes a flat {z}/{x}/{y}.ext ZIP and storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/<cache>/_alllayers + conf.xml/conf.cdi); both are synchronous. Compact Cache V2 / TPKX (storageFormatType=esriMapCacheStorageModeCompactV2, or storageFormat=tpkx/compact/compactv2) submits a durable asynchronous job and returns the ArcGIS { jobId, jobStatus } envelope; the package is a real Esri TPKX 1.0 archive of Compact Cache V2 .bundle files. It requires the durable tile-export job runtime (an execution job store); when that is unavailable the request is rejected rather than silently downgraded."
           },
           {
             "name": "Calculate Volume",
@@ -1638,13 +1716,51 @@
             "methods": [
               "GET",
               "POST"
-            ]
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/calculateVolume",
+              "POST /rest/services/{id}/ImageServer/calculateVolume",
+              "GET /rest/services/{serviceId}/ImageServer/calculateVolume",
+              "POST /rest/services/{serviceId}/ImageServer/calculateVolume"
+            ],
+            "notes": "Computes cut/fill volumes and 2D surface area per area-of-interest polygon against the layer associated DEM (raster_sensor_metadata.dem_source), integrating (elevation - basePlane) * pixelArea over DEM pixels in the AOI through the shared clip primitive. Partial: only a constant base plane is supported, the AOI is bounded by a per-operation pixel budget (over-budget returns 400), and a raster with no modeled DEM returns 501 rather than a fabricated value (ADR-0065)."
+          },
+          {
+            "name": "Compute Tie Points",
+            "esriPath": "/rest/services/{id}/ImageServer/computeTiePoints",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeTiePoints",
+              "POST /rest/services/{id}/ImageServer/computeTiePoints",
+              "GET /rest/services/{serviceId}/ImageServer/computeTiePoints",
+              "POST /rest/services/{serviceId}/ImageServer/computeTiePoints"
+            ],
+            "notes": "Returns the raster pre-registered control points / GCPs from its sensor metadata, passed through verbatim and bounded to 10000 points per response. Partial by design: automatic feature detection / descriptor matching (how ArcGIS derives tie points) needs a computer-vision dependency this repository bars, so a raster with no modeled control points returns 501 rather than a fabricated result (ADR-0065)."
           },
           {
             "name": "Compute Class Statistics",
             "esriPath": "/rest/services/{id}/ImageServer/computeClassStatistics",
             "methods": [
               "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/computeClassStatistics",
+              "POST /rest/services/{id}/ImageServer/computeClassStatistics",
+              "GET /rest/services/{serviceId}/ImageServer/computeClassStatistics",
+              "POST /rest/services/{serviceId}/ImageServer/computeClassStatistics"
+            ],
+            "notes": "Computes per-class signatures over the classDescriptions training AOIs: pixel count, per-band mean vector, per-band min/max/stddev, and the band-by-band sample covariance matrix (n-1), over a single raster or a layer mosaic (rasterIds + mosaicRule) with an optional bandIds subset. Partial: bounded by a configurable per-class pixel budget (GeoServices:ImageServer:ClassStatistics:MaxPixelsPerClass) and renderingRule/multidimensionalDefinition are rejected with 501 because signatures are computed on source pixels."
+          }
+        ],
+        "notImplemented": [
+          {
+            "name": "Add Rasters",
+            "esriPath": "/rest/services/{id}/ImageServer/addRasters",
+            "methods": [
               "POST"
             ]
           },
@@ -1658,14 +1774,6 @@
           {
             "name": "Download Rasters",
             "esriPath": "/rest/services/{id}/ImageServer/downloadRasters",
-            "methods": [
-              "GET",
-              "POST"
-            ]
-          },
-          {
-            "name": "Compute Tie Points",
-            "esriPath": "/rest/services/{id}/ImageServer/computeTiePoints",
             "methods": [
               "GET",
               "POST"
@@ -1740,6 +1848,33 @@
               "POST /rest/services/{id}/ImageServer/slices"
             ],
             "notes": "Returns spec-shaped empty documents for non-multidimensional rasters and populated variables/slices when multidimensional coverage metadata is available."
+          },
+          {
+            "name": "Colormap",
+            "esriPath": "/rest/services/{id}/ImageServer/colormap",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/colormap",
+              "POST /rest/services/{id}/ImageServer/colormap",
+              "GET /rest/services/{serviceId}/ImageServer/colormap",
+              "POST /rest/services/{serviceId}/ImageServer/colormap"
+            ],
+            "notes": "Renderer-driven. Honua rasters are continuous with no intrinsic source colormap, so this read-only resource reflects the active renderer: a renderingRule whose Colormap function resolves a colormap (explicit stops, named ColorrampName, or an inline algorithmic/multipart Colorramp) returns the Esri { \"colormap\": [[value, r, g, b], ...] } document, consistent with what exportImage/legend render. Any other request returns the not-available response."
+          },
+          {
+            "name": "Raster item thumbnail",
+            "esriPath": "/rest/services/{id}/ImageServer/{rasterId}/thumbnail",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/{rasterId}/thumbnail",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/thumbnail"
+            ],
+            "notes": "Renders a small thumbnail of the raster item through the shared export pipeline; honours f=json for an href envelope. Note the served path is {rasterId}/thumbnail, not {rasterId}/info/thumbnail."
           }
         ],
         "partial": [
@@ -1760,15 +1895,37 @@
               "GET /ogc/services/{serviceId}/wcs"
             ],
             "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals), the full Scaling extension (SCALESIZE explicit per-axis sizing x(w),y(h); SCALEFACTOR uniform factor; SCALEAXES per-axis factors x(f),y(f); SCALEEXTENT per-axis grid intervals x(low,high),y(low,high) - at most one scaling operator per request, resolved against the subset-trimmed base grid), and phenomenonTime temporal subsetting (SUBSET=phenomenonTime(\"instant\") or (\"start\",\"end\"); the request must intersect the coverage acquisition time, else InvalidSubsetting). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting and scaling extension conformance classes are not advertised pending CITE validation. Multidimensional slicing beyond phenomenonTime, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
+          },
+          {
+            "name": "Raster item image support data",
+            "esriPath": "/rest/services/{id}/ImageServer/{rasterId}/imageSupportData",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/{rasterId}/imageSupportData",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/imageSupportData"
+            ],
+            "notes": "Returns the Esri-shaped imageSupportData (sensor name, camera model, and interior/exterior/RPC orientation presence flags plus DEM source) projected from the raster sensor-metadata companion. Partial: only rasters with a modeled sensor-metadata row carry support data; a plain COG reports not-available rather than a fabricated empty support-data document."
+          }
+        ],
+        "stub": [
+          {
+            "name": "Raster item source file",
+            "esriPath": "/rest/services/{id}/ImageServer/{rasterId}/rasterFile",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/{rasterId}/rasterFile",
+              "GET /rest/services/{serviceId}/ImageServer/{rasterId}/rasterFile"
+            ],
+            "notes": "Route exists and resolves the raster item, then returns a precise capability-honest not-available response: Honua stores raster pixels in the provider (PostGIS raster / analytic stores) rather than referencing a downloadable source file, so there is no file to stream. Never a fabricated payload."
           }
         ],
         "notImplemented": [
-          "colormap",
-          "imageSupportData",
           "{rasterId}/info/metadata",
-          "{rasterId}/info/thumbnail",
-          "kml",
-          "rasterFile"
+          "kml"
         ]
       },
       "parameterCoverage": {
@@ -2006,8 +2163,8 @@
         "hasMultidimensions is always false until cube ingestion ships; multidimensionalInfo remains absent.",
         "ImageServer find filters by raster catalog footprint and returns catalog metadata; true camera/orientation-ranked image selection is deferred until sensor metadata is modeled.",
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
-        "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache, tile package, or advertised cacheInfo tile cache.",
-        "ImageServer exportTiles writes a flat ZIP (storageFormat=zip) or an Esri exploded-cache TPK (storageFormat=tpk/tilePackage=true) to configured cloud file storage; the compact TPKX bundle form and async job child resources are not implemented.",
+        "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache or an advertised cacheInfo tile cache.",
+        "ImageServer exportTiles writes a flat ZIP (storageFormat=zip) or an Esri exploded-cache TPK (storageFormat=tpk/tilePackage=true) synchronously, or a Compact Cache V2 / TPKX package through a durable asynchronous job; the durable path requires an execution job store.",
         "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png, image/jpeg, and image/tiff tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets are deferred."
       ]
     },
@@ -2045,15 +2202,15 @@
       "knownGaps": [],
       "evidence": {
         "code": [
-          "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/GeometryServiceEndpoints.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs",
-          "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/Services/GeometryServiceHandler.cs"
+          "src/Honua.Protocols.GeoServices/GeometryService/GeometryServiceEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs",
+          "src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceHandler.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceBufferTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceProjectTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceSimplifyTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceBufferTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceProjectTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceSimplifyTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceAdvancedOperationsTests.cs"
         ]
       },
       "operations": {
@@ -2991,7 +3148,19 @@
               "DELETE"
             ],
             "honuaEndpoints": [
-              "/api/v1/admin/network-datasets"
+              "GET /api/v1/admin/network-datasets",
+              "POST /api/v1/admin/network-datasets",
+              "GET /api/v1/admin/network-datasets/{id}",
+              "PUT /api/v1/admin/network-datasets/{id}",
+              "DELETE /api/v1/admin/network-datasets/{id}",
+              "GET /api/v1/admin/network-datasets/{id}/generations",
+              "POST /api/v1/admin/network-datasets/{id}/generations",
+              "POST /api/v1/admin/network-datasets/{id}/generations/{generation}/edits",
+              "POST /api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild",
+              "GET /api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}",
+              "POST /api/v1/admin/network-datasets/{id}/promote",
+              "POST /api/v1/admin/network-datasets/{id}/rollback",
+              "GET /api/v1/admin/network-datasets/{id}/promotions"
             ],
             "notes": "The addressable dataset registry and its mapping/metadata CRUD are implemented. Edge/vertex/turn-restriction editing and topology rebuild remain deferred."
           }
