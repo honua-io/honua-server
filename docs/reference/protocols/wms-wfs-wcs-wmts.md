@@ -30,12 +30,43 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | `GetCapabilities` | `SERVICE=WMS`, optional `VERSION`. |
 | `GetMap` | `LAYERS`, `STYLES`, `BBOX`, `CRS` (1.3.0) / `SRS` (1.1.1), `WIDTH`, `HEIGHT`, `FORMAT` (`image/png`, `image/jpeg`), `TRANSPARENT`, `BGCOLOR`, `EXCEPTIONS`. |
 | `GetFeatureInfo` | `GetMap` parameters plus `QUERY_LAYERS`, `I`/`J` (1.3.0) or `X`/`Y` (1.1.1), `INFO_FORMAT`, `FEATURE_COUNT`. |
+| `GetLegendGraphic` | `LAYER`, optional `STYLE` (`default`), `FORMAT` (`image/png`), `WIDTH`/`HEIGHT` (swatch size hint, default 20x20), `SCALE`. |
 
 Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon for EPSG:4326); WMS 1.1.1 always uses lon,lat. Honua applies the correct order per negotiated version.
 
 ```bash
 curl -o map.png "https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png"
 ```
+
+### GetLegendGraphic
+
+`GetLegendGraphic` is not part of the WMS 1.3.0 core specification, but it is universally
+implemented and Honua serves it on both WMS routes. Legends are generated from the
+canonical MapLibre GL style through the same style-resolution and SkiaSharp rendering path
+`GetMap` draws with, so a swatch always shows the paint the map actually applies.
+
+`WIDTH`/`HEIGHT` size the individual swatch (GeoServer's convention); the returned image
+grows to fit the stacked entries and their labels. `SCALE` is a scale denominator and
+filters entries by each style layer's `minzoom`/`maxzoom`.
+
+Capabilities advertise `LegendURL` inside a layer's `<Style>` element **only** for layers
+that can actually produce a legend — a layer whose style contains no painted
+(`fill`/`line`/`circle`) layer is not advertised, because `GetMap` draws nothing for it.
+`LegendURL` deliberately omits the optional `width`/`height` attributes: the composed image
+size depends on label metrics that are not known until render time.
+
+Data-driven expressions resolve to discrete entries where the expression permits it:
+
+| Expression | Legend behavior |
+| --- | --- |
+| `match` on an attribute | One entry per label (grouped labels expand), plus an `Other` entry for the fallback arm. |
+| `step` on an attribute | One entry per band, labelled `< first`, `lo - hi`, `>= last`. |
+| `interpolate` over colors | **Not representable.** Reported via a `Warning` response header rather than sampled. The shared expression evaluator interpolates numerically and does not blend colors, so sampling a ramp would either render the black `GetMap` produces for intermediate values or invent colors `GetMap` never draws. |
+| `case`, or any input that is not a plain attribute read | **Not representable.** Branches are arbitrary predicates with no finite attribute domain to enumerate; a single representative entry is returned and a `Warning` header explains why. |
+
+Where a legend cannot faithfully represent the style, the response carries a `Warning`
+header describing the limitation instead of silently showing a misleading swatch. Legends
+are capped at 64 entries; truncation is reported the same way.
 
 ## WFS operations
 
