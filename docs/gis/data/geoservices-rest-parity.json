@@ -371,76 +371,6 @@
             ]
           },
           {
-            "name": "Temporal Extent (Honua extension)",
-            "esriPath": null,
-            "methods": [
-              "GET"
-            ],
-            "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent"
-            ],
-            "extension": "honua-temporal-animation",
-            "edition": "Community",
-            "featureKey": "temporal.extent-discovery",
-            "notes": "Returns the resolved start/end time field names plus the layer's deterministic min/max timestamps as ISO 8601 UTC and Unix epoch milliseconds. Companion to the GeoServices REST timeInfo block on layer metadata. Returns 404 when the layer is not configured as time-aware (no timeInfo); returns 200 with null min/max when the layer is time-aware but has no rows. Output cached under the LayerMetadata tag and shares its invalidation. JSON only (f=json|pjson); other formats return 400. Community-tier (ADR-0024); see docs/gis/temporal-animation-api.md."
-          },
-          {
-            "name": "Query Clusters (Honua extension)",
-            "esriPath": null,
-            "methods": [
-              "POST"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters"
-            ],
-            "extension": "honua-spatial-analytics",
-            "edition": "Pro",
-            "featureKey": "analytics.clustering",
-            "notes": "DBSCAN or K-Means clustering. algorithm defaults to 'dbscan' when omitted. eps is meters (capped by Limits.Analytics.MaxDbscanEpsMeters); algorithm-specific required parameters are validated. returnHullPerCluster=true returns one feature per cluster (capped by Limits.Analytics.MaxClusters) with clusterId and featureCount; default returns one row per source feature with objectId, nested attributes, geometry, and clusterId. outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate columns and return HTTP 400 if both are supplied. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows (null in per-feature mode, populated in hull mode). FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Bounded by Limits.Analytics.MaxInputFeatures. Requires the active analytics.clustering entitlement (ADR-0024); requests without it return HTTP 402 Payment Required with the GeoServices error envelope and an entitlement remediation message. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
-          },
-          {
-            "name": "Spatial Join (Honua extension)",
-            "esriPath": null,
-            "methods": [
-              "POST"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin"
-            ],
-            "extension": "honua-spatial-analytics",
-            "edition": "Pro",
-            "featureKey": "analytics.spatial-join",
-            "notes": "Joins target layer against joinLayerId (must differ) using predicate intersects/contains/within/dwithin. dwithin requires positive distance in meters (capped by Limits.Analytics.MaxDWithinDistanceMeters). Each target feature preserves objectId, nested attributes, and geometry while adding matchCount; carryFields is a comma-separated list and is emitted as arrays of matched join-layer values, while outStatistics aggregates over matched rows. The join layer is resolved through the same IResourceValidator access policy as the target. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows (null for this operation's maxOutputRows). FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Requires the active analytics.spatial-join entitlement (ADR-0024); requests without it return HTTP 402 Payment Required. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
-          },
-          {
-            "name": "Query Buffer Aggregate (Honua extension)",
-            "esriPath": null,
-            "methods": [
-              "POST"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate"
-            ],
-            "extension": "honua-spatial-analytics",
-            "edition": "Pro",
-            "featureKey": "analytics.buffer-aggregate",
-            "notes": "Buffers each feature by distance in unit (meters/kilometers/feet/miles). The Limits.Analytics.MaxBufferDistanceMeters cap is enforced after unit conversion so it cannot be bypassed by switching to a larger unit. dissolve=true (default) unions overlapping buffers per group via ST_Union and returns dissolved polygons with featureCount plus any group/stat columns; dissolve=false returns one row per input feature with buffered geometry and objectId. groupByFields and outStatistics follow the standard GeoServices statistics shape. outStatistics requires dissolve=true; per-feature output (dissolve=false) cannot carry aggregate columns and returns HTTP 400. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows (null for this operation's maxOutputRows). FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Requires the active analytics.buffer-aggregate entitlement (ADR-0024); requests without it return HTTP 402 Payment Required. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
-          },
-          {
-            "name": "Query Density (Honua extension)",
-            "esriPath": null,
-            "methods": [
-              "POST"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity"
-            ],
-            "extension": "honua-spatial-analytics",
-            "edition": "Pro",
-            "featureKey": "analytics.density",
-            "notes": "Hex or square grid binning over Web Mercator. cellSize is meters and is clamped to [Limits.Analytics.MinDensityCellSizeMeters, Limits.Analytics.MaxDensityCellSizeMeters]. Output rows include cellId and featureCount; optional weightField adds a weighted sum column named weight. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows. FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Output bounded by Limits.Analytics.MaxDensityCells. Requires the active analytics.density entitlement (ADR-0024); requests without it return HTTP 402 Payment Required. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
-          },
-          {
             "name": "Add Attachment",
             "esriPath": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment",
             "methods": [
@@ -658,6 +588,73 @@
           }
         ]
       },
+      "honuaExtensions": [
+        {
+          "name": "Temporal Extent (Honua extension)",
+          "methods": [
+            "GET"
+          ],
+          "honuaEndpoints": [
+            "GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent"
+          ],
+          "extension": "honua-temporal-animation",
+          "edition": "Community",
+          "featureKey": "temporal.extent-discovery",
+          "notes": "Returns the resolved start/end time field names plus the layer's deterministic min/max timestamps as ISO 8601 UTC and Unix epoch milliseconds. Companion to the GeoServices REST timeInfo block on layer metadata. Returns 404 when the layer is not configured as time-aware (no timeInfo); returns 200 with null min/max when the layer is time-aware but has no rows. Output cached under the LayerMetadata tag and shares its invalidation. JSON only (f=json|pjson); other formats return 400. Community-tier (ADR-0024); see docs/gis/temporal-animation-api.md."
+        },
+        {
+          "name": "Query Clusters (Honua extension)",
+          "methods": [
+            "POST"
+          ],
+          "honuaEndpoints": [
+            "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters"
+          ],
+          "extension": "honua-spatial-analytics",
+          "edition": "Pro",
+          "featureKey": "analytics.clustering",
+          "notes": "DBSCAN or K-Means clustering. algorithm defaults to 'dbscan' when omitted. eps is meters (capped by Limits.Analytics.MaxDbscanEpsMeters); algorithm-specific required parameters are validated. returnHullPerCluster=true returns one feature per cluster (capped by Limits.Analytics.MaxClusters) with clusterId and featureCount; default returns one row per source feature with objectId, nested attributes, geometry, and clusterId. outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate columns and return HTTP 400 if both are supplied. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows (null in per-feature mode, populated in hull mode). FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Bounded by Limits.Analytics.MaxInputFeatures. Requires the active analytics.clustering entitlement (ADR-0024); requests without it return HTTP 402 Payment Required with the GeoServices error envelope and an entitlement remediation message. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
+        },
+        {
+          "name": "Spatial Join (Honua extension)",
+          "methods": [
+            "POST"
+          ],
+          "honuaEndpoints": [
+            "POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin"
+          ],
+          "extension": "honua-spatial-analytics",
+          "edition": "Pro",
+          "featureKey": "analytics.spatial-join",
+          "notes": "Joins target layer against joinLayerId (must differ) using predicate intersects/contains/within/dwithin. dwithin requires positive distance in meters (capped by Limits.Analytics.MaxDWithinDistanceMeters). Each target feature preserves objectId, nested attributes, and geometry while adding matchCount; carryFields is a comma-separated list and is emitted as arrays of matched join-layer values, while outStatistics aggregates over matched rows. The join layer is resolved through the same IResourceValidator access policy as the target. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows (null for this operation's maxOutputRows). FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Requires the active analytics.spatial-join entitlement (ADR-0024); requests without it return HTTP 402 Payment Required. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
+        },
+        {
+          "name": "Query Buffer Aggregate (Honua extension)",
+          "methods": [
+            "POST"
+          ],
+          "honuaEndpoints": [
+            "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate"
+          ],
+          "extension": "honua-spatial-analytics",
+          "edition": "Pro",
+          "featureKey": "analytics.buffer-aggregate",
+          "notes": "Buffers each feature by distance in unit (meters/kilometers/feet/miles). The Limits.Analytics.MaxBufferDistanceMeters cap is enforced after unit conversion so it cannot be bypassed by switching to a larger unit. dissolve=true (default) unions overlapping buffers per group via ST_Union and returns dissolved polygons with featureCount plus any group/stat columns; dissolve=false returns one row per input feature with buffered geometry and objectId. groupByFields and outStatistics follow the standard GeoServices statistics shape. outStatistics requires dissolve=true; per-feature output (dissolve=false) cannot carry aggregate columns and returns HTTP 400. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows (null for this operation's maxOutputRows). FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Requires the active analytics.buffer-aggregate entitlement (ADR-0024); requests without it return HTTP 402 Payment Required. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
+        },
+        {
+          "name": "Query Density (Honua extension)",
+          "methods": [
+            "POST"
+          ],
+          "honuaEndpoints": [
+            "POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity"
+          ],
+          "extension": "honua-spatial-analytics",
+          "edition": "Pro",
+          "featureKey": "analytics.density",
+          "notes": "Hex or square grid binning over Web Mercator. cellSize is meters and is clamped to [Limits.Analytics.MinDensityCellSizeMeters, Limits.Analytics.MaxDensityCellSizeMeters]. Output rows include cellId and featureCount; optional weightField adds a weighted sum column named weight. Shared filters include where, objectIds, geometry/geometryType/inSR/spatialRel, and time/timeRelation; distance-based esri spatial relationships are rejected because distance is operation-specific on the analytics slice. Returns application/geo+json with WGS84 coordinates, numberReturned = features.length, and metadata.operation/inputTruncated/resultTruncated/maxInputFeatures/maxOutputRows. FeatureServer-style f is accepted for parity but does not change the response media type; unsupported POST content types return HTTP 415 Unsupported Media Type. Output bounded by Limits.Analytics.MaxDensityCells. Requires the active analytics.density entitlement (ADR-0024); requests without it return HTTP 402 Payment Required. Deployments without a PostGIS-backed analytics reader (for example the DuckDB read-only provider) return HTTP 501 Not Implemented via TryGetAnalyticsReader."
+        }
+      ],
       "parameterCoverage": {
         "layerQuery": [
           {
@@ -1781,16 +1778,6 @@
           }
         ]
       },
-      "honuaExtensions": [
-        {
-          "name": "Compute Class (raster function chain validator)",
-          "honuaEndpoints": [
-            "GET /rest/services/{id}/ImageServer/computeClass",
-            "POST /rest/services/{id}/ImageServer/computeClass"
-          ],
-          "notes": "Closest in spirit to Esri's validate operation. Accepts a raster function chain document via renderingRule (or the legacy rasterFunction alias) and returns the planned execution metadata (rasterFunction, chainDepth, executedFunctions[], outputPixelType, status). The planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400; exportImage and identify execute Stretch (MinMax/StandardDeviation/PercentClip), Colormap (explicit stops or named ColorrampName), Clip (envelope/polygon, including ClippingType=1 keep-outside), and ExtractBand (0-based BandIds selection). computeStatisticsHistograms executes Stretch, Colormap, and Clip; ExtractBand and BandArithmetic remain deferred there."
-        }
-      ],
       "childResources": {
         "implemented": [
           {
@@ -2165,7 +2152,8 @@
         "ImageServer measure supports Basic map-space mensuration only; sensor/DEM-backed height and 3D mensuration are not implemented.",
         "ImageServer tile GET storage is a loose-object cache, not an Esri compact cache or an advertised cacheInfo tile cache.",
         "ImageServer exportTiles writes a flat ZIP (storageFormat=zip) or an Esri exploded-cache TPK (storageFormat=tpk/tilePackage=true) synchronously, or a Compact Cache V2 / TPKX package through a durable asynchronous job; the durable path requires an execution job store.",
-        "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png, image/jpeg, and image/tiff tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets are deferred."
+        "ImageServer WMTS supports GetCapabilities/GetTile/GetFeatureInfo for WebMercatorQuad image/png, image/jpeg, and image/tiff tiles with a TIME dimension for temporal layers; non-WebMercator matrix sets are deferred.",
+        "There is no /computeClass route. Raster-function chain validation is internal: a renderingRule chain is validated and planned as part of exportImage/identify/computeStatisticsHistograms execution (Identity/Stretch/Colormap/Clip/ExtractBand, max chain depth 8; unknown functions return 400, unsupported-but-recognized chains return 501). Esri has no computeClass operation either."
       ]
     },
     {
