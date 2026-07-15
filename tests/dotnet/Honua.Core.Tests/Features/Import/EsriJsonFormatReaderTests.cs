@@ -46,6 +46,25 @@ public sealed class EsriJsonFormatReaderTests
         features[1].Attributes["zone_code"].Should().Be("500");
     }
 
+    [Theory]
+    // ArcGIS commonly emits a legacy Esri-only wkid with no latestWkid; these must map to the
+    // EPSG code (3857) rather than pass through verbatim and fail import SRID validation.
+    [InlineData("{\"spatialReference\":{\"wkid\":102100},\"features\":[]}", 3857)]
+    [InlineData("{\"spatialReference\":{\"wkid\":102113},\"features\":[]}", 3857)]
+    [InlineData("{\"spatialReference\":{\"wkid\":900913},\"features\":[]}", 3857)]
+    // A registered EPSG code passes through unchanged.
+    [InlineData("{\"spatialReference\":{\"wkid\":26910},\"features\":[]}", 26910)]
+    // latestWkid (modern EPSG) wins over the legacy wkid when both are present.
+    [InlineData("{\"spatialReference\":{\"wkid\":102100,\"latestWkid\":3857},\"features\":[]}", 3857)]
+    // No spatial reference at all → undetected.
+    [InlineData("{\"features\":[]}", null)]
+    public async Task TryDetectSridAsync_ResolvesEsriWkid(string json, int? expected)
+    {
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var srid = await EsriJsonFormatReader.TryDetectSridAsync(stream, CancellationToken.None);
+        srid.Should().Be(expected);
+    }
+
     [Fact]
     public async Task ReadStreamingAsync_PolygonRings_ReturnsPolygon()
     {
