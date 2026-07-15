@@ -97,6 +97,31 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
+    public async Task<OperationGatewayResult> CreateApprovalProposalAsync(
+        OperationGatewayRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // The approval requirement was already decided by an upstream domain gate
+        // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
+        // edition ladder — we only need the RequiresApproval floor. Resolve the class
+        // decision to carry a truthful edition/source, then force the tier to
+        // RequiresApproval so the proposal is always persisted for human resolution.
+        var baseDecision = _ladder.Resolve(request.Kind);
+        var decision = baseDecision.Tier == GuardrailTier.RequiresApproval
+            ? baseDecision
+            : new GuardrailDecision(
+                GuardrailTier.RequiresApproval,
+                request.Kind,
+                baseDecision.Edition,
+                "upstream-gate-requires-approval");
+
+        Log.OperationRouted(_logger, request.Kind.ToString(), decision.Tier.ToString(), decision.Source);
+
+        return await CreateProposalAsync(request, decision, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<OperationProposal?> ApplyApprovedProposalAsync(
         string proposalId,
         string approvedBy,
