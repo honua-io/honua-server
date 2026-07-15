@@ -9,14 +9,14 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 /// Response for the ImageServer <c>computeTiePoints</c> operation. Mirrors the documented
 /// ArcGIS Enterprise REST response shape: a single <c>tiePoints</c> object carrying
 /// index-aligned <c>sourcePoints</c> (image/pixel points) and <c>targetPoints</c>
-/// (reference/ground points). See ADR-0064.
+/// (reference/ground points). See ADR-0065.
 /// </summary>
 public sealed class ImageServerComputeTiePointsResponse
 {
     /// <summary>
     /// The computed tie-point set. In this slice these are a faithful pass-through of the
     /// raster's pre-registered control points; automatic feature matching is not performed
-    /// (ADR-0064).
+    /// (ADR-0065).
     /// </summary>
     [JsonPropertyName("tiePoints")]
     public required ImageServerTiePointSet TiePoints { get; init; }

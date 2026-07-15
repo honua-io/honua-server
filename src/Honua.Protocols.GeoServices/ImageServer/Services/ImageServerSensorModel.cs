@@ -118,11 +118,11 @@ internal static class ImageServerSensorModel
     /// from the exterior-orientation payload. Control points live under a <c>controlPoints</c>
     /// array (aliases <c>tiePoints</c>, <c>gcps</c>); each entry pairs an <c>imagePoint</c>
     /// (aliases <c>sourcePoint</c>) in pixel space with a <c>referencePoint</c> (aliases
-    /// <c>targetPoint</c>, <c>groundPoint</c>) in ground/map space. See ADR-0064 for the schema.
+    /// <c>targetPoint</c>, <c>groundPoint</c>) in ground/map space. See ADR-0065 for the schema.
     /// Entries missing either point or with non-numeric coordinates are skipped defensively.
     /// Returns an empty list when the payload is missing, malformed, or carries no valid pairs —
     /// callers treat that as "no control points modeled" and return an honest 501 rather than
-    /// fabricating tie points (automatic feature matching is out of scope, ADR-0064).
+    /// fabricating tie points (automatic feature matching is out of scope, ADR-0065).
     /// </summary>
     /// <param name="metadata">The raster's sensor metadata, or <c>null</c>.</param>
     /// <param name="defaultReferenceSrid">
@@ -186,7 +186,7 @@ internal static class ImageServerSensorModel
 
     /// <summary>
     /// Reads the sun/illumination geometry from the exterior-orientation payload for shadow-based
-    /// height mensuration (ADR-0064). The sun elevation angle (degrees above the horizon) is read
+    /// height mensuration (ADR-0065). The sun elevation angle (degrees above the horizon) is read
     /// from <c>sunElevation</c> (aliases <c>sun_elevation</c>, <c>sunElevationAngle</c>,
     /// <c>solarElevation</c>, <c>sun_elevation_angle</c>) and the optional azimuth from
     /// <c>sunAzimuth</c> (aliases <c>sun_azimuth</c>, <c>solarAzimuth</c>, <c>sun_azimuth_angle</c>).
@@ -355,7 +355,7 @@ internal static class ImageServerSensorModel
 /// <summary>
 /// A pre-registered photogrammetric control point pairing an image (pixel-space) location with
 /// a reference (ground/map-space) location, parsed from the raster's exterior-orientation
-/// payload (ADR-0064). Backs the honest <c>computeTiePoints</c> pass-through: these are stored
+/// payload (ADR-0065). Backs the honest <c>computeTiePoints</c> pass-through: these are stored
 /// control points, never values derived by feature matching.
 /// </summary>
 /// <param name="ImageX">Image sample/column coordinate (pixel space).</param>
@@ -376,7 +376,7 @@ internal readonly record struct PhotogrammetricControlPoint(
 
 /// <summary>
 /// Sun / illumination geometry parsed from a raster's exterior-orientation payload, backing
-/// shadow-based height mensuration (ADR-0064). <see cref="SunElevationDegrees"/> is the angle of
+/// shadow-based height mensuration (ADR-0065). <see cref="SunElevationDegrees"/> is the angle of
 /// the sun above the horizon (0°–90°, exclusive); <see cref="SunAzimuthDegrees"/> is the optional
 /// horizontal bearing of the sun in degrees clockwise from north (not required for the shadow-length
 /// height formula, which uses the measured ground shadow length directly).

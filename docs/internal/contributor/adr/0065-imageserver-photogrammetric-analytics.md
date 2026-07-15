@@ -1,4 +1,4 @@
-# ADR-0064: ImageServer Photogrammetric Tie-Point and 3D Measurement Analytics
+# ADR-0065: ImageServer Photogrammetric Tie-Point and 3D Measurement Analytics
 
 ## Status
 

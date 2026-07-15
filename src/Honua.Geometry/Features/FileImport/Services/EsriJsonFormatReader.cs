@@ -101,18 +101,31 @@ internal static class EsriJsonFormatReader
             latestWkid.ValueKind == JsonValueKind.Number &&
             latestWkid.TryGetInt32(out var latest))
         {
-            return latest;
+            return NormalizeWkid(latest);
         }
 
         if (spatialReference.TryGetProperty("wkid", out var wkid) &&
             wkid.ValueKind == JsonValueKind.Number &&
             wkid.TryGetInt32(out var value))
         {
-            return value;
+            return NormalizeWkid(value);
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Maps Esri-only well-known ids that have no matching row in PostGIS <c>spatial_ref_sys</c> to
+    /// their EPSG equivalents so the source CRS validates. ArcGIS commonly emits <c>wkid</c> alone
+    /// (no <c>latestWkid</c>) with the legacy Web Mercator codes 102100 / 102113 / 900913, all of
+    /// which are EPSG:3857; passing them through verbatim would fail import SRID validation. Codes
+    /// that already correspond to a registered EPSG entry are returned unchanged.
+    /// </summary>
+    private static int NormalizeWkid(int wkid) => wkid switch
+    {
+        102100 or 102113 or 900913 => 3857,
+        _ => wkid,
+    };
 
     private static NtsGeometry? ParseGeometry(JsonElement geometry, GeometryFactory factory)
     {

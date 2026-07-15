@@ -1097,7 +1097,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetCapabilities_WithoutAuth_Returns200WithCompatibilityContract",
-        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope"
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope",
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesRouteHonestyTests.AdvertisedManifestCapabilities_MatchRegisteredRoutes"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -2545,6 +2546,48 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_AfterRegister_ReturnsDataset",
         "Honua.Server.Tests.Features.Admin.NetworkDatasetAdminEndpointsTests.Get_Missing_Returns404"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-network-datasets-id-generations",
+      "route": "/api/v1/admin/network-datasets/{id}/generations",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ListGenerations_AfterAllocate_IncludesActiveAndDraft",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ListGenerations_Anonymous_IsDenied"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-network-datasets-id-generations-generation-rebuild-attempt",
+      "route": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.GetRebuildAttempt_Missing_Returns404",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.Rebuild_EndToEnd_BuildsShadowTopologyAndCompletesGeneration"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-api-v1-admin-network-datasets-id-promotions",
+      "route": "/api/v1/admin/network-datasets/{id}/promotions",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.ListHistory_AfterPromotion_IncludesEntry",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.ListHistory_Anonymous_IsDenied"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -7576,7 +7619,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WithCompactStorageFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SingleZoomLevel_ReturnsError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitsDurableJobAndProjectsStatus"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -7649,6 +7694,33 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithOgcCrsUri_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithReturnCatalogItems_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithSrid_ReturnsSuccessOrNotFound"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-jobs-jobid",
+      "route": "/rest/services/{id}/ImageServer/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitsDurableJobAndProjectsStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.JobStatus_UnknownJob_ReturnsSanitizedNotFound"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-jobs-jobid-results-out-service-url",
+      "route": "/rest/services/{id}/ImageServer/jobs/{jobId}/results/out_service_url",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -7733,6 +7805,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_GetAndPost_ReprojectsGeometries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithDatumTransformationWkid_AppliesSelectedPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_AndRpcMetadata_WarpsImageToMap",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_AndUnsupportedDatumTransformation_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_ComposesWarpWithReprojectionAndDiffersFromNoTransformation",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithUnsupportedDatumTransformationWkid_Returns400"
       ],
@@ -7872,6 +7946,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-id-imageserver-rasterid-imagesupportdata",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/imageSupportData",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithoutSensorMetadata_ReturnsNotAvailableError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-id-imageserver-rasterid-info",
       "route": "/rest/services/{id}/ImageServer/{rasterId}/info",
       "method": "GET",
@@ -7907,6 +7995,32 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-rasterfile",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/rasterFile",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-thumbnail",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/thumbnail",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9292,6 +9406,32 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-imageserver-jobs-jobid",
+      "route": "/rest/services/{serviceId}/ImageServer/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-jobs-jobid-results-out-service-url",
+      "route": "/rest/services/{serviceId}/ImageServer/jobs/{jobId}/results/out_service_url",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-imageserver-keyproperties",
       "route": "/rest/services/{serviceId}/ImageServer/keyProperties",
       "method": "GET",
@@ -9476,6 +9616,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-imagesupportdata",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/imageSupportData",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-imageserver-rasterid-info",
       "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info",
       "method": "GET",
@@ -9510,6 +9663,32 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-rasterfile",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/rasterFile",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-thumbnail",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/thumbnail",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9877,6 +10056,32 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithMalformedPointPair_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithProjectedMapExtent_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerQueryLimitsTests.MapServer_Identify_WithConfiguredMaxRecordCount_AppliesGlobalCap"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-mapserver-jobs-jobid",
+      "route": "/rest/services/{serviceId}/MapServer/jobs/{jobId}",
+      "method": "GET",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-mapserver-jobs-jobid-results-out-service-url",
+      "route": "/rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url",
+      "method": "GET",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"
@@ -13465,6 +13670,92 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-api-v1-admin-network-datasets-id-generations",
+      "route": "/api/v1/admin/network-datasets/{id}/generations",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.AllocateDraft_ValidDataset_Returns201WithDraftState"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-generations-generation-edits",
+      "route": "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_ActiveGeneration_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_AddEdge_TransitionsDraftToDirtyAndBumpsRevision",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_DisallowedAttributeKey_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_MissingIdempotencyKey_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_MissingIfMatch_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_RestrictionReferencingUnknownEdge_RollsBackWholeBatch",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_SameIdempotencyKeyDifferentPayload_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_SameIdempotencyKeySamePayload_ReplaysWithoutMutating",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_SridMismatch_Returns400",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_StaleRowVersion_Returns409",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_Success_EmitsSanitizedAuditLogAndTelemetrySpan",
+        "Honua.Server.Tests.Features.Admin.NetworkTopologyEditAdminEndpointsTests.ApplyEditBatch_ValidRestriction_ThenDeleteReferencedEdge_Returns400WithoutDeleting"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-generations-generation-rebuild",
+      "route": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.Rebuild_StaleFencingToken_RejectsCheckpointWrite",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.Reconciler_ExpiredLease_OrphansAttemptAndCleansUpArtifacts",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_DirtyGeneration_TransitionsToBuildingAndReturns202",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_GenerationNotDirty_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_SecondActiveAttempt_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpointsTests.SubmitRebuild_StaleRowVersion_Returns409"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-promote",
+      "route": "/api/v1/admin/network-datasets/{id}/promote",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_CandidateNotReady_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_ConcurrentCandidates_OnlyOneWins",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_MissingIdempotencyKey_Returns400",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_ReadyCandidate_ActivatesAndRetiresOld",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Promote_SameIdempotencyKeyReplayed_ReturnsSameResultWithoutDoublePromoting"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-api-v1-admin-network-datasets-id-rollback",
+      "route": "/api/v1/admin/network-datasets/{id}/rollback",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Rollback_ToNonRetiredGeneration_Returns409",
+        "Honua.Server.Tests.Features.Admin.Routing.NetworkTopologyPromotionAdminEndpointsTests.Rollback_ToRetiredGeneration_Reactivates"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-api-v1-admin-oauth-clients",
       "route": "/api/v1/admin/oauth-clients",
       "method": "POST",
@@ -15981,6 +16272,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-id-imageserver-jobs-jobid-cancel",
+      "route": "/rest/services/{id}/ImageServer/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-id-imageserver-keyproperties",
       "route": "/rest/services/{id}/ImageServer/keyProperties",
       "method": "POST",
@@ -17201,6 +17505,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-serviceid-imageserver-jobs-jobid-cancel",
+      "route": "/rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-serviceid-imageserver-keyproperties",
       "route": "/rest/services/{serviceId}/ImageServer/keyProperties",
       "method": "POST",
@@ -17450,6 +17767,19 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_Post_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithOversizedGeometry_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-rest-services-serviceid-mapserver-jobs-jobid-cancel",
+      "route": "/rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"

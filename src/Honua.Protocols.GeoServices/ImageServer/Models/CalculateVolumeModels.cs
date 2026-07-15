@@ -9,7 +9,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 /// Response for the ImageServer <c>calculateVolume</c> operation. Mirrors the documented ArcGIS
 /// Enterprise REST response shape: a <c>results</c> array with one entry per input geometry
 /// (area-of-interest), each carrying the cut/fill volumes, 2D surface area, and elevation
-/// statistics computed against the layer's associated DEM surface. See ADR-0064.
+/// statistics computed against the layer's associated DEM surface. See ADR-0065.
 /// </summary>
 public sealed class CalculateVolumeResponse
 {

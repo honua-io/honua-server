@@ -127,7 +127,8 @@ environment variables above.
 ## Known gaps
 
 - **Auth certification:** skipped when `HONUA_DEV_AUTH=true`. Full auth testing requires a separate CI lane with auth enforcement.
-- **SDK scripts prerequisite for manual replays:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref. Keep `MCP_SDK_REF` pinned to an SDK commit that contains the certification scripts for release-evidence runs.
+- **Certification not yet active (#2807):** the currently pinned `MCP_SDK_REF` does **not** contain the `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts (they are tracked in `honua-sdk-js` `#484`). As a result the `mcp-certification` and `mcp-llm-smoke` lanes skip cleanly and **no certification artifact has been produced** — the MCP surface is not certified today. Do not cite the presence of these CI jobs as certification evidence. Once the scripts land, re-pin `MCP_SDK_REF` to the SDK commit that contains them so release-evidence runs actually execute and upload the `mcp-certification-{transport}` artifacts.
+- **SDK scripts prerequisite for manual replays:** CI jobs skip cleanly when `test:certification`, `test:certification:artifact`, or `test:llm-smoke` scripts are not present in the checked-out SDK ref.
 - **Cache-invalidation testing:** deferred until anonymous writes are available.
 - **C# SDK interop lane:** deferred to follow-up issue.
 - **Schema source consolidation:** `tests/seed/base-schema.sql` and `tests/python/shared/postgis.py` define CI and local-bootstrap catalog schemas independently. They already diverge on some columns. A future pass should have one consume the other to prevent further drift.

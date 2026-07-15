@@ -115,7 +115,7 @@ internal static class ImageServerMensurationMath
     /// and the sun elevation read from the raster's exterior-orientation metadata
     /// (<see cref="ImageServerSensorModel.TryReadSunGeometry"/>). Backs the
     /// <c>esriMensurationHeightFromBaseAndTopShadow</c> / <c>*HeightFromTopAndTopShadow</c>
-    /// operations (ADR-0064).
+    /// operations (ADR-0065).
     /// </para>
     /// </summary>
     /// <param name="shadowLengthMeters">Measured ground shadow length in meters (must be finite, ≥ 0).</param>

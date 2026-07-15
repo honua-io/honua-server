@@ -20,7 +20,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 /// descriptor matching (the way ArcGIS <i>derives</i> tie points) requires a computer-vision
 /// dependency this repository bars, so it is out of scope by design — when no control points are
 /// modeled the operation returns an actionable <c>501</c> rather than a fabricated result,
-/// mirroring the DEM-height 501 discipline (#1879). See ADR-0064.
+/// mirroring the DEM-height 501 discipline (#1879). See ADR-0065.
 /// </summary>
 internal sealed class ImageServerComputeTiePointsHandler
 {
@@ -95,7 +95,7 @@ internal sealed class ImageServerComputeTiePointsHandler
             if (controlPoints.Count == 0)
             {
                 // No pre-registered control points: be honest (501) rather than invoking a feature
-                // matcher we do not have (ADR-0064). Automatic tuning parameters (minRegionSize,
+                // matcher we do not have (ADR-0065). Automatic tuning parameters (minRegionSize,
                 // maxLevel, skipFactor, searchSize, similarity) are accepted for wire compatibility
                 // but have no effect because no matching is performed.
                 return StandardErrorHelpers.CreateNotImplemented(context, NoControlPointsMessage);

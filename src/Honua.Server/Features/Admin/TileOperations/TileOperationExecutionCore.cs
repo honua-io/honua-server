@@ -38,6 +38,7 @@ internal sealed partial class TileOperationExecutionCore
     private readonly TileLimits _tileLimits;
     private readonly ILogger _logger;
     private readonly int _maxTilesCeiling;
+    private readonly ITileCacheGenerationCheckpointStore? _checkpointStore;
 
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
 
@@ -47,7 +48,8 @@ internal sealed partial class TileOperationExecutionCore
         IOptions<TileOptions> tileOptions,
         IOptions<LimitsOptions> limitsOptions,
         ILogger logger,
-        int maxTilesCeiling)
+        int maxTilesCeiling,
+        ITileCacheGenerationCheckpointStore? checkpointStore = null)
     {
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
@@ -55,6 +57,7 @@ internal sealed partial class TileOperationExecutionCore
         _tileLimits = limitsOptions?.Value?.Tiles ?? throw new ArgumentNullException(nameof(limitsOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _maxTilesCeiling = Math.Max(1, maxTilesCeiling);
+        _checkpointStore = checkpointStore;
     }
 
     /// <summary>
@@ -151,18 +154,8 @@ internal sealed partial class TileOperationExecutionCore
         }
 
         var total = (long)layerIds.Count * tileCoordinates.Count;
-        var processed = 0L;
-        var successful = 0L;
-        var failed = 0L;
         var warningList = new List<string>();
         var phase = warmMode ? "Warming tiles" : "Seeding tiles";
-
-        var current = progress with
-        {
-            TotalTiles = total,
-            CurrentPhase = phase
-        };
-        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
         // Metatiling (#1837): render tiles in aligned N×N metatile blocks per pass so neighbouring
         // tiles are produced together. With MetatileFactor=1 this degenerates to one tile per block
@@ -172,50 +165,131 @@ internal sealed partial class TileOperationExecutionCore
             tileCoordinates.Select(static c => new TileIndex(c.Z, c.X, c.Y)),
             _tileOptions.MetatileFactor);
 
+        // Flatten (layer, metatile) into a single deterministic block ordering so a durable
+        // generation cursor (issue #2661) resumes exactly where a prior attempt stopped. The order
+        // is stable across attempts: ascending layer id order, then the deterministic metatile
+        // block order MetatileGrouping.Group produces.
+        var orderedBlocks = new List<(int LayerId, Metatile Block)>(layerIds.Count * metatiles.Count);
         foreach (var layerId in layerIds)
         {
             foreach (var metatile in metatiles)
             {
-                foreach (var member in metatile.Tiles)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    try
-                    {
-                        await tileProvider.GetMvtTileAsync(
-                            layerId,
-                            member.X,
-                            member.Y,
-                            member.Z,
-                            query: null,
-                            _tileOptions,
-                            _tileLimits,
-                            cancellationToken: cancellationToken).ConfigureAwait(false);
-                        successful++;
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        TileOperationLog.TileGenerationFailed(_logger, layerId, member.Z, member.X, member.Y, ex);
-                        failed++;
-                        if (warningList.Count < 20)
-                        {
-                            warningList.Add($"Layer {layerId} tile {member.Z}/{member.X}/{member.Y}: tile generation failed.");
-                        }
-                    }
+                orderedBlocks.Add((layerId, metatile));
+            }
+        }
 
-                    processed++;
-                    if (processed % 25 == 0 || processed == total)
+        // Resumable generation checkpoint. When a generation id is present and a checkpoint store
+        // is wired, a retry loads the prior snapshot: leading completed blocks are skipped (only
+        // their recorded failed units are regenerated) and already-successful units are never
+        // re-rendered. When no generation id / store is present this degenerates to the original
+        // full-grid seed with byte-for-byte behavior.
+        var generationId = string.IsNullOrWhiteSpace(request.GenerationId) ? null : request.GenerationId;
+        var checkpointEnabled = _checkpointStore is not null && generationId is not null;
+        var checkpoint = checkpointEnabled
+            ? await LoadCheckpointBestEffortAsync(generationId!, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        var completedBlocks = checkpoint?.CompletedMetatileBlocks ?? 0;
+        var priorFailedUnits = checkpoint is { FailedUnits.Count: > 0 }
+            ? new HashSet<string>(checkpoint.FailedUnits, StringComparer.Ordinal)
+            : null;
+        var attempt = (checkpoint?.Attempt ?? 0) + 1;
+
+        var successful = checkpoint?.CompletedUnitCount ?? 0L;
+        var processed = successful;
+        var failed = 0L;
+        var newFailedUnits = new HashSet<string>(StringComparer.Ordinal);
+
+        var current = progress with
+        {
+            TotalTiles = total,
+            ProcessedTiles = processed,
+            SuccessfulTiles = successful,
+            CurrentPhase = phase
+        };
+        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+
+        if (checkpoint is not null)
+        {
+            TileOperationLog.GenerationResumed(_logger, generationId!, completedBlocks, checkpoint.FailedUnits.Count, attempt);
+        }
+
+        var highestCompletedBlock = completedBlocks;
+        for (var blockIndex = 0; blockIndex < orderedBlocks.Count; blockIndex++)
+        {
+            var (layerId, block) = orderedBlocks[blockIndex];
+            var blockAlreadyCompleted = blockIndex < completedBlocks;
+
+            foreach (var member in block.Tiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var unitKey = BuildUnitKey(layerId, member.Z, member.X, member.Y);
+
+                // A block that a prior attempt already completed only needs its recorded failed
+                // units regenerated; its already-successful units must not be re-rendered.
+                if (blockAlreadyCompleted && (priorFailedUnits is null || !priorFailedUnits.Contains(unitKey)))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await tileProvider.GetMvtTileAsync(
+                        layerId,
+                        member.X,
+                        member.Y,
+                        member.Z,
+                        query: null,
+                        _tileOptions,
+                        _tileLimits,
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+                    successful++;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    TileOperationLog.TileGenerationFailed(_logger, layerId, member.Z, member.X, member.Y, ex);
+                    failed++;
+                    newFailedUnits.Add(unitKey);
+                    if (warningList.Count < 20)
                     {
-                        current = current with
-                        {
-                            ProcessedTiles = processed,
-                            SuccessfulTiles = successful,
-                            FailedTiles = failed,
-                            Warnings = warningList.ToArray(),
-                            CurrentPhase = $"{phase} ({processed}/{total})"
-                        };
-                        await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                        warningList.Add($"Layer {layerId} tile {member.Z}/{member.X}/{member.Y}: tile generation failed.");
                     }
                 }
+
+                processed++;
+                if (processed % 25 == 0 || processed == total)
+                {
+                    current = current with
+                    {
+                        ProcessedTiles = processed,
+                        SuccessfulTiles = successful,
+                        FailedTiles = failed,
+                        Warnings = warningList.ToArray(),
+                        CurrentPhase = $"{phase} ({processed}/{total})"
+                    };
+                    await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            if (!blockAlreadyCompleted)
+            {
+                highestCompletedBlock = blockIndex + 1;
+            }
+
+            // Persist the advanced cursor + failed set after every completed metatile block so a
+            // retry resumes from here without re-rendering completed units.
+            if (checkpointEnabled)
+            {
+                await PersistCheckpointBestEffortAsync(
+                    generationId!,
+                    request.Operation,
+                    highestCompletedBlock,
+                    successful,
+                    failed,
+                    newFailedUnits,
+                    attempt,
+                    cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -229,14 +303,108 @@ internal sealed partial class TileOperationExecutionCore
                 });
         }
 
-        var completedStatus = failed == 0 ? OperationStatus.Completed : OperationStatus.Failed;
+        current = current with
+        {
+            ProcessedTiles = processed,
+            SuccessfulTiles = successful,
+            FailedTiles = failed,
+            Warnings = warningList.ToArray()
+        };
+
+        if (failed == 0)
+        {
+            // A clean generation leaves no resume state behind.
+            if (checkpointEnabled)
+            {
+                await DeleteCheckpointBestEffortAsync(generationId!, cancellationToken).ConfigureAwait(false);
+            }
+
+            return current with
+            {
+                Status = OperationStatus.Completed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                ErrorMessage = null,
+                CurrentPhase = $"{request.Operation} completed"
+            };
+        }
+
+        // Failures leave the checkpoint in place (already persisted above) so a fix-forward retry
+        // regenerates only the failed units under the same generation id.
         return current with
         {
-            Status = completedStatus,
+            Status = OperationStatus.Failed,
             CompletedAt = DateTimeOffset.UtcNow,
-            ErrorMessage = failed == 0 ? null : $"{failed} tiles failed to process.",
-            CurrentPhase = failed == 0 ? $"{request.Operation} completed" : $"{request.Operation} completed with failures"
+            ErrorMessage = $"{failed} tiles failed to process.",
+            CurrentPhase = $"{request.Operation} completed with failures"
         };
+    }
+
+    private static string BuildUnitKey(int layerId, int z, int x, int y) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{layerId}/{z}/{x}/{y}");
+
+    private async Task<TileCacheGenerationCheckpoint?> LoadCheckpointBestEffortAsync(
+        string generationId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _checkpointStore!.LoadAsync(generationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Resume is an optimization: a checkpoint-store outage must never fail the seed. Fall
+            // back to a clean full-grid pass.
+            TileOperationLog.CheckpointLoadFailed(_logger, generationId, ex);
+            return null;
+        }
+    }
+
+    private async Task PersistCheckpointBestEffortAsync(
+        string generationId,
+        string operation,
+        int completedBlocks,
+        long completedUnitCount,
+        long failedUnitCount,
+        IReadOnlyCollection<string> failedUnits,
+        int attempt,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _checkpointStore!.SaveAsync(
+                new TileCacheGenerationCheckpoint
+                {
+                    GenerationId = generationId,
+                    Operation = operation,
+                    CompletedMetatileBlocks = completedBlocks,
+                    CompletedUnitCount = completedUnitCount,
+                    FailedUnitCount = failedUnitCount,
+                    FailedUnits = failedUnits.ToArray(),
+                    CapturedAt = DateTimeOffset.UtcNow,
+                    Attempt = attempt
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A failed checkpoint write only costs resumability, never correctness of this pass.
+            TileOperationLog.CheckpointSaveFailed(_logger, generationId, ex);
+        }
+    }
+
+    private async Task DeleteCheckpointBestEffortAsync(string generationId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _checkpointStore!.DeleteAsync(generationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A stale checkpoint self-expires; a failed delete is not fatal.
+            TileOperationLog.CheckpointDeleteFailed(_logger, generationId, ex);
+        }
     }
 
     private async Task<TileOperationProgress> ExecuteArchiveAsync(

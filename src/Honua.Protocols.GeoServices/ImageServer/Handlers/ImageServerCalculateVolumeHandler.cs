@@ -24,7 +24,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 /// (<see cref="IRasterStore.ReadClippedBandVectorsAsync"/>) that <c>computeClassStatistics</c> uses,
 /// bounded by a per-operation pixel budget. Returns an honest <c>501</c> when no DEM is modeled and
 /// a <c>400</c> when the AOI exceeds the synchronous budget — never a fabricated value or a
-/// <c>500</c>. See ADR-0064.
+/// <c>500</c>. See ADR-0065.
 /// </summary>
 internal sealed class ImageServerCalculateVolumeHandler
 {

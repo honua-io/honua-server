@@ -54,4 +54,11 @@ internal static class TileCacheJobParameterKeys
     /// emits uncompressed tiles.
     /// </summary>
     public const string Compression = "honua.tilecache.compression";
+
+    /// <summary>
+    /// Stable generation identifier for a resumable seed/warm run (issue #2661). Optional; when
+    /// absent the worker uses the execution job's operation id (which durable retries preserve) so
+    /// a retry resumes the same generation checkpoint instead of restarting the grid.
+    /// </summary>
+    public const string GenerationId = "honua.tilecache.generation_id";
 }

@@ -154,6 +154,9 @@ public sealed class ProposeOperationToolTests
         public Task<OperationGatewayResult> RouteAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
             => Task.FromResult(result);
 
+        public Task<OperationGatewayResult> CreateApprovalProposalAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(result);
+
         public Task<OperationProposal?> ApplyApprovedProposalAsync(string proposalId, string approvedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);
 

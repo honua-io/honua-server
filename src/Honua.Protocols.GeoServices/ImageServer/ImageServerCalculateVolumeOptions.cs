@@ -9,8 +9,8 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 /// Admission limits for the ImageServer <c>calculateVolume</c> operation. These bound the CPU and
 /// memory an unauthenticated volume request can consume so the synchronous operation is safe to
 /// enable in a rolling deployment, mirroring the <c>computeClassStatistics</c> precedent (#2662,
-/// ADR-0064). An AOI whose DEM clip exceeds the pixel budget is rejected with an actionable error
-/// rather than analysed partially; the async-job path for unbounded AOIs is deferred (ADR-0064 §4).
+/// ADR-0065). An AOI whose DEM clip exceeds the pixel budget is rejected with an actionable error
+/// rather than analysed partially; the async-job path for unbounded AOIs is deferred (ADR-0065 §4).
 /// </summary>
 public sealed class ImageServerCalculateVolumeOptions
 {

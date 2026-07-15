@@ -194,6 +194,113 @@ transactional content edits (#2716), isolated durable rebuild (#2718), atomic
 promotion/rollback (#2719), then multi-node fencing and recovery (#2720). Travel-profile
 metadata and cost semantics remain independently owned by #2655.
 
+### Transactional edge and turn-restriction content edits (#2716)
+
+Issue #2716 adds the canonical admin edit service the lifecycle foundation was built for.
+Migration 086 adds three additive tables scoped to one `(dataset_id, generation)` pair:
+`network_topology_edge_edits` (staged geometry + allowlisted attributes),
+`network_topology_restriction_edits` (staged turn restrictions, foreign-keyed to the staged
+edges so a dangling reference is a database-enforced rejection), and
+`network_topology_edit_idempotency` (an at-most-once ledger that stores only counts and
+lifecycle state, never geometry or attribute values). Two new admin endpoints under
+`/api/v1/admin/network-datasets/{id}/generations` allocate a `draft` generation (seeded from
+the dataset's current active generation) and list a dataset's generations; a third,
+`POST .../generations/{generation}/edits`, applies a batched add/update/delete edit for
+edges and turn restrictions in one Postgres transaction.
+
+Every batch requires an `Idempotency-Key` header (replaying the same key with the same
+payload returns the original result without re-applying; the same key with a different
+payload is rejected deterministically) and an `If-Match` header carrying the generation's
+current row version (a mismatch is a 409, not a silent overwrite). `NetworkTopologyLifecycle`
+(the same provider-neutral module #2715 introduced) gained `TryApplyContentEdit`: it only
+ever leaves a generation `dirty`, accepts edits when the current state is `draft` or `dirty`,
+and rejects every other state — active, ready, building, failed, and retired generations all
+return a sanitized 409 rather than accepting content. A successful batch increments both the
+row version (concurrency) and the source revision (content clock) in the same
+compare-and-swap `UPDATE` that applies the state transition, so the dirty transition and the
+content mutation commit atomically. Validation runs in two layers: `NetworkTopologyEditValidation`
+checks structure in memory (bounded batch size, duplicate ids, GeoJSON `LineString`/
+`MultiLineString` shape and SRID match, turn-restriction kind/penalty shape, and the edge
+attribute keys against the dataset's #2655 travel-profile forward/reverse cost columns)
+before a transaction opens, while id-collision and turn-restriction edge-reference checks run
+transactionally against the staged content (an `ON CONFLICT DO NOTHING` plus affected-row
+check for create/update/delete semantics, and an explicit existence pre-check for restriction
+references) so `Honua.Routing` never needs a direct Npgsql dependency to detect them. The
+NAServer/GeoServices protocol adapter never calls this edit service and remains read-only.
+
+### Durable shadow-topology rebuild, atomic promotion/rollback, and multi-node fencing (#2718/#2719/#2720)
+
+The remaining three children of umbrella #2656 land together. Migration 087 adds
+`network_topology_rebuild_attempts` (one row per rebuild attempt, carrying a monotonic
+fencing token, lease owner/expiry/heartbeat, and terminal evidence) and
+`network_topology_rebuild_checkpoints` (per-stage snapshot/build/analyze/validate/cleanup
+progress). Migration 088 adds `network_topology_promotions`, an immutable
+promote/rollback history table.
+
+**Rebuild (#2718).** `POST /api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild`
+creates a rebuild attempt — atomically transitioning the generation `dirty` → `building` via
+the same `NetworkTopologyLifecycle.TryTransition` compare-and-swap #2715 introduced — then
+submits a `NetworkTopologyRebuild` execution job through the *existing* shared durable job
+infrastructure (`IExecutionJobStore`/`IJobQueue`/`IJobExecutor`, `src/Honua.Core/Features/
+ControlPlane`, `src/Honua.Jobs/Features/ControlPlane`): no parallel job system was built.
+The worker-side `NetworkTopologyRebuildJobExecutor` runs entirely in-process against
+Postgres — no remote batch-compute backend — and calls
+`NetworkTopologyShadowTopologyBuilder` to materialize an isolated, generation-scoped
+pgRouting-shaped edge/vertex shadow topology directly from the generation's staged content
+edits (`honua.network_topology_edge_edits`/`..._restriction_edits`, #2716). This
+deliberately does not use `pgr_createTopology`'s geometry-tolerance snapping: #2716 edits
+already carry explicit, validated stable vertex references, which is a more precise source
+of truth than re-inferring connectivity from geometry, and it means a rebuild has no
+dependency on the optional `pgrouting` extension (migration 043 already treats it as
+optional). Graph-integrity evidence is a portable SQL-only check (edge/vertex/self-loop
+counts) rather than `pgr_analyzeGraph`, for the same portability reason. Every stage is
+checkpointed so a restarted worker resumes cleanly rather than restarting from scratch.
+Completion atomically transitions the attempt and the owning generation to `ready` (or
+`failed`), stamping the generation's own `edge_table`/`vertex_table` columns with the
+shadow tables — the single source of truth promotion later copies into
+`honua.network_datasets`.
+
+**Multi-node fencing (#2720).** Every rebuild-attempt mutation (lease acquire/takeover,
+heartbeat, checkpoint write, completion, failure) is gated by a monotonic fencing token
+scoped to the attempt row, verified inside one atomic SQL statement rather than a
+separate check-then-write round trip. This is intentionally a narrower, attempt-scoped
+mechanism layered on top of — not a replacement for — the shared job infrastructure's own
+claim/heartbeat/retry machinery (`ExecutionJobRecord.ClaimedBy`/`LastHeartbeatAt` plus
+optimistic-concurrency `Version` CAS, which the research for this delivery confirmed is
+the existing fencing-equivalent mechanism generic across every `ExecutionJobKind`); the
+topology-specific token exists because the mutation paths it fences (checkpoints, shadow
+artifacts, the generation's own lifecycle) are store methods this feature owns, not the
+generic job record. `NetworkTopologyRebuildReconciler` (run periodically by a thin
+`BackgroundService`) finds attempts whose lease has expired: if the owning execution job is
+already terminally failed, the attempt is failed with a stable sanitized code and its
+orphan shadow tables are dropped; otherwise the job is re-enqueued so a fresh worker claims
+it and takes over the lease. Deferred: true multi-node chaos/scale tests (simulated Redis
+outage mid-rebuild, rolling-deployment overlap, remote Kubernetes/AWS Batch backends) and a
+dedicated telemetry/metrics dashboard for self-healing status — structured logs and the
+rebuild-attempt status endpoint cover the same information today, just not as a
+purpose-built dashboard.
+
+**Atomic promotion/rollback (#2719).** `POST /api/v1/admin/network-datasets/{id}/promote`
+and `.../rollback` share one transactional helper: lock the active and target generation
+rows, verify state/evidence/artifact preconditions (a `ready` candidate's shadow tables
+still exist for promotion; a `retired` target's tables still exist, i.e. are not
+retention-cleaned, for rollback), retire the old active generation and activate the target
+via the same lifecycle compare-and-swap, then repoint `honua.network_datasets` to the
+target generation's own `edge_table`/`vertex_table`/`srid` columns — which the rebuild
+completion path already stamped — so `NetworkDatasetRegistry`/`INetworkDatasetResolver`
+picks up the new snapshot on its very next read with no resolver code change. `Rollback`
+required one small, explicit extension to `NetworkTopologyLifecycle.CanTransition`:
+`Retired -> Active`, documented as the rollback-only transition distinct from the normal
+`Ready -> Active` promotion path. Repointing the registry runs with the legacy
+`network_datasets_track_legacy_mapping_update` trigger (migration 084) disabled for the
+duration of the transaction — that trigger exists to keep the old admin registry-PUT path
+safe by auto-retiring-and-forking a brand new generation, which would conflict with this
+transaction's explicit retire-and-activate-an-existing-generation sequence; disabling it is
+scoped to the transaction (transactional DDL) and never affects the legacy path outside it.
+Every promotion is `Idempotency-Key`-scoped (replaying the same key returns the original
+history entry rather than re-promoting) and recorded in the immutable
+`network_topology_promotions` table.
+
 **Update (post-MVP, #1862 / #1863).** Two deferrals from the original first slice
 are now delivered:
 

@@ -225,7 +225,16 @@ public enum ExecutionJobKind
     /// <summary>
     /// Durable map or imagery tile-package export workload.
     /// </summary>
-    TileExport
+    TileExport,
+
+    /// <summary>
+    /// Isolated shadow-topology rebuild workload for a non-active network-topology
+    /// generation (#2718): stages a generation-scoped pgRouting-shaped edge/vertex shadow
+    /// topology from its staged content edits, validates graph integrity, and transitions
+    /// the generation from <c>dirty</c> to <c>ready</c> (or <c>failed</c>) without ever
+    /// touching the active solve tables.
+    /// </summary>
+    NetworkTopologyRebuild
 }
 
 /// <summary>
@@ -1131,6 +1140,15 @@ public sealed record ExecutionJobRecord
     /// through the execution context.
     /// </summary>
     public IReadOnlyList<string> ArtifactReferences { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Normalized execution-admission cost weight pinned at submit time for jobs whose exact-key spec
+    /// contract forbids carrying the admission cost in <see cref="ExecutionJobSpec.Parameters"/>
+    /// (for example durable tile-export jobs). The admission evaluator sums this when computing active
+    /// per-partition cost. <see langword="null"/> for jobs that carry their cost weight in the spec
+    /// parameters, preserving their existing accounting.
+    /// </summary>
+    public double? AdmissionCostWeight { get; init; }
 }
 
 /// <summary>

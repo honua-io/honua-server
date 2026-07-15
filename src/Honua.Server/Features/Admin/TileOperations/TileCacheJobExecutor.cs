@@ -80,6 +80,14 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             return JobExecutionResult.Failed($"Invalid tile-cache job spec: {parseError}");
         }
 
+        // Anchor the resumable generation (issue #2661) to the execution job's operation id when
+        // the spec did not carry one. Durable retries rerun the SAME operation id (AttemptCount++),
+        // so this preserves the generation checkpoint across attempts instead of forking a new one.
+        if (string.IsNullOrWhiteSpace(request.GenerationId))
+        {
+            request = request with { GenerationId = job.OperationId };
+        }
+
         await context.ReportProgressAsync(0, $"Starting {request.Operation}", cancellationToken).ConfigureAwait(false);
 
         // Seed a TileOperationProgress so GET /admin/tile-operations/jobs/{id} returns
@@ -115,7 +123,8 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 _tileOptions,
                 _limitsOptions,
                 _logger,
-                maxTilesCeiling);
+                maxTilesCeiling,
+                scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>());
 
             finalProgress = await core.ExecuteAsync(started, request, scope.ServiceProvider, cancellationToken)
                 .ConfigureAwait(false);

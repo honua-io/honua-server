@@ -53,7 +53,22 @@ public sealed record NetworkTopologyGeneration(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? ActivatedAt,
-    string? FailureCode);
+    string? FailureCode)
+{
+    /// <summary>
+    /// Schema-qualified edge table this generation solves against when active. Stamped by a
+    /// successful rebuild completion (#2718) and copied into <c>honua.network_datasets</c>
+    /// on promotion (#2719); otherwise reflects the mapping the generation was allocated
+    /// from.
+    /// </summary>
+    public string? EdgeTable { get; init; }
+
+    /// <summary>
+    /// Schema-qualified vertex table this generation solves against when active. See
+    /// <see cref="EdgeTable"/>.
+    /// </summary>
+    public string? VertexTable { get; init; }
+}
 
 /// <summary>
 /// Stable reason that a topology lifecycle compare-and-swap operation was rejected.

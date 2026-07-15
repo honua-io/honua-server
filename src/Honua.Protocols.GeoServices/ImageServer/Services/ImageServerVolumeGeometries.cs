@@ -12,7 +12,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// area-of-interest clip geometries the volume integration consumes. Each area of interest is an
 /// Esri polygon (rings) or envelope, converted to a WKB clip for the shared raster analytics path
 /// (the same clip primitive <c>computeClassStatistics</c> / <c>computeStatisticsHistograms</c>
-/// use). See ADR-0064.
+/// use). See ADR-0065.
 /// </summary>
 internal static class ImageServerVolumeGeometries
 {

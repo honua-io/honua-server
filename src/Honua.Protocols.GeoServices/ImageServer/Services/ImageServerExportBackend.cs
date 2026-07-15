@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 
@@ -47,6 +48,7 @@ internal sealed class ImageServerExportBackend(
     public Task<ZarrRasterSliceReadResult> ReadZarrSliceAsync(
         int layerId,
         ZarrRasterSliceReadRequest request,
+        ICoordinateTransformService? coordinateTransform,
         CancellationToken cancellationToken)
-        => zarrRasterSliceReader.ReadAsync(layerId, request, cancellationToken);
+        => zarrRasterSliceReader.ReadAsync(layerId, request, coordinateTransform, cancellationToken);
 }

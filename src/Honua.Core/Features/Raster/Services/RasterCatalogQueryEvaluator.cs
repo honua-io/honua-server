@@ -18,6 +18,10 @@ namespace Honua.Core.Features.Raster.Services;
 /// Evaluation order mirrors the canonical provider query so the fallback and the pushdown agree:
 /// temporal "newest batch" (layer-wide) → identity (<c>objectIds</c>) → envelope-intersects → paging.
 /// Input order is preserved (no re-sort) so the catalog's natural order flows through unchanged.
+/// This fallback has no geometry engine, so an exact
+/// <see cref="RasterCatalogSpatialPredicate.Relation"/> (Intersects/Contains/Within/Overlaps) is
+/// evaluated with the envelope-intersects box only — a conservative superset of every exact
+/// relation's match set. Providers with spatial storage (PostGIS) apply the exact predicate instead.
 /// </remarks>
 public static class RasterCatalogQueryEvaluator
 {

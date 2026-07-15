@@ -125,7 +125,7 @@ internal sealed class ImageServerMeasureHandler
                     GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
-            // Shadow-based height mensuration (#2667/ADR-0064): the object height is derived from the
+            // Shadow-based height mensuration (#2667/ADR-0065): the object height is derived from the
             // measured ground shadow length and the sun elevation modeled on the raster. Both the
             // base-and-top-shadow and top-and-top-shadow variants use height = shadowLength ·
             // tan(sunElevation); they return an honest 501 when no sun geometry is modeled.
@@ -448,7 +448,7 @@ internal sealed class ImageServerMeasureHandler
     }
 
     /// <summary>
-    /// Shadow-based height mensuration (ADR-0064). Reads the sun elevation from the raster's
+    /// Shadow-based height mensuration (ADR-0065). Reads the sun elevation from the raster's
     /// exterior-orientation metadata, measures the ground shadow length between the two supplied
     /// points using the same geodesic/planar path as distance mensuration, and returns
     /// <c>height = shadowLength · tan(sunElevation)</c>. Returns an honest 501 when no sun geometry

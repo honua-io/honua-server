@@ -9,6 +9,7 @@ using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.FileImport.Services;
 
@@ -20,13 +21,14 @@ namespace Honua.Core.Features.FileImport.Services;
 /// MultiPoint, MultiLineString, MultiPolygon, MultiSurface, MultiCurve, and
 /// MultiGeometry. Properties are read from non-geometry child elements.
 /// <para>
-/// KNOWN LIMITATION (#2743): coordinates are read in the axis order as written and passed
-/// through unchanged; this reader does NOT perform the CRS-dependent axis swap that GML 3.2
-/// implies for URN-declared CRSs (e.g. <c>urn:ogc:def:crs:EPSG::4326</c>, whose authority
-/// axis order is latitude,longitude). A GML file that declares a lat/lon URN CRS and writes
-/// its ordinates in that authority order will import transposed. Producers that emit
-/// lon/lat (the common ogr/QGIS default) are unaffected. Supply a producer that writes in
-/// easting/northing order, or pre-transform such files, until axis-aware handling lands.
+/// AXIS ORDER (#2745): coordinates are swapped from the declared authority axis order into the
+/// internal easting/northing (X=lon, Y=lat) storage order when — and only when — the geometry's
+/// <c>srsName</c> uses an authority form that carries axis order (a <c>urn:ogc:def:crs:EPSG:…</c>
+/// URN or an <c>http://www.opengis.net/def/crs/EPSG/…</c> URI) AND the CRS is geographic
+/// (lat/lon per <see cref="GeographicSridClassifier"/>). The legacy short form <c>EPSG:4326</c>,
+/// the <c>…/gml/srs/epsg.xml#4326</c> URL, and every <c>CRS84</c> spelling are treated as
+/// long/lat and pass through unswapped — matching the common ogr/QGIS default and GDAL's
+/// <c>SWAP_COORDINATES=AUTO</c> behavior. Projected CRSs are never swapped.
 /// </para>
 /// </summary>
 internal static class GmlFormatReader
@@ -42,6 +44,78 @@ internal static class GmlFormatReader
     internal const string GmlNs32 = "http://www.opengis.net/gml/3.2";
 
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
+
+    /// <summary>
+    /// The spatial reference resolved for a GML element: its EPSG SRID (if known) and whether its
+    /// ordinates are in an authority (lat/lon) axis order that must be swapped to the internal
+    /// easting/northing (X=lon, Y=lat) storage order. Threaded from the enclosing element so a
+    /// geometry without its own <c>srsName</c> inherits the collection/parent CRS and axis order.
+    /// </summary>
+    private readonly record struct GmlSrs(int? Srid, bool SwapAxes)
+    {
+        public static readonly GmlSrs None = new(null, false);
+    }
+
+    /// <summary>
+    /// Resolves the effective SRS for an element from its <c>srsName</c> attribute, inheriting the
+    /// enclosing element's SRS when the attribute is absent or cannot be parsed to an EPSG code.
+    /// </summary>
+    private static GmlSrs ResolveElementSrs(string? srsName, GmlSrs inherited)
+    {
+        if (string.IsNullOrWhiteSpace(srsName))
+        {
+            return inherited;
+        }
+
+        var srid = ParseSrsNameToSrid(srsName);
+        if (srid is null)
+        {
+            return inherited;
+        }
+
+        return new GmlSrs(srid, RequiresAxisSwap(srsName, srid.Value));
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when ordinates declared under <paramref name="srsName"/> for
+    /// EPSG code <paramref name="srid"/> are written in authority (lat/lon) order and therefore must
+    /// be swapped into internal easting/northing order: the srsName must use an axis-order-carrying
+    /// authority form (URN or OGC CRS URI) and the CRS must be geographic.
+    /// </summary>
+    private static bool RequiresAxisSwap(string srsName, int srid)
+        => UsesAuthorityAxisOrder(srsName) && GeographicSridClassifier.IsGeographicSrid(srid);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the <c>srsName</c> form carries the authority's axis
+    /// order — a <c>urn:ogc:def:crs:…</c> URN or an <c>http(s)://www.opengis.net/def/crs/…</c> URI.
+    /// The legacy short form (<c>EPSG:4326</c>), the <c>…/gml/srs/epsg.xml#4326</c> URL, and every
+    /// <c>CRS84</c> spelling are long/lat and return <see langword="false"/>.
+    /// </summary>
+    private static bool UsesAuthorityAxisOrder(string srsName)
+    {
+        var s = srsName.Trim();
+
+        // CRS84 (in any spelling) is explicitly long/lat regardless of its URN wrapper.
+        if (s.EndsWith("CRS84", StringComparison.OrdinalIgnoreCase)
+            || s.EndsWith("CRS:84", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return s.StartsWith("urn:", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("/def/crs/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void SwapXy(Coordinate coordinate)
+        => (coordinate.X, coordinate.Y) = (coordinate.Y, coordinate.X);
+
+    private static void SwapXy(Coordinate[] coordinates)
+    {
+        foreach (var coordinate in coordinates)
+        {
+            SwapXy(coordinate);
+        }
+    }
 
     /// <summary>
     /// Tries to detect the CRS SRS name embedded in the top-level FeatureCollection element.
@@ -90,8 +164,9 @@ internal static class GmlFormatReader
         var geometryFactory = GeometryFactory.Floating;
 
         // Detect the global srsName on the FeatureCollection element so features without an
-        // explicit per-geometry srsName get the right default.
-        int? collectionSrid = null;
+        // explicit per-geometry srsName get the right default CRS and axis order.
+        var collectionSrs = GmlSrs.None;
+        var collectionSrsResolved = false;
 
         while (await reader.ReadAsync())
         {
@@ -105,19 +180,22 @@ internal static class GmlFormatReader
             var localName = reader.LocalName;
 
             // Capture the srsName from the root collection element
-            if (collectionSrid == null && (localName is "FeatureCollection" or "SimpleFeatureCollection"))
+            if (!collectionSrsResolved && (localName is "FeatureCollection" or "SimpleFeatureCollection"))
             {
                 var srsName = reader.GetAttribute("srsName");
                 if (!string.IsNullOrWhiteSpace(srsName))
                 {
-                    collectionSrid = ParseSrsNameToSrid(srsName);
+                    collectionSrs = ResolveElementSrs(srsName, GmlSrs.None);
+                    // Match the original guard: keep looking until a usable EPSG code is found, so a
+                    // first collection element carrying an unparseable srsName does not lock in None.
+                    collectionSrsResolved = collectionSrs.Srid is not null;
                 }
             }
 
             // Enter a featureMember / member / featureMembers wrapper
             if (localName is "featureMember" or "member" or "featureMembers")
             {
-                await foreach (var feature in ReadFeatureMemberAsync(reader, geometryFactory, collectionSrid, cancellationToken))
+                await foreach (var feature in ReadFeatureMemberAsync(reader, geometryFactory, collectionSrs, cancellationToken))
                 {
                     yield return feature;
                 }
@@ -132,7 +210,7 @@ internal static class GmlFormatReader
     private static async IAsyncEnumerable<IFeature> ReadFeatureMemberAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var wrapperLocalName = reader.LocalName;
@@ -163,7 +241,7 @@ internal static class GmlFormatReader
                 continue;
             }
 
-            var feature = await ParseFeatureElementAsync(reader, factory, collectionSrid, cancellationToken);
+            var feature = await ParseFeatureElementAsync(reader, factory, inheritedSrs, cancellationToken);
             if (feature != null)
             {
                 yield return feature;
@@ -174,7 +252,7 @@ internal static class GmlFormatReader
     private static async Task<IFeature?> ParseFeatureElementAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var featureLocalName = reader.LocalName;
@@ -204,7 +282,7 @@ internal static class GmlFormatReader
             // GML geometry elements are in the GML namespace
             if (IsGmlNamespace(childNs))
             {
-                var geom = await TryParseGeometryAsync(reader, factory, collectionSrid, cancellationToken);
+                var geom = await TryParseGeometryAsync(reader, factory, inheritedSrs, cancellationToken);
                 if (geom != null)
                 {
                     geometry = geom;
@@ -253,7 +331,7 @@ internal static class GmlFormatReader
 
                 if (reader.NodeType == XmlNodeType.Element && IsGmlNamespace(reader.NamespaceURI))
                 {
-                    var geom = await TryParseGeometryAsync(reader, factory, collectionSrid, cancellationToken);
+                    var geom = await TryParseGeometryAsync(reader, factory, inheritedSrs, cancellationToken);
                     if (geom != null)
                     {
                         propertyGeom = geom;
@@ -283,19 +361,19 @@ internal static class GmlFormatReader
     private static async Task<NtsGeometry?> TryParseGeometryAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         return reader.LocalName switch
         {
-            "Point" => await ParsePointAsync(reader, factory, collectionSrid, cancellationToken),
-            "LineString" or "Curve" => await ParseLineStringAsync(reader, factory, collectionSrid, cancellationToken),
-            "LinearRing" => await ParseLinearRingAsync(reader, factory, collectionSrid, cancellationToken),
-            "Polygon" or "Surface" => await ParsePolygonAsync(reader, factory, collectionSrid, cancellationToken),
-            "MultiPoint" => await ParseMultiPointAsync(reader, factory, collectionSrid, cancellationToken),
-            "MultiLineString" or "MultiCurve" => await ParseMultiLineStringAsync(reader, factory, collectionSrid, cancellationToken),
-            "MultiPolygon" or "MultiSurface" => await ParseMultiPolygonAsync(reader, factory, collectionSrid, cancellationToken),
-            "MultiGeometry" or "GeometryCollection" => await ParseGeometryCollectionAsync(reader, factory, collectionSrid, cancellationToken),
+            "Point" => await ParsePointAsync(reader, factory, inheritedSrs, cancellationToken),
+            "LineString" or "Curve" => await ParseLineStringAsync(reader, factory, inheritedSrs, cancellationToken),
+            "LinearRing" => await ParseLinearRingAsync(reader, factory, inheritedSrs, cancellationToken),
+            "Polygon" or "Surface" => await ParsePolygonAsync(reader, factory, inheritedSrs, cancellationToken),
+            "MultiPoint" => await ParseMultiPointAsync(reader, factory, inheritedSrs, cancellationToken),
+            "MultiLineString" or "MultiCurve" => await ParseMultiLineStringAsync(reader, factory, inheritedSrs, cancellationToken),
+            "MultiPolygon" or "MultiSurface" => await ParseMultiPolygonAsync(reader, factory, inheritedSrs, cancellationToken),
+            "MultiGeometry" or "GeometryCollection" => await ParseGeometryCollectionAsync(reader, factory, inheritedSrs, cancellationToken),
             _ => null
         };
     }
@@ -307,12 +385,13 @@ internal static class GmlFormatReader
     private static async Task<Point?> ParsePointAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
 
         while (await reader.ReadAsync())
         {
@@ -336,6 +415,11 @@ internal static class GmlFormatReader
                 var coordinate = ParsePos(coords);
                 if (coordinate != null)
                 {
+                    if (srs.SwapAxes)
+                    {
+                        SwapXy(coordinate);
+                    }
+
                     var point = factory.CreatePoint(coordinate);
                     if (srid.HasValue)
                     {
@@ -353,12 +437,13 @@ internal static class GmlFormatReader
     private static async Task<LineString?> ParseLineStringAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
 
         while (await reader.ReadAsync())
         {
@@ -382,6 +467,11 @@ internal static class GmlFormatReader
                 var coordinates = ParsePosList(coords);
                 if (coordinates.Length >= 2)
                 {
+                    if (srs.SwapAxes)
+                    {
+                        SwapXy(coordinates);
+                    }
+
                     var line = factory.CreateLineString(coordinates);
                     if (srid.HasValue)
                     {
@@ -399,12 +489,13 @@ internal static class GmlFormatReader
     private static async Task<LinearRing?> ParseLinearRingAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
 
         while (await reader.ReadAsync())
         {
@@ -428,6 +519,11 @@ internal static class GmlFormatReader
                 var coordinates = ParsePosList(coords);
                 if (coordinates.Length >= 4)
                 {
+                    if (srs.SwapAxes)
+                    {
+                        SwapXy(coordinates);
+                    }
+
                     var ring = factory.CreateLinearRing(coordinates);
                     if (srid.HasValue)
                     {
@@ -445,12 +541,13 @@ internal static class GmlFormatReader
     private static async Task<Polygon?> ParsePolygonAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
         LinearRing? outerRing = null;
         var innerRings = new List<LinearRing>();
 
@@ -474,7 +571,7 @@ internal static class GmlFormatReader
             // GML 3: <exterior>/<interior> containing <LinearRing>
             if (reader.LocalName is "outerBoundaryIs" or "exterior")
             {
-                var ring = await ParseRingMemberAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+                var ring = await ParseRingMemberAsync(reader, factory, srs, cancellationToken);
                 if (ring != null)
                 {
                     outerRing = ring;
@@ -482,7 +579,7 @@ internal static class GmlFormatReader
             }
             else if (reader.LocalName is "innerBoundaryIs" or "interior")
             {
-                var ring = await ParseRingMemberAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+                var ring = await ParseRingMemberAsync(reader, factory, srs, cancellationToken);
                 if (ring != null)
                 {
                     innerRings.Add(ring);
@@ -491,7 +588,7 @@ internal static class GmlFormatReader
             else if (reader.LocalName == "LinearRing")
             {
                 // GML 2 may nest LinearRing directly under Polygon
-                var ring = await ParseLinearRingAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+                var ring = await ParseLinearRingAsync(reader, factory, srs, cancellationToken);
                 if (ring != null && outerRing == null)
                 {
                     outerRing = ring;
@@ -516,7 +613,7 @@ internal static class GmlFormatReader
     private static async Task<LinearRing?> ParseRingMemberAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? srid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var memberLocalName = reader.LocalName;
@@ -535,7 +632,7 @@ internal static class GmlFormatReader
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "LinearRing")
             {
-                return await ParseLinearRingAsync(reader, factory, srid, cancellationToken);
+                return await ParseLinearRingAsync(reader, factory, inheritedSrs, cancellationToken);
             }
         }
 
@@ -545,12 +642,13 @@ internal static class GmlFormatReader
     private static async Task<MultiPoint?> ParseMultiPointAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
         var points = new List<Point>();
 
         while (await reader.ReadAsync())
@@ -566,7 +664,7 @@ internal static class GmlFormatReader
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "Point")
             {
-                var point = await ParsePointAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+                var point = await ParsePointAsync(reader, factory, srs, cancellationToken);
                 if (point != null)
                 {
                     points.Add(point);
@@ -591,12 +689,13 @@ internal static class GmlFormatReader
     private static async Task<MultiLineString?> ParseMultiLineStringAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
         var lines = new List<LineString>();
 
         while (await reader.ReadAsync())
@@ -619,7 +718,7 @@ internal static class GmlFormatReader
                     continue;
                 }
 
-                var line = await ParseLineStringAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+                var line = await ParseLineStringAsync(reader, factory, srs, cancellationToken);
                 if (line != null)
                 {
                     lines.Add(line);
@@ -644,12 +743,13 @@ internal static class GmlFormatReader
     private static async Task<MultiPolygon?> ParseMultiPolygonAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
         var polygons = new List<Polygon>();
 
         while (await reader.ReadAsync())
@@ -672,7 +772,7 @@ internal static class GmlFormatReader
                     continue;
                 }
 
-                var polygon = await ParsePolygonAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+                var polygon = await ParsePolygonAsync(reader, factory, srs, cancellationToken);
                 if (polygon != null)
                 {
                     polygons.Add(polygon);
@@ -697,12 +797,13 @@ internal static class GmlFormatReader
     private static async Task<GeometryCollection?> ParseGeometryCollectionAsync(
         XmlReader reader,
         GeometryFactory factory,
-        int? collectionSrid,
+        GmlSrs inheritedSrs,
         CancellationToken cancellationToken)
     {
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
-        int? srid = ParseSrsNameToSrid(reader.GetAttribute("srsName")) ?? collectionSrid;
+        var srs = ResolveElementSrs(reader.GetAttribute("srsName"), inheritedSrs);
+        int? srid = srs.Srid;
         var geometries = new List<NtsGeometry>();
 
         while (await reader.ReadAsync())
@@ -729,7 +830,7 @@ internal static class GmlFormatReader
                 continue;
             }
 
-            var geom = await TryParseGeometryAsync(reader, factory, srid ?? collectionSrid, cancellationToken);
+            var geom = await TryParseGeometryAsync(reader, factory, srs, cancellationToken);
             if (geom != null)
             {
                 geometries.Add(geom);
@@ -894,8 +995,8 @@ internal static class GmlFormatReader
 
     /// <summary>
     /// Parses an SRS name attribute (e.g. <c>urn:ogc:def:crs:EPSG::4326</c>,
-    /// <c>EPSG:4326</c>, <c>http://www.opengis.net/gml/srs/epsg.xml#4326</c>)
-    /// into an integer EPSG SRID.
+    /// <c>EPSG:4326</c>, <c>http://www.opengis.net/gml/srs/epsg.xml#4326</c>,
+    /// <c>urn:ogc:def:crs:OGC:1.3:CRS84</c>) into an integer EPSG SRID.
     /// </summary>
     internal static int? ParseSrsNameToSrid(string? srsName)
     {
@@ -904,16 +1005,29 @@ internal static class GmlFormatReader
             return null;
         }
 
+        var trimmed = srsName.Trim();
+
+        // OGC CRS84 (WGS 84 in long/lat order): urn:ogc:def:crs:OGC:1.3:CRS84, CRS:84,
+        // http://www.opengis.net/def/crs/OGC/1.3/CRS84. Treated as EPSG:4326 — the ordinates are
+        // already long/lat (the axis order this reader reads as-written), so no swap is implied.
+        // This check must precede the generic trailing-integer parse below, otherwise "CRS:84"
+        // would be mis-read as SRID 84.
+        if (trimmed.EndsWith("CRS84", StringComparison.OrdinalIgnoreCase)
+            || trimmed.EndsWith("CRS:84", StringComparison.OrdinalIgnoreCase))
+        {
+            return 4326;
+        }
+
         // "EPSG:4326"
-        var colonIdx = srsName.LastIndexOf(':');
-        if (colonIdx >= 0 && int.TryParse(srsName.AsSpan(colonIdx + 1), out var srid) && srid > 0)
+        var colonIdx = trimmed.LastIndexOf(':');
+        if (colonIdx >= 0 && int.TryParse(trimmed.AsSpan(colonIdx + 1), out var srid) && srid > 0)
         {
             return srid;
         }
 
         // "http://www.opengis.net/gml/srs/epsg.xml#4326"
-        var hashIdx = srsName.LastIndexOf('#');
-        if (hashIdx >= 0 && int.TryParse(srsName.AsSpan(hashIdx + 1), out var sridHash) && sridHash > 0)
+        var hashIdx = trimmed.LastIndexOf('#');
+        if (hashIdx >= 0 && int.TryParse(trimmed.AsSpan(hashIdx + 1), out var sridHash) && sridHash > 0)
         {
             return sridHash;
         }

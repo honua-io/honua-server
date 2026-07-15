@@ -519,6 +519,13 @@ if (connectedRedis != null)
     // continues to return NotSupported for it, and IOperationExecutorCatalog reports that truthfully.
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.MetadataReleaseOperationExecutor>();
+    // Geoprocess executor (#2814): resumes an approved destructive/sink GP plan.
+    // A gated GP submission is persisted as an AwaitingApproval proposal carrying the
+    // serialized plan; approving it routes here to re-submit through the GP job
+    // pipeline with the approval gate already satisfied (ADR-0064). Resolves the GP
+    // job service lazily to avoid the gateway <-> job-service construction cycle.
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+        Honua.Geoprocessing.GeoprocessOperationExecutor>();
     // Executor-discovery capability surface (#2563): reflects the exact executors registered above so
     // discovery consumers (honua_supported_operation_kinds and the proposal compatibility field)
     // can never drift from routing reality.

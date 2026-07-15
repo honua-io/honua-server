@@ -50,7 +50,7 @@ internal static class ImageServerServiceCollectionExtensions
             configuration.GetSection(ImageServerClassStatisticsOptions.SectionName));
 
         // calculateVolume admission limits (per-AOI DEM pixel budget, geometry count). Bounds the
-        // CPU/memory a synchronous cut/fill volume request can consume (#2667, ADR-0064).
+        // CPU/memory a synchronous cut/fill volume request can consume (#2667, ADR-0065).
         services.Configure<ImageServerCalculateVolumeOptions>(
             configuration.GetSection(ImageServerCalculateVolumeOptions.SectionName));
 
@@ -75,6 +75,12 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerComputeTiePointsHandler>();
         services.AddScoped<ImageServerCalculateVolumeHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
+
+        // Durable tile-export raster producer + source fence (#2707). Registered as singletons so
+        // the singleton TileExport job executor can hold them; each resolves the scoped raster store
+        // and metadata graph from a per-job scope via IServiceScopeFactory.
+        services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportPackageProducer, Tiles.ImageServerTileExportProducer>();
+        services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportSourceFence, Tiles.ImageServerTileExportSourceFence>();
         services.AddScoped<ImageServerFindHandler>();
         services.AddScoped<ImageServerMeasureHandler>();
         services.AddScoped<ImageServerWmtsHandler>();
