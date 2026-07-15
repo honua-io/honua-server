@@ -77,6 +77,23 @@ internal readonly record struct VerticalSelection(double Min, double Max, string
         => new(value, value, rawValue);
 }
 
+/// <summary>
+/// Thrown by the transport-neutral render core when the shared render capacity limiter is
+/// saturated. HTTP callers translate this to a 503 with a <c>Retry-After</c>; the durable
+/// tile-export producer lets it fail the job for retry.
+/// </summary>
+internal sealed class RasterRenderCapacityExceededException(string message, int retryAfterSeconds)
+    : Exception(message)
+{
+    public int RetryAfterSeconds { get; } = retryAfterSeconds;
+}
+
+/// <summary>
+/// Thrown by the transport-neutral render core when a Skia render surface cannot be allocated.
+/// HTTP callers translate this to a 500; the durable tile-export producer fails the job.
+/// </summary>
+internal sealed class RasterRenderSurfaceException(string message) : Exception(message);
+
 internal static class RasterMapRenderingPipeline
 {
     internal sealed class RasterStylePlan
@@ -148,7 +165,7 @@ internal static class RasterMapRenderingPipeline
         int maxFeatures,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
-        => RenderRasterTileCoreAsync(
+        => RenderRasterTileCoreForHttpAsync(
             context,
             serviceSrid,
             renderLayers,
@@ -183,7 +200,7 @@ internal static class RasterMapRenderingPipeline
         var tileBounds = isGeographicGrid
             ? TileMath.GetTileBoundsGeographic(x, y, z)
             : TileMath.GetTileBounds(x, y, z);
-        return RenderRasterTileCoreAsync(
+        return RenderRasterTileCoreForHttpAsync(
             context,
             serviceSrid,
             renderLayers,
@@ -217,7 +234,7 @@ internal static class RasterMapRenderingPipeline
         ArgumentNullException.ThrowIfNull(gridGeometry);
         var tileBounds = gridGeometry.GetTileBounds(x, y, z)
             ?? throw new ArgumentOutOfRangeException(nameof(z), "Requested level is not part of the tile matrix set.");
-        return RenderRasterTileCoreAsync(
+        return RenderRasterTileCoreForHttpAsync(
             context,
             serviceSrid,
             renderLayers,
@@ -230,7 +247,7 @@ internal static class RasterMapRenderingPipeline
 
 #pragma warning disable CA1068 // legacy callers/tests pass cancellation before optional temporal filters
     private static async Task<RasterTileRenderResult> RenderRasterTileCoreAsync(
-        HttpContext context,
+        IServiceProvider services,
         int serviceSrid,
         IReadOnlyList<RenderLayerDescriptor> renderLayers,
         int tileSrid,
@@ -246,16 +263,17 @@ internal static class RasterMapRenderingPipeline
             tileBounds.XMax,
             tileBounds.YMax);
 
-        await using var renderLease = await context.RequestServices
+        await using var renderLease = await services
             .GetRequiredService<RasterRenderCapacityLimiter>()
             .TryAcquireAsync(TileSize, TileSize, cancellationToken)
             .ConfigureAwait(false);
         if (renderLease is null)
         {
-            return RasterTileRenderResult.Failure(StandardErrorHelpers.CreateServiceUnavailable(
-                context,
+            // The core is HTTP-independent: signal the failure through a typed exception so an
+            // HTTP caller can shape a 503 while the durable tile-export producer fails the job.
+            throw new RasterRenderCapacityExceededException(
                 RasterRenderCapacityLimiter.CapacityExceededMessage,
-                RasterRenderCapacityLimiter.RetryAfterSeconds));
+                RasterRenderCapacityLimiter.RetryAfterSeconds);
         }
 
         if (renderLayers.Count == 0)
@@ -274,8 +292,8 @@ internal static class RasterMapRenderingPipeline
             return RasterTileRenderResult.Success(emptyImage, 0);
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
+        var featureReader = services.GetRequiredService<IFeatureReader>();
+        var styleCatalog = services.GetRequiredService<ILayerStyleCatalog>();
 
         // The tile envelope is expressed in the gridset CRS (3857 for WebMercatorQuad, 4326 for
         // WorldCRS84Quad). Build the spatial filter in that CRS and let the canonical query
@@ -287,8 +305,7 @@ internal static class RasterMapRenderingPipeline
         using var surface = SKSurface.Create(new SKImageInfo(TileSize, TileSize, SKColorType.Rgba8888, SKAlphaType.Premul));
         if (surface is null)
         {
-            return RasterTileRenderResult.Failure(
-                StandardErrorHelpers.CreateInternalServerError(context, "Failed to allocate render surface."));
+            throw new RasterRenderSurfaceException("Failed to allocate render surface.");
         }
 
         var canvas = surface.Canvas;
@@ -368,6 +385,79 @@ internal static class RasterMapRenderingPipeline
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, "png");
         return RasterTileRenderResult.Success(imageBytes, totalFeatureCount);
     }
+
+    /// <summary>
+    /// HTTP-facing wrapper over the service-provider render core. Preserves the exact
+    /// <see cref="RasterTileRenderResult.Failure"/> envelopes (503 capacity, 500 surface) the
+    /// tile/WMTS/OGC endpoints returned before the core was made transport-neutral, so their
+    /// success bytes and error responses are unchanged.
+    /// </summary>
+#pragma warning disable CA1068 // matches the core: cancellation precedes optional temporal filters
+    private static async Task<RasterTileRenderResult> RenderRasterTileCoreForHttpAsync(
+        HttpContext context,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int tileSrid,
+        TileBounds tileBounds,
+        int maxFeatures,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters)
+#pragma warning restore CA1068
+    {
+        try
+        {
+            return await RenderRasterTileCoreAsync(
+                context.RequestServices,
+                serviceSrid,
+                renderLayers,
+                tileSrid,
+                tileBounds,
+                maxFeatures,
+                cancellationToken,
+                layerTemporalFilters).ConfigureAwait(false);
+        }
+        catch (RasterRenderCapacityExceededException exception)
+        {
+            return RasterTileRenderResult.Failure(StandardErrorHelpers.CreateServiceUnavailable(
+                context, exception.Message, exception.RetryAfterSeconds));
+        }
+        catch (RasterRenderSurfaceException exception)
+        {
+            return RasterTileRenderResult.Failure(
+                StandardErrorHelpers.CreateInternalServerError(context, exception.Message));
+        }
+    }
+
+    /// <summary>
+    /// Renders a WebMercatorQuad raster tile from resolved v2 render descriptors without an
+    /// <see cref="HttpContext"/>, for the durable tile-export producer. Shares the exact render
+    /// core the synchronous MapServer tile path uses, so a queued export produces the same bytes as
+    /// a live request. Capacity/surface failures surface as exceptions the caller maps to a failed
+    /// export job rather than an HTTP result.
+    /// </summary>
+    internal static async Task<byte[]> RenderRasterTileForExportAsync(
+        IServiceProvider services,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int z,
+        int y,
+        int x,
+        int maxFeatures,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
+    {
+        var result = await RenderRasterTileCoreAsync(
+            services,
+            serviceSrid,
+            renderLayers,
+            TileSrid,
+            TileMath.GetTileBounds(x, y, z),
+            maxFeatures,
+            cancellationToken,
+            layerTemporalFilters).ConfigureAwait(false);
+        return result.ImageBytes;
+    }
+
     /// <summary>
     /// Result of a single-collection vector render through the Skia pipeline.
     /// </summary>

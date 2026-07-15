@@ -39,7 +39,8 @@ internal sealed partial class TileOperationJobService(
     IOptions<TileOptions> tileOptions,
     IOptions<LimitsOptions> limitsOptions,
     ILogger<TileOperationJobService> logger,
-    IConnectionMultiplexer? redis = null) : ITileOperationJobService
+    IConnectionMultiplexer? redis = null,
+    ITileCacheGenerationCheckpointStore? checkpointStore = null) : ITileOperationJobService
 {
     private const string MissingRequestFailureMessage = "Tile operation request metadata is no longer available.";
     private readonly IUniversalProgressStore _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
@@ -62,7 +63,8 @@ internal sealed partial class TileOperationJobService(
         tileOptions ?? throw new ArgumentNullException(nameof(tileOptions)),
         limitsOptions ?? throw new ArgumentNullException(nameof(limitsOptions)),
         logger,
-        InProcessMaxTilesCeiling);
+        InProcessMaxTilesCeiling,
+        checkpointStore);
 
     private const int JobRequestRetentionHours = 24;
     private static readonly TimeSpan _jobRequestRetention = TimeSpan.FromHours(JobRequestRetentionHours);
@@ -86,6 +88,16 @@ internal sealed partial class TileOperationJobService(
 
         var normalized = NormalizeRequest(request);
         var jobId = Guid.NewGuid().ToString("N");
+
+        // Stamp a stable generation id on the first submission so seed/warm generations are
+        // resumable (issue #2661). A retry (RetryAsync) forwards the original request unchanged,
+        // preserving this id across a new job id so the retry resumes the SAME generation rather
+        // than forking a fresh full-grid pass.
+        if (string.IsNullOrWhiteSpace(normalized.GenerationId))
+        {
+            normalized = normalized with { GenerationId = jobId };
+        }
+
         _jobRequests[jobId] = CreateCachedRequest(normalized, schemaName);
         await PersistJobRequestAsync(jobId, normalized, schemaName, cancellationToken).ConfigureAwait(false);
 
@@ -690,4 +702,12 @@ internal sealed record TileOperationStartRequest
     public string? TileMatrixSetId { get; init; }
     public double[]? Bbox { get; init; }
     public int? MaxTiles { get; init; }
+
+    /// <summary>
+    /// Stable generation identifier for a resumable seed/warm run (issue #2661). Optional so all
+    /// existing seed/warm/invalidate/purge/archive/publish callers are unchanged; when absent the
+    /// in-process submission path stamps one, and a retry forwards it so the generation resumes
+    /// rather than restarting from zero.
+    /// </summary>
+    public string? GenerationId { get; init; }
 }

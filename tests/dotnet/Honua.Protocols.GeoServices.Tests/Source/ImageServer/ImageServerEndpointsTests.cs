@@ -155,6 +155,32 @@ public class ImageServerEndpointsTests
         return store;
     }
 
+    private static IRasterStore CreateRpcRasterStoreSubstitute()
+    {
+        // A raster carrying an offset/scale RPC sensor model so the image-CS transformation warp
+        // (#1881/#2840) has an image<->ground mapping to apply: image (0,0) -> ground (-120, 35).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    SensorName = "TestSensor",
+                    RpcJson = """
+                    {
+                        "sampleOffset": 0, "lineOffset": 0,
+                        "longOffset": -120.0, "latOffset": 35.0,
+                        "sampleScale": 1, "lineScale": 1,
+                        "longScale": 0.001, "latScale": 0.001
+                    }
+                    """,
+                },
+            });
+
+        return store;
+    }
+
     private static IRasterStore CreateSamplingRasterStoreSubstitute()
     {
         var store = CreateRasterStoreSubstitute();
@@ -911,6 +937,142 @@ public class ImageServerEndpointsTests
                 .GetProperty("histograms");
             histograms.GetArrayLength().Should().Be(1);
             histograms[0].GetProperty("counts").GetArrayLength().Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/imageSupportData")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/imageSupportData")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new()
+                {
+                    RasterDataId = 100,
+                    SensorName = "WorldView-3",
+                    CameraModel = "WV110",
+                    RpcJson = "{\"rowNum\":1}",
+                    DemSource = "dem-layer",
+                    CreatedAt = DateTimeOffset.UtcNow,
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("rasterId").GetInt64().Should().Be(100);
+            body.GetProperty("sensorName").GetString().Should().Be("WorldView-3");
+            body.GetProperty("cameraModel").GetString().Should().Be("WV110");
+            body.GetProperty("hasRationalPolynomialCoefficients").GetBoolean().Should().BeTrue();
+            body.GetProperty("hasInteriorOrientation").GetBoolean().Should().BeFalse();
+            body.GetProperty("demSource").GetString().Should().Be("dem-layer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/imageSupportData")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemImageSupportData_WithoutSensorMetadata_ReturnsNotAvailableError()
+    {
+        // The default substitute returns an empty sensor-metadata dictionary, so the item carries
+        // no image support data and the resource must report not-available honestly.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/imageSupportData?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/thumbnail")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/thumbnail")]
+    [Operation(Operations.Export)]
+    public async Task GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage()
+    {
+        var store = CreateMultiRasterStoreSubstitute();
+        var selectedRasterIds = new List<long>();
+        store.ExportImageAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                selectedRasterIds.Add(call.ArgAt<long>(1));
+                return new RasterResult
+                {
+                    Data = [0x89, 0x50, 0x4E, 0x47],
+                    ContentType = "image/png",
+                    Width = 200,
+                    Height = 200,
+                    Srid = 4326,
+                };
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            // Default (no f): thumbnail returns image bytes.
+            var imageResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/200/thumbnail");
+            imageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            imageResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            // f=json returns the href envelope.
+            var jsonResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/200/thumbnail?f=json");
+            jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            jsonResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            var envelope = JsonDocument.Parse(await jsonResponse.Content.ReadAsStringAsync()).RootElement;
+            envelope.GetProperty("href").GetString().Should().NotBeNullOrWhiteSpace();
+
+            selectedRasterIds.Should().OnlyContain(id => id == 200);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/{rasterId}/rasterFile")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/{rasterId}/rasterFile")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError()
+    {
+        // Honua stores raster pixels in the provider with no downloadable source file, so rasterFile
+        // must be a precise capability-honest not-available response rather than a raw error.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/100/rasterFile?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            body.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
         }
         finally
         {
@@ -2191,6 +2353,77 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithImageCoordinateSystemTransformation_ComposesWarpWithReprojectionAndDiffersFromNoTransformation()
+    {
+        // #2840 round trip: the image-CS warp (image sample/line -> WGS84 ground) is composed with
+        // the ground -> outSR reprojection. Requesting the transformation must move the geometry to
+        // the warped/reprojected location, which differs from the untransformed reprojection of the
+        // same input coordinate.
+        var store = CreateRpcRasterStoreSubstitute();
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            // Image origin (0,0) warps to ground (-120, 35), then reprojects into Web Mercator (3857).
+            const string imageGeometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""";
+            var warpResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&outSR=3857&transformation=image&geometries={Uri.EscapeDataString(imageGeometries)}");
+
+            warpResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var warpJson = JsonDocument.Parse(await warpResponse.Content.ReadAsStringAsync());
+            var warped = warpJson.RootElement.GetProperty("geometries")[0];
+            var warpedX = warped.GetProperty("x").GetDouble();
+            var warpedY = warped.GetProperty("y").GetDouble();
+
+            // Web Mercator of (-120, 35): ~(-13358338.9, 4163881.1).
+            warpedX.Should().BeApproximately(-13358338.9, 1.0);
+            warpedY.Should().BeApproximately(4163881.1, 1.0);
+
+            // Same input coordinate (0,0) reprojected 4326 -> 3857 without the transformation stays
+            // at the map origin; the transformation result must differ.
+            const string mapGeometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":4326}}]}""";
+            var plainResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&inSR=4326&outSR=3857&geometries={Uri.EscapeDataString(mapGeometries)}");
+
+            plainResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var plainJson = JsonDocument.Parse(await plainResponse.Content.ReadAsStringAsync());
+            var plain = plainJson.RootElement.GetProperty("geometries")[0];
+            plain.GetProperty("x").GetDouble().Should().BeApproximately(0.0, 1e-6);
+
+            warpedX.Should().NotBeApproximately(plain.GetProperty("x").GetDouble(), 1.0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/project")]
+    [Operation(Operations.Project)]
+    public async Task Project_WithImageCoordinateSystemTransformation_AndUnsupportedDatumTransformation_Returns400()
+    {
+        // #2840: when the image-CS warp is composed with an unsupported datumTransformation for the
+        // ground(4326) -> outSR leg, the request is rejected with a precise 400 rather than silently
+        // dropping the requested transformation. WKID 108001 does not connect 4326 -> 3857.
+        var store = CreateRpcRasterStoreSubstitute();
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string geometries = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0}]}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/project?f=json&outSR=3857&transformation=image&datumTransformation=108001&geometries={Uri.EscapeDataString(geometries)}");
+
+            await response.AssertGeoServicesErrorAsync(400);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/estimateExportTilesSize")]
     [Endpoint("POST /rest/services/{id}/ImageServer/estimateExportTilesSize")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/estimateExportTilesSize")]
@@ -2385,13 +2618,16 @@ public class ImageServerEndpointsTests
         var fixture = await CreateFixtureAsync(CreateTileExportRasterStoreSubstitute());
         try
         {
+            // Compact Cache V2 / TPKX now negotiates the durable async path (#2707) rather than the
+            // old "unsupported" rejection: a single-level request is instead rejected by the TPKX
+            // validation, which requires at least two zoom levels.
             var query = "f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=compact";
             var response = await fixture.Client.GetAsync(
                 $"/rest/services/{TestLayerId}/ImageServer/exportTiles?{query}");
 
             var content = await response.Content.ReadAsStringAsync();
             await response.AssertGeoServicesErrorAsync(400);
-            content.Should().Contain("compact");
+            content.ToLowerInvariant().Should().Contain("zoom levels");
         }
         finally
         {

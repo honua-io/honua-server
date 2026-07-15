@@ -74,6 +74,11 @@ internal static class TileCacheExecutionSpecBuilder
                 request.MaxTiles.Value.ToString(CultureInfo.InvariantCulture);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.GenerationId))
+        {
+            parameters[TileCacheJobParameterKeys.GenerationId] = request.GenerationId;
+        }
+
         if (!string.IsNullOrWhiteSpace(schemaName))
         {
             parameters[TileCacheJobParameterKeys.SchemaName] = schemaName;
@@ -205,6 +210,7 @@ internal static class TileCacheExecutionSpecBuilder
 
         parameters.TryGetValue(TileCacheJobParameterKeys.ServiceId, out var serviceId);
         parameters.TryGetValue(TileCacheJobParameterKeys.TileMatrixSetId, out var tileMatrixSetId);
+        parameters.TryGetValue(TileCacheJobParameterKeys.GenerationId, out var generationId);
         if (parameters.TryGetValue(TileCacheJobParameterKeys.SchemaName, out var schema)
             && !string.IsNullOrWhiteSpace(schema))
         {
@@ -221,6 +227,7 @@ internal static class TileCacheExecutionSpecBuilder
             TileMatrixSetId = string.IsNullOrWhiteSpace(tileMatrixSetId) ? null : tileMatrixSetId,
             Bbox = bbox,
             MaxTiles = maxTiles,
+            GenerationId = string.IsNullOrWhiteSpace(generationId) ? null : generationId,
         };
 
         return true;

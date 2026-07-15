@@ -114,6 +114,24 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetService<IConnectionMultiplexer>()));
         services.AddHostedService<ExportBackgroundService>();
 
+        // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
+        // cross-request resume state must not live only on a serving pod's memory. The in-memory
+        // store is the default so stores-less dev/test profiles still resolve the dependency; when
+        // a Redis multiplexer is present it is overridden with the durable cross-node store so a
+        // fix-forward retry resumes the generation instead of restarting the whole grid. The Redis
+        // binding is registered first so the TryAdd fallback below does not replace it.
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            services.AddSingleton<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(sp =>
+                new RedisTileCacheGenerationCheckpointStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetRequiredService<ILogger<RedisTileCacheGenerationCheckpointStore>>()));
+        }
+
+        services.AddSingleton<Honua.Core.Features.Tiles.InMemoryTileCacheGenerationCheckpointStore>();
+        services.TryAddSingleton<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(sp =>
+            sp.GetRequiredService<Honua.Core.Features.Tiles.InMemoryTileCacheGenerationCheckpointStore>());
+
         // Tile operations (cache warming + reseed + invalidation orchestration).
         services.AddSingleton<ITileOperationJobService>(sp =>
             new TileOperationJobService(
@@ -124,7 +142,8 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<IOptions<Honua.Core.Features.Tiles.TileOptions>>(),
                 sp.GetRequiredService<IOptions<LimitsOptions>>(),
                 sp.GetRequiredService<ILogger<TileOperationJobService>>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>(),
+                sp.GetService<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>()));
         services.Configure<TileCacheWarmingOptions>(
             configuration.GetSection(TileCacheWarmingOptions.SectionName));
         services.AddHostedService<TileCacheWarmingHostedService>();

@@ -744,7 +744,7 @@
       },
       "knownLimitations": [
         "GeoJSON output requires EPSG:4326-compatible output behavior.",
-        "GeoParquet writes WKB geometry and always strips M values.",
+        "GeoParquet writes WKB geometry with a GeoParquet 1.1 covering bbox column for spatial pruning, and always strips M values.",
         "Binary query formats do not all expose runtime-computed attributes such as KNN distance.",
         "Replica synchronization is MVP-level and not a full ArcGIS enterprise offline replacement."
       ]
@@ -1217,7 +1217,11 @@
         "histograms",
         "rasterFunctionInfos",
         "rasterAttributeTable",
-        "WCS 2.0.1 KVP"
+        "WCS 2.0.1 KVP",
+        "image coordinate system transformation warps for project (composed with datumTransformation)",
+        "spatial WHERE pushdown for raster catalog query (provider-side)",
+        "transformed multidimensional/Zarr slice exports (reprojection, JPEG/TIFF, interpolation, renderingRule) via exportImage and classic WCS GetCoverage",
+        "richer image child resources (imageSupportData, thumbnail, rasterFile)"
       ],
       "knownGaps": [
         "sensor/DEM-backed ImageServer height and 3D mensuration",
@@ -1225,14 +1229,9 @@
         "Esri compact/generated tile-cache management",
         "catalog mutation",
         "camera/orientation-ranked ImageServer find",
-        "image coordinate system (transformation) warps for ImageServer project (datumTransformation is implemented)",
-        "spatial WHERE pushdown for query",
         "multidimensional cube ingestion",
-        "transformed per-slice exports (JPEG/TIFF, reprojection, advanced interpolation, and renderingRule) for registered Zarr cubes; native-CRS nearest-neighbor grayscale PNG exportImage plus identify/getSamples are implemented",
-        "transformed or multi-coordinate registered-Zarr slice output in classic WCS GetCoverage (native-CRS nearest-neighbor grayscale PNG coordinate slices are implemented)",
         "full WCS CRS extension advertisement/validation beyond the bounded transformable set (native coverage CRS plus default WGS84/WebMercator identifiers)",
-        "WMTS non-WebMercator matrix sets",
-        "richer image child resources"
+        "WMTS non-WebMercator matrix sets"
       ],
       "evidence": {
         "code": [

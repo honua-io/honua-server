@@ -36,6 +36,12 @@ internal static class MapServerServiceCollectionExtensions
         services.Configure<MapServerDynamicLayersOptions>(
             configuration.GetSection(MapServerDynamicLayersOptions.SectionName));
 
+        // Durable tile-export map source: the singleton producer/fence resolve scoped services per
+        // job via IServiceScopeFactory, so the singleton TileExport executor can render MapServer
+        // tiles from a pinned plan HTTP-independently (#2706).
+        services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportPackageProducer, Tiles.MapTileExportProducer>();
+        services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportSourceFence, Tiles.MapTileExportSourceFence>();
+
         return services;
     }
 }
