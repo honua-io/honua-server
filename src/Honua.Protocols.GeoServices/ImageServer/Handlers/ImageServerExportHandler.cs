@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -13,6 +14,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Geometries;
 
@@ -271,38 +273,41 @@ internal sealed class ImageServerExportHandler
                 "time and mosaicRule cannot be combined with multidimensionalDefinition; select dimensions in multidimensionalDefinition.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.RenderingRule) ||
-            !string.IsNullOrWhiteSpace(request.BandIds) ||
-            !string.IsNullOrWhiteSpace(request.NoData))
+        // A coordinate-selected Zarr slice renders a single variable, so multi-band raster
+        // functions and per-band NoData/band selection do not apply. Reprojection, JPEG/TIFF
+        // output, interpolation, and the single-band Stretch/Colormap functions ARE supported
+        // (threaded onto the canonical slice request below); only genuinely-inapplicable
+        // transforms are rejected.
+        if (exportQuery.Bands is { Length: > 0 })
         {
             return StandardErrorHelpers.CreateNotImplemented(
                 context,
-                "renderingRule, bandIds, and noData transforms are not supported for multidimensional Zarr exports; request the native grayscale slice.");
+                "band selection (bandIds / ExtractBand) is not supported for single-variable multidimensional Zarr exports.");
         }
 
-        if (exportQuery.OutputFormat != RasterFormat.PNG)
+        if (exportQuery.BandArithmetic is not null || exportQuery.Terrain is not null)
         {
             return StandardErrorHelpers.CreateNotImplemented(
                 context,
-                "Multidimensional Zarr export currently supports PNG output only.");
+                "BandArithmetic and terrain raster functions are not supported for multidimensional Zarr exports.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Interpolation) &&
-            !string.Equals(request.Interpolation, "RSP_NearestNeighbor", StringComparison.OrdinalIgnoreCase))
+        if (exportQuery.RenderingClip is not null)
         {
             return StandardErrorHelpers.CreateNotImplemented(
                 context,
-                "Multidimensional Zarr export currently supports the default or RSP_NearestNeighbor interpolation only.");
+                "renderingRule Clip is not supported for multidimensional Zarr exports; trim with bbox instead.");
         }
 
-        var imageSrid = SpatialReferenceHelpers.TryParseSrid(request.ImageSr);
+        if (!string.IsNullOrWhiteSpace(request.NoData))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "noData transforms are not supported for multidimensional Zarr exports; NoData is rendered transparent from the coverage fill value.");
+        }
+
+        var imageSrid = exportQuery.OutputSrid;
         var bboxSrid = SpatialReferenceHelpers.TryParseSrid(request.BboxSr);
-        if (imageSrid is not null && bboxSrid is not null && imageSrid != bboxSrid)
-        {
-            return StandardErrorHelpers.CreateNotImplemented(
-                context,
-                "Multidimensional Zarr export does not support reprojection between bboxSR and imageSR.");
-        }
 
         RasterExtent? bounds = null;
         if (!string.IsNullOrWhiteSpace(request.Bbox) &&
@@ -329,14 +334,23 @@ internal sealed class ImageServerExportHandler
             constraint.Values[0])).ToArray();
         scope.WithTag("honua.slice.selection_count", selections.Length);
 
+        // Reprojection between bboxSR/imageSR uses the shared coordinate-transform service.
+        // It is registered by the PostGIS provider; read-only providers that lack it simply
+        // cannot reproject, and the reader rejects a non-native output CRS with a clean 400.
+        var coordinateTransform = context.RequestServices.GetService<ICoordinateTransformService>();
         var read = await _exportBackend.ReadZarrSliceAsync(
                 layerId,
                 new ZarrRasterSliceReadRequest(
                     bounds,
-                    bboxSrid ?? imageSrid,
+                    bboxSrid,
                     exportQuery.OutputWidth ?? DefaultOutputDimension,
                     exportQuery.OutputHeight ?? DefaultOutputDimension,
-                    selections),
+                    selections,
+                    OutputSrid: imageSrid ?? bboxSrid,
+                    Resampling: exportQuery.ResamplingAlgorithm,
+                    Stretch: exportQuery.Stretch,
+                    Colormap: exportQuery.Colormap),
+                coordinateTransform,
                 cancellationToken)
             .ConfigureAwait(false);
         if (read.Status != ZarrRasterSliceReadStatus.Success)
@@ -354,20 +368,38 @@ internal sealed class ImageServerExportHandler
         }
 
         var raster = read.Raster!.Value;
-        ImageServerLog.ExportImageStarted(_logger, layerId, raster.Width, raster.Height, "PNG");
+        if (!TryEncodeSliceOutput(
+                exportQuery,
+                raster,
+                read.Rgba,
+                out var outputData,
+                out var outputContentType,
+                out var encodeError))
+        {
+            ImageServerLog.InvalidExportParameters(_logger, layerId, encodeError);
+            return StandardErrorHelpers.CreateInternalServerError(context, encodeError);
+        }
+
+        var outputFormatName = exportQuery.OutputFormat switch
+        {
+            RasterFormat.JPEG => "JPEG",
+            RasterFormat.TIFF => "TIFF",
+            _ => "PNG",
+        };
+        ImageServerLog.ExportImageStarted(_logger, layerId, raster.Width, raster.Height, outputFormatName);
         scope.WithTag("honua.slice.variable", read.Variable);
-        scope.WithTag("honua.output.bytes", raster.Data.Length);
+        scope.WithTag("honua.output.bytes", outputData.Length);
 
         if (WantsInlineImageResponse(request.F))
         {
-            ImageServerLog.ExportImageCompleted(_logger, layerId, raster.Data.Length);
+            ImageServerLog.ExportImageCompleted(_logger, layerId, outputData.Length);
             scope.SetSuccess(1);
-            return Results.File(raster.Data, raster.ContentType);
+            return Results.File(outputData, outputContentType);
         }
 
         var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
-            raster.Data,
-            raster.ContentType,
+            outputData,
+            outputContentType,
             TimeSpan.FromHours(1),
             principal: context.User,
             cancellationToken: cancellationToken);
@@ -379,9 +411,44 @@ internal sealed class ImageServerExportHandler
             Extent = BuildExtent(raster.Extent, request.Bbox, bboxSrid, raster.Srid),
         };
 
-        ImageServerLog.ExportImageCompleted(_logger, layerId, raster.Data.Length);
+        ImageServerLog.ExportImageCompleted(_logger, layerId, outputData.Length);
         scope.SetSuccess(1);
         return Results.Json(response, ImageServerJsonContext.Default.ExportImageResponse);
+    }
+
+    // Encodes the rendered slice into the requested container. PNG is emitted directly by the
+    // canonical slice reader; JPEG and TIFF are re-encoded from the reader's RGBA buffer. Only
+    // the three exportImage raster formats reach here (validated during parameter parsing).
+    private static bool TryEncodeSliceOutput(
+        RasterQuery exportQuery,
+        RasterResult raster,
+        byte[]? rgba,
+        out byte[] data,
+        out string contentType,
+        out string error)
+    {
+        error = string.Empty;
+
+        switch (exportQuery.OutputFormat)
+        {
+            case RasterFormat.PNG:
+                data = raster.Data;
+                contentType = raster.ContentType;
+                return true;
+            case RasterFormat.JPEG when rgba is not null:
+                (data, contentType) = ImageServerRasterSliceEncoder.EncodeJpeg(
+                    rgba, raster.Width, raster.Height, exportQuery.Quality);
+                return true;
+            case RasterFormat.TIFF when rgba is not null:
+                (data, contentType) = ImageServerRasterSliceEncoder.EncodeTiff(
+                    rgba, raster.Width, raster.Height, exportQuery.TiffCompression);
+                return true;
+            default:
+                data = Array.Empty<byte>();
+                contentType = string.Empty;
+                error = "The multidimensional Zarr slice could not be encoded in the requested output format.";
+                return false;
+        }
     }
 
     // Builds the export response extent. Prefers a real extent from the raster store; when
