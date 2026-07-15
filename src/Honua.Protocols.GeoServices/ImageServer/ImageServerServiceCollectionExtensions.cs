@@ -49,6 +49,11 @@ internal static class ImageServerServiceCollectionExtensions
         services.Configure<ImageServerClassStatisticsOptions>(
             configuration.GetSection(ImageServerClassStatisticsOptions.SectionName));
 
+        // calculateVolume admission limits (per-AOI DEM pixel budget, geometry count). Bounds the
+        // CPU/memory a synchronous cut/fill volume request can consume (#2667, ADR-0065).
+        services.Configure<ImageServerCalculateVolumeOptions>(
+            configuration.GetSection(ImageServerCalculateVolumeOptions.SectionName));
+
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();
         services.AddScoped<ImageServerMultidimensionalInfoHandler>();
@@ -67,6 +72,8 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerRasterMetadataHandler>();
         services.AddScoped<ImageServerCoordinateMetadataHandler>();
         services.AddScoped<ImageServerProjectHandler>();
+        services.AddScoped<ImageServerComputeTiePointsHandler>();
+        services.AddScoped<ImageServerCalculateVolumeHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
 
         // Durable tile-export raster producer + source fence (#2707). Registered as singletons so

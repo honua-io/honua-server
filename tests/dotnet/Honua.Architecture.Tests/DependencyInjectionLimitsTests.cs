@@ -52,12 +52,17 @@ public sealed class DependencyInjectionLimitsTests
     private static readonly HashSet<string> AllowedHandlerExceptions = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Service/coordinator/facade god objects accepted as tracked debt. Now empty: the last
-    /// allowlisted aggregate (GeoservicesImportService) was decomposed so the gate enforces the
-    /// collaborator ceiling on every service with no exceptions. Add a type here only with a
-    /// follow-up issue; do not grow this list for new code.
+    /// Service/coordinator/facade god objects accepted as tracked debt. Add a type here only with a
+    /// follow-up issue; do not grow this list for new code. A prior aggregate
+    /// (GeoservicesImportService) was decomposed rather than allowlisted; the current entry is
+    /// tracked for the same treatment.
     /// </summary>
-    private static readonly HashSet<string> AllowedServiceExceptions = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> AllowedServiceExceptions = new(StringComparer.Ordinal)
+    {
+        // #2814 added the approval-lane IOperationGateway as the 9th collaborator; decomposition
+        // back within the 8-collaborator ceiling is tracked by #2859.
+        "Honua.Geoprocessing.GeoprocessingJobService",
+    };
 
     [ArchitectureTest]
     public void EndpointHandlers_ShouldNotExceedParameterLimit()

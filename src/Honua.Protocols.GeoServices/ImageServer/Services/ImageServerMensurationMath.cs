@@ -106,6 +106,28 @@ internal static class ImageServerMensurationMath
     }
 
     /// <summary>
+    /// Shadow-based object height in meters: <c>height = shadowLength · tan(sunElevation)</c>.
+    /// <para>
+    /// Classic photogrammetric shadow mensuration. An object of height <c>h</c> standing on flat
+    /// ground casts a shadow of horizontal length <c>L</c> under a sun elevation angle <c>θ</c>
+    /// (degrees above the horizon): <c>tan(θ) = h / L</c>, hence <c>h = L · tan(θ)</c>. The caller
+    /// supplies the measured ground shadow length (from the existing planar/geodesic distance path)
+    /// and the sun elevation read from the raster's exterior-orientation metadata
+    /// (<see cref="ImageServerSensorModel.TryReadSunGeometry"/>). Backs the
+    /// <c>esriMensurationHeightFromBaseAndTopShadow</c> / <c>*HeightFromTopAndTopShadow</c>
+    /// operations (ADR-0065).
+    /// </para>
+    /// </summary>
+    /// <param name="shadowLengthMeters">Measured ground shadow length in meters (must be finite, ≥ 0).</param>
+    /// <param name="sunElevationDegrees">
+    /// Sun elevation angle above the horizon in degrees; the caller guarantees it is in the open
+    /// interval (0, 90) so the tangent is finite and positive.
+    /// </param>
+    /// <returns>The object height in meters.</returns>
+    internal static double ShadowHeightMeters(double shadowLengthMeters, double sunElevationDegrees)
+        => shadowLengthMeters * Math.Tan(DegreesToRadians(sunElevationDegrees));
+
+    /// <summary>
     /// Planar Euclidean distance between two projected-meter points.
     /// </summary>
     internal static double PlanarDistanceMeters(double x1, double y1, double x2, double y2)

@@ -125,6 +125,19 @@ internal sealed class ImageServerMeasureHandler
                     GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
             }
 
+            // Shadow-based height mensuration (#2667/ADR-0065): the object height is derived from the
+            // measured ground shadow length and the sun elevation modeled on the raster. Both the
+            // base-and-top-shadow and top-and-top-shadow variants use height = shadowLength ·
+            // tan(sunElevation); they return an honest 501 when no sun geometry is modeled.
+            if (normalizedOperation is "esrimensurationheightfrombaseandtopshadow" or
+                    "esrimensurationheightfromtopandtopshadow"
+                && toGeometry is not null)
+            {
+                return await MeasureShadowHeightAsync(
+                    context, layerId, raster, fromGeometry.Points[0], toGeometry.Value.Points[0],
+                    operation, GetString(values, "linearUnit") ?? "esriMeters", cancellationToken).ConfigureAwait(false);
+            }
+
             if (IsSensorDependentOperation(operation))
             {
                 return StandardErrorHelpers.CreateNotImplemented(
@@ -388,28 +401,8 @@ internal sealed class ImageServerMeasureHandler
         string angularUnit,
         CancellationToken cancellationToken)
     {
-        var fromNormalized = await NormalizePointAsync(from, cancellationToken).ConfigureAwait(false);
-        var toNormalized = await NormalizePointAsync(to, cancellationToken).ConfigureAwait(false);
-
-        double distanceMeters;
-        double azimuthDegrees;
-        if (fromNormalized.Space == MeasureSpace.Geodesic && toNormalized.Space == MeasureSpace.Geodesic)
-        {
-            distanceMeters = ImageServerMensurationMath.GeodesicDistanceMeters(
-                fromNormalized.X, fromNormalized.Y, toNormalized.X, toNormalized.Y);
-            azimuthDegrees = ImageServerMensurationMath.InitialBearingDegrees(
-                fromNormalized.X, fromNormalized.Y, toNormalized.X, toNormalized.Y);
-        }
-        else
-        {
-            // Projected map units (or unknown SRID): planar fallback on the original coordinates,
-            // with the CRS linear unit converted to meters (US survey-foot State Plane zones are
-            // not metric). Both operands share the request's geometryType/SRID, so a space
-            // mismatch is a corner case handled conservatively as planar.
-            var metersPerUnit = LinearUnitToMeters(from.Srid ?? to.Srid);
-            distanceMeters = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y) * metersPerUnit;
-            azimuthDegrees = ImageServerMensurationMath.PlanarBearingDegrees(from.X, from.Y, to.X, to.Y);
-        }
+        var (distanceMeters, azimuthDegrees) = await ComputeGroundDistanceAndAzimuthAsync(
+            from, to, cancellationToken).ConfigureAwait(false);
 
         var (distance, distanceUnit) = ConvertLinear(distanceMeters, linearUnit);
         var (angle, angleUnit) = ConvertAngular(azimuthDegrees, angularUnit);
@@ -419,6 +412,85 @@ internal sealed class ImageServerMeasureHandler
             Distance = CreateValue(distance, distanceUnit),
             AzimuthAngle = CreateValue(angle, angleUnit),
         };
+    }
+
+    /// <summary>
+    /// Measures the ground distance (meters) and true azimuth (degrees) between two measure points,
+    /// normalizing each to lon/lat and measuring geodesically when possible, else falling back to
+    /// planar meters with the CRS linear-unit conversion. Shared by the distance-and-angle response
+    /// and the shadow-height path (which needs the shadow length only).
+    /// </summary>
+    private async ValueTask<(double DistanceMeters, double AzimuthDegrees)> ComputeGroundDistanceAndAzimuthAsync(
+        MeasurePoint from,
+        MeasurePoint to,
+        CancellationToken cancellationToken)
+    {
+        var fromNormalized = await NormalizePointAsync(from, cancellationToken).ConfigureAwait(false);
+        var toNormalized = await NormalizePointAsync(to, cancellationToken).ConfigureAwait(false);
+
+        if (fromNormalized.Space == MeasureSpace.Geodesic && toNormalized.Space == MeasureSpace.Geodesic)
+        {
+            var distance = ImageServerMensurationMath.GeodesicDistanceMeters(
+                fromNormalized.X, fromNormalized.Y, toNormalized.X, toNormalized.Y);
+            var azimuth = ImageServerMensurationMath.InitialBearingDegrees(
+                fromNormalized.X, fromNormalized.Y, toNormalized.X, toNormalized.Y);
+            return (distance, azimuth);
+        }
+
+        // Projected map units (or unknown SRID): planar fallback on the original coordinates,
+        // with the CRS linear unit converted to meters (US survey-foot State Plane zones are
+        // not metric). Both operands share the request's geometryType/SRID, so a space
+        // mismatch is a corner case handled conservatively as planar.
+        var metersPerUnit = LinearUnitToMeters(from.Srid ?? to.Srid);
+        var planarDistance = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y) * metersPerUnit;
+        var planarAzimuth = ImageServerMensurationMath.PlanarBearingDegrees(from.X, from.Y, to.X, to.Y);
+        return (planarDistance, planarAzimuth);
+    }
+
+    /// <summary>
+    /// Shadow-based height mensuration (ADR-0065). Reads the sun elevation from the raster's
+    /// exterior-orientation metadata, measures the ground shadow length between the two supplied
+    /// points using the same geodesic/planar path as distance mensuration, and returns
+    /// <c>height = shadowLength · tan(sunElevation)</c>. Returns an honest 501 when no sun geometry
+    /// is modeled for the raster (rather than a fabricated height), mirroring the DEM-height 501
+    /// discipline. Backs <c>esriMensurationHeightFromBaseAndTopShadow</c> and
+    /// <c>*HeightFromTopAndTopShadow</c> — both use the measured shadow length and sun elevation.
+    /// </summary>
+    private async Task<IResult> MeasureShadowHeightAsync(
+        HttpContext context,
+        int layerId,
+        RasterInfo raster,
+        MeasurePoint from,
+        MeasurePoint to,
+        string operation,
+        string linearUnit,
+        CancellationToken cancellationToken)
+    {
+        const string SunGeometryMissing =
+            "Shadow-based height mensuration requires sun elevation/illumination metadata that is " +
+            "not modeled for this raster.";
+
+        var metadata = await _rasterStore.GetSensorMetadataAsync([raster.Id], cancellationToken).ConfigureAwait(false);
+        var sensor = metadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
+        if (ImageServerSensorModel.TryReadSunGeometry(sensor) is not { } sun)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context, SunGeometryMissing);
+        }
+
+        var (shadowLengthMeters, _) = await ComputeGroundDistanceAndAzimuthAsync(from, to, cancellationToken)
+            .ConfigureAwait(false);
+        var heightMeters = ImageServerMensurationMath.ShadowHeightMeters(shadowLengthMeters, sun.SunElevationDegrees);
+        var (height, unit) = ConvertLinear(heightMeters, linearUnit);
+
+        var response = new ImageServerMeasureResponse
+        {
+            Name = raster.Name,
+            SensorName = sensor?.SensorName ?? "Unknown",
+            Height = CreateValue(height, unit),
+        };
+
+        ImageServerLog.MeasureCompleted(_logger, layerId, operation, 0);
+        return Results.Json(response, ImageServerJsonContext.Default.ImageServerMeasureResponse);
     }
 
     private async ValueTask<ImageServerMeasureResponse> BuildAreaResponseAsync(
@@ -533,12 +605,15 @@ internal sealed class ImageServerMeasureHandler
         return Results.Json(response, ImageServerJsonContext.Default.ImageServerMeasureResponse);
     }
 
+    /// <summary>
+    /// Identifies mensuration operations that still require sensor/orientation metadata Honua does
+    /// not model and therefore honestly return 501. The DEM-backed height
+    /// (<c>heightFromBaseAndTop</c>) and shadow-based height (<c>*Shadow</c>) operations are handled
+    /// before this gate (#1879, #2667), so only the pure-3D operations (<c>*3d</c>, which need full
+    /// exterior orientation / a stereo model) remain unsupported.
+    /// </summary>
     private static bool IsSensorDependentOperation(string operation)
-    {
-        var normalized = operation.ToLowerInvariant();
-        return normalized.Contains("3d", StringComparison.Ordinal) ||
-               normalized.Contains("height", StringComparison.Ordinal);
-    }
+        => operation.ToLowerInvariant().Contains("3d", StringComparison.Ordinal);
 
     private static MeasurePoint CalculateCentroid(MeasureGeometry geometry, bool sridIsGeographic)
     {

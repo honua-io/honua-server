@@ -1097,7 +1097,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetCapabilities_WithoutAuth_Returns200WithCompatibilityContract",
-        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope"
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesEndpointTests.GetCapabilities_EmitsDocumentedCompatibilityEnvelope",
+        "Honua.Server.Tests.Features.Admin.AdminCapabilitiesRouteHonestyTests.AdvertisedManifestCapabilities_MatchRegisteredRoutes"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented"
@@ -7427,6 +7428,23 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-id-imageserver-calculatevolume",
+      "route": "/rest/services/{id}/ImageServer/calculateVolume",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_AoiExceedsPixelBudget_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_MissingConstantZ_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_UnsupportedBaseType_ReturnsNotImplemented",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithoutDem_ReturnsNotImplemented"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-id-imageserver-colormap",
       "route": "/rest/services/{id}/ImageServer/colormap",
       "method": "GET",
@@ -7507,6 +7525,20 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Get_WithEnvelope_ReturnsStatisticsAndHistograms",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-computetiepoints",
+      "route": "/rest/services/{id}/ImageServer/computeTiePoints",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_NoControlPoints_ReturnsNotImplemented",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -7741,7 +7773,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_WithDemMetadata_ButPointOutsideDem_ReturnsNotImplemented",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_WithDemMetadata_ReturnsDifferencedHeight"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_HeightOperation_WithDemMetadata_ReturnsDifferencedHeight",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithoutSunGeometry_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -7771,6 +7805,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_GetAndPost_ReprojectsGeometries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithDatumTransformationWkid_AppliesSelectedPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_AndRpcMetadata_WarpsImageToMap",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_AndUnsupportedDatumTransformation_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_ComposesWarpWithReprojectionAndDiffersFromNoTransformation",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithImageCoordinateSystemTransformation_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithUnsupportedDatumTransformationWkid_Returns400"
       ],
@@ -7910,6 +7946,20 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-id-imageserver-rasterid-imagesupportdata",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/imageSupportData",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithoutSensorMetadata_ReturnsNotAvailableError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-id-imageserver-rasterid-info",
       "route": "/rest/services/{id}/ImageServer/{rasterId}/info",
       "method": "GET",
@@ -7945,6 +7995,32 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-rasterfile",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/rasterFile",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-id-imageserver-rasterid-thumbnail",
+      "route": "/rest/services/{id}/ImageServer/{rasterId}/thumbnail",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9120,6 +9196,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-imageserver-calculatevolume",
+      "route": "/rest/services/{serviceId}/ImageServer/calculateVolume",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-imageserver-colormap",
       "route": "/rest/services/{serviceId}/ImageServer/colormap",
       "method": "GET",
@@ -9195,6 +9284,19 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-computetiepoints",
+      "route": "/rest/services/{serviceId}/ImageServer/computeTiePoints",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9363,7 +9465,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -9513,6 +9616,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-imagesupportdata",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/imageSupportData",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-rest-services-serviceid-imageserver-rasterid-info",
       "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/info",
       "method": "GET",
@@ -9547,6 +9663,32 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-rasterfile",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/rasterFile",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-rasterid-thumbnail",
+      "route": "/rest/services/{serviceId}/ImageServer/{rasterId}/thumbnail",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -15931,6 +16073,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-id-imageserver-calculatevolume",
+      "route": "/rest/services/{id}/ImageServer/calculateVolume",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-id-imageserver-colormap",
       "route": "/rest/services/{id}/ImageServer/colormap",
       "method": "POST",
@@ -16004,6 +16159,19 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-rest-services-id-imageserver-computetiepoints",
+      "route": "/rest/services/{id}/ImageServer/computeTiePoints",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -16151,7 +16319,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"
@@ -17139,6 +17308,19 @@
       "maturity": "implemented"
     },
     {
+      "id": "post-rest-services-serviceid-imageserver-calculatevolume",
+      "route": "/rest/services/{serviceId}/ImageServer/calculateVolume",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
       "id": "post-rest-services-serviceid-imageserver-colormap",
       "route": "/rest/services/{serviceId}/ImageServer/colormap",
       "method": "POST",
@@ -17214,6 +17396,19 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "implemented"
+    },
+    {
+      "id": "post-rest-services-serviceid-imageserver-computetiepoints",
+      "route": "/rest/services/{serviceId}/ImageServer/computeTiePoints",
+      "method": "POST",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "implemented"

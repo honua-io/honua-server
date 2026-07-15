@@ -409,6 +409,44 @@ internal static class ImageServerEndpoints
             .Produces(404)
             .Produces(501);
 
+        group.MapGet("/computeTiePoints", ComputeTiePointsGet)
+            .WithDisplayName("Compute Tie Points (GET)")
+            .WithName("ImageServerComputeTiePointsGet")
+            .WithSummary("Compute tie points from pre-registered control points")
+            .WithDescription("ArcGIS ImageServer computeTiePoints contract. Passes through pre-registered control points / GCPs modeled on the raster; automatic feature matching is not supported and returns 501 when no control points exist.")
+            .Produces<ImageServerComputeTiePointsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+        group.MapPost("/computeTiePoints", ComputeTiePointsPost)
+            .WithDisplayName("Compute Tie Points (POST)")
+            .WithName("ImageServerComputeTiePointsPost")
+            .WithSummary("Compute tie points from pre-registered control points via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer computeTiePoints endpoint")
+            .Produces<ImageServerComputeTiePointsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
+        group.MapGet("/calculateVolume", CalculateVolumeGet)
+            .WithDisplayName("Calculate Volume (GET)")
+            .WithName("ImageServerCalculateVolumeGet")
+            .WithSummary("Calculate cut/fill volumes over an area of interest")
+            .WithDescription("ArcGIS ImageServer calculateVolume contract. Integrates the layer's DEM surface against a constant base plane (baseType=0, constantZ) over each polygon/envelope AOI, returning cut/fill volumes, surface area, and elevation statistics; returns 501 when no DEM is modeled.")
+            .Produces<CalculateVolumeResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+        group.MapPost("/calculateVolume", CalculateVolumePost)
+            .WithDisplayName("Calculate Volume (POST)")
+            .WithName("ImageServerCalculateVolumePost")
+            .WithSummary("Calculate cut/fill volumes over an area of interest via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer calculateVolume endpoint")
+            .Produces<CalculateVolumeResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
         group.MapGet("/estimateExportTilesSize", EstimateExportTilesSizeGet)
             .WithDisplayName("Estimate Image Service Export Tiles Size (GET)")
             .WithName("ImageServerEstimateExportTilesSizeGet")
@@ -966,6 +1004,40 @@ internal static class ImageServerEndpoints
             .WithName("ImageServerProjectPostByService")
             .WithSummary("Project geometries via POST")
             .Produces<ImageServerProjectResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
+        serviceGroup.MapGet("/computeTiePoints", ComputeTiePointsGetByService)
+            .WithDisplayName("Compute Tie Points by Service (GET)")
+            .WithName("ImageServerComputeTiePointsGetByService")
+            .WithSummary("Compute tie points from pre-registered control points")
+            .Produces<ImageServerComputeTiePointsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+        serviceGroup.MapPost("/computeTiePoints", ComputeTiePointsPostByService)
+            .WithDisplayName("Compute Tie Points by Service (POST)")
+            .WithName("ImageServerComputeTiePointsPostByService")
+            .WithSummary("Compute tie points from pre-registered control points via POST")
+            .Produces<ImageServerComputeTiePointsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+
+        serviceGroup.MapGet("/calculateVolume", CalculateVolumeGetByService)
+            .WithDisplayName("Calculate Volume by Service (GET)")
+            .WithName("ImageServerCalculateVolumeGetByService")
+            .WithSummary("Calculate cut/fill volumes over an area of interest")
+            .Produces<CalculateVolumeResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
+        serviceGroup.MapPost("/calculateVolume", CalculateVolumePostByService)
+            .WithDisplayName("Calculate Volume by Service (POST)")
+            .WithName("ImageServerCalculateVolumePostByService")
+            .WithSummary("Calculate cut/fill volumes over an area of interest via POST")
+            .Produces<CalculateVolumeResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
             .Produces(501);
@@ -2566,6 +2638,154 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await ProjectPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute ImageServer tie points from pre-registered control points (GET).
+    /// </summary>
+    private static async Task<IResult> ComputeTiePointsGet(
+        int id,
+        HttpContext context,
+        ImageServerComputeTiePointsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ComputeTiePointsAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputeTiePointsGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerComputeTiePointsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeTiePointsGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute ImageServer tie points from pre-registered control points (POST).
+    /// </summary>
+    private static async Task<IResult> ComputeTiePointsPost(
+        int id,
+        HttpContext context,
+        ImageServerComputeTiePointsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.ComputeTiePointsAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputeTiePointsPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerComputeTiePointsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeTiePointsPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Calculate ImageServer cut/fill volumes over the request AOIs against the layer DEM (GET).
+    /// </summary>
+    private static async Task<IResult> CalculateVolumeGet(
+        int id,
+        HttpContext context,
+        ImageServerCalculateVolumeHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.CalculateVolumeAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> CalculateVolumeGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCalculateVolumeHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await CalculateVolumeGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Calculate ImageServer cut/fill volumes over the request AOIs against the layer DEM (POST).
+    /// </summary>
+    private static async Task<IResult> CalculateVolumePost(
+        int id,
+        HttpContext context,
+        ImageServerCalculateVolumeHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.CalculateVolumeAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> CalculateVolumePostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerCalculateVolumeHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await CalculateVolumePost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

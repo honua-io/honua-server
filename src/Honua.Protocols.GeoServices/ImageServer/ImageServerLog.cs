@@ -298,4 +298,40 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "Failed to compute class statistics for layer {LayerId}")]
     public static partial void ClassStatisticsFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5848,
+        Level = LogLevel.Warning,
+        Message = "Invalid computeTiePoints parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidComputeTiePointsParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5849,
+        Level = LogLevel.Information,
+        Message = "ImageServer computeTiePoints for layer {LayerId} returned {TiePointCount} pre-registered control points")]
+    public static partial void ComputeTiePointsCompleted(ILogger logger, int layerId, int tiePointCount);
+
+    [LoggerMessage(
+        EventId = 5850,
+        Level = LogLevel.Error,
+        Message = "ImageServer computeTiePoints failed for layer {LayerId}")]
+    public static partial void ComputeTiePointsFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5851,
+        Level = LogLevel.Warning,
+        Message = "Invalid calculateVolume parameters for layer {LayerId}: {ValidationErrors}")]
+    public static partial void InvalidCalculateVolumeParameters(ILogger logger, int layerId, string validationErrors);
+
+    [LoggerMessage(
+        EventId = 5852,
+        Level = LogLevel.Information,
+        Message = "ImageServer calculateVolume for layer {LayerId} returned {ResultCount} volume results")]
+    public static partial void CalculateVolumeCompleted(ILogger logger, int layerId, int resultCount);
+
+    [LoggerMessage(
+        EventId = 5853,
+        Level = LogLevel.Error,
+        Message = "ImageServer calculateVolume failed for layer {LayerId}")]
+    public static partial void CalculateVolumeFailed(ILogger logger, Exception ex, int layerId);
 }

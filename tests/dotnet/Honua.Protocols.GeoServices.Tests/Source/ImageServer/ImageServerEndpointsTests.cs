@@ -155,6 +155,86 @@ public class ImageServerEndpointsTests
         return store;
     }
 
+    /// <summary>
+    /// Builds a substitute for calculateVolume: the image layer's primary raster carries a DEM
+    /// source (layer 777); the DEM primary raster has a 10x10 (100 unit²) pixel and the clipped read
+    /// returns the supplied elevations for band 1. The AOI geometry is ignored by the substitute, so
+    /// the volume result is fully determined by <paramref name="elevations"/>, the pixel area, and
+    /// the base plane, making the expected cut/fill/area hand-verifiable.
+    /// </summary>
+    private static IRasterStore CreateVolumeRasterStoreSubstitute(
+        double[] elevations,
+        bool exceedBudget = false)
+    {
+        var store = CreateRasterStoreSubstitute();
+
+        var imageInfo = new RasterInfo
+        {
+            Id = 100,
+            LayerId = TestLayerId,
+            Name = "image-raster",
+            Width = 256,
+            Height = 256,
+            BandCount = 1,
+            PixelType = "8BUI",
+            Srid = 4326,
+            GeoTransform = [-180, 1.40625, 0, 90, 0, -0.703125],
+            Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        var demInfo = new RasterInfo
+        {
+            Id = 200,
+            LayerId = 777,
+            Name = "dem-raster",
+            Width = 100,
+            Height = 100,
+            BandCount = 1,
+            PixelType = "32BF",
+            Srid = 3857,
+            // 10 x 10 map-unit pixels => 100 unit² per pixel.
+            GeoTransform = [0, 10, 0, 0, 0, -10],
+            Extent = new RasterExtent { XMin = 0, YMin = -1000, XMax = 1000, YMax = 0, Srid = 3857 },
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        store.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.ArgAt<int>(0) == 777 ? demInfo : imageInfo);
+
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata { RasterDataId = 100, DemSource = "777" },
+            });
+
+        store.QueryRastersAsync(default, default, default).ReturnsForAnyArgs([demInfo]);
+
+        store.ReadClippedBandVectorsAsync(
+                Arg.Any<int>(),
+                Arg.Any<long[]>(),
+                Arg.Any<RasterMergeStrategy>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<int?>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => exceedBudget
+                ? new RasterBandVectorSet
+                {
+                    Bands = [1],
+                    Pixels = Array.Empty<double[]>(),
+                    ExceededPixelBudget = true,
+                    BoundingPixelCount = 999_999_999,
+                }
+                : new RasterBandVectorSet
+                {
+                    Bands = [1],
+                    Pixels = elevations.Select(e => new[] { e }).ToList(),
+                });
+
+        return store;
+    }
+
     private static IRasterStore CreateRpcRasterStoreSubstitute()
     {
         // A raster carrying an offset/scale RPC sensor model so the image-CS transformation warp
@@ -1754,6 +1834,381 @@ public class ImageServerEndpointsTests
 
             // #2795: not-implemented operations now surface body error.code 501 (pass-through) instead
             // of collapsing to 500, so clients can distinguish "unsupported" from a server fault.
+            await response.AssertGeoServicesErrorAsync(501);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/measure")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight()
+    {
+        // The raster models a 45° sun elevation. The two points are ~5 ground-meters apart (a 3-4-5
+        // triangle near the Web Mercator origin), so the shadow-height h = shadowLength · tan(45°)
+        // ≈ shadowLength ≈ 5 m. Both shadow operations use the same formula (ADR-0065, #2667).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    SensorName = "ShadowSensor",
+                    ExteriorOrientationJson = """{"sunElevation": 45.0, "sunAzimuth": 135.0}""",
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertShadowHeight(await getResponse.Content.ReadAsStringAsync());
+
+            using var postContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("measureOperation", "esriMensurationHeightFromTopAndTopShadow"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                new KeyValuePair<string, string>("fromGeometry", fromGeometry),
+                new KeyValuePair<string, string>("toGeometry", toGeometry),
+            ]);
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure", postContent);
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertShadowHeight(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var byServiceResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+            byServiceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertShadowHeight(await byServiceResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+
+        static void AssertShadowHeight(string body)
+        {
+            var measure = JsonSerializer.Deserialize(body, ImageServerJsonContext.Default.ImageServerMeasureResponse);
+            measure.Should().NotBeNull();
+            measure!.Height.Should().NotBeNull();
+            // tan(45°) = 1, so height ≈ the ~5 m shadow length (small spherical correction tolerated).
+            measure.Height!.Value.Should().BeApproximately(5.0, 0.05);
+            measure.SensorName.Should().Be("ShadowSensor");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
+    [Operation(Operations.Distance)]
+    public async Task Measure_ShadowHeight_WithoutSunGeometry_ReturnsNotImplemented()
+    {
+        // The default substitute models no sun geometry, so shadow-based height is honestly 501
+        // (never a fabricated height), mirroring the DEM-height 501 discipline (ADR-0065).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string fromGeometry = """{"x":0,"y":0,"spatialReference":{"wkid":3857}}""";
+            const string toGeometry = """{"x":3,"y":4,"spatialReference":{"wkid":3857}}""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/measure?f=json&measureOperation=esriMensurationHeightFromBaseAndTopShadow&geometryType=esriGeometryPoint&fromGeometry={Uri.EscapeDataString(fromGeometry)}&toGeometry={Uri.EscapeDataString(toGeometry)}");
+
+            await response.AssertGeoServicesErrorAsync(501);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeTiePoints")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/computeTiePoints")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeTiePoints")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeTiePoints")]
+    [Operation(Operations.Query)]
+    public async Task ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints()
+    {
+        // The raster carries two pre-registered control points in its exterior-orientation payload.
+        // computeTiePoints must pass them through verbatim (no feature matching): sourcePoints are
+        // the image/pixel coordinates and targetPoints the reference/ground coordinates (ADR-0065).
+        var store = CreateRasterStoreSubstitute();
+        store.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, RasterSensorMetadata>
+            {
+                [100] = new RasterSensorMetadata
+                {
+                    RasterDataId = 100,
+                    ExteriorOrientationJson = """
+                        {
+                          "controlPoints": [
+                            { "imagePoint": { "x": 512.0, "y": 384.0 },
+                              "referencePoint": { "x": -117.161, "y": 32.716, "z": 104.2, "spatialReference": { "wkid": 4326 } } },
+                            { "imagePoint": { "x": 1024.0, "y": 768.0 },
+                              "referencePoint": { "x": -117.155, "y": 32.720 } }
+                          ]
+                        }
+                        """,
+                },
+            });
+
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints?f=json");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await getResponse.Content.ReadAsStringAsync());
+
+            using var postContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+            ]);
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints",
+                postContent);
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var serviceGetResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/computeTiePoints?f=json");
+            serviceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await serviceGetResponse.Content.ReadAsStringAsync());
+
+            using var servicePostContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+            ]);
+            var servicePostResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/computeTiePoints",
+                servicePostContent);
+            servicePostResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertTiePoints(await servicePostResponse.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+
+        static void AssertTiePoints(string body)
+        {
+            var response = JsonSerializer.Deserialize(
+                body,
+                ImageServerJsonContext.Default.ImageServerComputeTiePointsResponse);
+            response.Should().NotBeNull();
+            response!.TiePoints.Should().NotBeNull();
+            response.TiePoints.SourcePoints.Should().HaveCount(2);
+            response.TiePoints.TargetPoints.Should().HaveCount(2);
+
+            // Pass-through is exact (ADR-0065 numerical-fixture expectation).
+            response.TiePoints.SourcePoints[0].X.Should().Be(512.0);
+            response.TiePoints.SourcePoints[0].Y.Should().Be(384.0);
+            response.TiePoints.TargetPoints[0].X.Should().Be(-117.161);
+            response.TiePoints.TargetPoints[0].Y.Should().Be(32.716);
+            response.TiePoints.TargetPoints[0].Z.Should().Be(104.2);
+            response.TiePoints.TargetPoints[0].SpatialReference!.Wkid.Should().Be(4326);
+            // Reference point without an explicit SR inherits the raster SRID (4326).
+            response.TiePoints.TargetPoints[1].SpatialReference!.Wkid.Should().Be(4326);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeTiePoints")]
+    [Operation(Operations.Query)]
+    public async Task ComputeTiePoints_NoControlPoints_ReturnsNotImplemented()
+    {
+        // The default substitute models no sensor metadata / control points. Automatic feature
+        // matching is out of scope by design, so the honest answer is 501 — never a fabricated or
+        // empty tie-point set (ADR-0065), mirroring the DEM-height 501 discipline.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeTiePoints?f=json");
+
+            await response.AssertGeoServicesErrorAsync(501);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/calculateVolume")]
+    [Endpoint("POST /rest/services/{id}/ImageServer/calculateVolume")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/calculateVolume")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/calculateVolume")]
+    [Operation(Operations.Query)]
+    public async Task CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi()
+    {
+        // DEM pixels are [12, 12, 8, 8] over 100 unit² pixels with a base plane of 10:
+        //   deltas [+2, +2, -2, -2] => cut = 4·100 = 400, fill = -4·100 = -400,
+        //   area = 4·100 = 400, minz = 8, maxz = 12, meanz = 10 (hand-verifiable).
+        var store = CreateVolumeRasterStoreSubstitute([12d, 12d, 8d, 8d]);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string geometries =
+                """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
+            var query =
+                $"f=json&geometryType=esriGeometryPolygon&baseType=0&constantZ=10&geometries={Uri.EscapeDataString(geometries)}";
+
+            var getResponse = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?{query}");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertVolume(await getResponse.Content.ReadAsStringAsync());
+
+            using var postContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPolygon"),
+                new KeyValuePair<string, string>("baseType", "0"),
+                new KeyValuePair<string, string>("constantZ", "10"),
+                new KeyValuePair<string, string>("geometries", geometries),
+            ]);
+            var postResponse = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume", postContent);
+            postResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertVolume(await postResponse.Content.ReadAsStringAsync());
+
+            var serviceId = WebAppFixture.TestServiceId;
+            var byServiceGet = await fixture.Client.GetAsync(
+                $"/rest/services/{serviceId}/ImageServer/calculateVolume?{query}");
+            byServiceGet.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertVolume(await byServiceGet.Content.ReadAsStringAsync());
+
+            using var byServicePostContent = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPolygon"),
+                new KeyValuePair<string, string>("baseType", "0"),
+                new KeyValuePair<string, string>("constantZ", "10"),
+                new KeyValuePair<string, string>("geometries", geometries),
+            ]);
+            var byServicePost = await fixture.Client.PostAsync(
+                $"/rest/services/{serviceId}/ImageServer/calculateVolume", byServicePostContent);
+            byServicePost.StatusCode.Should().Be(HttpStatusCode.OK);
+            AssertVolume(await byServicePost.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+
+        static void AssertVolume(string body)
+        {
+            var response = JsonSerializer.Deserialize(body, ImageServerJsonContext.Default.CalculateVolumeResponse);
+            response.Should().NotBeNull();
+            response!.Results.Should().HaveCount(1);
+            var result = response.Results[0];
+            result.Cut.Should().BeApproximately(400d, 1e-6);
+            result.Fill.Should().BeApproximately(-400d, 1e-6);
+            result.Area.Should().BeApproximately(400d, 1e-6);
+            result.MinZ.Should().BeApproximately(8d, 1e-6);
+            result.MaxZ.Should().BeApproximately(12d, 1e-6);
+            result.MeanZ.Should().BeApproximately(10d, 1e-6);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/calculateVolume")]
+    [Operation(Operations.Query)]
+    public async Task CalculateVolume_WithoutDem_ReturnsNotImplemented()
+    {
+        // The default substitute models no DEM/sensor metadata, so volume is honestly 501 rather
+        // than a fabricated result or a 500 (ADR-0065).
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            const string geometries =
+                """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?f=json&geometryType=esriGeometryPolygon&baseType=0&constantZ=10&geometries={Uri.EscapeDataString(geometries)}");
+
+            await response.AssertGeoServicesErrorAsync(501);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/calculateVolume")]
+    [Operation(Operations.Query)]
+    public async Task CalculateVolume_AoiExceedsPixelBudget_ReturnsBadRequest()
+    {
+        // A DEM is modeled but the AOI clip exceeds the synchronous pixel budget: reject with an
+        // actionable 400 rather than analysing a truncated (wrong) volume.
+        var store = CreateVolumeRasterStoreSubstitute([12d, 8d], exceedBudget: true);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string geometries =
+                """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?f=json&geometryType=esriGeometryPolygon&baseType=0&constantZ=10&geometries={Uri.EscapeDataString(geometries)}");
+
+            await response.AssertGeoServicesErrorAsync(400);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/calculateVolume")]
+    [Operation(Operations.Query)]
+    public async Task CalculateVolume_MissingConstantZ_ReturnsBadRequest()
+    {
+        // baseType=0 requires the constant base plane; omitting constantZ is a 400.
+        var store = CreateVolumeRasterStoreSubstitute([12d, 8d]);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string geometries =
+                """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?f=json&geometryType=esriGeometryPolygon&baseType=0&geometries={Uri.EscapeDataString(geometries)}");
+
+            await response.AssertGeoServicesErrorAsync(400);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/calculateVolume")]
+    [Operation(Operations.Query)]
+    public async Task CalculateVolume_UnsupportedBaseType_ReturnsNotImplemented()
+    {
+        // Only baseType=0 (constant plane) is supported; a best-fitting/perimeter base is 501.
+        var store = CreateVolumeRasterStoreSubstitute([12d, 8d]);
+        var fixture = await CreateFixtureAsync(store);
+        try
+        {
+            const string geometries =
+                """[{"rings":[[[0,0],[100,0],[100,-100],[0,-100],[0,0]]],"spatialReference":{"wkid":3857}}]""";
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/calculateVolume?f=json&geometryType=esriGeometryPolygon&baseType=1&geometries={Uri.EscapeDataString(geometries)}");
+
             await response.AssertGeoServicesErrorAsync(501);
         }
         finally

@@ -67,6 +67,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0062](0062-graduated-ops-autonomy-policy.md) | Graduated Autonomy Policy for Ops Findings | Accepted | 2026-07 |
 | [0063](0063-custom-code-execution-is-aws-batch-only.md) | Custom-code (custom GP tool) execution is AWS-Batch-only | Accepted | 2026-07 |
 | [0064](0064-geoprocessing-destructive-plan-approval-lane.md) | Geoprocessing Destructive-Plan Approval Lane (Fail-Closed Classifier + Control-Plane Proposal Reuse) | Accepted | 2026-07 |
+| [0065](0065-imageserver-photogrammetric-analytics.md) | ImageServer Photogrammetric Tie-Point and 3D Measurement Analytics | Accepted | 2026-07 |
 
 ## Template
 
