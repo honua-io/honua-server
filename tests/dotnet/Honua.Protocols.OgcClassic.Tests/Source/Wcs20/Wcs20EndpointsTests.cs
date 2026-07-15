@@ -73,7 +73,7 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
-    public async Task Wcs_GetCapabilities_WithProjectedRaster_DoesNotAdvertiseUnsupportedCrsExtension()
+    public async Task Wcs_GetCapabilities_WithProjectedRaster_AdvertisesTransformableOutputCrsValues()
     {
         var raster = CreateRasterInfo() with
         {
@@ -96,8 +96,15 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        // The CRS values are advertised inside the ServiceMetadata xs:any Extension slot
+        // (purely additive; the CRS-extension conformance class is intentionally NOT
+        // declared, so the document stays valid for the WCS core ETS).
         content.Should().Contain("<wcs:ServiceMetadata>");
-        content.Should().NotContain("<wcs:crsSupported>");
+        content.Should().Contain("<wcs:Extension>");
+        content.Should().Contain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/3857</crs:crsSupported>");
+        content.Should().Contain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/4326</crs:crsSupported>");
+        // Advertisement only — the CRS-extension conformance class must not be claimed.
+        content.Should().NotContain("crs-extension");
     }
 
     [IntegrationTest]
@@ -140,6 +147,89 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         query.OutputSrid.Should().Be(3857);
         query.ClipRegion.Should().NotBeNull();
         query.ClipRegion!.Value.Srid.Should().Be(4326);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithUnsupportedOutputCrs_ReturnsOutputCrsNotSupported()
+    {
+        // A syntactically valid but non-transformable OUTPUTCRS is rejected with a
+        // protocol-correct 400 (OGC 11-053r1 OutputCrs-NotSupported) rather than reaching
+        // ST_Transform with an unknown SRID and surfacing a downstream 500.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&OUTPUTCRS=EPSG:99999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"OutputCrs-NotSupported\"");
+        content.Should().Contain("locator=\"OUTPUTCRS\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithUnsupportedSubsettingCrs_ReturnsSubsettingCrsNotSupported()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&SUBSETTINGCRS=EPSG:99999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"SubsettingCrs-NotSupported\"");
+        content.Should().Contain("locator=\"SUBSETTINGCRS\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithUnsupportedBboxCrs_ReturnsSubsettingCrsNotSupported()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&BBOX=-122.4,37.7,-122.3,37.8&BBOXCRS=EPSG:99999");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("exceptionCode=\"SubsettingCrs-NotSupported\"");
+        content.Should().Contain("locator=\"BBOXCRS\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_WithProjectedRaster_ListsNativeCrsWithoutContradiction()
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Srid = 3857,
+            GeoTransform = [-13625505, 262.578125, 0, 4551210, 0, -220],
+            Extent = new RasterExtent
+            {
+                XMin = -13625505,
+                YMin = 4537132,
+                XMax = -13608700,
+                YMax = 4551210,
+                Srid = 3857
+            }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        // DescribeCoverage advertises the native CRS as the coverage srsName; it must
+        // agree with the transformable set advertised in GetCapabilities (which includes 3857).
+        content.Should().Contain("srsName=\"http://www.opengis.net/def/crs/EPSG/0/3857\"");
     }
 
     [IntegrationTest]
