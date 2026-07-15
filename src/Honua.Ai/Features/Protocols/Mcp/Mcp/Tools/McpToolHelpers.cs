@@ -272,6 +272,8 @@ internal static class McpToolHelpers
             RequiresReauthentication = jsonRpcError.Data?.RequiresReauthentication,
             ApprovalRequired = jsonRpcError.Data?.ApprovalRequired,
             PolicyRef = jsonRpcError.Data?.PolicyRef,
+            ProposalId = jsonRpcError.Data?.ProposalId,
+            ResourceUri = jsonRpcError.Data?.ResourceUri,
             ConflictingJobId = jsonRpcError.Data?.ConflictingJobId,
             Retryable = jsonRpcError.Data?.Retryable,
             Violations = violations,
