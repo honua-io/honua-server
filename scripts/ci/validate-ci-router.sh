@@ -17,6 +17,11 @@ require_command() {
 require_command jq
 require_command python3
 
+# CR-safe jq: strip the CRLF the Windows jq binary emits in text mode (no-op on
+# Linux). Sourced AFTER require_command above so that guard probes the real
+# binary, not this wrapper function.
+source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
+
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
