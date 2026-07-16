@@ -40,13 +40,28 @@ verbatim — it hand-restates a route roster that
 `docs/gis/data/feature-catalog.json` already **generates and gates**, in a second
 path vocabulary, with nothing reconciling the two. honua-server#2861 audited it
 (found both an over-claim — a published `computeClass` route that never existed —
-and shipped work still recorded as deferred) and corrected the content; the
-structural fix is to derive its route roster from the generated capability data
-and gate the join in both directions, so only the human-judgment layer
-(`Implemented`/`Partial`/`Stub`/`Not implemented` + gap prose) stays
-hand-authored. Note the name collision that let it hide: the repo's
-`parity-scorecard-*` machinery is **data-import fidelity** over ten dataset
-cases and has never read this artifact.
+and shipped work still recorded as deferred) and corrected the content.
+
+**Roster 6 is resolved (honua-server#2863).** It is no longer a hand-maintained
+roster: its route inventory is now *derived* from the generated capability data
+(`EndpointRegistry.All` via `FeatureCatalogGenerator`, normalized to Esri-relative
+operation paths by `GeoServicesRouteRoster`), the published artifact is *generated*
+from the join of that roster with a hand-authored judgment source
+(`docs/gis/data/geoservices-parity-judgment.json`), and
+`GeoServicesParityMatrixDriftTests` gates the join **in both directions** —
+served-but-unclassified fails, classified-but-not-served fails. Only the
+human-judgment layer (`Implemented`/`Partial`/`Stub`/`Not implemented` + gap prose)
+stays hand-authored, which is the outcome this ADR prescribes: derive the mechanical
+half, hand-maintain only the judgment, gate the join. Deriving it immediately
+surfaced what a hand roster had hidden — two whole served Esri service types
+(`VectorTileServer`, `VersionManagementServer`) the matrix had never mentioned, and
+two further published routes (`/rest/services/geometry/{area,length}`) that were
+never served.
+
+Note the name collision that let roster 6 hide in the first place: the repo's
+`parity-scorecard-*` machinery is **data-import fidelity** over ten dataset cases
+and has never read this artifact. Renaming that side is still open on
+honua-server#2861.
 
 Each is hand-maintained against the others. The predictable failure is exactly
 what the pre-release audit found: the MCP conformance `FULL` verdict passing

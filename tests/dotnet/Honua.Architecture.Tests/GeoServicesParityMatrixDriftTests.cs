@@ -1,311 +1,280 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using FluentAssertions;
-using Honua.Architecture.Tests.FeatureCatalog;
-using Honua.Server;
+using Honua.Architecture.Tests.GeoServicesParity;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
 
 /// <summary>
-/// Partial drift guard for the published GeoServices REST parity matrix
-/// (<c>docs/gis/data/geoservices-rest-parity.json</c>, #2861). The matrix is the
-/// most externally-consequential capability roster we publish — GitBook maps five
-/// public URLs onto its <c>.md</c> summary — and until this guard it was
-/// hand-maintained with nothing checking it against the code.
-/// <para>
-/// Unlike <c>feature-catalog.json</c>, the matrix cannot be fully generated: the
-/// Implemented/Partial/Stub/Not-implemented vocabulary encodes human judgement about
-/// *how much* of an Esri operation's documented behaviour is supported, which is not
-/// derivable from a route table. So this guard deliberately enforces only what is
-/// mechanically decidable, in the direction that costs trust:
-/// </para>
-/// <list type="number">
-///   <item><description>
-///     every endpoint the matrix claims as implemented/partial/stub actually exists
-///     on the served surface (<see cref="EndpointRegistry.All"/>) — catches the
-///     over-claim that a prospect discovers by getting a 404;
-///   </description></item>
-///   <item><description>
-///     no operation recorded as not-implemented is in fact served — catches the
-///     under-claim direction (shipped work still recorded as deferred, e.g. the
-///     async exportTiles lifecycle that #2861 found stale);
-///   </description></item>
-///   <item><description>
-///     every <c>evidence</c> path resolves to a real file — the matrix cited 24 paths
-///     that no longer existed after GeoServices moved assemblies.
-///   </description></item>
-/// </list>
-/// <para>
-/// <b>What remains ungated, stated plainly:</b> whether a status is the *right* status.
-/// Nothing here stops someone labelling a Stub as Implemented, or a Partial whose
-/// parameter coverage has silently regressed. Those need human review — the matrix's
-/// <c>lastReviewed</c> date and the release checklist remain the control. This guard
-/// makes the route-level claims honest, not the behavioural ones. It must never be
-/// used to justify upgrading a Stub to Implemented to make a test pass.
-/// </para>
+/// The join gate for the published GeoServices REST parity matrix
+/// (<c>docs/gis/data/geoservices-rest-parity.json</c>, #2861 / #2863). The matrix is
+/// the most externally-consequential capability roster we publish — GitBook maps five
+/// public URLs onto its <c>.md</c> summary — and it is the only ADR-0058 roster a
+/// prospect reads.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Not to be confused with the import-fidelity scorecard.</b>
+/// <c>parity-scorecard-governance.yml</c>, <c>geoservices-parity-nightly.yml</c>,
+/// <c>GeoservicesParityIntegrationTests</c>, and <c>parity-scorecard-baseline.json</c>
+/// measure whether <i>imported data</i> matches Esri's across ten dataset cases. They
+/// never read this matrix and answer a different question. This file is the only gate
+/// over the published matrix.
+/// </para>
+/// <para>
+/// <b>What changed in #2863.</b> The interim guard (#2864) joined hand-listed matrix
+/// claims against <c>EndpointRegistry.All</c> while the matrix kept its own parallel
+/// hand roster — a second gate over a duplicated roster, which is precisely what
+/// ADR-0058 says not to build. The roster is now <b>derived</b>
+/// (<see cref="GeoServicesRouteRoster"/>) and the matrix <b>generated</b> from the join
+/// of that roster with a hand-authored judgement source
+/// (<see cref="GeoServicesParityGenerator"/>). So these tests no longer audit a copy;
+/// they assert the join is total and that the published artifact is the join's output.
+/// </para>
+/// <para>
+/// <b>What remains ungated, stated plainly:</b> whether a status is the <i>right</i>
+/// status. Nothing here stops someone labelling a Stub as Implemented, or a Partial
+/// whose parameter coverage has silently regressed. That needs human review — the
+/// judgement source's <c>lastReviewed</c> date and the release checklist remain the
+/// control. This gate makes the route-level claims honest, not the behavioural ones.
+/// <b>It must never be used to justify upgrading a status to make a test pass.</b> If
+/// a gate here creates that pressure, the gate is wrong: fix the gate, not the truth.
+/// </para>
+/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class GeoServicesParityMatrixDriftTests
 {
-    /// <summary>Repo-relative location of the published machine-readable matrix.</summary>
-    private const string RelativePath = "docs/gis/data/geoservices-rest-parity.json";
+    /// <summary>
+    /// The join, computed once. It reads the committed judgement source and derives the
+    /// roster from the generated capability data; both are pure, so sharing is safe and
+    /// keeps the suite from re-deriving the roster per assertion.
+    /// </summary>
+    private static readonly Lazy<GeoServicesParityJoin> SharedJoin =
+        new(GeoServicesParityGenerator.Join, isThreadSafe: true);
 
-    /// <summary>Statuses whose entries assert that Honua serves something.</summary>
-    private static readonly string[] ServedBuckets = ["implemented", "partial", "stub"];
-
-    /// <summary>Route-constraint stripper: <c>{layerId:int}</c> → <c>{layerId}</c>.</summary>
-    private static readonly Regex RouteConstraintRegex = new(
-        @"\{(?<name>[^{}:]+):[^{}]+\}",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
+    /// <summary>
+    /// Direction 1 — <b>served but unclassified</b>. We shipped a GeoServices operation
+    /// and never said anything about it. This is the direction the interim guard could
+    /// not enforce, and the one that let two whole served service types
+    /// (VectorTileServer, VersionManagementServer) go unmentioned while the matrix
+    /// presented itself as an operation-level coverage statement.
+    /// </summary>
     [ArchitectureTest]
-    public void EveryServedClaim_ResolvesToARegisteredRoute()
+    public void EveryServedOperation_CarriesAJudgment()
     {
-        var registered = EndpointRegistry.All
-            .Select(endpoint => EndpointKey.Format(endpoint.Method, endpoint.Path))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var unresolved = new List<string>();
-
-        foreach (var (serviceId, bucket, name, endpoint) in EnumerateClaimedEndpoints())
-        {
-            if (!ServedBuckets.Contains(bucket, StringComparer.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var key = EndpointKey.Normalize(NormalizeRoute(endpoint));
-            if (key is null)
-            {
-                unresolved.Add($"{serviceId}/{name}: '{endpoint}' is not a 'METHOD /path' pair");
-                continue;
-            }
-
-            if (!registered.Contains(key))
-            {
-                unresolved.Add($"{serviceId}/{name} ({bucket}): {endpoint}");
-            }
-        }
-
-        unresolved.Should().BeEmpty(
-            "every endpoint the published parity matrix claims as implemented/partial/stub must exist in "
-            + "EndpointRegistry.All. A claim that resolves to no route is an over-claim: a prospect who tests it "
-            + "gets a 404. Fix the matrix (or the route) — do not delete the assertion.");
+        SharedJoin.Value.ServedButUnclassified.Should().BeEmpty(
+            "every served GeoServices operation must carry a parity judgement in "
+            + $"{GeoServicesParityGenerator.JudgmentRelativePath}. An unclassified served operation means we "
+            + "shipped something the published matrix silently omits, while that matrix claims to be an "
+            + "operation-level statement of coverage. Classify it honestly — implemented, partial, or stub — "
+            + "and regenerate with scripts/generate-geoservices-parity.sh. Do NOT relax this assertion, and do "
+            + "NOT pick a status because it is convenient.");
     }
 
+    /// <summary>
+    /// Direction 2 — <b>classified but not served</b>. The matrix names an operation
+    /// that resolves to no route. This is the over-claim a prospect discovers by
+    /// getting a 404, and it is why this work exists: we published a <c>computeClass</c>
+    /// route that never existed.
+    /// </summary>
     [ArchitectureTest]
-    public void EveryNotImplementedClaim_IsAbsentFromTheServedSurface()
+    public void EveryJudgment_ResolvesToAServedOperation()
     {
-        var registeredPaths = EndpointRegistry.All
-            .Select(endpoint => endpoint.Path)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        SharedJoin.Value.ClassifiedButNotServed.Should().BeEmpty(
+            "every operation classified implemented/partial/stub must resolve to a route Honua actually serves. "
+            + "A judgement that resolves to nothing is an over-claim: a prospect who tests it gets a 404, which "
+            + "costs more trust than the gap it was hiding. Remove the entry (or serve the route) — do not delete "
+            + "the assertion.");
+    }
 
-        var served = new List<string>();
-
-        foreach (var (serviceId, name, esriPath) in EnumerateNotImplementedPaths())
-        {
-            // Wildcard families (e.g. '/MapServer/exts/*') describe a class of routes
-            // rather than one path; they are not decidable by exact match.
-            if (esriPath.Contains('*', StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (registeredPaths.Contains(NormalizeRoute(esriPath)))
-            {
-                served.Add($"{serviceId}/{name}: {esriPath}");
-            }
-        }
-
-        served.Should().BeEmpty(
+    /// <summary>
+    /// Direction 3 — <b>not-implemented but served</b>. Shipped work still published as
+    /// deferred: the async exportTiles lifecycle (#2688 / #2831) that #2861 found stale
+    /// within a day of landing.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryNotImplementedOperation_IsAbsentFromTheServedSurface()
+    {
+        SharedJoin.Value.NotImplementedButServed.Should().BeEmpty(
             "an operation recorded as not-implemented must not actually be served. This is the under-claim "
-            + "direction: shipped work still published as deferred (it cost us credit for the async exportTiles "
-            + "lifecycle in #2861). Promote the entry to its honest status instead.");
+            + "direction: shipped work still published as deferred. Promote the entry to its honest status "
+            + "instead — which means classifying what it really does, not assuming 'implemented'.");
     }
 
+    /// <summary>
+    /// One operation, one judgement. Two entries claiming the same operation is how the
+    /// hand matrix ended up publishing <c>computeHistograms</c> and <c>getSamples</c> as
+    /// implemented <i>and</i> partial at the same time.
+    /// </summary>
+    [ArchitectureTest]
+    public void NoOperation_CarriesTwoJudgments()
+    {
+        SharedJoin.Value.ClassifiedTwice.Should().BeEmpty(
+            "each served operation must be claimed by exactly one judgement entry; two entries can (and did) "
+            + "disagree about the same route's status, so a reader cannot tell which claim is the real one.");
+    }
+
+    /// <summary>
+    /// A judgement must live under the service that actually serves the operation, so
+    /// the per-service prose describes the routes it is filed against.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryJudgment_IsFiledUnderTheServingServiceType()
+    {
+        SharedJoin.Value.MisfiledUnderWrongService.Should().BeEmpty(
+            "an operation must be classified under the matrix service that owns the Esri service type serving "
+            + "it, or the service-level implementedSurface/knownGaps prose describes a different surface than "
+            + "the operations filed beneath it.");
+    }
+
+    /// <summary>
+    /// A newly served Esri service type must be given a home in the matrix rather than
+    /// silently omitted — the failure that hid VectorTileServer and
+    /// VersionManagementServer.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryServedServiceType_HasAMatrixHome()
+    {
+        SharedJoin.Value.ServiceTypesWithNoMatrixHome.Should().BeEmpty(
+            "a served Esri service type must map to a service in the parity matrix (or be an explicit, "
+            + "reasoned exclusion in GeoServicesRouteRoster.ExcludedServiceTypes). Silently omitting a whole "
+            + "served service type is how VectorTileServer and VersionManagementServer stayed unmentioned.");
+    }
+
+    /// <summary>
+    /// Every route under a GeoServices family must normalize, so the roster cannot
+    /// under-report the served surface by quietly dropping what it fails to parse.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryGeoServicesRoute_Normalizes()
+    {
+        SharedJoin.Value.Roster.Unmapped.Should().BeEmpty(
+            "every served route under a GeoServices route family must normalize to an Esri-relative operation "
+            + "path. A route the normalization cannot place would otherwise be dropped from the roster, and a "
+            + "dropped route is an operation the join can never require a judgement for.");
+    }
+
+    /// <summary>
+    /// A scope exclusion must still describe something real. An exclusion that matches
+    /// nothing is either a typo silently widening the matrix's blind spot, or a stale
+    /// note for a service type that no longer exists.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryRosterExclusion_StillMatchesAServedServiceType()
+    {
+        SharedJoin.Value.StaleExclusions.Should().BeEmpty(
+            "each declared roster exclusion must still match a served service type. An exclusion matching "
+            + "nothing is either stale or misspelled, and a misspelled exclusion excludes nothing while reading "
+            + "as though it does.");
+    }
+
+    /// <summary>
+    /// The published artifact must equal freshly-generated output. This is what makes
+    /// the derivation real rather than aspirational: a hand edit to a derived field
+    /// (<c>esriPaths</c>, <c>honuaEndpoints</c>, <c>maturity</c>) cannot survive, and a
+    /// route change that the judgement source has not caught up with fails here.
+    /// Mirrors <c>FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput</c>.
+    /// </summary>
+    [ArchitectureTest]
+    public void CommittedMatrix_EqualsFreshlyGeneratedOutput()
+    {
+        var committedPath = GeoServicesParityGenerator.CommittedMatrixPath();
+        File.Exists(committedPath).Should().BeTrue(
+            $"the published parity matrix must exist at {GeoServicesParityGenerator.MatrixRelativePath}");
+
+        var committed = File.ReadAllText(committedPath).ReplaceLineEndings("\n");
+        var generated = GeoServicesParityGenerator.Serialize(GeoServicesParityGenerator.Generate());
+
+        committed.Should().Be(generated,
+            $"{GeoServicesParityGenerator.MatrixRelativePath} is generated, never authored. Edit the judgement "
+            + $"source ({GeoServicesParityGenerator.JudgmentRelativePath}) and run "
+            + "scripts/generate-geoservices-parity.sh, then commit the result.");
+    }
+
+    /// <summary>
+    /// Statuses must come from the declared vocabulary. <c>stub</c> in particular has an
+    /// exact meaning — route exists, spec-shaped response, backing model deferred;
+    /// read-stubs return empty/<c>false</c>, mutation-stubs return HTTP 400 rather than
+    /// fabricating success — and an invented token would let that meaning drift.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryJudgment_UsesTheDeclaredStatusVocabulary()
+    {
+        var judgment = SharedJoin.Value.Judgment;
+        var offenders = judgment.ServiceList
+            .SelectMany(service => service.OperationList.Select(operation => (service.Id, operation.Name, operation.Status)))
+            .Where(entry => !GeoServicesParityGenerator.ServedStatuses.Contains(entry.Status, StringComparer.Ordinal))
+            .Select(entry => $"{entry.Id}/{entry.Name}: '{entry.Status}'")
+            .ToArray();
+
+        offenders.Should().BeEmpty(
+            "a served operation's status must be one of implemented/partial/stub. not_implemented is not a "
+            + "status a served operation can carry — it belongs in absentOperations, which the join checks "
+            + "against the served surface separately.");
+    }
+
+    /// <summary>
+    /// Every judgement must bind to at least one operation. An entry claiming nothing
+    /// contributes no claims, so the join would neither reject it nor require it to be
+    /// true — a status floating free of any route, which is how prose drifts back into
+    /// being a roster.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryJudgment_BindsToAtLeastOneOperation()
+    {
+        var offenders = SharedJoin.Value.Judgment.ServiceList
+            .SelectMany(service => service.OperationList.Select(operation => (service.Id, operation.Name, operation.PathList)))
+            .Where(entry => entry.PathList.Length == 0)
+            .Select(entry => $"{entry.Id}/{entry.Name}")
+            .ToArray();
+
+        offenders.Should().BeEmpty(
+            "every judgement entry must name at least one esriPath. An entry that binds to no operation is "
+            + "invisible to the join in both directions: nothing proves it is true, and nothing notices when it "
+            + "stops being true.");
+    }
+
+    /// <summary>
+    /// Every judgement must say something. An empty note on a partial or stub is a
+    /// status with no stated reason, which is exactly the claim a reader cannot verify.
+    /// </summary>
+    [ArchitectureTest]
+    public void EveryPartialOrStubJudgment_StatesItsGap()
+    {
+        var offenders = SharedJoin.Value.Judgment.ServiceList
+            .SelectMany(service => service.OperationList.Select(operation => (service.Id, operation.Name, operation.Status, operation.Notes)))
+            .Where(entry => entry.Status is "partial" or "stub" && string.IsNullOrWhiteSpace(entry.Notes))
+            .Select(entry => $"{entry.Id}/{entry.Name} ({entry.Status})")
+            .ToArray();
+
+        offenders.Should().BeEmpty(
+            "a partial or stub judgement must state what is missing. 'Partial' with no note tells a reader "
+            + "nothing they can act on and hides the size of the gap.");
+    }
+
+    /// <summary>
+    /// Every <c>evidence</c> path must resolve to a real file — the matrix cited 24 paths
+    /// that no longer existed after GeoServices moved assemblies, and a dead path means
+    /// a reader cannot verify the claim.
+    /// </summary>
     [ArchitectureTest]
     public void EveryEvidencePath_ResolvesToARealFile()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var missing = new List<string>();
 
-        using var document = JsonDocument.Parse(File.ReadAllText(CommittedArtifactPath()));
-
-        foreach (var service in document.RootElement.GetProperty("services").EnumerateArray())
-        {
-            var serviceId = service.GetProperty("id").GetString() ?? "(unknown)";
-            if (!service.TryGetProperty("evidence", out var evidence))
-            {
-                continue;
-            }
-
-            foreach (var kind in evidence.EnumerateObject())
-            {
-                foreach (var path in kind.Value.EnumerateArray())
-                {
-                    var relative = path.GetString();
-                    if (string.IsNullOrWhiteSpace(relative))
-                    {
-                        continue;
-                    }
-
-                    var absolute = ArchitectureTestHelpers.CombinePath(
-                        root, relative.Replace('/', Path.DirectorySeparatorChar));
-                    if (!File.Exists(absolute))
-                    {
-                        missing.Add($"{serviceId}/{kind.Name}: {relative}");
-                    }
-                }
-            }
-        }
+        var missing = SharedJoin.Value.Judgment.ServiceList
+            .SelectMany(service => service.EvidenceMap
+                .SelectMany(kind => kind.Value.Select(path => (service.Id, Kind: kind.Key, Path: path))))
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
+            .Where(entry => !File.Exists(ArchitectureTestHelpers.CombinePath(
+                root, entry.Path.Replace('/', Path.DirectorySeparatorChar))))
+            .Select(entry => $"{entry.Id}/{entry.Kind}: {entry.Path}")
+            .ToArray();
 
         missing.Should().BeEmpty(
             "every evidence path cited by the parity matrix must resolve to a real file; a dead path means the "
             + "matrix is citing code that moved or was deleted, and a reader cannot verify the claim.");
-    }
-
-    /// <summary>
-    /// Yields (serviceId, bucket, name, endpoint) for every <c>honuaEndpoints</c> entry
-    /// under a service's <c>operations</c> and <c>childResources</c> status buckets.
-    /// </summary>
-    private static IEnumerable<(string ServiceId, string Bucket, string Name, string Endpoint)> EnumerateClaimedEndpoints()
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(CommittedArtifactPath()));
-
-        foreach (var service in document.RootElement.GetProperty("services").EnumerateArray())
-        {
-            var serviceId = service.GetProperty("id").GetString() ?? "(unknown)";
-
-            // `honuaExtensions` is a flat array of served entries (no status buckets):
-            // Honua-specific operations with no Esri equivalent. Treat it as implemented.
-            if (service.TryGetProperty("honuaExtensions", out var extensions)
-                && extensions.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var entry in extensions.EnumerateArray())
-                {
-                    if (entry.ValueKind != JsonValueKind.Object
-                        || !entry.TryGetProperty("honuaEndpoints", out var extEndpoints))
-                    {
-                        continue;
-                    }
-
-                    var extName = entry.TryGetProperty("name", out var en) ? en.GetString() ?? "(unnamed)" : "(unnamed)";
-                    foreach (var endpoint in extEndpoints.EnumerateArray())
-                    {
-                        var value = endpoint.GetString();
-                        if (!string.IsNullOrWhiteSpace(value))
-                        {
-                            yield return (serviceId, "implemented", extName, value);
-                        }
-                    }
-                }
-            }
-
-            foreach (var container in new[] { "operations", "childResources" })
-            {
-                if (!service.TryGetProperty(container, out var buckets)
-                    || buckets.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                foreach (var bucket in buckets.EnumerateObject())
-                {
-                    if (bucket.Value.ValueKind != JsonValueKind.Array)
-                    {
-                        continue;
-                    }
-
-                    foreach (var entry in bucket.Value.EnumerateArray())
-                    {
-                        // Some buckets carry bare strings (a name only, no route claim).
-                        if (entry.ValueKind != JsonValueKind.Object
-                            || !entry.TryGetProperty("honuaEndpoints", out var endpoints))
-                        {
-                            continue;
-                        }
-
-                        var name = entry.TryGetProperty("name", out var n) ? n.GetString() ?? "(unnamed)" : "(unnamed)";
-                        foreach (var endpoint in endpoints.EnumerateArray())
-                        {
-                            var value = endpoint.GetString();
-                            if (!string.IsNullOrWhiteSpace(value))
-                            {
-                                yield return (serviceId, NormalizeBucket(bucket.Name), name, value);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Yields (serviceId, name, esriPath) for every not-implemented entry carrying a concrete path.
-    /// </summary>
-    private static IEnumerable<(string ServiceId, string Name, string EsriPath)> EnumerateNotImplementedPaths()
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(CommittedArtifactPath()));
-
-        foreach (var service in document.RootElement.GetProperty("services").EnumerateArray())
-        {
-            var serviceId = service.GetProperty("id").GetString() ?? "(unknown)";
-
-            foreach (var container in new[] { "operations", "childResources" })
-            {
-                if (!service.TryGetProperty(container, out var buckets)
-                    || buckets.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                foreach (var bucket in buckets.EnumerateObject())
-                {
-                    if (NormalizeBucket(bucket.Name) != "notimplemented"
-                        || bucket.Value.ValueKind != JsonValueKind.Array)
-                    {
-                        continue;
-                    }
-
-                    foreach (var entry in bucket.Value.EnumerateArray())
-                    {
-                        if (entry.ValueKind != JsonValueKind.Object
-                            || !entry.TryGetProperty("esriPath", out var path))
-                        {
-                            continue;
-                        }
-
-                        var value = path.GetString();
-                        if (string.IsNullOrWhiteSpace(value) || !value.StartsWith('/'))
-                        {
-                            continue;
-                        }
-
-                        var name = entry.TryGetProperty("name", out var n) ? n.GetString() ?? "(unnamed)" : "(unnamed)";
-                        yield return (serviceId, name, value);
-                    }
-                }
-            }
-        }
-    }
-
-    /// <summary>Folds <c>notImplemented</c>/<c>not_implemented</c> onto one comparable token.</summary>
-    private static string NormalizeBucket(string bucket)
-        => bucket.Replace("_", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
-
-    /// <summary>Strips route constraints so matrix routes compare against registry routes.</summary>
-    private static string NormalizeRoute(string route)
-        => RouteConstraintRegex.Replace(route.Trim(), "{${name}}");
-
-    private static string CommittedArtifactPath()
-    {
-        var path = ArchitectureTestHelpers.CombinePath(
-            ArchitectureTestHelpers.ResolveRepositoryRoot(), "docs", "gis", "data", "geoservices-rest-parity.json");
-        File.Exists(path).Should().BeTrue($"the published parity matrix must exist at {RelativePath}");
-        return path;
     }
 }
