@@ -145,6 +145,8 @@ There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A P
 
 **The required branch-protection check is still `CI Gate`, which the batch CI produces exclusively — it never appears on a PR head SHA.** So a freshly opened PR shows as `blocked` and stays that way no matter how green it is (#2865). That is a known configuration bug, not a problem with your PR: **do not chase it, and do not `--admin` around it — dispatch the train (below).** `PR Gate` exists to become that required context; until protection is flipped to it, `blocked` remains the normal steady state.
 
+> **Maintainer note (#2865):** once the required context is swapped to `PR Gate` (`gh api -X PATCH repos/honua-io/honua-server/branches/trunk/protection/required_status_checks` with `checks=[{context: "PR Gate", app_id: 15368}]`), a green PR reaches `CLEAN` on its own, `pr-merge-train.yml` starts landing PRs unattended, and the two paragraphs above go stale — update them then.
+
 ### Landing a PR (the ONLY non-admin path today)
 
 ```bash
