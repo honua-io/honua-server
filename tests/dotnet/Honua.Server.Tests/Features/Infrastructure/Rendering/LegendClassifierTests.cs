@@ -131,7 +131,7 @@ public class LegendClassifierTests
     }
 
     [UnitTest]
-    public void Classify_InterpolateColourRamp_IsReportedUnrepresentable()
+    public void Classify_InterpolateColourRamp_SamplesStopsThatResolveToGetMapColours()
     {
         var layer = ParseLayer("""
             {
@@ -146,12 +146,44 @@ public class LegendClassifierTests
 
         var result = LegendClassifier.Classify(layer);
 
-        // The shared evaluator coerces interpolate endpoints to numbers, so a colour
-        // ramp resolves to black rather than a blend. Sampling it would misrepresent
-        // GetMap; the classifier must say so instead.
-        result.UnrepresentableReason.Should().NotBeNull();
-        result.UnrepresentableReason.Should().Contain("interpolate");
-        result.IsDataDriven.Should().BeFalse();
+        // #2870 made the shared evaluator blend colours instead of coercing the stops to 0f,
+        // so a ramp is now representable: sampling it at its own stops yields entries whose
+        // swatches are exactly the colours GetMap paints for those attribute values.
+        result.UnrepresentableReason.Should().BeNull();
+        result.IsDataDriven.Should().BeTrue();
+        result.Field.Should().Be("density");
+        result.Classes.Select(c => c.Label).Should().Equal("0", "100");
+
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties)
+            .FillColor.Should().Be(new SKColor(0xff, 0xff, 0xff));
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties)
+            .FillColor.Should().Be(new SKColor(0xff, 0x00, 0x00));
+    }
+
+    [UnitTest]
+    public void Classify_InterpolateColourRamp_SamplesInteriorStopsExactly()
+    {
+        // An interior stop is the case that would expose a sampler modelling the curve
+        // itself: it is approached from both sides, and every interpolation type must
+        // still resolve it to its own output verbatim.
+        var layer = ParseLayer("""
+            {
+              "id": "heat", "type": "fill",
+              "paint": { "fill-color": [
+                "interpolate", ["exponential", 2], ["get", "density"],
+                0, "#ffffff",
+                50, "#00ff00",
+                100, "#ff0000"
+              ] }
+            }
+            """);
+
+        var result = LegendClassifier.Classify(layer);
+
+        result.UnrepresentableReason.Should().BeNull();
+        result.Classes.Select(c => c.Label).Should().Equal("0", "50", "100");
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties)
+            .FillColor.Should().Be(new SKColor(0x00, 0xff, 0x00));
     }
 
     [UnitTest]

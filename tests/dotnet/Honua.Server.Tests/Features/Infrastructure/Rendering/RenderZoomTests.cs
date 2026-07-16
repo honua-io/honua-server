@@ -104,6 +104,95 @@ public class RenderZoomTests
         zoom.Level!.Value.Should().BeApproximately(expectedZoom, 1e-9);
     }
 
+    [Theory]
+    // MapLibre's world is 512 * 2^zoom pixels, so zoom 0 is a 0.28mm-pixel scale denominator of
+    // worldSpan / 512 / 0.00028 = 279_541_132.0143589 and each zoom halves it. The 256px
+    // GoogleMapsCompatible zoom-0 denominator (559_082_264.0287178) is deliberately included: it is
+    // exactly twice MapLibre's, so treating it as zoom 0 is the off-by-one this pins down.
+    [InlineData(559082264.0287178, -1.0)]
+    [InlineData(279541132.0143589, 0.0)]
+    [InlineData(139770566.0071794, 1.0)]
+    [InlineData(17471320.7508974, 4.0)]
+    [InlineData(4367830.1877244, 6.0)]
+    [InlineData(2132.7295634, 17.0)]
+    public void FromScaleDenominator_MapLibreScale_RecoversCameraZoom(
+        double scaleDenominator,
+        double expectedZoom)
+    {
+        var zoom = RenderZoom.FromScaleDenominator(scaleDenominator);
+
+        zoom.Level.Should().NotBeNull();
+        zoom.Level!.Value.Should().BeApproximately(expectedZoom, 1e-6);
+        zoom.NotDerivableReason.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(9)]
+    [InlineData(14)]
+    [InlineData(20)]
+    public void FromScaleDenominator_WellKnownScaleSet_AgreesWithTheTileEnvelopeDerivation(int matrixLevel)
+    {
+        // Cross-checks the scale entry point against the envelope entry point through the repo's
+        // own WebMercatorQuad definition rather than through the same algebra twice: the registry
+        // builds a level's scale denominator as cellSize / 0.00028 (TileMatrixSetRegistry), and a
+        // 256px tile envelope at that level is one zoom below the level (pinned above). Both must
+        // land on the same zoom, or a scale-driven caller and a bbox-driven caller disagree.
+        var cellSize = (WorldSpanMeters / 256.0) / Math.Pow(2, matrixLevel);
+        var scaleDenominator = cellSize / 0.00028;
+
+        var tileSpan = WorldSpanMeters / Math.Pow(2, matrixLevel);
+        var minX = -WorldSpanMeters / 2.0;
+        var fromEnvelope = RenderZoom.FromWebMercatorExtent(
+            new SkiaMapRenderer.RenderExtent(minX, 0, minX + tileSpan, tileSpan),
+            256,
+            256);
+
+        var fromScale = RenderZoom.FromScaleDenominator(scaleDenominator);
+
+        fromScale.Level.Should().NotBeNull();
+        fromEnvelope.Level.Should().NotBeNull();
+        fromScale.Level!.Value.Should().BeApproximately(fromEnvelope.Level!.Value, 1e-9);
+        fromScale.Level!.Value.Should().BeApproximately(matrixLevel - 1.0, 1e-9);
+    }
+
+    [UnitTest]
+    public void FromScaleDenominator_ReferenceSpanCancelsOut_MatchesAnyImageSizeAtTheSameResolution()
+    {
+        // A scale fixes a ground resolution, not a camera or an image size. Rendering that same
+        // resolution at an arbitrary pixel size must derive the same zoom, which is what lets the
+        // legend's SCALE and GetMap's bbox+size agree.
+        const double ScaleDenominator = 17471320.7508974;
+        var metersPerPixel = ScaleDenominator * 0.00028;
+
+        foreach (var pixels in new[] { 37, 256, 1024 })
+        {
+            var span = pixels * metersPerPixel;
+            var fromEnvelope = RenderZoom.FromWebMercatorExtent(
+                new SkiaMapRenderer.RenderExtent(0, 0, span, span),
+                pixels,
+                pixels);
+
+            RenderZoom.FromScaleDenominator(ScaleDenominator).Level!.Value
+                .Should().BeApproximately(fromEnvelope.Level!.Value, 1e-9);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.MaxValue)]
+    public void FromScaleDenominator_NonPositiveOrNonFinite_IsNotDerivableWithAReason(double scaleDenominator)
+    {
+        var zoom = RenderZoom.FromScaleDenominator(scaleDenominator);
+
+        zoom.Level.Should().BeNull();
+        zoom.NotDerivableReason.Should().NotBeNullOrWhiteSpace();
+    }
+
     [UnitTest]
     public void FromWebMercatorExtent_MismatchedAspect_FitsTheMoreConstrainedAxis()
     {

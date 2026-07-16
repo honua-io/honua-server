@@ -24,11 +24,6 @@ internal static partial class WmsRequestHandlers
     private const int MaxLegendSwatchDimension = 256;
     private const int MaxLegendEntries = 64;
 
-    // WebMercator scale denominator at zoom 0, matching the GoogleMapsCompatible
-    // well-known scale set the WMTS port advertises. SCALE is a WMS-level concept;
-    // converting it to the canonical zoom the style pipeline understands is adapter work.
-    private const double LegendScaleDenominatorZoom0 = 559082264.0287178;
-
     /// <summary>
     /// Style layer types the raster pipeline actually paints. A style layer of any
     /// other type (symbol, background, heatmap) draws nothing in GetMap, so it must
@@ -168,9 +163,11 @@ internal static partial class WmsRequestHandlers
 
         if (entries.Count == 0)
         {
-            // SCALE excluded every style layer. An empty legend is the honest answer:
-            // substituting a default swatch would claim symbology this scale never draws.
-            unrepresentable.Add("No style layer is visible at the requested SCALE.");
+            // Every style layer was gated out. An empty legend is the honest answer:
+            // substituting a default swatch would claim symbology GetMap never draws here.
+            unrepresentable.Add(zoom.Level is null
+                ? "No style layer in this style is visible."
+                : "No style layer is visible at the requested SCALE.");
         }
 
         var imageBytes = LegendImageComposer.Compose(
@@ -214,13 +211,15 @@ internal static partial class WmsRequestHandlers
     }
 
     /// <summary>
-    /// Maps the WMS SCALE parameter (a scale denominator) onto the canonical zoom the
-    /// style pipeline gates minzoom/maxzoom with. Absent SCALE leaves zoom unknown,
-    /// which is what GetMap does — every style layer contributes.
+    /// Maps the WMS SCALE parameter (a scale denominator) onto the canonical zoom the style
+    /// pipeline gates minzoom/maxzoom with, via the shared <see cref="RenderZoom"/> derivation
+    /// GetMap and every other render path uses — so a legend gates at the zoom the map draws at
+    /// rather than at one derived independently here. Absent SCALE leaves the zoom underivable,
+    /// which is what GetMap does with no zoom context: every style layer contributes.
     /// </summary>
-    private static bool TryParseLegendScale(IQueryCollection query, out double? zoom, out string error)
+    private static bool TryParseLegendScale(IQueryCollection query, out RenderZoom zoom, out string error)
     {
-        zoom = null;
+        zoom = RenderZoom.NotDerivable("the GetLegendGraphic request supplied no SCALE");
         error = string.Empty;
 
         var raw = GetQueryValue(query, "SCALE");
@@ -236,7 +235,7 @@ internal static partial class WmsRequestHandlers
             return false;
         }
 
-        zoom = Math.Log2(LegendScaleDenominatorZoom0 / scale);
+        zoom = RenderZoom.FromScaleDenominator(scale);
         return true;
     }
 }

@@ -89,7 +89,7 @@ internal static class LegendClassifier
         {
             MatchOperator => ClassifyMatch(items) ?? fallback,
             StepOperator => ClassifyStep(items) ?? fallback,
-            InterpolateOperator => ClassifyInterpolate(classifyingProperty, items) ?? fallback,
+            InterpolateOperator => ClassifyInterpolate(items) ?? fallback,
             _ => new LegendClassSet
             {
                 Classes = fallback.Classes,
@@ -199,7 +199,16 @@ internal static class LegendClassifier
     /// A layer is only ever classified on its colour property, so an "interpolate"
     /// here is always a continuous colour ramp.
     /// </summary>
-    private static LegendClassSet? ClassifyInterpolate(string classifyingProperty, MapLibreExpression[] items)
+    /// <remarks>
+    /// The ramp is sampled at its own stops. A stop is the one input an "interpolate" resolves
+    /// exactly, for every interpolation type: the evaluator returns that stop's output verbatim
+    /// rather than blending toward a neighbour, so "linear", "exponential" and "cubic-bezier"
+    /// ramps all sample identically here and the curve between stops never has to be modelled.
+    /// Each entry is therefore the colour GetMap paints for a feature carrying that value — the
+    /// same guarantee "match" and "step" entries carry — and the sampling is what a continuous
+    /// domain permits: exact at the labelled values, continuous between them.
+    /// </remarks>
+    private static LegendClassSet? ClassifyInterpolate(MapLibreExpression[] items)
     {
         // interpolate, ["linear"], input, stop1, output1, stop2, output2, ...
         if (items.Length < 5)
@@ -213,20 +222,23 @@ internal static class LegendClassifier
             return null;
         }
 
-        // ExpressionEvaluator.InterpolateValues coerces both endpoints through
-        // ConvertToFloat, so an interpolated colour reaches ParseColor as a number and
-        // resolves to black. Sampling the ramp would either reproduce that black
-        // (useless) or bypass the evaluator and show colours GetMap never draws
-        // (wrong). Neither is honest, so report the limitation instead.
-        return new LegendClassSet
+        var classes = new List<LegendClass>();
+        for (var i = 3; i < items.Length - 1; i += 2)
         {
-            Classes = [new LegendClass(field, ImmutableDictionary<string, object?>.Empty)],
-            Field = field,
-            UnrepresentableReason =
-                $"'{classifyingProperty}' is a continuous 'interpolate' colour ramp over '{field}'. "
-                + "The shared renderer interpolates numerically and does not blend colours, so this ramp "
-                + "cannot be shown as discrete legend entries that match GetMap output."
-        };
+            if (items[i].Kind != MapLibreExpressionKind.Number)
+            {
+                // MapLibre requires numeric interpolate stops; anything else is a style we
+                // cannot enumerate rather than one we can sample.
+                return null;
+            }
+
+            var stop = items[i].NumberValue;
+            classes.Add(new LegendClass(FormatNumber(stop), PropertiesFor(field, stop)));
+        }
+
+        return classes.Count == 0
+            ? null
+            : new LegendClassSet { Classes = classes, Field = field };
     }
 
     private static void AddLiteralClass(List<LegendClass> classes, string field, MapLibreExpression label)

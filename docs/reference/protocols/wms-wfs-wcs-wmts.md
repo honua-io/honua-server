@@ -47,7 +47,13 @@ canonical MapLibre GL style through the same style-resolution and SkiaSharp rend
 
 `WIDTH`/`HEIGHT` size the individual swatch (GeoServer's convention); the returned image
 grows to fit the stacked entries and their labels. `SCALE` is a scale denominator and
-filters entries by each style layer's `minzoom`/`maxzoom`.
+filters entries by each style layer's `minzoom`/`maxzoom`. It is converted to a zoom level
+through the same shared derivation every render path uses: a scale denominator is defined
+against the OGC standardized 0.28 mm pixel, which fixes a ground resolution, and that
+resolution derives the MapLibre zoom (whose world spans `512 * 2^zoom` pixels). A legend
+therefore gates at exactly the zoom a `GetMap` of the same ground resolution gates at.
+Omitting `SCALE` leaves the zoom underivable, so `minzoom`/`maxzoom` do not apply and every
+style layer contributes — matching a `GetMap` with no zoom context.
 
 Capabilities advertise `LegendURL` inside a layer's `<Style>` element **only** for layers
 that can actually produce a legend — a layer whose style contains no painted
@@ -61,7 +67,7 @@ Data-driven expressions resolve to discrete entries where the expression permits
 | --- | --- |
 | `match` on an attribute | One entry per label (grouped labels expand), plus an `Other` entry for the fallback arm. |
 | `step` on an attribute | One entry per band, labelled `< first`, `lo - hi`, `>= last`. |
-| `interpolate` over colors | **Not representable.** Reported via a `Warning` response header rather than sampled. The shared expression evaluator interpolates numerically and does not blend colors, so sampling a ramp would either render the black `GetMap` produces for intermediate values or invent colors `GetMap` never draws. |
+| `interpolate` over colors | One entry per ramp stop, labelled with the stop value. A stop is resolved exactly — the evaluator returns that stop's own output rather than blending toward a neighbour — so `linear`, `exponential` and `cubic-bezier` ramps all sample identically and each swatch is the color `GetMap` paints for that value. The ramp remains continuous between the labelled stops. |
 | `case`, or any input that is not a plain attribute read | **Not representable.** Branches are arbitrary predicates with no finite attribute domain to enumerate; a single representative entry is returned and a `Warning` header explains why. |
 
 Where a legend cannot faithfully represent the style, the response carries a `Warning`
