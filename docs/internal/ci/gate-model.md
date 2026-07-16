@@ -33,7 +33,8 @@ These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
 |---|---|---|
-| `ci.yml` | PR template compliance (gates every downstream job via `pr-template-check` → `pr-readiness`), CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility | None (always runs); expensive lanes require `ci/full`, schedule, or manual dispatch |
+| `pr-gate.yml` | **The per-PR required check, context `PR Gate`** (#2865). One runner: full-solution warnings-as-errors build, `dotnet format --verify-no-changes`, `Tier=Fast` unit smoke, architecture-enforcement tests (incl. the `feature-catalog.json` drift guard). Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. | None — a required context must never be path-filtered, or non-matching PRs block forever waiting for a status that will not report |
+| `ci.yml` | **No `pull_request` trigger** (deliberate — see the header comment). PR template compliance, CI router validation, build, .NET foundation tests, targeted server-test shards, architecture gate, JavaScript typecheck, baseline Postgres compatibility all run on the train's `train/batch/*` `workflow_dispatch` and the nightly schedule. Its aggregator context `CI Gate` is produced by the batch CI only and never appears on a PR. | n/a — not PR-triggered |
 | `openapi-contract-governance.yml` | OpenAPI spec stability | `src/**/api-specs/**`, `*.openapi.*` |
 | `control-plane-sdk-governance.yml` | Control plane SDK governance | SDK/control-plane paths |
 | `parity-scorecard-governance.yml` | Parity baseline stability + perf-parity gate smoke test (pass/fail fixtures) | Parity/baseline/perf-budget asset paths |
