@@ -1617,13 +1617,15 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
-          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "executionLane": "ci:architecture",
           "evidenceLocations": [
-            ".github/workflows/geoservices-parity-nightly.yml",
-            ".github/workflows/parity-scorecard-governance.yml",
-            "docs/reference/compatibility/geoservices-parity.md",
-            "docs/gis/data/geoservices-rest-parity.json"
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "docs/gis/data/geoservices-parity-judgment.json",
+            "docs/gis/data/geoservices-rest-parity.json",
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1678,13 +1680,15 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "GeoServices parity docs and nightly scorecard governance covering the portal-sharing surface",
-          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "executionLane": "ci:architecture",
           "evidenceLocations": [
-            ".github/workflows/geoservices-parity-nightly.yml",
-            ".github/workflows/parity-scorecard-governance.yml",
-            "docs/reference/compatibility/geoservices-parity.md",
-            "docs/gis/data/geoservices-rest-parity.json"
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "docs/gis/data/geoservices-parity-judgment.json",
+            "docs/gis/data/geoservices-rest-parity.json",
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1812,13 +1816,15 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
-          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "executionLane": "ci:architecture",
           "evidenceLocations": [
-            ".github/workflows/geoservices-parity-nightly.yml",
-            ".github/workflows/parity-scorecard-governance.yml",
-            "docs/reference/compatibility/geoservices-parity.md",
-            "docs/gis/data/geoservices-rest-parity.json"
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "docs/gis/data/geoservices-parity-judgment.json",
+            "docs/gis/data/geoservices-rest-parity.json",
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2036,13 +2042,15 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
-          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "executionLane": "ci:architecture",
           "evidenceLocations": [
-            ".github/workflows/geoservices-parity-nightly.yml",
-            ".github/workflows/parity-scorecard-governance.yml",
-            "docs/reference/compatibility/geoservices-parity.md",
-            "docs/gis/data/geoservices-rest-parity.json"
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "docs/gis/data/geoservices-parity-judgment.json",
+            "docs/gis/data/geoservices-rest-parity.json",
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2098,7 +2106,8 @@
       "operationKeys": [
         "WMS-1.3.0::GetCapabilities",
         "WMS-1.3.0::GetMap",
-        "WMS-1.3.0::GetFeatureInfo"
+        "WMS-1.3.0::GetFeatureInfo",
+        "WMS-1.3.0::GetLegendGraphic"
       ],
       "proofs": [
         {
@@ -2161,7 +2170,8 @@
       "operationKeys": [
         "WMS-1.1.1::GetCapabilities",
         "WMS-1.1.1::GetMap",
-        "WMS-1.1.1::GetFeatureInfo"
+        "WMS-1.1.1::GetFeatureInfo",
+        "WMS-1.1.1::GetLegendGraphic"
       ],
       "proofs": [
         {
@@ -2284,13 +2294,15 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
-          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "executionLane": "ci:architecture",
           "evidenceLocations": [
-            ".github/workflows/geoservices-parity-nightly.yml",
-            ".github/workflows/parity-scorecard-governance.yml",
-            "docs/reference/compatibility/geoservices-parity.md",
-            "docs/gis/data/geoservices-rest-parity.json"
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "docs/gis/data/geoservices-parity-judgment.json",
+            "docs/gis/data/geoservices-rest-parity.json",
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2774,13 +2786,15 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "GeoServices parity docs and nightly scorecard governance",
-          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "proofMechanism": "The published GeoServices REST parity matrix is generated, not authored: its route roster is derived from EndpointRegistry.All via the feature-catalog generator and normalized to Esri-relative operation paths (GeoServicesRouteRoster), and only the implemented/partial/stub judgement and gap prose are hand-authored (geoservices-parity-judgment.json). GeoServicesParityMatrixDriftTests gates the join in both directions on every CI run: a served operation with no judgement fails, a judgement naming an unserved operation fails, an operation recorded not-implemented that is in fact served fails, and the committed matrix must equal freshly-generated output. Behavioural accuracy of a status remains human review (the judgement source's lastReviewed date), not a gate.",
+          "executionLane": "ci:architecture",
           "evidenceLocations": [
-            ".github/workflows/geoservices-parity-nightly.yml",
-            ".github/workflows/parity-scorecard-governance.yml",
-            "docs/reference/compatibility/geoservices-parity.md",
-            "docs/gis/data/geoservices-rest-parity.json"
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParityMatrixDriftTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+            "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "docs/gis/data/geoservices-parity-judgment.json",
+            "docs/gis/data/geoservices-rest-parity.json",
+            "docs/reference/compatibility/geoservices-parity.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
