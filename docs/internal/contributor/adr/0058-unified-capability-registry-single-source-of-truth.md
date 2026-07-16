@@ -20,14 +20,33 @@ conformance harness, the Console/Studio AI authoring flow, and the SDKs. The
 and `StudioPackageLifecycleService` are shared engines, and ADR-0029 /
 ADR-0057 keep geoprocessing on one canonical server engine. The fork is **not**
 in execution. It is in the **capability description / discovery / contract**
-layer, where five independent rosters have grown and now drift:
+layer, where six independent rosters have grown and now drift:
 
 1. the `geospatial-mcp` spec + conformance manifest (`index.json`);
 2. the `/mcp` tool roster in `McpServiceCollectionExtensions` /
    `McpToolSchemas`;
 3. honua-server#1186 `CapabilityManifestService` (a per-environment manifest);
 4. `StudioPackageFamilyRegistry` (Studio's package-family list);
-5. the Console shim DTOs in `Honua.Console.Contracts`.
+5. the Console shim DTOs in `Honua.Console.Contracts`;
+6. the published **GeoServices REST parity matrix**
+   (`docs/gis/data/geoservices-rest-parity.json` + its
+   `docs/reference/compatibility/geoservices-parity.md` summary) — added to this
+   inventory by honua-server#2861.
+
+Roster 6 was absent from this ADR's original enumeration and is the only one a
+**prospect reads**: `docs/.gitbook.yaml` maps five public URLs onto its summary,
+and `honua-site/claims.html` vouches for it. It exhibits this ADR's thesis
+verbatim — it hand-restates a route roster that
+`docs/gis/data/feature-catalog.json` already **generates and gates**, in a second
+path vocabulary, with nothing reconciling the two. honua-server#2861 audited it
+(found both an over-claim — a published `computeClass` route that never existed —
+and shipped work still recorded as deferred) and corrected the content; the
+structural fix is to derive its route roster from the generated capability data
+and gate the join in both directions, so only the human-judgment layer
+(`Implemented`/`Partial`/`Stub`/`Not implemented` + gap prose) stays
+hand-authored. Note the name collision that let it hide: the repo's
+`parity-scorecard-*` machinery is **data-import fidelity** over ten dataset
+cases and has never read this artifact.
 
 Each is hand-maintained against the others. The predictable failure is exactly
 what the pre-release audit found: the MCP conformance `FULL` verdict passing
