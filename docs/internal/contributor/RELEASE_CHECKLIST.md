@@ -31,7 +31,7 @@ Use this checklist for every MVP release.
   gates against the authoritative GitHub issues before sign-off.
 - [ ] Update [MVP Compatibility Contract](../../reference/compatibility/clients.md)
 - [ ] Validate [Public Interface Quality Model](public-interface-quality-model.md) and [public-interface-proof.json](../../gis/data/public-interface-proof.json) against the shipped runtime surface
-- [ ] Refresh [GeoServices REST Parity](../../reference/compatibility/geoservices-parity.md), the service drill-down matrices, and [data/geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json) when GeoServices routes, parameters, or response shapes changed in the release
+- [ ] Re-review the GeoServices parity **judgement** ([data/geoservices-parity-judgment.json](../../gis/data/geoservices-parity-judgment.json)) and bump its `lastReviewed` when GeoServices parameters or response shapes changed in the release. The route roster and [data/geoservices-rest-parity.json](../../gis/data/geoservices-rest-parity.json) are **generated** (`scripts/generate-geoservices-parity.sh`) and gated in both directions by `GeoServicesParityMatrixDriftTests`, so route drift already fails CI — what needs a human here is whether each Implemented/Partial/Stub verdict is still the *right* one, which no gate checks. Refresh the [landing page](../../reference/compatibility/geoservices-parity.md) prose to match.
 - [ ] Execute [Client Templates + Manual Smoke Runbook](../../gis/CLIENT_TEMPLATE_RUNBOOK.md)
 - [ ] Bump [`docs/developer/sdk-compatibility-versions.json`](../../developer/sdk-compatibility-versions.json)
   per the [Server + SDK Compatibility Matrix](../../concepts/ecosystem.md#machine-readable-ci-manifest)
