@@ -9,11 +9,20 @@ description: >
   Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
   (and may reclaim runner disk); this action owns only the gate itself.
 
-  NOT included, on purpose: AOT, docker, the Server Tests shard matrix, the
-  browser/MCP/Postgres lanes, and every other integration suite. Those are the
-  ~45-job matrix whose per-PR fan-out caused the 2026-06-18 runner-starvation
-  spiral. This action must stay cheap: one runner, no service containers, no
-  Docker.
+  NOT included, on purpose: AOT, the Server Tests shard matrix, the browser/MCP
+  lanes, cross-provider Postgres coverage, and every other integration suite.
+  Those are the ~45-job matrix whose per-PR fan-out caused the 2026-06-18
+  runner-starvation spiral. This action must stay cheap: ONE runner, no GitHub
+  `services:` orchestration, no matrix.
+
+  ONE bounded exception (#2882): the "Server Governance/Drift" step boots
+  EndpointRegistryDriftTests, which must enumerate the REAL deployed route table
+  to catch #2862-class registry drift. That route set is store-gated, so the test
+  needs the full host + its Testcontainers PostgreSQL — one ephemeral container on
+  the same single runner (NOT a `services:` block, NOT the provider matrix),
+  measured at ~1.5 min warm / ~3-4 min cold. Fidelity was chosen over a
+  Postgres-free variant that would validate a synthetic route set and risk
+  false-positive REDs on this required gate.
 
 inputs:
   trx-prefix:
@@ -32,6 +41,13 @@ inputs:
     description: 'Cap for the architecture-enforcement tests.'
     required: false
     default: '10'
+  governance-timeout-minutes:
+    description: >
+      Cap for the Server-project governance/drift tests
+      (EndpointRegistryDriftTests + Category=Architecture siblings). Higher than
+      the others because this step brings up a Testcontainers PostgreSQL cold.
+    required: false
+    default: '15'
 
 runs:
   using: composite
@@ -99,5 +115,38 @@ runs:
             --no-restore \
             --configuration Release \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+    # Server-project governance/drift tests. These are the Category=Architecture
+    # tests that live in Honua.Server.Tests (not Honua.Architecture.Tests) and
+    # carry NO Tier=Fast trait, so they fell between the Architecture step above
+    # (wrong project) and the Server Fast step (wrong filter) — the exact seam
+    # #2882 is about. The set today (all Category=Architecture in Server.Tests):
+    #   * EndpointRegistryDriftTests   — registry <-> deployed-route/gRPC/WFS drift
+    #   * EndpointResponseMetadataTests — advertised vs runtime response media types
+    #   * ContractCoverageMatrixTests   — endpoint scenario-depth governance
+    # EndpointRegistryDriftTests.AllDeployedEndpoints_AreTrackedInRegistry is what
+    # caught #2862 (a registry entry for a route deployed only under OIDC) on the
+    # batch lane; without this step a PR reintroducing that defect passes PR Gate
+    # green and reaches trunk, caught only by nightly.
+    #
+    # Unlike the two steps above this is NOT service-free: the drift test must
+    # enumerate the REAL deployed route table, which is store-gated (Forms,
+    # FieldCollection, FieldWorkflows routes map only when their Postgres-backed
+    # stores are registered), so it boots the full WebAppFixture and its
+    # Testcontainers PostgreSQL — one ephemeral container on this same single
+    # runner (no `services:` block, no matrix), ~1.5 min warm / ~3-4 min cold.
+    # See the header note for why fidelity was chosen over a Postgres-free variant.
+    - name: Run .NET Tests (Server Governance/Drift)
+      shell: bash
+      run: |
+        timeout "${{ inputs.governance-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=Architecture" \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-governance.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
