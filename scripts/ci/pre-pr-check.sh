@@ -224,7 +224,30 @@ else
     # Affected projects outside the solution (e.g. the customcode worker harness
     # under docker/, which has its own solution) must be dropped or MSBuild
     # fails with MSB5028; they are built by their own dedicated checks.
-    sln_members="$(grep -oE '"[^"]+\.csproj"' Honua.sln | tr -d '"' | sed 's#\\#/#g' | sort -u)"
+    #
+    # MSBuild resolves a filter entry by string-matching it against the
+    # solution's own project path strings, NOT by comparing resolved file
+    # paths. Honua.sln spells them with backslashes ("src\Honua.Server\..."),
+    # so a filter emitting POSIX separators names projects the solution
+    # "does not contain" — MSB5028 at restore, before any check runs (#2871).
+    # Keep the solution's literal spelling for every path we emit, and match
+    # internally on a separator-normalized key so the rest of this script can
+    # keep comparing against the forward-slash paths git and
+    # compute-affected-projects.sh produce.
+    declare -A sln_member_paths=()
+    while IFS= read -r sln_proj; do
+        [[ -z "${sln_proj}" ]] && continue
+        sln_member_paths["${sln_proj//\\//}"]="${sln_proj}"
+    done < <(grep -oE '"[^"]+\.csproj"' Honua.sln | tr -d '"' | tr -d '\r' | sort -u)
+    sln_members="$(printf '%s\n' "${!sln_member_paths[@]}" | sort -u)"
+
+    sln_literal_path() {
+        # Usage: sln_literal_path <normalized-path> -> the path exactly as
+        # Honua.sln spells it. Falls back to the input for paths the solution
+        # does not list (nothing reaches the filter that way, but a silent
+        # empty string would be worse than a visible MSB5028).
+        printf '%s' "${sln_member_paths["$1"]:-$1}"
+    }
     if [[ "${AFFECTED}" == "ALL" ]]; then
         # Shared infrastructure changed (props/sln/CI paths) or the affected
         # computation failed: every src project must compile, but test-project
@@ -253,12 +276,12 @@ else
             pruned_count=$((pruned_count + 1))
         fi
     done <<< "${candidates}"
+    # Architecture.Tests always runs, so it is always part of the build set.
+    kept+="${ARCHITECTURE_TEST_PROJECT}"$'\n'
     projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
+        | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
         | jq -R . | jq -s 'unique')"
-    projects_json="$(jq -n --argjson p "${projects_json}" \
-        --arg arch "${ARCHITECTURE_TEST_PROJECT}" \
-        '($p + [$arch]) | unique')"
     jq -n --argjson p "${projects_json}" '{solution:{path:"Honua.sln",projects:$p}}' > "${SLNF}"
     echo "   (build set: $(jq -r '.solution.projects|length' "${SLNF}") projects; pruned ${pruned_count} test projects that neither run locally nor changed)"
     if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
