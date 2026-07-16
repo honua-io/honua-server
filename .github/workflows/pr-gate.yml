@@ -45,13 +45,20 @@ name: PR Gate
 #
 # IT MUST STAY CHEAP
 # ------------------
-# One ubuntu-latest runner. No service containers, no Docker, no matrix, no
+# One ubuntu-latest runner. No GitHub `services:` orchestration, no matrix, no
 # coverage collection. Build (warnings-as-errors) + format + Server Fast tier +
-# architecture tests. It is not a replacement for the train's batch CI — it is
-# the cheap floor that stops a PR that cannot compile, is unformatted, breaks
-# shared unit behavior, or has drifted the feature catalog from reaching trunk
-# at all. The authoritative full matrix remains the train's batch CI and the
-# nightly schedule.
+# architecture tests + Server governance/drift tests. It is not a replacement
+# for the train's batch CI — it is the cheap floor that stops a PR that cannot
+# compile, is unformatted, breaks shared unit behavior, has drifted the feature
+# catalog, or has drifted EndpointRegistry from the deployed routes (#2862/#2882)
+# from reaching trunk at all. The authoritative full matrix remains the train's
+# batch CI and the nightly schedule.
+#
+# One step (Server governance/drift) is the single exception to "service-free":
+# EndpointRegistryDriftTests must enumerate the REAL, store-gated route table, so
+# it boots one ephemeral Testcontainers PostgreSQL on this same runner — not a
+# `services:` block, not the provider matrix, ~1.5 min warm / ~3-4 min cold. See
+# .github/actions/lean-gate/action.yml for the fidelity-vs-cost rationale.
 #
 # NO `paths:` FILTER — IT RUNS ON EVERY PR, ON PURPOSE
 # ----------------------------------------------------

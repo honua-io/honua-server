@@ -22,8 +22,10 @@ on:
   # only merge path, which meant the batch CI never ran on merged work (that is
   # how a stale feature-catalog.json reached trunk). The fix is a SEPARATE
   # workflow, `.github/workflows/pr-gate.yml`, publishing the context `PR Gate`:
-  # one cheap runner (build + format + Fast unit + architecture smoke, no
-  # services, no Docker, no matrix), sharing its steps with `merge-queue-gate`
+  # one cheap runner (build + format + Fast unit + architecture smoke + the
+  # Server governance/drift tests, no `services:` orchestration, no matrix — the
+  # governance step boots one ephemeral Testcontainers Postgres for the
+  # EndpointRegistry drift check, #2882), sharing its steps with `merge-queue-gate`
   # below via ./.github/actions/lean-gate.
   # DO NOT "simplify" that by adding a `pull_request` trigger to THIS workflow.
   # The heavy jobs below guard on `event_name != 'pull_request' || <not
