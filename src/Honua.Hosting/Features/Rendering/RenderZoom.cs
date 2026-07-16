@@ -27,6 +27,12 @@ internal sealed class RenderZoom
     private const double MercatorWorldSpanMeters = SpatialConstants.WebMercatorExtent * 2.0;
     private const int WebMercatorSrid = 3857;
 
+    /// <summary>
+    /// The pixel span <see cref="FromScaleDenominator"/> reconstructs a reference extent against.
+    /// It cancels out of the derivation, so the value is arbitrary and carries no zoom convention.
+    /// </summary>
+    private const int ReferencePixelSpan = 256;
+
     private RenderZoom(double? level, string? notDerivableReason)
     {
         Level = level;
@@ -57,6 +63,42 @@ internal sealed class RenderZoom
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         return new RenderZoom(null, reason);
+    }
+
+    /// <summary>
+    /// Derives the MapLibre zoom for an OGC scale denominator, such as a WMS <c>SCALE</c> parameter
+    /// or a tile matrix's <c>ScaleDenominator</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>A scale denominator is defined against the OGC standardized rendering pixel size
+    /// (0.28 mm, <see cref="SpatialConstants.PixelSizeMeters"/>), so it pins a ground resolution:
+    /// <c>metres per pixel = denominator * 0.00028</c>. That resolution is the only information a
+    /// scale carries — it fixes no centre and no image size — which is why this rebuilds a
+    /// reference extent/pixel pair at that resolution and defers to
+    /// <see cref="FromWebMercatorExtent"/> rather than applying a scale-to-zoom constant of its
+    /// own. <see cref="ReferencePixelSpan"/> cancels out of the derivation, so it selects no
+    /// particular camera; it only carries the resolution into the shared path.</para>
+    /// <para>Routing through that one derivation is the point: a legend or any other scale-driven
+    /// caller then gates on exactly the zoom a <c>GetMap</c> of the same ground resolution gates
+    /// on, so the two cannot drift. A second constant here — for instance the 256 px
+    /// GoogleMapsCompatible zoom-0 denominator, which is twice MapLibre's because
+    /// <c>Transform.tileSize</c> is 512 — would silently offset every gate by one zoom level.</para>
+    /// </remarks>
+    public static RenderZoom FromScaleDenominator(double scaleDenominator)
+    {
+        if (!(scaleDenominator > 0) || !double.IsFinite(scaleDenominator))
+        {
+            return NotDerivable("the scale denominator is not a positive, finite number");
+        }
+
+        var extentSpanMeters = ReferencePixelSpan * scaleDenominator * SpatialConstants.PixelSizeMeters;
+
+        // Anchored at the origin so MinX < MaxX and the extent is never read as a
+        // dateline-wrapped envelope; only the span feeds the derivation.
+        return FromWebMercatorExtent(
+            new SkiaMapRenderer.RenderExtent(0, 0, extentSpanMeters, extentSpanMeters),
+            ReferencePixelSpan,
+            ReferencePixelSpan);
     }
 
     /// <summary>
