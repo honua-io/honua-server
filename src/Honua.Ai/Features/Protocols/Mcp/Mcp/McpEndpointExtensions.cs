@@ -58,14 +58,18 @@ internal static class McpEndpointExtensions
     /// <summary>
     /// Maps <c>POST /mcp</c> for JSON-RPC dispatch, <c>GET /mcp</c> for the
     /// server-to-client SSE stream, and <c>DELETE /mcp</c> for session
-    /// termination.
+    /// termination, alongside the RFC 9728 protected-resource metadata that
+    /// describes the surface.
     /// </summary>
     public static IEndpointRouteBuilder MapMcpOperatorSurface(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        endpoints.MapMcpProtectedResourceMetadata();
+
         endpoints.MapPost(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandlePostAsync(context, ct))
+            .AddEndpointFilter(ProtectedResourceChallengeFilter)
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
@@ -74,6 +78,7 @@ internal static class McpEndpointExtensions
 
         endpoints.MapGet(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleGetAsync(context, ct))
+            .AddEndpointFilter(ProtectedResourceChallengeFilter)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpOperatorSurfaceStream")
             .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
@@ -82,6 +87,7 @@ internal static class McpEndpointExtensions
 
         endpoints.MapDelete(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleDeleteAsync(context, ct))
+            .AddEndpointFilter(ProtectedResourceChallengeFilter)
             .WithDisplayName("MCP Operator Surface (session termination)")
             .WithName("McpOperatorSurfaceTerminate")
             .WithSummary("Terminates an MCP session.")
@@ -89,6 +95,20 @@ internal static class McpEndpointExtensions
             .WithTags("Mcp");
 
         return endpoints;
+    }
+
+    /// <summary>
+    /// Arms the RFC 9728 <c>WWW-Authenticate</c> challenge on every MCP transport route so
+    /// that any 401 the surface returns points the client at the protected-resource
+    /// metadata. Applied as a filter rather than inline in the handlers because the
+    /// challenge depends only on the final status code, not on which transport verb ran.
+    /// </summary>
+    private static ValueTask<object?> ProtectedResourceChallengeFilter(
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        McpProtectedResourceMetadataEndpointExtensions.StampChallengeOnUnauthorized(context.HttpContext);
+        return next(context);
     }
 
     private static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)

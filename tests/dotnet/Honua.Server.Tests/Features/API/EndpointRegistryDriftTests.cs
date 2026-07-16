@@ -61,6 +61,16 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         // Explicit Development/Test fixture endpoint, mapped only when
         // OperateObservabilityFixture:Enabled=true.
         "POST /api/v1/admin/dev/fixtures/operate-observability/{profile}",
+        // RFC 9728 protected-resource metadata (#2849). Mapped only when the host has a
+        // valid OIDC authority configured; with no authorization server the surface is
+        // deliberately absent rather than serving an empty authorization_servers array,
+        // which would be a false capability claim (#2803). The default test host
+        // configures no authority, so the route is not deployed here. Both states are
+        // proven directly by McpProtectedResourceMetadataTests in Honua.Ai.Tests
+        // (…_WithOidcConfigured_ReturnsRfc9728Document asserts it appears when an
+        // authority exists; …_WithNoAuthorizationServerConfigured_IsAbsent asserts the
+        // 404 when none does), each against its own fixture.
+        "GET /.well-known/oauth-protected-resource/mcp",
         // These surfaces have direct endpoint-level tests, but ASP.NET's test-host
         // EndpointDataSource does not expose their route metadata consistently.
         "GET /monitoring/alerts",

@@ -3902,7 +3902,8 @@
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
-        "/mcp"
+        "/mcp",
+        "/.well-known/oauth-protected-resource/mcp"
       ],
       "endpointContains": [],
       "operationKeys": [
@@ -3924,6 +3925,20 @@
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "standards-conformance",
+          "proofMechanism": "RFC 9728 protected-resource metadata for the /mcp resource is asserted against the RFC: document shape and required members, the well-known URI construction rule (path inserted between host and resource path), derivation of authorization_servers from the OIDC authority configuration, the WWW-Authenticate resource_metadata challenge parameter, and absence of the endpoint when no authorization server is configured.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpProtectedResourceMetadata.cs",
+            "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpProtectedResourceMetadataEndpointExtensions.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpProtectedResourceMetadataTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
