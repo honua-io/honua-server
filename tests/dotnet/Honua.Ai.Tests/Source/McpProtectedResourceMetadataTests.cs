@@ -30,7 +30,12 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Operation(Operations.GetMetadata)]
 public sealed class McpProtectedResourceMetadataTests
 {
-    private const string MetadataPath = "/.well-known/oauth-protected-resource/mcp";
+    // The metadata path is spelled as a literal at each request site below rather than
+    // routed through a constant. EndpointRegistryDriftTests proves every EndpointRegistry
+    // entry is backed by a same-method HTTP request by scanning this source for the route
+    // path, and it cannot see through a const reference. This route is registry-tracked
+    // but only conditionally deployed (no OIDC authority => absent), so that source-level
+    // proof is its only drift gate — keep the literal at the call site.
     private const string GenericAuthority = "https://auth.example.com";
     private const string PublicBaseUrl = "https://mcp.example.com";
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
@@ -47,7 +52,7 @@ public sealed class McpProtectedResourceMetadataTests
             await fixture.InitializeAsync();
             var client = fixture.CreateClient();
 
-            var response = await client.GetAsync(MetadataPath);
+            var response = await client.GetAsync("/.well-known/oauth-protected-resource/mcp");
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Content.Headers.ContentType!.MediaType.Should().Be(
@@ -105,7 +110,7 @@ public sealed class McpProtectedResourceMetadataTests
             await fixture.InitializeAsync();
             var client = fixture.CreateClient();
 
-            var response = await client.GetAsync(MetadataPath);
+            var response = await client.GetAsync("/.well-known/oauth-protected-resource/mcp");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -135,7 +140,7 @@ public sealed class McpProtectedResourceMetadataTests
             await fixture.InitializeAsync();
             var client = fixture.CreateClient();
 
-            var response = await client.GetAsync(MetadataPath);
+            var response = await client.GetAsync("/.well-known/oauth-protected-resource/mcp");
 
             response.StatusCode.Should().Be(
                 HttpStatusCode.NotFound,
