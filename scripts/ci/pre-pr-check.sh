@@ -210,7 +210,12 @@ if [[ "${FULL}" == "1" ]]; then
     dotnet restore Honua.sln
 
     echo "3. Building with warnings as errors (full solution)..."
-    dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+    # -p: not /p: — under Git Bash, MSYS path conversion rewrites a /-prefixed
+    # switch into a Windows path, so MSBuild sees a bare
+    # "p:TreatWarningsAsErrors=true" argument and rejects it as a second
+    # project (MSB1008). The two forms are equivalent to MSBuild; the AOT step
+    # below already uses -p: for the same reason.
+    dotnet build Honua.sln --no-restore --configuration Release -p:TreatWarningsAsErrors=true
 else
     # Compose the build set via a throwaway solution filter so shared
     # dependencies compile once. Architecture.Tests is always included so the
@@ -294,7 +299,8 @@ else
     dotnet restore "${SLNF}"
 
     echo "3. Building with warnings as errors..."
-    dotnet build "${SLNF}" --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+    # -p: not /p: — see the FULL-mode build above (MSB1008 under Git Bash).
+    dotnet build "${SLNF}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
 fi
 
 echo "4. Checking code format..."
