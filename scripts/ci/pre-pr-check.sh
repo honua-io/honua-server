@@ -210,7 +210,12 @@ if [[ "${FULL}" == "1" ]]; then
     dotnet restore Honua.sln
 
     echo "3. Building with warnings as errors (full solution)..."
-    dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+    # -p: not /p: — under Git Bash, MSYS path conversion rewrites a /-prefixed
+    # switch into a Windows path, so MSBuild sees a bare
+    # "p:TreatWarningsAsErrors=true" argument and rejects it as a second
+    # project (MSB1008). The two forms are equivalent to MSBuild; the AOT step
+    # below already uses -p: for the same reason.
+    dotnet build Honua.sln --no-restore --configuration Release -p:TreatWarningsAsErrors=true
 else
     # Compose the build set via a throwaway solution filter so shared
     # dependencies compile once. Architecture.Tests is always included so the
@@ -224,7 +229,30 @@ else
     # Affected projects outside the solution (e.g. the customcode worker harness
     # under docker/, which has its own solution) must be dropped or MSBuild
     # fails with MSB5028; they are built by their own dedicated checks.
-    sln_members="$(grep -oE '"[^"]+\.csproj"' Honua.sln | tr -d '"' | sed 's#\\#/#g' | sort -u)"
+    #
+    # MSBuild resolves a filter entry by string-matching it against the
+    # solution's own project path strings, NOT by comparing resolved file
+    # paths. Honua.sln spells them with backslashes ("src\Honua.Server\..."),
+    # so a filter emitting POSIX separators names projects the solution
+    # "does not contain" — MSB5028 at restore, before any check runs (#2871).
+    # Keep the solution's literal spelling for every path we emit, and match
+    # internally on a separator-normalized key so the rest of this script can
+    # keep comparing against the forward-slash paths git and
+    # compute-affected-projects.sh produce.
+    declare -A sln_member_paths=()
+    while IFS= read -r sln_proj; do
+        [[ -z "${sln_proj}" ]] && continue
+        sln_member_paths["${sln_proj//\\//}"]="${sln_proj}"
+    done < <(grep -oE '"[^"]+\.csproj"' Honua.sln | tr -d '"' | tr -d '\r' | sort -u)
+    sln_members="$(printf '%s\n' "${!sln_member_paths[@]}" | sort -u)"
+
+    sln_literal_path() {
+        # Usage: sln_literal_path <normalized-path> -> the path exactly as
+        # Honua.sln spells it. Falls back to the input for paths the solution
+        # does not list (nothing reaches the filter that way, but a silent
+        # empty string would be worse than a visible MSB5028).
+        printf '%s' "${sln_member_paths["$1"]:-$1}"
+    }
     if [[ "${AFFECTED}" == "ALL" ]]; then
         # Shared infrastructure changed (props/sln/CI paths) or the affected
         # computation failed: every src project must compile, but test-project
@@ -253,12 +281,12 @@ else
             pruned_count=$((pruned_count + 1))
         fi
     done <<< "${candidates}"
+    # Architecture.Tests always runs, so it is always part of the build set.
+    kept+="${ARCHITECTURE_TEST_PROJECT}"$'\n'
     projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
+        | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \
         | jq -R . | jq -s 'unique')"
-    projects_json="$(jq -n --argjson p "${projects_json}" \
-        --arg arch "${ARCHITECTURE_TEST_PROJECT}" \
-        '($p + [$arch]) | unique')"
     jq -n --argjson p "${projects_json}" '{solution:{path:"Honua.sln",projects:$p}}' > "${SLNF}"
     echo "   (build set: $(jq -r '.solution.projects|length' "${SLNF}") projects; pruned ${pruned_count} test projects that neither run locally nor changed)"
     if [[ "${HONUA_PRE_PR_PRINT_BUILD_PLAN:-0}" == "1" ]]; then
@@ -271,7 +299,8 @@ else
     dotnet restore "${SLNF}"
 
     echo "3. Building with warnings as errors..."
-    dotnet build "${SLNF}" --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+    # -p: not /p: — see the FULL-mode build above (MSB1008 under Git Bash).
+    dotnet build "${SLNF}" --no-restore --configuration Release -p:TreatWarningsAsErrors=true
 fi
 
 echo "4. Checking code format..."
@@ -444,8 +473,30 @@ else
 fi
 
 echo "8. Local architecture review..."
-if command -v python3 >/dev/null 2>&1; then
-    python3 scripts/ci/local-architecture-review.py || {
+# Resolve an interpreter that actually runs. `command -v python3` alone is not
+# enough on Windows: the Microsoft Store ships a python3.exe App Execution
+# Alias stub that is present on PATH but exits non-zero with "Python was not
+# found", while the real interpreter installs as `python`/`py`. The old guard
+# therefore passed, the stub failed, and the script blamed the code —
+# reporting "architecture review found blocking issues" when Python was simply
+# absent (#2871). Probe each candidate by executing it, and require Python 3 so
+# a legacy `python` == python2 is not selected. On Linux `python3` matches
+# first, exactly as before.
+PYTHON_BIN=""
+for candidate in python3 python py; do
+    if command -v "${candidate}" >/dev/null 2>&1 \
+        && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+        PYTHON_BIN="${candidate}"
+        break
+    fi
+done
+if [[ -n "${PYTHON_BIN}" ]]; then
+    # PYTHONIOENCODING=utf-8: the review prints emoji, but Python on Windows
+    # defaults stdout to the ANSI code page (cp1252) and dies with
+    # UnicodeEncodeError — while printing its own error message, so the real
+    # verdict is lost and the run looks like a review failure. Already the
+    # default on Linux, so this is a no-op in CI.
+    PYTHONIOENCODING=utf-8 "${PYTHON_BIN}" scripts/ci/local-architecture-review.py || {
         echo "❌ Architecture review found blocking issues!"
         echo "   Fix violations before creating PR"
         exit 1
