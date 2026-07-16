@@ -80,20 +80,51 @@ internal static class StyleTranslator
     }
 
     /// <summary>
-    /// Returns whether a style layer should be rendered for the supplied zoom, when zoom is known.
-    /// If zoom is not known, minzoom/maxzoom are left unapplied and layer visibility is still honored.
+    /// Returns whether a style layer should be rendered at the supplied <paramref name="zoom"/>.
+    /// Layer visibility is always honored; minzoom/maxzoom apply when the render carries a derived
+    /// zoom and are left unapplied when <see cref="RenderZoom.NotDerivable"/> states that no zoom
+    /// could be derived for the request.
     /// </summary>
     public static bool ShouldRenderLayer(
         MapLibreStyleLayer layer,
-        double? zoom = null,
+        RenderZoom zoom,
         ImmutableDictionary<string, object?>? properties = null)
     {
-        if (zoom.HasValue && !IsLayerInZoomRange(layer, zoom.Value))
+        ArgumentNullException.ThrowIfNull(zoom);
+
+        if (zoom.Level is { } level && !IsLayerInZoomRange(layer, level))
         {
             return false;
         }
 
         return IsLayerVisible(layer, properties ?? ImmutableDictionary<string, object?>.Empty);
+    }
+
+    /// <summary>
+    /// Returns whether any layer in a style document falls inside its minzoom/maxzoom range at the
+    /// supplied <paramref name="zoom"/>. Callers use this to skip querying features for a layer
+    /// whose style is entirely out of range, since none of it could be drawn. Styles with no layers
+    /// render with default paints and are always in range.
+    /// </summary>
+    public static bool IsAnyLayerInZoomRange(MapLibreStyleLayer[] styleLayers, RenderZoom zoom)
+    {
+        ArgumentNullException.ThrowIfNull(styleLayers);
+        ArgumentNullException.ThrowIfNull(zoom);
+
+        if (zoom.Level is not { } level || styleLayers.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (var styleLayer in styleLayers)
+        {
+            if (IsLayerInZoomRange(styleLayer, level))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

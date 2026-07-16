@@ -287,7 +287,8 @@ internal static class RasterMapRenderingPipeline
                 TileSize,
                 true,
                 null,
-                MetadataV2GeometryType.None);
+                MetadataV2GeometryType.None,
+                RenderZoom.NotDerivable("the tile has no render layers"));
 
             return RasterTileRenderResult.Success(emptyImage, 0);
         }
@@ -311,6 +312,13 @@ internal static class RasterMapRenderingPipeline
         var canvas = surface.Canvas;
         canvas.Clear(SKColors.Transparent);
         var transform = SkiaMapRenderer.BuildTransform(renderExtent, TileSize, TileSize);
+
+        // The tile matrix level is not the MapLibre zoom: these tiles are TileSize (256) pixels, so
+        // a client consuming them as a 256px source sits one camera zoom below the matrix level.
+        // Deriving from the tile envelope keeps the gate aligned with that camera zoom and with the
+        // other protocols rendering the same envelope.
+        var renderZoom = RenderZoom.FromExtent(renderExtent, TileSize, TileSize, tileSrid);
+        RecordRenderZoom(renderZoom);
 
         for (var layerIndex = 0; layerIndex < renderLayers.Count; layerIndex++)
         {
@@ -343,6 +351,11 @@ internal static class RasterMapRenderingPipeline
                 styleCatalog,
                 layer.LayerId,
                 cancellationToken).ConfigureAwait(false);
+            if (!StyleTranslator.IsAnyLayerInZoomRange(stylePlan.StyleLayers, renderZoom))
+            {
+                continue;
+            }
+
             var featureQuery = CreateRasterFeatureQuery(
                 stylePlan,
                 spatialFilter,
@@ -379,7 +392,7 @@ internal static class RasterMapRenderingPipeline
             }
 
             totalFeatureCount += features.Length;
-            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType);
+            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType, renderZoom);
         }
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, "png");
@@ -561,6 +574,13 @@ internal static class RasterMapRenderingPipeline
         {
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var transform = SkiaMapRenderer.BuildTransform(requestExtent, imageWidth, imageHeight);
+            var renderZoom = await DeriveRenderZoomAsync(
+                context,
+                requestExtent,
+                requestSrid,
+                imageWidth,
+                imageHeight,
+                cancellationToken).ConfigureAwait(false);
             var stylePlan = BuildRasterStylePlanFromJson(mapLibreStyleJson);
             var spatialFilter = CreateBboxSpatialFilter(queryExtent, serviceSrid);
             var featureQuery = CreateRasterFeatureQuery(
@@ -594,7 +614,7 @@ internal static class RasterMapRenderingPipeline
                 if (features.Length > 0)
                 {
                     totalFeatureCount += features.Length;
-                    RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType);
+                    RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType, renderZoom);
                 }
             }
         }
@@ -652,6 +672,8 @@ internal static class RasterMapRenderingPipeline
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor ?? SKColors.White);
 
         var transform = SkiaMapRenderer.BuildTransform(requestExtent, imageWidth, imageHeight);
+        var renderZoom = RenderZoom.FromExtent(requestExtent, imageWidth, imageHeight, requestSrid);
+        RecordRenderZoom(renderZoom);
 
         foreach (var layer in layers)
         {
@@ -698,7 +720,7 @@ internal static class RasterMapRenderingPipeline
                 continue;
             }
 
-            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType);
+            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType, renderZoom);
         }
 
         return SkiaMapRenderer.EncodeSurface(surface, format);
@@ -709,13 +731,14 @@ internal static class RasterMapRenderingPipeline
         ImmutableArray<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         Func<double, double, SKPoint> transform,
-        MetadataV2GeometryType geometryType)
+        MetadataV2GeometryType geometryType,
+        RenderZoom zoom)
     {
         if (styleLayers.Length > 0)
         {
             foreach (var styleLayer in styleLayers)
             {
-                if (styleLayer.Type == null)
+                if (styleLayer.Type == null || !StyleTranslator.ShouldRenderLayer(styleLayer, zoom))
                 {
                     continue;
                 }
@@ -1339,6 +1362,55 @@ internal static class RasterMapRenderingPipeline
             DrawCircleLoop(canvas, projectedPoints, points.Length, circleStyle.Radius, strokePaint);
         }
     }
+
+    /// <summary>
+    /// Derives the MapLibre <see cref="RenderZoom"/> for a request extent, resolving CRSs that have
+    /// no in-process Web Mercator mapping through the same shared transform services the render
+    /// paths already use for reprojection. The result is recorded on the current activity, so a
+    /// render that ends up ungated is traceable rather than silently unfiltered.
+    /// </summary>
+    internal static async Task<RenderZoom> DeriveRenderZoomAsync(
+        HttpContext context,
+        SkiaMapRenderer.RenderExtent extent,
+        int srid,
+        int imageWidth,
+        int imageHeight,
+        CancellationToken cancellationToken)
+    {
+        var zoom = RenderZoom.FromExtent(extent, imageWidth, imageHeight, srid);
+
+        if (zoom.Level is null && !SpatialReferenceExtensions.IsWebMercatorSrid(srid))
+        {
+            var transformed = await TryTransformExtentAsync(context, extent, srid, TileSrid, cancellationToken)
+                .ConfigureAwait(false);
+            zoom = transformed.IsSuccess
+                ? RenderZoom.FromWebMercatorExtent(transformed.Extent, imageWidth, imageHeight)
+                : RenderZoom.NotDerivable(
+                    $"the request extent could not be transformed from EPSG:{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)} to Web Mercator");
+        }
+
+        RecordRenderZoom(zoom);
+        return zoom;
+    }
+
+    internal static void RecordRenderZoom(RenderZoom zoom)
+    {
+        var activity = System.Diagnostics.Activity.Current;
+        if (activity is null)
+        {
+            return;
+        }
+
+        if (zoom.Level is { } level)
+        {
+            activity.SetTag("honua.render.zoom", level);
+        }
+        else
+        {
+            activity.SetTag("honua.render.zoom_ungated_reason", zoom.NotDerivableReason);
+        }
+    }
+
     internal static int? TryParseSrid(string? sr)
         => SpatialReferenceHelpers.TryParseSrid(sr);
 

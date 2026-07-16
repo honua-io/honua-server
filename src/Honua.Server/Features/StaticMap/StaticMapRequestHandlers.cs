@@ -337,6 +337,12 @@ internal static partial class StaticMapEndpoints
                 : extent;
             var transform = SkiaMapRenderer.BuildTransform(renderExtent, renderWidth, renderHeight);
 
+            // Derived from the rendered extent rather than parameters.Zoom: the static map zoom is
+            // defined against 256px tiles (see CenterZoomToExtent) while a MapLibre style's
+            // minzoom/maxzoom is against MapLibre's 512px camera zoom, so the two differ by one.
+            // Deriving also covers the bbox route, which carries no zoom at all.
+            var renderZoom = RenderZoom.FromExtent(renderExtent, renderWidth, renderHeight, renderSrid);
+
             // Overlay markers/paths are always specified in lon/lat — project to Mercator first
             // when rendering in 3857, otherwise use the same transform.
             var overlayTransform = useMercator
@@ -378,7 +384,7 @@ internal static partial class StaticMapEndpoints
                 var style = await styleCatalog.GetLayerStyleAsync(layer.StorageLayerId, context.RequestAborted);
                 var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
 
-                RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType);
+                RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType, renderZoom);
             }
 
             // Render overlay markers
@@ -832,11 +838,12 @@ internal static partial class StaticMapEndpoints
         ImmutableArray<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         Func<double, double, SKPoint> transform,
-        MetadataV2GeometryType geometryType)
+        MetadataV2GeometryType geometryType,
+        RenderZoom zoom)
     {
         if (styleLayers.Length > 0)
         {
-            SkiaMapRenderer.RenderWithStyles(canvas, features, styleLayers, transform);
+            SkiaMapRenderer.RenderWithStyles(canvas, features, styleLayers, transform, zoom);
         }
         else
         {

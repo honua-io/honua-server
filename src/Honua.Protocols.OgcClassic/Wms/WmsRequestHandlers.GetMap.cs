@@ -228,6 +228,17 @@ internal static partial class WmsRequestHandlers
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
         var transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
 
+        // BBOX + WIDTH/HEIGHT + CRS fix the scale the map is drawn at, which is what a style's
+        // minzoom/maxzoom is authored against.
+        var renderZoom = await DeriveRenderZoomAsync(
+            context,
+            requestedExtent,
+            requestSrid,
+            imageWidth,
+            imageHeight,
+            cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("wms.render_zoom", renderZoom.Level);
+
         for (var i = 0; i < renderLayers.Length; i++)
         {
             var layer = renderLayers[i];
@@ -266,6 +277,11 @@ internal static partial class WmsRequestHandlers
                 styleCatalog,
                 layer.StorageLayerId,
                 cancellationToken).ConfigureAwait(false);
+            if (!StyleTranslator.IsAnyLayerInZoomRange(stylePlan.StyleLayers, renderZoom))
+            {
+                continue;
+            }
+
             var featureQuery = CreateRasterFeatureQuery(
                 stylePlan,
                 spatialFilter,
@@ -300,7 +316,7 @@ internal static partial class WmsRequestHandlers
             }
 
             totalFeatureCount += features.Length;
-            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transformFn, geometryType);
+            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transformFn, geometryType, renderZoom);
         }
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, imageFormat);
