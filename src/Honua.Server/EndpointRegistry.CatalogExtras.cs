@@ -72,6 +72,9 @@ public static partial class EndpointRegistry
         new("POST", "/mcp"),
         new("GET", "/mcp"),
         new("DELETE", "/mcp"),
+        // RFC 9728 protected-resource metadata for the /mcp resource (#2849). Mapped
+        // only when an OIDC authority is configured; absent otherwise.
+        new("GET", "/.well-known/oauth-protected-resource/mcp"),
 
         // Spec plan / apply engine (#789).
         new("POST", "/v1/spec/validate"),

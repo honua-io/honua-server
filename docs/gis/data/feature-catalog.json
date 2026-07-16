@@ -807,6 +807,21 @@
       "maturity": "implemented"
     },
     {
+      "id": "get-well-known-oauth-protected-resource-mcp",
+      "route": "/.well-known/oauth-protected-resource/mcp",
+      "method": "GET",
+      "family": "MCP",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_DerivesAuthorizationServersFromEveryConfiguredAuthority",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithNoAuthorizationServerConfigured_IsAbsent",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpProtectedResourceMetadataTests.ProtectedResourceMetadata_WithOidcConfigured_ReturnsRfc9728Document"
+      ],
+      "proof_ledger_surface": "mcp-operator",
+      "maturity": "implemented"
+    },
+    {
       "id": "get-api-enrich-catalog",
       "route": "/api/enrich/catalog",
       "method": "GET",
