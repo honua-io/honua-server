@@ -46,6 +46,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         int width = 0, height = 0, bandCount = 1, tileWidth = 256, tileHeight = 256;
         ushort compression = TiffConstants.CompressionNone;
         int bitsPerSample = 8;
+        int predictor = TilePixelLayout.PredictorNone;
         ushort sampleFormat = TiffConstants.SampleFormatUnsigned;
         string pixelType = "uint8";
         int srid = 0;
@@ -89,6 +90,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             int ifdWidth = 0, ifdHeight = 0, ifdTileWidth = 256, ifdTileHeight = 256;
             ushort ifdCompression = TiffConstants.CompressionNone;
             ushort samplesPerPixel = 1;
+            var ifdPredictor = TilePixelLayout.PredictorNone;
             IfdEntry? tileOffsetsEntry = null;
             IfdEntry? tileByteCountsEntry = null;
 
@@ -113,6 +115,9 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                         break;
                     case TiffConstants.TagSamplesPerPixel:
                         samplesPerPixel = (ushort)entry.ValueOrOffset;
+                        break;
+                    case TiffConstants.TagPredictor:
+                        ifdPredictor = (int)entry.ValueOrOffset;
                         break;
                     case TiffConstants.TagTileOffsets:
                         tileOffsetsEntry = entry;
@@ -164,6 +169,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 tileWidth = ifdTileWidth;
                 tileHeight = ifdTileHeight;
                 compression = ifdCompression;
+                predictor = ifdPredictor;
 
                 // Classify pixel type now that both BitsPerSample and SampleFormat are collected.
                 pixelType = ClassifyPixelType(bitsPerSample, sampleFormat);
@@ -221,7 +227,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             TiffConstants.GetCompressionName(compression),
             tileWidth, tileHeight,
             overviewLevels.ToArray(),
-            new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid });
+            new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
+            bitsPerSample, predictor, parser.IsLittleEndian);
     }
 
     private static async Task<long[]> ReadLongArrayFromEntryAsync(

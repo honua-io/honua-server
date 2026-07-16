@@ -8,6 +8,19 @@ namespace Honua.Core.Features.Raster.Domain;
 /// <summary>
 /// Parsed COG structure from IFD chain traversal.
 /// </summary>
+/// <param name="Width">Base image width in pixels.</param>
+/// <param name="Height">Base image height in pixels.</param>
+/// <param name="BandCount">Samples per pixel.</param>
+/// <param name="PixelType">Classified sample type, e.g. <c>uint8</c> or <c>float32</c>.</param>
+/// <param name="Srid">EPSG code parsed from the GeoTIFF keys, or 0 when absent.</param>
+/// <param name="Compression">TIFF compression name, e.g. <c>LZW</c>.</param>
+/// <param name="TileWidth">Tile width in pixels.</param>
+/// <param name="TileHeight">Tile height in pixels.</param>
+/// <param name="OverviewLevels">IFD chain, base level first.</param>
+/// <param name="Extent">Georeferenced extent of the base level.</param>
+/// <param name="BitsPerSample">Bits per sample (TIFF tag 258), needed to reverse a predictor.</param>
+/// <param name="Predictor">TIFF predictor (tag 317): 1 = none, 2 = horizontal differencing.</param>
+/// <param name="IsLittleEndian">Byte order of the source TIFF, which multi-byte samples are stored in.</param>
 public sealed record CogMetadata(
     int Width,
     int Height,
@@ -18,7 +31,10 @@ public sealed record CogMetadata(
     int TileWidth,
     int TileHeight,
     CogOverviewLevel[] OverviewLevels,
-    RasterExtent Extent);
+    RasterExtent Extent,
+    int BitsPerSample = 8,
+    int Predictor = 1,
+    bool IsLittleEndian = true);
 
 /// <summary>
 /// One IFD resolution level within a COG.

@@ -106,8 +106,14 @@ internal sealed class CogTileResolver : ICogTileResolver
             offset, length,
             cancellationToken).ConfigureAwait(false);
 
-        // Decompress based on compression type
-        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression);
+        // Decompress based on compression type, reversing the tile's predictor when it declares one.
+        var layout = new TilePixelLayout(
+            metadata.TileWidth,
+            metadata.BandCount,
+            metadata.BitsPerSample,
+            metadata.Predictor,
+            metadata.IsLittleEndian);
+        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
 
         if (!CanServeRequestedFormat(format, contentType))
         {

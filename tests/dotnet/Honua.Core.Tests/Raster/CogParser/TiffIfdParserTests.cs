@@ -185,8 +185,10 @@ public class TiffIfdParserTests
         TileDecompressor.IsSupported("DEFLATE").Should().BeTrue();
         TileDecompressor.IsSupported("NONE").Should().BeTrue();
         TileDecompressor.IsSupported("").Should().BeTrue();
-        TileDecompressor.IsSupported("LZW").Should().BeFalse();
-        TileDecompressor.IsSupported("ZSTD").Should().BeFalse();
+        TileDecompressor.IsSupported("LZW").Should().BeTrue();
+        TileDecompressor.IsSupported("ZSTD").Should().BeTrue();
+        TileDecompressor.IsSupported("LERC").Should().BeFalse();
+        TileDecompressor.IsSupported("PACKBITS").Should().BeFalse();
     }
 
     [Fact]
@@ -257,7 +259,7 @@ public class TiffIfdParserTests
         byte[] data = [0x01, 0x02, 0x03];
 
         // Act & Assert
-        var act = () => TileDecompressor.Decompress(data, "LZW");
-        act.Should().Throw<NotSupportedException>().WithMessage("*LZW*");
+        var act = () => TileDecompressor.Decompress(data, "PACKBITS");
+        act.Should().Throw<UnsupportedTileCodecException>().WithMessage("*PACKBITS*");
     }
 }

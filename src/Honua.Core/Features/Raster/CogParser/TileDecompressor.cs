@@ -8,8 +8,9 @@ namespace Honua.Core.Features.Raster.CogParser;
 
 /// <summary>
 /// Decompresses COG tile data based on the compression type.
-/// Supports JPEG passthrough (zero-copy) and DEFLATE via <see cref="ZLibStream"/>.
-/// LZW and ZSTD are deferred to follow-up work.
+/// Supports JPEG passthrough (zero-copy), DEFLATE via <see cref="ZLibStream"/>,
+/// TIFF LZW, ZSTD, and NONE, reversing the horizontal differencing predictor
+/// (TIFF tag 317 = 2) when the tile declares one.
 /// </summary>
 public static class TileDecompressor
 {
@@ -20,16 +21,15 @@ public static class TileDecompressor
     /// </summary>
     public const int DefaultMaxDecompressedBytes = 128 * 1024 * 1024;
 
+    private static readonly string[] SupportedCodecs = ["JPEG", "DEFLATE", "LZW", "ZSTD", "NONE"];
+
     /// <summary>
     /// Decompresses tile data and returns the content type for the response.
-    /// JPEG tiles are standalone images and served directly (zero-copy passthrough).
-    /// DEFLATE and NONE tiles contain raw pixel data (not a valid image file);
-    /// they are returned as <c>application/octet-stream</c> because re-encoding
-    /// into a renderable image format requires band/dimension context that is
-    /// outside this component's scope.
+    /// Equivalent to calling <see cref="Decompress(byte[], string, in TilePixelLayout, int)"/>
+    /// with <see cref="TilePixelLayout.None"/>; use that overload for tiles that declare a predictor.
     /// </summary>
     /// <param name="tileData">Raw compressed tile bytes from the COG</param>
-    /// <param name="compression">TIFF compression name (JPEG, DEFLATE, NONE, etc.)</param>
+    /// <param name="compression">TIFF compression name (JPEG, DEFLATE, LZW, ZSTD, NONE)</param>
     /// <param name="maxDecompressedBytes">
     /// Maximum allowed decompressed size; pass the tile's expected pixel-buffer size when known.
     /// Exceeding it throws <see cref="InvalidDataException"/> (decompression-bomb guard).
@@ -39,21 +39,100 @@ public static class TileDecompressor
         byte[] tileData,
         string compression,
         int maxDecompressedBytes = DefaultMaxDecompressedBytes)
+        => Decompress(tileData, compression, TilePixelLayout.None, maxDecompressedBytes);
+
+    /// <summary>
+    /// Decompresses tile data and returns the content type for the response.
+    /// JPEG tiles are standalone images and served directly (zero-copy passthrough).
+    /// DEFLATE, LZW, ZSTD, and NONE tiles contain raw pixel data (not a valid image file);
+    /// they are returned as <c>application/octet-stream</c> because re-encoding
+    /// into a renderable image format requires band/dimension context that is
+    /// outside this component's scope.
+    /// </summary>
+    /// <param name="tileData">Raw compressed tile bytes from the COG</param>
+    /// <param name="compression">TIFF compression name (JPEG, DEFLATE, LZW, ZSTD, NONE)</param>
+    /// <param name="layout">
+    /// Pixel geometry of the tile, used to reverse the TIFF predictor. Predictors apply to the
+    /// pixel-data codecs only; a predictor declared alongside JPEG is ignored, matching libtiff.
+    /// </param>
+    /// <param name="maxDecompressedBytes">
+    /// Maximum allowed decompressed size; pass the tile's expected pixel-buffer size when known.
+    /// Exceeding it throws <see cref="InvalidDataException"/> (decompression-bomb guard).
+    /// </param>
+    /// <returns>Decompressed data and the appropriate content type</returns>
+    /// <exception cref="UnsupportedTileCodecException">The tile's codec cannot be decoded.</exception>
+    /// <exception cref="UnsupportedTilePredictorException">The tile's predictor cannot be reversed.</exception>
+    public static (byte[] Data, string ContentType) Decompress(
+        byte[] tileData,
+        string compression,
+        in TilePixelLayout layout,
+        int maxDecompressedBytes = DefaultMaxDecompressedBytes)
     {
-        return compression switch
+        switch (compression)
         {
-            "JPEG" => (tileData, "image/jpeg"), // Zero-copy passthrough — tile is a standalone JPEG
-            "DEFLATE" => (DecompressZlib(tileData, maxDecompressedBytes), "application/octet-stream"),
-            "NONE" or "" => (tileData, "application/octet-stream"),
-            _ => throw new NotSupportedException(
-                $"COG tile compression '{compression}' is not supported. Supported: JPEG (passthrough), DEFLATE, NONE.")
-        };
+            case "JPEG":
+                return (tileData, "image/jpeg"); // Zero-copy passthrough — tile is a standalone JPEG
+
+            case "NONE" or "":
+                // NONE tiles are already pixel data; a predictor still has to be reversed, but the
+                // caller owns tileData so an in-place pass would mutate their buffer.
+                return (ApplyPredictor(tileData, layout, copyFirst: true), "application/octet-stream");
+
+            case "DEFLATE":
+                return (ApplyPredictor(DecompressZlib(tileData, maxDecompressedBytes), layout, copyFirst: false),
+                    "application/octet-stream");
+
+            case "LZW":
+                return (ApplyPredictor(
+                        LzwDecoder.Decode(tileData, maxDecompressedBytes, ExpectedTileBytes(layout, maxDecompressedBytes)),
+                        layout,
+                        copyFirst: false),
+                    "application/octet-stream");
+
+            case "ZSTD":
+                return (ApplyPredictor(DecompressZstd(tileData, maxDecompressedBytes), layout, copyFirst: false),
+                    "application/octet-stream");
+
+            default:
+                throw new UnsupportedTileCodecException(compression, SupportedCodecs);
+        }
     }
 
     /// <summary>
     /// Returns true if the compression type is supported for direct serving.
     /// </summary>
-    public static bool IsSupported(string compression) => compression is "JPEG" or "DEFLATE" or "NONE" or "";
+    public static bool IsSupported(string compression)
+        => compression is "JPEG" or "DEFLATE" or "LZW" or "ZSTD" or "NONE" or "";
+
+    private static byte[] ApplyPredictor(byte[] pixels, in TilePixelLayout layout, bool copyFirst)
+    {
+        if (!layout.HasPredictor)
+        {
+            return pixels;
+        }
+
+        var target = copyFirst ? (byte[])pixels.Clone() : pixels;
+        TilePredictor.Undo(target, layout);
+        return target;
+    }
+
+    /// <summary>
+    /// Size of a fully-populated tile's pixel buffer, or 0 when the layout does not describe one.
+    /// TIFF pads edge tiles to the full tile geometry, so this is exact for every tile in a level.
+    /// </summary>
+    private static int ExpectedTileBytes(in TilePixelLayout layout, int maxDecompressedBytes)
+    {
+        if (layout.TileWidth <= 0 || layout.SamplesPerPixel <= 0 || layout.BitsPerSample <= 0)
+        {
+            return 0;
+        }
+
+        // TileHeight is not carried on the layout; the row stride alone is enough to beat the
+        // default growth heuristic without over-renting for tiles of unknown height.
+        var rowStride = (long)layout.TileWidth * layout.SamplesPerPixel * (layout.BitsPerSample / 8);
+        var estimate = rowStride * layout.TileWidth;
+        return estimate is <= 0 or > int.MaxValue ? 0 : (int)Math.Min(estimate, maxDecompressedBytes);
+    }
 
     /// <summary>
     /// TIFF DEFLATE compression uses zlib (RFC 1950) wrapping, not raw DEFLATE (RFC 1951).
@@ -113,5 +192,42 @@ public static class TileDecompressor
         {
             pool.Return(scratch);
         }
+    }
+
+    /// <summary>
+    /// TIFF ZSTD (compression code 50000) stores a single zstd frame per tile.
+    /// GDAL writes the frame's content size in its header, so the common path sizes the
+    /// output buffer exactly; frames without it fall back to the streaming decoder.
+    /// </summary>
+    private static byte[] DecompressZstd(byte[] compressedData, int maxDecompressedBytes)
+    {
+        var declaredSize = ZstdSharp.Decompressor.GetDecompressedSize(compressedData);
+
+        // Trust the declared size only as an allocation hint after bounds-checking it — it is
+        // attacker-controlled file content, and an inflated value is a decompression-bomb vector.
+        if (declaredSize > (ulong)maxDecompressedBytes)
+        {
+            throw new InvalidDataException(
+                $"ZSTD tile declares a {declaredSize}-byte frame, exceeding the {maxDecompressedBytes}-byte limit (possible decompression bomb).");
+        }
+
+        using var decompressor = new ZstdSharp.Decompressor();
+
+        if (declaredSize > 0)
+        {
+            var exact = new byte[(int)declaredSize];
+            var written = decompressor.Unwrap(compressedData, exact, offset: 0);
+            if (written == exact.Length)
+            {
+                return exact;
+            }
+
+            var trimmed = new byte[written];
+            Buffer.BlockCopy(exact, 0, trimmed, 0, written);
+            return trimmed;
+        }
+
+        var decompressed = decompressor.Unwrap(compressedData, maxDecompressedBytes);
+        return decompressed.ToArray();
     }
 }
