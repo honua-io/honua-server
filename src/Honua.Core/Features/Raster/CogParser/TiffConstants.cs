@@ -31,6 +31,7 @@ internal static class TiffConstants
     public const ushort TagBitsPerSample = 258;
     public const ushort TagCompression = 259;
     public const ushort TagPhotometricInterpretation = 262;
+    public const ushort TagPredictor = 317;
     public const ushort TagSamplesPerPixel = 277;
     public const ushort TagTileWidth = 322;
     public const ushort TagTileLength = 323;
