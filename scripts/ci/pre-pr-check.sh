@@ -473,8 +473,30 @@ else
 fi
 
 echo "8. Local architecture review..."
-if command -v python3 >/dev/null 2>&1; then
-    python3 scripts/ci/local-architecture-review.py || {
+# Resolve an interpreter that actually runs. `command -v python3` alone is not
+# enough on Windows: the Microsoft Store ships a python3.exe App Execution
+# Alias stub that is present on PATH but exits non-zero with "Python was not
+# found", while the real interpreter installs as `python`/`py`. The old guard
+# therefore passed, the stub failed, and the script blamed the code —
+# reporting "architecture review found blocking issues" when Python was simply
+# absent (#2871). Probe each candidate by executing it, and require Python 3 so
+# a legacy `python` == python2 is not selected. On Linux `python3` matches
+# first, exactly as before.
+PYTHON_BIN=""
+for candidate in python3 python py; do
+    if command -v "${candidate}" >/dev/null 2>&1 \
+        && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
+        PYTHON_BIN="${candidate}"
+        break
+    fi
+done
+if [[ -n "${PYTHON_BIN}" ]]; then
+    # PYTHONIOENCODING=utf-8: the review prints emoji, but Python on Windows
+    # defaults stdout to the ANSI code page (cp1252) and dies with
+    # UnicodeEncodeError — while printing its own error message, so the real
+    # verdict is lost and the run looks like a review failure. Already the
+    # default on Linux, so this is a no-op in CI.
+    PYTHONIOENCODING=utf-8 "${PYTHON_BIN}" scripts/ci/local-architecture-review.py || {
         echo "❌ Architecture review found blocking issues!"
         echo "   Fix violations before creating PR"
         exit 1
