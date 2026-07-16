@@ -1,0 +1,115 @@
+name: PR Gate
+
+# ===========================================================================
+# THE PER-PR REQUIRED CHECK (#2865)
+# ===========================================================================
+# WHY THIS EXISTS
+# ---------------
+# `trunk` branch protection required the context `CI Gate`, which ci.yml
+# produces ONLY on a `train/batch/*` workflow_dispatch — never on a PR head SHA
+# (ci.yml has no `pull_request` trigger, deliberately). So every PR sat at
+# mergeStateStatus=BLOCKED forever and `--admin` became the only way to land
+# anything. Admin merges bypass the train, so the batch CI never ran on the
+# merged work, and a stale docs/gis/data/feature-catalog.json reached trunk red.
+# This workflow supplies a context that actually materializes on a PR, so
+# protection can name a check that is reachable and `clean` becomes attainable
+# (which also un-blocks pr-merge-train.yml, whose only precondition is `clean`).
+#
+# THE NAME IS `PR Gate`, NOT `CI Gate`
+# ------------------------------------
+# `CI Gate` is the batch aggregator in ci.yml. Conflating the two is the exact
+# category error #2865 is about, and it is the same one ci.yml already warns
+# against one layer down: "The merge-queue REQUIRED check must be `Merge Queue
+# Gate`, NOT `CI Gate`." Three gates, three distinct contexts:
+#   * `PR Gate`          (this file)  — per-PR,        pull_request
+#   * `Merge Queue Gate` (ci.yml)     — per-batch,     merge_group   [dormant]
+#   * `CI Gate`          (ci.yml)     — train batch CI, workflow_dispatch/schedule
+#
+# WHY A SEPARATE WORKFLOW INSTEAD OF ADDING `pull_request:` TO ci.yml
+# -------------------------------------------------------------------
+# Because that would re-create the problem the current design was built to
+# avoid. Nearly every heavy job in ci.yml is guarded by
+# `github.event_name != 'pull_request' || <not dependabot>`, which evaluates
+# TRUE for an ordinary PR — so merely adding the trigger would fan the full
+# ~45-job matrix (AOT, docker, the 30+ Server Tests shards, browser/MCP lanes)
+# out on every push to every PR. That is the runner storm that starved the
+# merge queue into being disabled on 2026-06-18 (ruleset 17808547). A separate
+# file cannot accidentally fire ci.yml's matrix. The no-per-PR-matrix decision
+# in ci.yml's header stands; this workflow does not touch it.
+#
+# THE GATE LOGIC IS SHARED, NOT COPIED
+# ------------------------------------
+# The steps live in ./.github/actions/lean-gate and are used verbatim by
+# ci.yml's `Merge Queue Gate`. Two hand-maintained copies of the same gate is
+# the drift that produced this ticket; there is one definition.
+#
+# IT MUST STAY CHEAP
+# ------------------
+# One ubuntu-latest runner. No service containers, no Docker, no matrix, no
+# coverage collection. Build (warnings-as-errors) + format + Server Fast tier +
+# architecture tests. It is not a replacement for the train's batch CI — it is
+# the cheap floor that stops a PR that cannot compile, is unformatted, breaks
+# shared unit behavior, or has drifted the feature catalog from reaching trunk
+# at all. The authoritative full matrix remains the train's batch CI and the
+# nightly schedule.
+#
+# NO `paths:` FILTER — IT RUNS ON EVERY PR, ON PURPOSE
+# ----------------------------------------------------
+# A required status check with a `paths:` filter never reports on a PR that
+# does not match it, and GitHub leaves such a PR permanently "Expected —
+# Waiting for status to be reported". That is #2865 again with extra steps.
+# A required context must be unconditional.
+
+on:
+  pull_request:
+    branches: [trunk]
+  # Manual replay for a PR head or a branch, e.g. after a transient runner fault.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  # Key on the PR number so a re-push cancels the superseded run instead of
+  # queuing a second full build behind it. The rollup always reflects the run
+  # for the newest head SHA.
+  group: pr-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  pr-gate:
+    # This exact string is the branch-protection required context. Changing it
+    # silently un-gates trunk (a renamed context stops reporting and protection
+    # waits forever). See #2865.
+    name: PR Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # The full-solution Release build can exhaust ubuntu-latest disk once
+      # every project writes bin/obj. Reclaim unused hosted toolchains before
+      # .NET setup and restore. Best-effort; mirrors ci.yml's heavy jobs.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Lean gate (build + format + fast unit/architecture smoke)
+        uses: ./.github/actions/lean-gate
+        with:
+          trx-prefix: pr-gate

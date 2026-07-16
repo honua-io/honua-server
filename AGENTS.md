@@ -141,20 +141,33 @@ Every `honua-server` PR runs a **Validate PR Template Compliance** check (in `ci
 
 ## Merge Train (how PRs actually land)
 
-There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events only run CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The required branch-protection check, **`CI Gate`**, is produced exclusively by the train's **batch CI** — so a freshly opened PR always shows as `blocked`; that is normal, not a problem to fix.
+There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A PR's own events run the cheap **`PR Gate`** (`.github/workflows/pr-gate.yml` — build + format + Fast unit + architecture smoke, one runner), CodeQL, GitBook previews, and the drift/OpenAPI governance checks. The heavy ~45-job matrix runs only on the train's **batch CI** and the nightly schedule.
+
+**The required branch-protection check is still `CI Gate`, which the batch CI produces exclusively — it never appears on a PR head SHA.** So a freshly opened PR shows as `blocked` and stays that way no matter how green it is (#2865). That is a known configuration bug, not a problem with your PR: **do not chase it, and do not `--admin` around it — dispatch the train (below).** `PR Gate` exists to become that required context; until protection is flipped to it, `blocked` remains the normal steady state.
+
+> **Maintainer note (#2865):** once the required context is swapped to `PR Gate` (`gh api -X PATCH repos/honua-io/honua-server/branches/trunk/protection/required_status_checks` with `checks=[{context: "PR Gate", app_id: 15368}]`), a green PR reaches `CLEAN` on its own, `pr-merge-train.yml` starts landing PRs unattended, and the two paragraphs above go stale — update them then.
+
+### Landing a PR (the ONLY non-admin path today)
+
+```bash
+gh pr edit <N> --add-label train:hold   # exclude any PR that is not ready to land
+gh workflow run merge-train.yml -f train_apply=true
+```
+
+- **`train_apply` defaults to `false` — a bare `gh workflow run merge-train.yml` is a DRY RUN** that reports decisions and merges nothing. It looks like a no-op because it is one. `-f train_apply=true` is the only thing that lands a batch; scheduled and `workflow_run` invocations hard-code `TRAIN_APPLY=0` and can never act.
+- The train lands the whole **batch**, not just the PR you are looking at. Label every PR you do not want landed with **`train:hold`** first (`hold` is honored as a legacy alias, and `train:escalated` also excludes). Marking a PR draft excludes it too.
+- Verified working: #2860 landed this way with no `--admin` (run 29445247618).
 
 Two workflows cooperate:
 
-- **`merge-train.yml` ("Merge Train")** — the batch former. On a ~2-hour schedule (and on manual dispatch) it selects eligible PRs (open, non-draft, no `hold` label, no `train:escalated` label), assembles them oldest-first onto a `train/batch/<trunk-sha>/<id>` branch, computes the smart-CI shard subset for the cumulative diff, and dispatches `ci.yml` on that branch. Batch success stamps `CI Gate` onto the member PR heads.
-- **`pr-merge-train.yml` ("PR merge train")** — the lander. Every few minutes it squash-merges the oldest PR whose `mergeable_state` is `clean` (green + up to date) and freshens green-but-behind PRs onto trunk. One merge per run.
+- **`merge-train.yml` ("Merge Train")** — the batch former. On a 15-minute schedule (dry-run only) and on manual dispatch (the sole path that can act) it selects eligible PRs (open, non-draft, no `train:hold`/`hold` label, no `train:escalated` label), assembles them oldest-first onto a `train/batch/<trunk-sha>/<id>` branch, computes the smart-CI shard subset for the cumulative diff, and dispatches `ci.yml` on that branch. Batch success stamps `CI Gate` onto the member PR heads.
+- **`pr-merge-train.yml` ("PR merge train")** — the lander. Every few minutes it squash-merges the oldest PR whose `mergeable_state` is `clean` (green + up to date) and freshens green-but-behind PRs onto trunk. One merge per run. **It cannot act while `CI Gate` is the required context** — `clean` is unreachable, so this lander is currently inert (#2865); the manual `train_apply=true` dispatch above is what actually lands work.
 
 What to do (and not do):
 
-- **Do not admin-merge** around the train, and do not wait for a per-PR CI matrix that will never run. Open the PR, keep it non-draft, and let the train land it.
-- **Manual dispatch is dry-run by default.** To actually form and land a batch: `gh workflow run merge-train.yml -f train_apply=true`. Without `train_apply=true` you get a report only (`TRAIN_APPLY=0`).
+- **Do not admin-merge** around the train, and do not wait for a per-PR CI matrix that will never run. Open the PR, keep it non-draft, and dispatch the train with `train_apply=true`.
 - **Batch failure ⇒ `train:escalated`.** When a batch fails, the train attributes the failure and labels the batch members `train:escalated`, which excludes them from future batches. If a later rerun of that same `train/batch/*` CI run turns green, `merge-train-rerun-recovery.yml` clears the stale escalation labels and stamps `CI Gate` on the member PR heads. If the failure is real, fix the root cause, remove the label, and re-dispatch with `train_apply=true`.
 - **Batch CI is stricter than local builds.** The Linux batch lane has analyzer rules that may not fire locally on Windows (e.g. `CA1873` on log-argument evaluation). A locally-clean warnings-as-errors build does not guarantee the batch build passes; read the batch log (`gh run view <id> --log-failed`) and fix on the PR branch.
-- Exclude a PR from the train with the `hold` label or by marking it draft.
 - The known `40P01` deadlock flake applies to batch shards too — rerun the failed shard rather than "fixing" it (see Pull Request Policy above).
 
 ## MVP Deferrals (Operational Simplicity)
