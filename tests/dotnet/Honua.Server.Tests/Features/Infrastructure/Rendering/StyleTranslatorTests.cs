@@ -221,7 +221,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","layout":{"visibility":"none"}}]""");
 
-        StyleTranslator.ShouldRenderLayer(layers[0]).Should().BeFalse();
+        StyleTranslator.ShouldRenderLayer(layers[0], RenderZoom.NotDerivable("unit test")).Should().BeFalse();
     }
 
     [Theory]
@@ -233,8 +233,53 @@ public class StyleTranslatorTests
     public void ShouldRenderLayer_WithZoomContext_AppliesMinInclusiveMaxExclusive(double? zoom, bool expected)
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","minzoom":5,"maxzoom":10}]""");
+        var renderZoom = zoom.HasValue ? RenderZoom.At(zoom.Value) : RenderZoom.NotDerivable("unit test");
 
-        StyleTranslator.ShouldRenderLayer(layers[0], zoom).Should().Be(expected);
+        StyleTranslator.ShouldRenderLayer(layers[0], renderZoom).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(4.99, false)]
+    [InlineData(5.0, true)]
+    [InlineData(9.99, true)]
+    [InlineData(10.0, false)]
+    public void IsAnyLayerInZoomRange_SingleScopedLayer_MatchesLayerGate(double zoom, bool expected)
+    {
+        var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","minzoom":5,"maxzoom":10}]""");
+
+        StyleTranslator.IsAnyLayerInZoomRange(layers, RenderZoom.At(zoom)).Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void IsAnyLayerInZoomRange_OneLayerInRange_ReturnsTrue()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"circle","minzoom":14},{"id":"b","type":"line","maxzoom":8}]""");
+
+        StyleTranslator.IsAnyLayerInZoomRange(layers, RenderZoom.At(4)).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void IsAnyLayerInZoomRange_AllLayersOutOfRange_ReturnsFalse()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"circle","minzoom":14},{"id":"b","type":"line","minzoom":16}]""");
+
+        StyleTranslator.IsAnyLayerInZoomRange(layers, RenderZoom.At(4)).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsAnyLayerInZoomRange_NoDerivedZoom_ReturnsTrue()
+    {
+        var layers = StyleTranslator.ParseStyleLayers("""[{"id":"a","type":"circle","minzoom":14}]""");
+
+        StyleTranslator.IsAnyLayerInZoomRange(layers, RenderZoom.NotDerivable("unit test")).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void IsAnyLayerInZoomRange_EmptyStyle_ReturnsTrue()
+    {
+        StyleTranslator.IsAnyLayerInZoomRange([], RenderZoom.At(4)).Should().BeTrue();
     }
 
     [UnitTest]

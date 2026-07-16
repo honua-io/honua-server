@@ -46,7 +46,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// <param name="transparent">Whether background should be transparent</param>
     /// <param name="backgroundColor">Background color (when not transparent)</param>
     /// <param name="geometryType">Geometry type of the layer</param>
-    /// <param name="zoom">Optional MapLibre zoom level for evaluating layer minzoom/maxzoom gates</param>
+    /// <param name="zoom">MapLibre zoom level for evaluating layer minzoom/maxzoom gates</param>
     /// <returns>PNG image bytes</returns>
     internal byte[] RenderMap(
         IReadOnlyList<Feature> features,
@@ -57,7 +57,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         bool transparent,
         SKColor? backgroundColor,
         MetadataV2GeometryType geometryType,
-        double? zoom = null)
+        RenderZoom zoom)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ValidatePositiveDimension(imageWidth, nameof(imageWidth));
@@ -109,7 +109,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         int imageWidth,
         int imageHeight,
         MetadataV2GeometryType geometryType,
-        double? zoom = null)
+        RenderZoom zoom)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -265,7 +265,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         Func<double, double, SKPoint> transform,
-        double? zoom = null)
+        RenderZoom zoom)
     {
         foreach (var styleLayer in styleLayers)
         {

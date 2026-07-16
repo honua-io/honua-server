@@ -303,7 +303,8 @@ internal static partial class MapServerEndpoints
                     imageHeight,
                     parameters.Transparent,
                     backgroundColor,
-                    MetadataV2GeometryType.None);
+                    MetadataV2GeometryType.None,
+                    RenderZoom.NotDerivable("the export has no render layers"));
 
                 stopwatch.Stop();
                 MapServerLog.ExportCompleted(logger, serviceId, 0, stopwatch.Elapsed.TotalMilliseconds);
@@ -324,6 +325,17 @@ internal static partial class MapServerEndpoints
             }
 
             var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, bboxSrid.Value);
+
+            // Esri layer min/max scale gating (IsLayerVisibleAtScale) and MapLibre minzoom/maxzoom
+            // gating are independent: the former is layer metadata, the latter belongs to the bound
+            // style document. Both apply to an export.
+            var renderZoom = await DeriveRenderZoomAsync(
+                context,
+                renderExtent,
+                imageSrid.Value,
+                imageWidth,
+                imageHeight,
+                cancellationToken).ConfigureAwait(false);
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
@@ -458,7 +470,7 @@ internal static partial class MapServerEndpoints
                 }
 
                 totalFeatureCount += features.Length;
-                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType);
+                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType, renderZoom);
             }
 
             stopwatch.Stop();
