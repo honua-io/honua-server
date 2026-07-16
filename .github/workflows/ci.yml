@@ -15,6 +15,24 @@ on:
   # the nightly schedule) still run them; only the per-PR fan-out is dropped.
   # A genuinely-broken PR is caught when the train batches it (attribute+drop).
   #
+  # PER-PR GATING LIVES IN pr-gate.yml, NOT HERE (#2865). Dropping the per-PR
+  # fan-out was right; leaving `CI Gate` as trunk's required context was not.
+  # `CI Gate` is produced only by a train/batch/* dispatch, so it never appears
+  # on a PR head SHA — every PR was permanently BLOCKED and `--admin` became the
+  # only merge path, which meant the batch CI never ran on merged work (that is
+  # how a stale feature-catalog.json reached trunk). The fix is a SEPARATE
+  # workflow, `.github/workflows/pr-gate.yml`, publishing the context `PR Gate`:
+  # one cheap runner (build + format + Fast unit + architecture smoke, no
+  # services, no Docker, no matrix), sharing its steps with `merge-queue-gate`
+  # below via ./.github/actions/lean-gate.
+  # DO NOT "simplify" that by adding a `pull_request` trigger to THIS workflow.
+  # The heavy jobs below guard on `event_name != 'pull_request' || <not
+  # dependabot>`, which is TRUE for an ordinary PR — the trigger alone would fan
+  # the whole ~45-job matrix out per PR and rebuild the exact runner storm this
+  # header exists to prevent. Three gates, three distinct contexts, none
+  # interchangeable: `PR Gate` (per-PR) / `Merge Queue Gate` (per-batch,
+  # dormant) / `CI Gate` (the train's batch CI).
+  #
   # SELECTIVE BATCHES: a train/batch/* dispatch is gated like a PR diffed against
   # trunk — the `changes` + `targeted-shards` jobs run only the shards/lanes the
   # batch's cumulative diff touches (the smart-ci subset the train computes),
@@ -2233,18 +2251,25 @@ jobs:
   # Gate", NOT "CI Gate". It is deliberately LEAN: build (warnings-as-errors) +
   # format + the Fast/architecture unit smoke. It does NOT run AOT, docker, the
   # Server Tests shard matrix, the browser/MCP/Postgres lanes, or any
-  # integration suite — those already gated each PR on its own pull_request run
-  # before the PR entered the queue. The queue only needs to catch SEMANTIC
-  # conflicts introduced by BATCHING (e.g. two PRs that each compile alone but
-  # not together, a format drift, an architecture-rule break). Keeping it lean
-  # is the fix for the 2026-06-18 runner-starvation spiral: a batch of 5 no
-  # longer fans out to ~225 concurrent jobs, so the group finishes inside
-  # check_response_timeout_minutes and the front PR is not ejected.
+  # integration suite — those already gated each PR on its own run before the PR
+  # entered the queue (today that is `PR Gate` from pr-gate.yml). The queue only
+  # needs to catch SEMANTIC conflicts introduced by BATCHING (e.g. two PRs that
+  # each compile alone but not together, a format drift, an architecture-rule
+  # break). Keeping it lean is the fix for the 2026-06-18 runner-starvation
+  # spiral: a batch of 5 no longer fans out to ~225 concurrent jobs, so the
+  # group finishes inside check_response_timeout_minutes and the front PR is not
+  # ejected.
+  #
+  # DORMANT: the GitHub merge queue is disabled (2026-06-18) and re-enabling it
+  # is an explicit non-goal (#2865), so this job does not currently fire. Its
+  # steps are shared with the live per-PR `PR Gate` job via
+  # ./.github/actions/lean-gate — one definition, so the dormant copy cannot
+  # rot away from the live one.
   merge-queue-gate:
     name: Merge Queue Gate
     if: ${{ github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -2263,55 +2288,10 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
-
-      # Full-solution warnings-as-errors build. On a BATCHED commit the
-      # "affected projects" optimization is unsafe (the merge_group ref's diff
-      # base is the queue base, not a single PR), so build the whole solution —
-      # this is the one place we want the combined batch fully compiled.
-      - name: Build (warnings as errors)
-        timeout-minutes: 20
-        run: |
-          dotnet build Honua.sln \
-            --no-restore \
-            --configuration Release \
-            /p:TreatWarningsAsErrors=true
-
-      - name: Format Check
-        run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
-
-      - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
-
-      # Fast unit smoke — the same coverage-free Fast tier the PR lane runs, to
-      # catch a batch that compiles but breaks shared unit behavior. NOT the
-      # Postgres/integration shards (those ran per-PR and need the DB service).
-      - name: Run .NET Tests (Server Fast Tier)
-        timeout-minutes: 15
-        run: |
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "Tier=Fast" \
-            --logger "trx;LogFileName=merge-queue-server-fast.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      # Architecture-enforcement tests are cheap and catch the BLOCKING
-      # dependency-direction / controller / encapsulation regressions that a
-      # batch could reintroduce by combining two otherwise-clean PRs.
-      - name: Run .NET Tests (Architecture)
-        timeout-minutes: 10
-        run: |
-          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=merge-queue-architecture.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+      - name: Lean gate (build + format + fast unit/architecture smoke)
+        uses: ./.github/actions/lean-gate
+        with:
+          trx-prefix: merge-queue
 
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.

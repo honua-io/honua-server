@@ -1,0 +1,103 @@
+name: Lean Gate
+description: >
+  Shared LEAN gate: full-solution warnings-as-errors build + format check + the
+  Fast/architecture unit smoke. Single source of truth for BOTH the per-PR
+  `PR Gate` job (.github/workflows/pr-gate.yml) and the `Merge Queue Gate` job
+  (.github/workflows/ci.yml). Keeping one definition is deliberate — two
+  hand-maintained copies of a gate is exactly the drift that produced #2865.
+
+  Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
+  (and may reclaim runner disk); this action owns only the gate itself.
+
+  NOT included, on purpose: AOT, docker, the Server Tests shard matrix, the
+  browser/MCP/Postgres lanes, and every other integration suite. Those are the
+  ~45-job matrix whose per-PR fan-out caused the 2026-06-18 runner-starvation
+  spiral. This action must stay cheap: one runner, no service containers, no
+  Docker.
+
+inputs:
+  trx-prefix:
+    description: 'Prefix for emitted .trx file names so callers do not collide.'
+    required: false
+    default: 'lean-gate'
+  build-timeout-minutes:
+    description: 'Cap for the warnings-as-errors build step.'
+    required: false
+    default: '20'
+  server-fast-timeout-minutes:
+    description: 'Cap for the Server Fast tier unit smoke.'
+    required: false
+    default: '15'
+  architecture-timeout-minutes:
+    description: 'Cap for the architecture-enforcement tests.'
+    required: false
+    default: '10'
+
+runs:
+  using: composite
+  steps:
+    - name: Restore
+      shell: bash
+      run: scripts/ci/dotnet-restore-retry.sh Honua.sln
+
+    # Full-solution warnings-as-errors build. The "affected projects"
+    # optimization the heavy `build` job uses is NOT applied here: on a batched
+    # merge_group commit the diff base is the queue base rather than a single
+    # PR, and on a PR the whole point of this gate is that nothing else compiles
+    # the solution before merge. Build everything; it is one runner.
+    #
+    # Composite-action steps do not support `timeout-minutes`, so each bounded
+    # step wraps its command in coreutils `timeout` (exit 124 => step fails).
+    - name: Build (warnings as errors)
+      shell: bash
+      run: |
+        timeout "${{ inputs.build-timeout-minutes }}m" \
+          dotnet build Honua.sln \
+            --no-restore \
+            --configuration Release \
+            /p:TreatWarningsAsErrors=true
+
+    - name: Format Check
+      shell: bash
+      run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
+
+    - name: Create Test Results Directory
+      shell: bash
+      run: mkdir -p ./tests/TestResults
+
+    # Fast unit smoke. The [UnitTest] tests in Server.Tests use NSubstitute /
+    # NullLogger / in-memory caches and do NOT require the PostgreSQL service —
+    # that is what keeps this step to a few minutes and this job to a single
+    # service-free runner. Coverage-free on purpose (the Coverlet collector adds
+    # ~20m of teardown on Honua.Server.dll and would destroy the "cheap" budget).
+    - name: Run .NET Tests (Server Fast Tier)
+      shell: bash
+      run: |
+        timeout "${{ inputs.server-fast-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Tier=Fast" \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-fast.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+    # Architecture-enforcement tests: cheap (~75s) and high-value. This step is
+    # what makes the gate catch the failure that motivated #2865 —
+    # FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput
+    # fails when docs/gis/data/feature-catalog.json is stale, which previously
+    # only surfaced on trunk AFTER an admin merge. It also catches the BLOCKING
+    # dependency-direction / controller / encapsulation / API-surface-coverage
+    # regressions.
+    - name: Run .NET Tests (Architecture)
+      shell: bash
+      run: |
+        timeout "${{ inputs.architecture-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
