@@ -6496,7 +6496,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Errors.StandardErrorResponseFormatterTests.FormatError_WmsAliasPath_ReturnsServiceExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcAlias_GetCapabilities_ReturnsXml"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcAlias_GetCapabilities_ReturnsXml",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend"
       ],
       "proof_ledger_surface": "wms-1.3",
       "maturity": "implemented"
@@ -9800,6 +9801,17 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_MaxZoomScopedStyle_OmitsLayerAtOrAboveThreshold",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_MinZoomScopedStyle_OmitsLayerBelowThreshold",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_UnscopedStyle_RendersAtEveryScale",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms111_GetLegendGraphic_ReturnsPngLegend",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetCapabilities_AdvertisesLegendUrlForLegendCapableLayer",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_InvalidScale_ReturnsServiceException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_MissingLayer_ReturnsServiceException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OversizedWidth_ReturnsInvalidDimensionValue",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_ReturnsPngLegend",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_UnknownLayer_ReturnsLayerNotDefined",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_UnknownStyle_ReturnsStyleNotDefined",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_UnsupportedFormat_ReturnsInvalidFormat",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_WidthAndHeightSizeTheSwatch",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_WithScale_ReturnsPngLegend",
         "Honua.Server.Tests.Features.Security.WmsServiceRbacTests.GetCapabilities_WithAnonymousClient_ReturnsWmsAccessDeniedException"
       ],
       "proof_ledger_surface": "map-server",

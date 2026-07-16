@@ -115,7 +115,7 @@ internal static partial class WmsRequestHandlers
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     /// <summary>
-    /// Handle OGC WMS requests (GetCapabilities, GetMap, GetFeatureInfo).
+    /// Handle OGC WMS requests (GetCapabilities, GetMap, GetFeatureInfo, GetLegendGraphic).
     /// </summary>
     internal static async Task<IResult> HandleWms(HttpContext context)
     {
@@ -232,6 +232,11 @@ internal static partial class WmsRequestHandlers
             if (string.Equals(requestType, "GetFeatureInfo", StringComparison.OrdinalIgnoreCase))
             {
                 return await HandleWmsGetFeatureInfo(context, svcDef, accessibleLayers, serviceId, logger);
+            }
+
+            if (string.Equals(requestType, "GetLegendGraphic", StringComparison.OrdinalIgnoreCase))
+            {
+                return await HandleWmsGetLegendGraphic(context, accessibleLayers, serviceId, logger);
             }
 
             return CreateWmsServiceException(context, "OperationNotSupported", $"Unsupported WMS REQUEST '{requestType}'.");
