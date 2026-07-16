@@ -6,6 +6,7 @@ using System.Text;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Helpers;
 using MetadataV2TemporalRange = Honua.Infrastructure.Helpers.TemporalExtentHelpers.MetadataV2TemporalRange;
 using Honua.Infrastructure.Rendering;
@@ -157,6 +158,48 @@ internal static partial class WmsRequestHandlers
         }
 
         return dict;
+    }
+
+    /// <summary>
+    /// Resolves which layers GetLegendGraphic can actually serve, so LegendURL is
+    /// advertised per-layer rather than blanket-asserted (capability honesty, #2803).
+    /// A layer qualifies only when its resolved style plan — the same plan GetMap
+    /// renders from — yields symbology the swatch renderer paints.
+    /// </summary>
+    private static async Task<HashSet<int>> PrefetchLegendCapableLayersAsync(
+        HttpContext context,
+        IReadOnlyList<WmsLayer> layers,
+        CancellationToken cancellationToken)
+    {
+        var styleCatalog = context.RequestServices.GetService<ILayerStyleCatalog>();
+        if (styleCatalog is null || layers.Count == 0)
+        {
+            return [];
+        }
+
+        // Fan out like the temporal prefetch above: each style lookup opens its own
+        // connection, so the per-layer capabilities loop does not pay a sequential
+        // round-trip per layer.
+        var candidates = layers.Where(static layer => ResourceHasGeometry(layer.Resource)).ToArray();
+        if (candidates.Length == 0)
+        {
+            return [];
+        }
+
+        var plans = await Task.WhenAll(candidates.Select(layer =>
+            GetRasterStylePlanAsync(styleCatalog, layer.StorageLayerId, cancellationToken)))
+            .ConfigureAwait(false);
+
+        var capable = new HashSet<int>();
+        for (var i = 0; i < candidates.Length; i++)
+        {
+            if (SupportsLegend(plans[i]))
+            {
+                capable.Add(candidates[i].StorageLayerId);
+            }
+        }
+
+        return capable;
     }
 
     /// <summary>
@@ -456,6 +499,9 @@ internal static partial class WmsRequestHandlers
         var temporalRanges = await PrefetchTemporalRangesAsync(
             context, accessibleLayers, cancellationToken).ConfigureAwait(false);
 
+        var legendCapableLayers = await PrefetchLegendCapableLayersAsync(
+            context, accessibleLayers, cancellationToken).ConfigureAwait(false);
+
         foreach (var layer in accessibleLayers)
         {
             var layerName = GetWmsLayerDisplayName(layer);
@@ -492,6 +538,22 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("        <Style>");
             sb.AppendLine("          <Name>default</Name>");
             sb.AppendLine("          <Title>Default style</Title>");
+            if (legendCapableLayers.Contains(layer.StorageLayerId))
+            {
+                // width/height are deliberately omitted: both are optional in the WMS
+                // schema and the composed legend's size depends on label metrics we
+                // cannot know without rendering. Advertising a guess would be a
+                // capability claim we do not honor.
+                var legendHref =
+                    $"{wmsUrlPrefix}SERVICE=WMS&VERSION={(isWms111 ? Wms111Version : Wms13Version)}"
+                    + $"&REQUEST=GetLegendGraphic&LAYER={Uri.EscapeDataString(layerName)}"
+                    + "&STYLE=default&FORMAT=image/png";
+                sb.AppendLine("          <LegendURL>");
+                sb.AppendLine("            <Format>image/png</Format>");
+                AppendWmsOnlineResource(sb, "            ", legendHref, isWms111);
+                sb.AppendLine("          </LegendURL>");
+            }
+
             sb.AppendLine("        </Style>");
             sb.AppendLine("      </Layer>");
         }

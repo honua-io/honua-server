@@ -79,7 +79,7 @@ Modern resource-oriented OGC standards, each with its own landing page, `/confor
 
 For clients pinned to the pre-REST OGC generation. All are KVP-style and read-only except WFS 2.0 transactions.
 
-- **WMS 1.3 / 1.1.1** — GetCapabilities, GetMap, GetFeatureInfo. WMS 1.1.1 uses `SRS`, `X`/`Y`, and lon/lat `EPSG:4326` BBOX order.
+- **WMS 1.3 / 1.1.1** — GetCapabilities, GetMap, GetFeatureInfo, GetLegendGraphic. WMS 1.1.1 uses `SRS`, `X`/`Y`, and lon/lat `EPSG:4326` BBOX order.
   `GET /ogc/services/parcels/wms?service=WMS&version=1.3.0&request=GetMap&…`
 - **WFS 2.0 / 1.1.0 / 1.0.0** — GetFeature with version-appropriate GML (3.2 / 3.1.1 / 2.1.2). Legacy versions are read-only.
   `GET /wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=parcels`
