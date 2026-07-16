@@ -9797,6 +9797,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetMap_WithoutFilter_NoRegression",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_InvalidServiceId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_InvalidService_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_MaxZoomScopedStyle_OmitsLayerAtOrAboveThreshold",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_MinZoomScopedStyle_OmitsLayerBelowThreshold",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_UnscopedStyle_RendersAtEveryScale",
         "Honua.Server.Tests.Features.Security.WmsServiceRbacTests.GetCapabilities_WithAnonymousClient_ReturnsWmsAccessDeniedException"
       ],
       "proof_ledger_surface": "map-server",

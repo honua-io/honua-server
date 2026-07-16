@@ -29,6 +29,15 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <!-- Compressor side of the managed zstd port, used to build benchmark inputs (#2854). -->
+    <PackageReference Include="ZstdSharp.Port" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Real GDAL-produced LZW tile payload, extracted from the #2854 test fixtures. -->
+    <None Update="Fixtures\*.bin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

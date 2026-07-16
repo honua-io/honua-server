@@ -20,6 +20,10 @@
     <None Update="Features\Import\MigrationArtifactSchemaSnapshots\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- GDAL-produced COG fixtures and GDAL's own decode of them (#2854). -->
+    <None Update="Raster\CogParser\Fixtures\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
