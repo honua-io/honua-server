@@ -26,6 +26,11 @@ require_command jq
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/python-resolve.sh"
 PYTHON_BIN="$(honua_resolve_python || true)"
 
+# CR-safe jq: strip the CRLF the Windows jq binary emits in text mode (no-op on
+# Linux). Sourced AFTER require_command above so that guard probes the real
+# binary, not this wrapper function.
+source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
+
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
