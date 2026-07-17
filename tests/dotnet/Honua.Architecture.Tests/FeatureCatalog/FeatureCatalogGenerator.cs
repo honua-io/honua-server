@@ -56,7 +56,7 @@ namespace Honua.Architecture.Tests.FeatureCatalog;
 internal static class FeatureCatalogGenerator
 {
     /// <summary>Catalog schema version. Bump when the entry shape changes.</summary>
-    public const string SchemaVersion = "1.0.0";
+    public const string SchemaVersion = "1.1.0";
 
     /// <summary>
     /// Fallback maturity tier for a test-backed route that has no matching
@@ -88,6 +88,7 @@ internal static class FeatureCatalogGenerator
     {
         var provingTestsByEndpoint = CollectProvingTests();
         var ledger = ProofLedgerProjection.Load();
+        var capabilityMapper = CapabilityRouteMapper.Load();
 
         var entries = EndpointRegistry.All
             // EndpointRegistry.All may list the same (method, route) twice when a
@@ -104,18 +105,21 @@ internal static class FeatureCatalogGenerator
 
                 var surface = ledger.ResolveSurface(endpoint.Path);
                 var id = SlugFor(endpoint.Method, endpoint.Path);
+                var family = surface?.Protocol ?? "uncategorized";
+                var method = endpoint.Method.ToUpperInvariant();
 
                 return new FeatureCatalogEntry
                 {
                     Id = id,
                     Route = endpoint.Path,
-                    Method = endpoint.Method.ToUpperInvariant(),
-                    Family = surface?.Protocol ?? "uncategorized",
+                    Method = method,
+                    Family = family,
                     Protocol = surface?.SurfaceKind ?? "http-route",
                     CodeLocation = surface?.CodeLocation ?? "src/Honua.Server/EndpointRegistry.cs",
                     ProvingTests = provingTests,
                     ProofLedgerSurface = surface?.SurfaceId ?? string.Empty,
-                    Maturity = ResolveMaturity(surface?.SurfaceId, id, endpoint.Path)
+                    Maturity = ResolveMaturity(surface?.SurfaceId, id, endpoint.Path),
+                    Capability = capabilityMapper.Resolve(family, endpoint.Path, method)
                 };
             })
             .OrderBy(entry => entry.Method, StringComparer.Ordinal)
@@ -368,6 +372,14 @@ internal sealed class FeatureCatalogEntry
     /// descriptor.
     /// </summary>
     public string Maturity { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Customer-facing capability key (issue #2893) this entry belongs to,
+    /// resolved from <c>docs/gis/data/capability-route-mapping.v1.json</c> via
+    /// <see cref="CapabilityRouteMapper"/>. Every entry resolves to exactly one
+    /// capability key from <see cref="Honua.Core.Features.Licensing.Domain.CapabilityKeyCatalog.All"/>.
+    /// </summary>
+    public string Capability { get; init; } = string.Empty;
 }
 
 [JsonSourceGenerationOptions(
