@@ -7,7 +7,7 @@ namespace Honua.Plugins.Abstractions;
 
 /// <summary>
 /// A plugin extension point that contributes a feature output format out-of-tree (issue #2856,
-/// ADR-0066). A format declares a stable wire token (<see cref="FormatId"/>), the media type and
+/// ADR-0067). A format declares a stable wire token (<see cref="FormatId"/>), the media type and
 /// file extension it produces, and streams a sequence of canonical <see cref="Feature"/> values to
 /// an output <see cref="System.IO.Stream"/>. The host consults registered formats at its
 /// export/format-negotiation seam after the built-in formats, so a third party can add, for

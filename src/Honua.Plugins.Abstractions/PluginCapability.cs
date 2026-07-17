@@ -39,7 +39,7 @@ public enum PluginCapability
 
     /// <summary>
     /// Permits the plugin to contribute a feature output format via the
-    /// <see cref="IFeatureOutputFormat"/> extension point (issue #2856, ADR-0066). Contributed
+    /// <see cref="IFeatureOutputFormat"/> extension point (issue #2856, ADR-0067). Contributed
     /// formats are consulted by the host's export/format-negotiation seam after the built-in
     /// formats and remain Enterprise-gated (<c>plugin.sdk</c>) plus honor the operator kill-switch.
     /// </summary>
@@ -48,7 +48,7 @@ public enum PluginCapability
     /// <summary>
     /// Permits the plugin to contribute a read-only vector data store by implementing the Core
     /// provider seam (<c>Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProvider</c>)
-    /// (issue #2856, ADR-0066). The host registers the plugin as an additional feature-data
+    /// (issue #2856, ADR-0067). The host registers the plugin as an additional feature-data
     /// provider so the existing provider registry/router bind layers to it by provider name —
     /// no runtime assembly loading, no router changes. Because the provider contract lives in
     /// <c>Honua.Core</c> rather than this minimal contract package, a data-store plugin

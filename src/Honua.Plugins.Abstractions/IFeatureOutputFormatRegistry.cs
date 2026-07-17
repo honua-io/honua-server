@@ -5,7 +5,7 @@ namespace Honua.Plugins.Abstractions;
 
 /// <summary>
 /// Host-facing lookup of plugin-contributed <see cref="IFeatureOutputFormat"/>s (issue #2856,
-/// ADR-0066). A single implementation is resolved from DI; when the plugin SDK is unlicensed, the
+/// ADR-0067). A single implementation is resolved from DI; when the plugin SDK is unlicensed, the
 /// operator kill-switch is off, or no output-format plugins are registered, the host registers
 /// <see cref="NoOpFeatureOutputFormatRegistry"/> so the export/negotiation seam has zero overhead
 /// and can depend on this abstraction unconditionally.

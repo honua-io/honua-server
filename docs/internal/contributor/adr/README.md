@@ -69,6 +69,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0064](0064-geoprocessing-destructive-plan-approval-lane.md) | Geoprocessing Destructive-Plan Approval Lane (Fail-Closed Classifier + Control-Plane Proposal Reuse) | Accepted | 2026-07 |
 | [0065](0065-imageserver-photogrammetric-analytics.md) | ImageServer Photogrammetric Tie-Point and 3D Measurement Analytics | Accepted | 2026-07 |
 | [0066](0066-mcp-evidence-vs-intelligence-boundary.md) | Evidence-vs-Intelligence Boundary for the Open MCP Surface (Rename to `McpDataAccessSurface`) | Accepted | 2026-07 |
+| [0067](0067-plugin-data-store-and-output-format-extension-points.md) | Plugin Data-Store and Output-Format Extension Points | Accepted | 2026-07 |
 
 ## Template
 

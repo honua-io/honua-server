@@ -105,7 +105,7 @@ internal sealed class HonuaPluginBuilder(IServiceCollection services) : IHonuaPl
             // FeatureDataProviderRegistry (composed in the server's InfrastructureCompositionRoot)
             // enumerates GetServices<IFeatureDataProvider>() lazily, so the plugin provider is
             // routed by provider name with no router changes and independent of registration order
-            // (issue #2856, ADR-0066). The provider shares the plugin's singleton instance, so — like
+            // (issue #2856, ADR-0067). The provider shares the plugin's singleton instance, so — like
             // every other extension point — a data-store plugin must be thread-safe.
             _services.AddSingleton<IFeatureDataProvider>(sp => (IFeatureDataProvider)sp.GetRequiredService<TPlugin>());
         }

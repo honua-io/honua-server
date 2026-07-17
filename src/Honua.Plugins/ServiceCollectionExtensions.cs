@@ -25,7 +25,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="IPluginEditPipeline"/> / <see cref="IComputedFieldPipeline"/> /
     /// <see cref="IFeatureOutputFormatRegistry"/> unconditionally. Data-store plugins are registered
     /// as additional <c>IFeatureDataProvider</c>s picked up by the server's existing provider
-    /// registry/router (issue #2856, ADR-0066). Declared inter-plugin dependencies and
+    /// registry/router (issue #2856, ADR-0067). Declared inter-plugin dependencies and
     /// minimum-server-version constraints are validated at registration time and fail fast.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -60,7 +60,7 @@ public static class ServiceCollectionExtensions
         // singleton license service, so it can be a singleton.
         services.TryAddSingleton<IComputedFieldPipeline, ComputedFieldPipeline>();
 
-        // Output-format registry (issue #2856, ADR-0066). Registered as the real, license-gated
+        // Output-format registry (issue #2856, ADR-0067). Registered as the real, license-gated
         // registry only when at least one output-format plugin is present; otherwise the export /
         // format-negotiation seam gets the zero-overhead no-op so it can depend on
         // IFeatureOutputFormatRegistry unconditionally. It aggregates singleton IFeatureOutputFormat
