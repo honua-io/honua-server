@@ -9,9 +9,17 @@ using SkiaSharp;
 namespace Honua.Infrastructure.Rendering;
 
 /// <summary>
-/// Evaluates MapLibre style expressions against feature properties.
-/// Supports common expression operators: get, case, match, interpolate, step, literal, has, !, ==, !=, &lt;, &gt;, etc.
+/// Evaluates MapLibre style expressions against feature properties and the zoom the render is
+/// being evaluated at.
+/// Supports common expression operators: get, zoom, case, match, interpolate, step, literal, has, !, ==, !=, &lt;, &gt;, etc.
 /// </summary>
+/// <remarks>
+/// Every entry point takes an explicit <see cref="RenderZoom"/> rather than defaulting to "no zoom",
+/// so a caller cannot reach the zoom-dependent operators by accident. A render that carries
+/// <see cref="RenderZoom.NotDerivable"/> and evaluates a <c>["zoom"]</c> expression raises
+/// <see cref="StyleExpressionEvaluationException"/> instead of substituting a placeholder level
+/// (honua-server#2873).
+/// </remarks>
 internal static class ExpressionEvaluator
 {
     /// <summary>
@@ -23,37 +31,55 @@ internal static class ExpressionEvaluator
     private const double NumericEpsilon = 1e-9;
 
     /// <summary>
-    /// Evaluates a MapLibre expression to a color value.
+    /// Evaluates a MapLibre expression to a color value at the supplied <paramref name="zoom"/>.
     /// </summary>
-    public static SKColor EvaluateColor(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
+    public static SKColor EvaluateColor(
+        MapLibreExpression expression,
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
-        var result = Evaluate(expression, properties);
+        var result = Evaluate(expression, properties, zoom);
         return ParseColor(result);
     }
 
     /// <summary>
-    /// Evaluates a MapLibre expression to a float value.
+    /// Evaluates a MapLibre expression to a float value at the supplied <paramref name="zoom"/>.
     /// </summary>
-    public static float EvaluateFloat(MapLibreExpression expression, ImmutableDictionary<string, object?> properties, float defaultValue = 0f)
+    public static float EvaluateFloat(
+        MapLibreExpression expression,
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom,
+        float defaultValue = 0f)
     {
-        var result = Evaluate(expression, properties);
+        var result = Evaluate(expression, properties, zoom);
         return ConvertToFloat(result, defaultValue);
     }
 
     /// <summary>
-    /// Evaluates a MapLibre expression to a string value.
+    /// Evaluates a MapLibre expression to a string value at the supplied <paramref name="zoom"/>.
     /// </summary>
-    public static string? EvaluateString(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
+    public static string? EvaluateString(
+        MapLibreExpression expression,
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
-        var result = Evaluate(expression, properties);
+        var result = Evaluate(expression, properties, zoom);
         return result?.ToString();
     }
 
     /// <summary>
     /// Core expression evaluator.
     /// </summary>
-    public static object? Evaluate(MapLibreExpression expression, ImmutableDictionary<string, object?> properties)
+    /// <exception cref="StyleExpressionEvaluationException">
+    /// The expression evaluates <c>["zoom"]</c> but <paramref name="zoom"/> carries no derived level.
+    /// </exception>
+    public static object? Evaluate(
+        MapLibreExpression expression,
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
+        ArgumentNullException.ThrowIfNull(zoom);
+
         return expression.Kind switch
         {
             MapLibreExpressionKind.String => expression.StringValue,
@@ -61,7 +87,7 @@ internal static class ExpressionEvaluator
             MapLibreExpressionKind.Boolean => expression.BoolValue,
             MapLibreExpressionKind.Null => null,
             MapLibreExpressionKind.Array => expression.Items is { Length: > 0 }
-                ? EvaluateArrayExpression(expression.Items, properties)
+                ? EvaluateArrayExpression(expression.Items, properties, zoom)
                 : null,
             _ => null
         };
@@ -102,7 +128,10 @@ internal static class ExpressionEvaluator
         return values.Length > 0;
     }
 
-    private static object? EvaluateArrayExpression(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateArrayExpression(
+        MapLibreExpression[] array,
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
         if (array.Length == 0)
         {
@@ -118,31 +147,60 @@ internal static class ExpressionEvaluator
         {
             "get" => EvaluateGet(array, properties),
             "has" => EvaluateHas(array, properties),
-            "!" => EvaluateNot(array, properties),
-            "case" => EvaluateCase(array, properties),
-            "match" => EvaluateMatch(array, properties),
-            "step" => EvaluateStep(array, properties),
-            "interpolate" => EvaluateInterpolate(array, properties),
+            "zoom" => EvaluateZoom(zoom),
+            "!" => EvaluateNot(array, properties, zoom),
+            "case" => EvaluateCase(array, properties, zoom),
+            "match" => EvaluateMatch(array, properties, zoom),
+            "step" => EvaluateStep(array, properties, zoom),
+            "interpolate" => EvaluateInterpolate(array, properties, zoom),
             "literal" => array.Length > 1 ? EvaluateLiteral(array[1]) : null,
-            "to-string" => EvaluateToString(array, properties),
-            "to-number" => EvaluateToNumber(array, properties),
-            "typeof" => EvaluateTypeof(array, properties),
-            "concat" => EvaluateConcat(array, properties),
-            "==" => EvaluateComparison(array, properties, CompareEqual),
-            "!=" => EvaluateComparison(array, properties, CompareNotEqual),
-            "<" => EvaluateComparison(array, properties, CompareLessThan),
-            ">" => EvaluateComparison(array, properties, CompareGreaterThan),
-            "<=" => EvaluateComparison(array, properties, CompareLessThanOrEqual),
-            ">=" => EvaluateComparison(array, properties, CompareGreaterThanOrEqual),
-            "all" => EvaluateAll(array, properties),
-            "any" => EvaluateAny(array, properties),
-            "coalesce" => EvaluateCoalesce(array, properties),
-            "+" => EvaluateArithmetic(array, properties, (a, b) => a + b),
-            "-" => EvaluateArithmetic(array, properties, (a, b) => a - b),
-            "*" => EvaluateArithmetic(array, properties, (a, b) => a * b),
-            "/" => EvaluateArithmetic(array, properties, (a, b) => Math.Abs(b) > NumericEpsilon ? a / b : 0),
+            "to-string" => EvaluateToString(array, properties, zoom),
+            "to-number" => EvaluateToNumber(array, properties, zoom),
+            "typeof" => EvaluateTypeof(array, properties, zoom),
+            "concat" => EvaluateConcat(array, properties, zoom),
+            "==" => EvaluateComparison(array, properties, zoom, CompareEqual),
+            "!=" => EvaluateComparison(array, properties, zoom, CompareNotEqual),
+            "<" => EvaluateComparison(array, properties, zoom, CompareLessThan),
+            ">" => EvaluateComparison(array, properties, zoom, CompareGreaterThan),
+            "<=" => EvaluateComparison(array, properties, zoom, CompareLessThanOrEqual),
+            ">=" => EvaluateComparison(array, properties, zoom, CompareGreaterThanOrEqual),
+            "all" => EvaluateAll(array, properties, zoom),
+            "any" => EvaluateAny(array, properties, zoom),
+            "coalesce" => EvaluateCoalesce(array, properties, zoom),
+            "+" => EvaluateArithmetic(array, properties, zoom, (a, b) => a + b),
+            "-" => EvaluateArithmetic(array, properties, zoom, (a, b) => a - b),
+            "*" => EvaluateArithmetic(array, properties, zoom, (a, b) => a * b),
+            "/" => EvaluateArithmetic(array, properties, zoom, (a, b) => Math.Abs(b) > NumericEpsilon ? a / b : 0),
             _ => null
         };
+    }
+
+    /// <summary>
+    /// Evaluates the MapLibre <c>["zoom"]</c> input, which yields the zoom level the render is being
+    /// evaluated at. MapLibre GL JS reads this from the evaluation globals
+    /// (<c>expression/definitions/index.ts</c> binds <c>zoom</c> to <c>ctx.globals.zoom</c>) and
+    /// returns it as a plain number, so a fractional zoom stays fractional here too.
+    /// </summary>
+    /// <remarks>
+    /// When the render carries no derived zoom this raises rather than substituting a level. A
+    /// substituted zoom is not a degraded picture but a confidently wrong one: every zoom ramp would
+    /// silently collapse onto whichever stop the placeholder selects, with no throw, warning, or log
+    /// — the failure mode that made <c>interpolate</c> render black in honua-server#2867 and that let
+    /// <c>minzoom</c>/<c>maxzoom</c> be skipped in honua-server#2868. The
+    /// <see cref="RenderZoom.NotDerivableReason"/> recorded by the render path is carried into the
+    /// message so the cause is traceable from the failure alone.
+    /// </remarks>
+    private static double EvaluateZoom(RenderZoom zoom)
+    {
+        if (zoom.Level is { } level)
+        {
+            return level;
+        }
+
+        throw new StyleExpressionEvaluationException(
+            "Cannot evaluate a [\"zoom\"] expression: no zoom could be derived for this render because "
+            + $"{zoom.NotDerivableReason}. The style is zoom-dependent, so it cannot be rendered "
+            + "correctly at an unknown zoom.");
     }
 
     private static object? EvaluateLiteral(MapLibreExpression expression)
@@ -190,35 +248,35 @@ internal static class ExpressionEvaluator
         return properties.ContainsKey(key);
     }
 
-    private static bool EvaluateNot(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateNot(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         if (array.Length < 2)
         {
             return true;
         }
 
-        var result = Evaluate(array[1], properties);
+        var result = Evaluate(array[1], properties, zoom);
         return !IsTruthy(result);
     }
 
-    private static object? EvaluateCase(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateCase(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         // case, condition1, output1, condition2, output2, ..., fallback
         for (int i = 1; i < length - 1; i += 2)
         {
-            var condition = Evaluate(array[i], properties);
+            var condition = Evaluate(array[i], properties, zoom);
             if (IsTruthy(condition))
             {
-                return Evaluate(array[i + 1], properties);
+                return Evaluate(array[i + 1], properties, zoom);
             }
         }
 
         // Return fallback (last element)
-        return length > 1 ? Evaluate(array[length - 1], properties) : null;
+        return length > 1 ? Evaluate(array[length - 1], properties, zoom) : null;
     }
 
-    private static object? EvaluateMatch(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateMatch(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         if (length < 4)
@@ -226,7 +284,7 @@ internal static class ExpressionEvaluator
             return null;
         }
 
-        var input = Evaluate(array[1], properties);
+        var input = Evaluate(array[1], properties, zoom);
         var inputStr = input?.ToString();
 
         // match, input, label1, output1, label2, output2, ..., fallback
@@ -241,18 +299,18 @@ internal static class ExpressionEvaluator
                 {
                     if (MatchesLabel(inputStr, input, item))
                     {
-                        return Evaluate(array[i + 1], properties);
+                        return Evaluate(array[i + 1], properties, zoom);
                     }
                 }
             }
             else if (MatchesLabel(inputStr, input, label))
             {
-                return Evaluate(array[i + 1], properties);
+                return Evaluate(array[i + 1], properties, zoom);
             }
         }
 
         // Fallback
-        return Evaluate(array[length - 1], properties);
+        return Evaluate(array[length - 1], properties, zoom);
     }
 
     private static bool MatchesLabel(string? inputStr, object? inputObj, MapLibreExpression label)
@@ -301,7 +359,7 @@ internal static class ExpressionEvaluator
         }
     }
 
-    private static object? EvaluateStep(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateStep(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         if (length < 4)
@@ -309,17 +367,17 @@ internal static class ExpressionEvaluator
             return null;
         }
 
-        var input = ConvertToFloat(Evaluate(array[1], properties), 0f);
-        var defaultOutput = Evaluate(array[2], properties);
+        var input = ConvertToFloat(Evaluate(array[1], properties, zoom), 0f);
+        var defaultOutput = Evaluate(array[2], properties, zoom);
 
         // step, input, default, stop1, output1, stop2, output2, ...
         object? result = defaultOutput;
         for (int i = 3; i < length - 1; i += 2)
         {
-            var stop = ConvertToFloat(Evaluate(array[i], properties), float.MaxValue);
+            var stop = ConvertToFloat(Evaluate(array[i], properties, zoom), float.MaxValue);
             if (input >= stop)
             {
-                result = Evaluate(array[i + 1], properties);
+                result = Evaluate(array[i + 1], properties, zoom);
             }
             else
             {
@@ -330,7 +388,7 @@ internal static class ExpressionEvaluator
         return result;
     }
 
-    private static object? EvaluateInterpolate(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateInterpolate(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         if (length < 5)
@@ -341,15 +399,15 @@ internal static class ExpressionEvaluator
         // interpolate, <interpolation>, input, stop1, output1, stop2, output2, ...
         // <interpolation> is ["linear"], ["exponential", base], or ["cubic-bezier", x1, y1, x2, y2].
         var interpolation = ParseInterpolation(array[1]);
-        var input = ConvertToFloat(Evaluate(array[2], properties), 0f);
+        var input = ConvertToFloat(Evaluate(array[2], properties, zoom), 0f);
 
         float? prevStop = null;
         object? prevOutput = null;
 
         for (int i = 3; i < length - 1; i += 2)
         {
-            var stop = ConvertToFloat(Evaluate(array[i], properties), 0f);
-            var output = Evaluate(array[i + 1], properties);
+            var stop = ConvertToFloat(Evaluate(array[i], properties, zoom), 0f);
+            var output = Evaluate(array[i + 1], properties, zoom);
 
             if (input <= stop)
             {
@@ -628,24 +686,24 @@ internal static class ExpressionEvaluator
             _ => "object"
         };
 
-    private static string EvaluateToString(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateToString(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         if (array.Length < 2)
         {
             return "";
         }
 
-        return Evaluate(array[1], properties)?.ToString() ?? "";
+        return Evaluate(array[1], properties, zoom)?.ToString() ?? "";
     }
 
-    private static object? EvaluateToNumber(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateToNumber(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         if (array.Length < 2)
         {
             return 0.0;
         }
 
-        var val = Evaluate(array[1], properties);
+        var val = Evaluate(array[1], properties, zoom);
         return (double)ConvertToFloat(val, 0f);
     }
 
@@ -653,14 +711,14 @@ internal static class ExpressionEvaluator
     /// Evaluates the MapLibre <c>typeof</c> expression, returning the runtime type name
     /// of the evaluated value: "number", "string", "boolean", "object", or "null".
     /// </summary>
-    private static string EvaluateTypeof(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateTypeof(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         if (array.Length < 2)
         {
             return "null";
         }
 
-        var val = Evaluate(array[1], properties);
+        var val = Evaluate(array[1], properties, zoom);
         return val switch
         {
             null => "null",
@@ -671,13 +729,13 @@ internal static class ExpressionEvaluator
         };
     }
 
-    private static string EvaluateConcat(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static string EvaluateConcat(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         var parts = new string[length - 1];
         for (int i = 1; i < length; i++)
         {
-            parts[i - 1] = Evaluate(array[i], properties)?.ToString() ?? "";
+            parts[i - 1] = Evaluate(array[i], properties, zoom)?.ToString() ?? "";
         }
 
         return string.Concat(parts);
@@ -686,6 +744,7 @@ internal static class ExpressionEvaluator
     private static bool EvaluateComparison(
         MapLibreExpression[] array,
         ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom,
         Func<object?, object?, bool> comparator)
     {
         if (array.Length < 3)
@@ -693,17 +752,17 @@ internal static class ExpressionEvaluator
             return false;
         }
 
-        var left = Evaluate(array[1], properties);
-        var right = Evaluate(array[2], properties);
+        var left = Evaluate(array[1], properties, zoom);
+        var right = Evaluate(array[2], properties, zoom);
         return comparator(left, right);
     }
 
-    private static bool EvaluateAll(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateAll(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         for (int i = 1; i < length; i++)
         {
-            if (!IsTruthy(Evaluate(array[i], properties)))
+            if (!IsTruthy(Evaluate(array[i], properties, zoom)))
             {
                 return false;
             }
@@ -712,12 +771,12 @@ internal static class ExpressionEvaluator
         return true;
     }
 
-    private static bool EvaluateAny(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateAny(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         for (int i = 1; i < length; i++)
         {
-            if (IsTruthy(Evaluate(array[i], properties)))
+            if (IsTruthy(Evaluate(array[i], properties, zoom)))
             {
                 return true;
             }
@@ -726,12 +785,12 @@ internal static class ExpressionEvaluator
         return false;
     }
 
-    private static object? EvaluateCoalesce(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties)
+    private static object? EvaluateCoalesce(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
         var length = array.Length;
         for (int i = 1; i < length; i++)
         {
-            var val = Evaluate(array[i], properties);
+            var val = Evaluate(array[i], properties, zoom);
             if (val != null)
             {
                 return val;
@@ -744,6 +803,7 @@ internal static class ExpressionEvaluator
     private static double EvaluateArithmetic(
         MapLibreExpression[] array,
         ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom,
         Func<double, double, double> op)
     {
         if (array.Length < 3)
@@ -751,8 +811,8 @@ internal static class ExpressionEvaluator
             return 0.0;
         }
 
-        var left = ConvertToFloat(Evaluate(array[1], properties), 0f);
-        var right = ConvertToFloat(Evaluate(array[2], properties), 0f);
+        var left = ConvertToFloat(Evaluate(array[1], properties, zoom), 0f);
+        var right = ConvertToFloat(Evaluate(array[2], properties, zoom), 0f);
         return op(left, right);
     }
 
