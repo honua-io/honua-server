@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -111,12 +112,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<CustomCodeOptions>? customCodeOptions = null,
         ICustomCodeCommitSignatureVerifier? customCodeSignatureVerifier = null,
         IGeoprocessingRasterSourceResolver? rasterSourceResolver = null,
-        IOperationGateway? operationGateway = null)
+        IOperationGateway? operationGateway = null,
+        IOperatorScopeAuthorizer? scopeAuthorizer = null)
         : this(
             progressStore,
             cancellationNotifiers,
             processCatalog,
-            new GeoprocessingJobAuthorizer(authEvaluator, approvalEvaluator, logger),
+            new GeoprocessingJobAuthorizer(
+                authEvaluator,
+                approvalEvaluator,
+                scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
+                logger),
             new GeoprocessingJobDispatcher(
                 logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
             new CustomCodeJobSubmissionGate(
