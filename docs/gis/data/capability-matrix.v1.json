@@ -1557,10 +1557,10 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "entryCount": 139,
-      "provingTestCount": 331,
+      "entryCount": 141,
+      "provingTestCount": 334,
       "maturity": {
-        "implemented": 139
+        "implemented": 141
       },
       "noSurface": null,
       "cite": [],

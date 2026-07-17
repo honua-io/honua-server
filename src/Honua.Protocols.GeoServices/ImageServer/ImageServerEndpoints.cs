@@ -26,6 +26,7 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 internal static class ImageServerEndpoints
 {
     private const string JsonContentType = "application/json";
+    private const string KmzContentType = "application/vnd.google-earth.kmz";
     private const string InlineImageFormat = "image";
 
     /// <summary>
@@ -233,6 +234,14 @@ internal static class ImageServerEndpoints
             .WithDescription("Returns the source raster file when a downloadable path is available; Honua stores raster pixels in the provider and returns a precise not-available response")
             .Produces(400)
             .Produces(404);
+        group.MapGet("/kml/image.kmz", GetKml)
+            .WithDisplayName("Get Image Service KML")
+            .WithName("GetImageServerKml")
+            .WithSummary("Get the image service as an OGC KML 2.2 KMZ")
+            .WithDescription("Returns a KMZ carrying a GroundOverlay whose Icon references the service exportImage operation over the WGS84 service extent, mirroring the ArcGIS ImageServer KML resource")
+            .Produces(200, contentType: KmzContentType)
+            .Produces(404)
+            .Produces(500);
 
         group.MapGet("/find", FindGet)
             .WithDisplayName("Find Image Catalog Items (GET)")
@@ -862,6 +871,13 @@ internal static class ImageServerEndpoints
             .WithSummary("Download one raster item's source file")
             .Produces(400)
             .Produces(404);
+        serviceGroup.MapGet("/kml/image.kmz", GetKmlByService)
+            .WithDisplayName("Get Image Service KML by Service")
+            .WithName("GetImageServerKmlByService")
+            .WithSummary("Get the image service as an OGC KML 2.2 KMZ")
+            .Produces(200, contentType: KmzContentType)
+            .Produces(404)
+            .Produces(500);
 
         serviceGroup.MapGet("/find", FindGetByService)
             .WithDisplayName("Find Image Catalog Items by Service (GET)")
@@ -1932,6 +1948,34 @@ internal static class ImageServerEndpoints
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetRasterItemThumbnail(
             resolution.LayerId, rasterId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get the image service as an OGC KML 2.2 KMZ (GroundOverlay over the service extent).
+    /// </summary>
+    private static async Task<IResult> GetKml(
+        int id,
+        HttpContext context,
+        ImageServerKmlHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetKmlAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> GetKmlByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerKmlHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetKml(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
