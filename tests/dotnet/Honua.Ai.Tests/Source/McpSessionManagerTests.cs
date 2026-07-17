@@ -89,16 +89,18 @@ public sealed class McpSessionManagerTests
     public void ValidateAccess_BindsToPrincipal_AndRejectsDifferentPrincipal()
     {
         var manager = new McpSessionManager();
-        manager.TryCreateSession("sub:alice", out var id).Should().BeTrue();
+        manager.TryCreateSession("JwtBearer:sub:alice", out var id).Should().BeTrue();
 
-        manager.ValidateAccess(id, "sub:alice").Should().Be(McpSessionValidation.Valid);
+        manager.ValidateAccess(id, "JwtBearer:sub:alice").Should().Be(McpSessionValidation.Valid);
         // Anonymous caller cannot ride a session bound to an authenticated principal.
         manager.ValidateAccess(id, McpSessionManager.AnonymousPrincipalKey)
             .Should().Be(McpSessionValidation.PrincipalMismatch);
         // A different authenticated identity is likewise rejected.
-        manager.ValidateAccess(id, "sub:bob").Should().Be(McpSessionValidation.PrincipalMismatch);
+        manager.ValidateAccess(id, "JwtBearer:sub:bob").Should().Be(McpSessionValidation.PrincipalMismatch);
+        // Same subject under a different auth scheme is also rejected.
+        manager.ValidateAccess(id, "ApiKey:name:alice").Should().Be(McpSessionValidation.PrincipalMismatch);
         // An unknown id is unknown regardless of principal.
-        manager.ValidateAccess("never-issued", "sub:alice").Should().Be(McpSessionValidation.Unknown);
+        manager.ValidateAccess("never-issued", "JwtBearer:sub:alice").Should().Be(McpSessionValidation.Unknown);
     }
 
     [UnitTest]

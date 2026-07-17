@@ -69,14 +69,6 @@ internal static class McpBearerAuthenticationEndpointExtensions
             return await next(context).ConfigureAwait(false);
         }
 
-        // Already authenticated by an earlier scheme (for example the composite default
-        // scheme validated the same bearer, or an X-API-Key principal is present): nothing
-        // to add, and re-validating would be wasted work.
-        if (httpContext.User.Identity?.IsAuthenticated == true)
-        {
-            return await next(context).ConfigureAwait(false);
-        }
-
         // Resource-server validation is only meaningful when an authorization server is
         // configured. This is the same gate the RFC 9728 metadata uses (#2849): with no
         // authority there is nothing to validate the token against, so leave the request

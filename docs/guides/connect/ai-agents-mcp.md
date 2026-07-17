@@ -8,6 +8,9 @@ For operations work, MCP is the agent seat in the same control loop that Console
 
 The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches), MCP protocol revision `2025-03-26`. The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant.
 
+Authentication supports both legacy `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`).
+When both are present, bearer tokens are evaluated first for this route.
+
 ## Two MCP surfaces: data-access (open) vs. operator (proprietary)
 
 There are two distinct MCP surfaces in the Honua platform, and it is easy to
@@ -197,11 +200,13 @@ invalidates the session — session lifetime is bounded only by `DELETE /mcp` or
 the idle TTL.
 
 **Principal binding.** A session is bound at `initialize` to the authenticated
-principal (or to anonymous where the endpoint allows anonymous access). A later
-request that presents the id under a *different* identity is rejected with a
-structured `permission_denied` / `requiresReauthentication` error, so a leaked
-`Mcp-Session-Id` cannot be ridden by another caller. This mirrors the existing
-auth posture — it adds no new authentication requirement.
+principal (or to anonymous where the endpoint allows anonymous access). The
+binding includes the auth scheme and principal identifier, so a bearer principal
+and an API-key principal cannot silently share the same `Mcp-Session-Id`.
+A later request that presents the id under a *different* identity is rejected
+with a structured `permission_denied` / `requiresReauthentication` error, so a
+leaked `Mcp-Session-Id` cannot be ridden by another caller. This mirrors the
+existing auth posture — it adds no new authentication requirement.
 
 ### Rate limiting
 
