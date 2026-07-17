@@ -283,7 +283,7 @@ public sealed class McpDispatcherTelemetryTests
     private static string? GetTagString(KeyValuePair<string, object?>[] tags, string name)
         => tags.Where(tag => tag.Key == name).Select(tag => tag.Value as string).FirstOrDefault();
 
-    private McpOperatorSurface BuildSurface()
+    private McpDataAccessSurface BuildSurface()
     {
         var tools = new IMcpTool[]
         {
@@ -299,10 +299,10 @@ public sealed class McpDispatcherTelemetryTests
             new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance)
         };
-        return new McpOperatorSurface(tools, resources, NullLogger<McpOperatorSurface>.Instance);
+        return new McpDataAccessSurface(tools, resources, NullLogger<McpDataAccessSurface>.Instance);
     }
 
-    private McpOperatorSurface BuildPromotionSurface()
+    private McpDataAccessSurface BuildPromotionSurface()
     {
         var tools = Array.Empty<IMcpTool>();
         var resources = new IMcpResource[]
@@ -311,7 +311,7 @@ public sealed class McpDispatcherTelemetryTests
                 _services, _deployments, _jobService,
                 NullLogger<PromotionSurfaceIndexResource>.Instance)
         };
-        return new McpOperatorSurface(tools, resources, NullLogger<McpOperatorSurface>.Instance);
+        return new McpDataAccessSurface(tools, resources, NullLogger<McpDataAccessSurface>.Instance);
     }
 
     private readonly record struct MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);

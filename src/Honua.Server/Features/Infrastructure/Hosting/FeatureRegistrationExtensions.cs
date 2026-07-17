@@ -178,7 +178,7 @@ internal static class FeatureRegistrationExtensions
         // the ICapabilityRegistry registered by AddCapabilityManifest above.
         services.AddCapabilityGatedOpenApi();
         services.AddPackageReview();
-        services.AddMcpOperatorSurface(configuration);
+        services.AddMcpDataAccessSurface(configuration);
         services.AddSpecGrounding();
         services.AddSpatialAnalytics();
         services.AddDataEnrichment(configuration);
@@ -325,7 +325,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapTemporalHistorySliceEndpoints();
         endpoints.MapAnalysisReporting();
         endpoints.MapCapabilityManifestEndpoints();
-        endpoints.MapMcpOperatorSurface();
+        endpoints.MapMcpDataAccessSurface();
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();
         // Plugin-contributed REST routes (ICustomEndpoint, #1562). A no-op unless a custom build
