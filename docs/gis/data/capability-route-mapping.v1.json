@@ -333,6 +333,21 @@
     },
     {
       "family": "HTTP",
+      "routePrefix": "/metrics",
+      "capability": "ops.observability"
+    },
+    {
+      "family": "HTTP",
+      "routePrefix": "/docs",
+      "capability": "discovery.capability-manifest"
+    },
+    {
+      "family": "HTTP",
+      "routePrefix": "/csp-violation-report",
+      "capability": "ops.observability"
+    },
+    {
+      "family": "HTTP",
       "capability": "ops.health"
     },
     {

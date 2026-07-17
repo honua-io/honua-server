@@ -1,4 +1,9 @@
 {
+  "unjoinedCiteSuites": [
+    "GML 3.2",
+    "GeoPackage 1.2",
+    "KML 2.2"
+  ],
   "schemaVersion": "1.0.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
   "trackingIssue": "#2893",
@@ -647,10 +652,10 @@
       "displayName": "Capability Manifest",
       "category": "Discovery",
       "edition": "Community",
-      "entryCount": 1,
-      "provingTestCount": 10,
+      "entryCount": 2,
+      "provingTestCount": 11,
       "maturity": {
-        "implemented": 1
+        "implemented": 2
       },
       "noSurface": null,
       "cite": [],
@@ -1121,10 +1126,10 @@
       "displayName": "Health Checks",
       "category": "Ops",
       "edition": "Community",
-      "entryCount": 18,
-      "provingTestCount": 70,
+      "entryCount": 15,
+      "provingTestCount": 54,
       "maturity": {
-        "implemented": 18
+        "implemented": 15
       },
       "noSurface": null,
       "cite": [],
@@ -1138,10 +1143,10 @@
       "displayName": "Observability",
       "category": "Ops",
       "edition": "Community",
-      "entryCount": 14,
-      "provingTestCount": 18,
+      "entryCount": 16,
+      "provingTestCount": 33,
       "maturity": {
-        "implemented": 14
+        "implemented": 16
       },
       "noSurface": null,
       "cite": [],
@@ -1965,7 +1970,29 @@
         "implemented": 2
       },
       "noSurface": null,
-      "cite": [],
+      "cite": [
+        {
+          "suite": "WFS 1.0",
+          "profile": "basic",
+          "passed": 162,
+          "total": 162,
+          "passRate": 100.0
+        },
+        {
+          "suite": "WFS 1.1",
+          "profile": "basic",
+          "passed": 39,
+          "total": 39,
+          "passRate": 100.0
+        },
+        {
+          "suite": "WFS 2.0",
+          "profile": "basic",
+          "passed": 167,
+          "total": 167,
+          "passRate": 100.0
+        }
+      ],
       "parity": [],
       "esriAssess": [],
       "interop": [

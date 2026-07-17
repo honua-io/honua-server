@@ -42,13 +42,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Capability keys whose protocol has an official OGC CITE ETS. Maps a
 # capability key to the exact "Suite" column value in docs/cite-status.md's
 # per-protocol table.
-CAPABILITY_TO_CITE_SUITE: dict[str, str] = {
-    "serve.wms": "WMS 1.3",
-    "serve.wmts": "WMTS 1.0",
-    "serve.wcs": "WCS 2.0",
-    "serve.ogc-api-features": "OGC API Features 1.0",
-    "serve.ogc-api-tiles": "OGC API Tiles 1.0",
+CAPABILITY_TO_CITE_SUITES: dict[str, list[str]] = {
+    "serve.wms": ["WMS 1.3"],
+    "serve.wmts": ["WMTS 1.0"],
+    "serve.wcs": ["WCS 2.0"],
+    "serve.wfs": ["WFS 1.0", "WFS 1.1", "WFS 2.0"],
+    "serve.ogc-api-features": ["OGC API Features 1.0"],
+    "serve.ogc-api-tiles": ["OGC API Tiles 1.0"],
 }
+# Format-conformance suites (GeoPackage/GML/KML) validate output encodings that
+# span several serving capabilities; they are deliberately surfaced in the
+# matrix's top-level ``unjoinedCiteSuites`` rather than force-mapped to one key.
 
 
 def load_json(path: Path) -> dict:
@@ -132,9 +136,9 @@ def build_matrix(
         counts = per_capability.get(key, {"entryCount": 0, "provingTestCount": 0, "maturity": {}})
 
         cite_entries = []
-        cite_suite = CAPABILITY_TO_CITE_SUITE.get(key)
-        if cite_suite and cite_suite in cite_suites:
-            cite_entries.append({"suite": cite_suite, **cite_suites[cite_suite]})
+        for cite_suite in CAPABILITY_TO_CITE_SUITES.get(key, []):
+            if cite_suite in cite_suites:
+                cite_entries.append({"suite": cite_suite, **cite_suites[cite_suite]})
 
         parity_entries = []
         for service_id in esri_compat_by_capability.get(key, []):
@@ -166,7 +170,10 @@ def build_matrix(
             }
         )
 
+    joined_suites = {suite for suites in CAPABILITY_TO_CITE_SUITES.values() for suite in suites}
+    unjoined = sorted(set(cite_suites) - joined_suites)
     return {
+        "unjoinedCiteSuites": unjoined,
         "schemaVersion": "1.0.0",
         "generator": "scripts/ci/generate-capability-matrix.py",
         "trackingIssue": "#2893",
