@@ -15,6 +15,7 @@ using Honua.Io.Export.Writers;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
+using Honua.Plugins.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,7 +28,7 @@ internal static class ExportEndpoints
 {
     private const long AsyncThreshold = 50_000;
 
-    private static readonly HashSet<string> _validFormats = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> _builtInFormats = new(StringComparer.OrdinalIgnoreCase)
     {
         "csv", "shapefile", "gpkg"
     };
@@ -61,19 +62,28 @@ internal static class ExportEndpoints
         [FromServices] IFeatureReader featureReader,
         [FromServices] IStreamingFeatureStore streamingStore,
         [FromServices] ICrsRegistry crsRegistry,
+        [FromServices] IFeatureOutputFormatRegistry pluginFormats,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var logger = httpContext.RequestServices.GetRequiredService<ILogger<ExportEndpointsLog>>();
 
-        // Validate format
-        if (string.IsNullOrEmpty(format) || !_validFormats.Contains(format))
+        // Validate format. Built-in formats (csv/shapefile/gpkg) plus any active, licensed
+        // plugin-contributed output format (issue #2856, ADR-0067) are accepted.
+        var isBuiltInFormat = !string.IsNullOrEmpty(format) && _builtInFormats.Contains(format);
+        var pluginFormatResolved = !isBuiltInFormat
+            && !string.IsNullOrEmpty(format)
+            && pluginFormats.TryGetFormat(format, out _);
+        if (!isBuiltInFormat && !pluginFormatResolved)
         {
             ExportLog.FormatValidationFailed(logger, format ?? "(empty)");
+            var advertised = pluginFormats.AdvertisedFormats.Count > 0
+                ? ", " + string.Join(", ", pluginFormats.AdvertisedFormats.Select(f => f.FormatId))
+                : string.Empty;
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status400BadRequest,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                $"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg");
+                $"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg{advertised}");
         }
 
         // Validate service + layer against the Metadata v2 graph.
@@ -169,8 +179,11 @@ internal static class ExportEndpoints
 
         var outputSrid = outSR ?? layerSrid;
 
-        // Async path for large exports
-        if (count > AsyncThreshold)
+        // Async path for large exports. Restricted to built-in formats: the durable export-job
+        // pipeline dispatches the built-in writers by format string, so a plugin-contributed format
+        // (issue #2856) is streamed synchronously below regardless of size. Plugin writers are
+        // streaming (O(1) memory) like the built-ins, so this stays bounded.
+        if (count > AsyncThreshold && isBuiltInFormat)
         {
             var exportJobService = httpContext.RequestServices.GetService<IExportJobService>();
             if (exportJobService is null)
@@ -252,9 +265,21 @@ internal static class ExportEndpoints
 
         try
         {
+            // CSV is dispatched through the IFeatureOutputFormat contract (issue #2856): the built-in
+            // CsvOutputFormat implements the same seam a plugin format does, keeping the extension
+            // point load-bearing. Shapefile/GeoPackage keep their bespoke (CRS/.prj, temp-file)
+            // handling. A non-built-in token resolves to a licensed plugin format.
+            if (!isBuiltInFormat && pluginFormats.TryGetFormat(format, out var pluginFormat) && pluginFormat is not null)
+            {
+                return await WriteFeatureFormatResponseAsync(
+                    httpContext, pluginFormat, features, selectedFields, serviceName, layerId, layerName,
+                    outputSrid, logger, sw, activity);
+            }
+
             return format.ToLowerInvariant() switch
             {
-                "csv" => await WriteCsvResponseAsync(httpContext, features, selectedFields, serviceName, layerId, layerName, logger, sw, activity),
+                "csv" => await WriteFeatureFormatResponseAsync(httpContext, CsvOutputFormat.Instance, features, selectedFields,
+                    serviceName, layerId, layerName, outputSrid, logger, sw, activity),
                 "shapefile" => await WriteShapefileResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
                 "gpkg" => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
@@ -274,26 +299,45 @@ internal static class ExportEndpoints
         }
     }
 
-    private static async Task<IResult> WriteCsvResponseAsync(
+    /// <summary>
+    /// Streams a feature export through an <see cref="IFeatureOutputFormat"/> — the built-in CSV
+    /// writer (<see cref="CsvOutputFormat"/>) or a plugin-contributed format (issue #2856, ADR-0067).
+    /// The host owns HTTP concerns (content type, download filename, telemetry); the format owns
+    /// only byte production.
+    /// </summary>
+    private static async Task<IResult> WriteFeatureFormatResponseAsync(
         HttpContext httpContext,
+        IFeatureOutputFormat format,
         IAsyncEnumerable<Feature> features,
         ExportField[] fields,
         string serviceName,
         int layerId,
         string layerName,
+        int outputSrid,
         ILogger logger,
         Stopwatch sw,
         Activity? activity)
     {
         var response = httpContext.Response;
-        response.ContentType = "text/csv";
-        response.Headers["Content-Disposition"] = $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.csv\"";
+        response.ContentType = format.MediaType;
+        response.Headers["Content-Disposition"] =
+            $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.{format.FileExtension}\"";
         response.StatusCode = StatusCodes.Status200OK;
 
-        var csvRowCount = await CsvExportWriter.WriteAsync(response.Body, features, fields, httpContext.RequestAborted);
+        var outputFields = ImmutableArray.CreateBuilder<FeatureOutputField>(fields.Length);
+        foreach (var field in fields)
+        {
+            outputFields.Add(new FeatureOutputField(field.Name, field.Type.ToString(), field.Nullable));
+        }
 
-        ExportLog.ExportCompleted(logger, serviceName, layerId, "csv", csvRowCount, sw.Elapsed.TotalMilliseconds);
-        HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(csvRowCount));
+        var context = new FeatureOutputFormatContext(
+            serviceName, layerId, layerName, outputFields.MoveToImmutable(), outputSrid);
+
+        var rowCount = await format.WriteAsync(features, context, response.Body, httpContext.RequestAborted)
+            .ConfigureAwait(false);
+
+        ExportLog.ExportCompleted(logger, serviceName, layerId, format.FormatId, rowCount, sw.Elapsed.TotalMilliseconds);
+        HonuaTelemetry.SetSuccess(activity, ToTelemetryFeatureCount(rowCount));
         HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
         return Results.Empty;
     }

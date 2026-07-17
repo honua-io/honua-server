@@ -17,9 +17,9 @@ namespace Honua.Protocols.GeoServices.VectorTileServer.Models;
 /// </summary>
 internal sealed class VectorTileServerMetadataResponse
 {
-    /// <summary>ArcGIS service version number.</summary>
-    [JsonPropertyName("currentVersion")]
-    public double CurrentVersion { get; init; } = 10.81;
+    // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
+    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
     /// <summary>Service name (the GeoServices service identifier the route resolves).</summary>
     [JsonPropertyName("name")]

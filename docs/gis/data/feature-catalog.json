@@ -10007,7 +10007,13 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ExportTiles_WritesZipArchiveToCloudStorage"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_ExportTiles_WritesZipArchiveToCloudStorage",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"
@@ -10102,7 +10108,12 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Retry_WithFreshKey_ReusesCompletedPackageCheckpoint",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"
@@ -10115,7 +10126,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.ArtifactExpiry_AfterSuccess_ProducesStableNotFound",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"
@@ -15322,6 +15335,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_InitializeWithValidBearer_IsAcceptedAndBindsAuthenticatedPrincipal",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithExpiredBearer_Returns401",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithTokenForDifferentAudience_Returns401",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_WithoutBearer_AnonymousHandshakeStillSucceeds",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.BatchContainingInitialize_IsRejectedAsInvalidRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.BatchMixedWithNotification_ReturnsOnlyResponseForRequest",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.BatchOfOnlyNotifications_ReturnsAccepted",
@@ -17813,7 +17831,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
+        "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented"

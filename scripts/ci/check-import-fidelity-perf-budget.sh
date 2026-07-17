@@ -5,13 +5,13 @@ set -euo pipefail
 #
 # Grades the Honua-vs-source p95/p99 latency ratios carried by a generated parity scorecard
 # against a configurable perf budget and FAILS when latency regresses beyond the budget. This is
-# the performance analogue of scripts/ci/check-parity-scorecard-regression.sh (the correctness
+# the performance analogue of scripts/ci/check-import-fidelity-scorecard-regression.sh (the correctness
 # gate). The C# GeoServicesPerfParityGate already writes a PerfParity.Verdict into each scorecard
 # case; this script enforces that verdict AND independently re-checks the raw ratios against the
 # budget so the gate holds even if the embedded verdict is stale or missing.
 #
 # Usage:
-#   check-parity-perf-budget.sh <scorecard.json> [budget.json]
+#   check-import-fidelity-perf-budget.sh <scorecard.json> [budget.json]
 #
 # Budget JSON (all keys optional; omitted keys disable that threshold):
 #   { "warnP95": 1.5, "failP95": 2.0, "warnP99": 1.75, "failP99": 2.5, "minSamples": 5 }
