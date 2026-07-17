@@ -38,7 +38,18 @@ set -euo pipefail
 # per-test schema is migrated (honua-server#1568/#2049). These are intermittent:
 # the rerun clears a true race, while a genuine missing-migration bug reproduces
 # and still escalates — so it is safe to treat them as flake candidates.
-: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character}"
+#
+# The ASP.NET static-web-assets loader signature (StaticWebAssetsLoader / an
+# obj/<config>/<tfm>/compressed/ path in a DirectoryNotFoundException) is the
+# honua-server#2904 environmental race: the sharded Release test build did not
+# reliably materialize the Blazor compressed-assets content root, so the test
+# host aborted construction and failed EVERY test in the shard identically —
+# which the attributor then blunt-escalated onto every PR in the batch. The
+# host bootstrap fix (Program.cs skips the loader for API test hosts and hardens
+# the opt-in demo path) removes the race; this signature is defense-in-depth so
+# any residual/related static-web-assets content-root race is rerun-and-merged-
+# through rather than escalating the whole batch.
+: "${TRAIN_FLAKE_REGEX:=40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)|relation .* does not exist|column .* does not exist|schema .* does not exist|does not exist at character|StaticWebAssetsLoader|obj/[^ ]*/compressed}"
 
 # Heavy CI jobs the train treats as NON-BLOCKING. They run on EVERY batch (not
 # shard-targeted), flake on environment (Docker registry, browser, JS/Python
