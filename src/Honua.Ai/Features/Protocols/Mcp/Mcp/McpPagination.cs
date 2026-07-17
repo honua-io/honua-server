@@ -259,7 +259,7 @@ internal static class McpPagination
 /// <summary>
 /// Host-tunable limits for the MCP operator surface: the list-pagination page
 /// size and the per-page character budget for chunked <c>resources/read</c>
-/// responses. Injected into <see cref="McpOperatorSurface"/>; defaults to
+/// responses. Injected into <see cref="McpDataAccessSurface"/>; defaults to
 /// <see cref="Default"/> when the host does not register an override.
 /// </summary>
 internal sealed record McpSurfaceLimits(int ListPageSize, int MaxResourceReadChars)

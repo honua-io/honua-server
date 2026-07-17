@@ -391,7 +391,7 @@ public sealed class McpAuthorizationTests
         response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
     }
 
-    private McpOperatorSurface BuildSurface()
+    private McpDataAccessSurface BuildSurface()
     {
         var tools = new IMcpTool[]
         {
@@ -407,6 +407,6 @@ public sealed class McpAuthorizationTests
             new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance),
             new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance)
         };
-        return new McpOperatorSurface(tools, resources, NullLogger<McpOperatorSurface>.Instance);
+        return new McpDataAccessSurface(tools, resources, NullLogger<McpDataAccessSurface>.Instance);
     }
 }

@@ -49,7 +49,7 @@ internal static class McpEndpointExtensions
     /// client's original id, in which case it MUST be <c>null</c>. Assigning this
     /// element to <see cref="McpJsonRpcResponse.Id"/> prevents the
     /// <c>WhenWritingNull</c> ignore condition from dropping the property.
-    /// Exposed <c>internal</c> so <see cref="McpOperatorSurface"/> can emit
+    /// Exposed <c>internal</c> so <see cref="McpDataAccessSurface"/> can emit
     /// invalid_request error envelopes for malformed requests that reach the
     /// dispatcher without a valid id.
     /// </summary>
@@ -61,7 +61,7 @@ internal static class McpEndpointExtensions
     /// termination, alongside the RFC 9728 protected-resource metadata that
     /// describes the surface.
     /// </summary>
-    public static IEndpointRouteBuilder MapMcpOperatorSurface(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapMcpDataAccessSurface(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
@@ -72,7 +72,7 @@ internal static class McpEndpointExtensions
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface")
-            .WithName("McpOperatorSurface")
+            .WithName("McpDataAccessSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
             .WithDescription("Accepts JSON-RPC 2.0 requests over the Streamable-HTTP transport. Issues an Mcp-Session-Id on initialize and validates it on subsequent requests. Responds with application/json or, when the client accepts text/event-stream, a single SSE message frame. Single-request-only: initialize (MCP lifecycle forbids batching). Single or batched: notifications/initialized, tools/list, tools/call, resources/list, resources/templates/list, resources/read, prompts/list, and prompts/get.")
             .WithTags("Mcp");
@@ -82,7 +82,7 @@ internal static class McpEndpointExtensions
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
-            .WithName("McpOperatorSurfaceStream")
+            .WithName("McpDataAccessSurfaceStream")
             .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
             .WithDescription("Streamable-HTTP transport GET endpoint. Opens a text/event-stream the server uses to push notifications (e.g. progress, listChanged). Requires a valid Mcp-Session-Id.")
             .WithTags("Mcp");
@@ -92,7 +92,7 @@ internal static class McpEndpointExtensions
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (session termination)")
-            .WithName("McpOperatorSurfaceTerminate")
+            .WithName("McpDataAccessSurfaceTerminate")
             .WithSummary("Terminates an MCP session.")
             .WithDescription("Streamable-HTTP transport DELETE endpoint. Removes the session identified by the Mcp-Session-Id header.")
             .WithTags("Mcp");
@@ -116,9 +116,9 @@ internal static class McpEndpointExtensions
 
     private static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        var surface = context.RequestServices.GetRequiredService<McpOperatorSurface>();
+        var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
-        var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
 
         JsonDocument? document;
         try
@@ -214,7 +214,7 @@ internal static class McpEndpointExtensions
                 // the session so clarification-emitting tools can later choose the
                 // MCP-native elicitation projection over the proprietary envelope.
                 var elicitationSupported =
-                    context.Items.TryGetValue(McpOperatorSurface.ElicitationCapabilityItemKey, out var flag)
+                    context.Items.TryGetValue(McpDataAccessSurface.ElicitationCapabilityItemKey, out var flag)
                     && flag is true;
                 if (sessions.TryCreateSession(principalKey, elicitationSupported, out var sessionId))
                 {
@@ -244,7 +244,7 @@ internal static class McpEndpointExtensions
     private static async Task HandleGetAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
-        var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
         var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
 
         // Per the Streamable-HTTP spec the standalone GET stream is optional: a
@@ -337,7 +337,7 @@ internal static class McpEndpointExtensions
     private static Task HandleDeleteAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var sessions = context.RequestServices.GetRequiredService<McpSessionManager>();
-        var logger = context.RequestServices.GetRequiredService<ILogger<McpOperatorSurface>>();
+        var logger = context.RequestServices.GetRequiredService<ILogger<McpDataAccessSurface>>();
 
         var sessionId = context.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
         if (string.IsNullOrEmpty(sessionId))
@@ -383,7 +383,7 @@ internal static class McpEndpointExtensions
 
     private static async Task HandleBatchAsync(
         HttpContext context,
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         JsonElement batch,
         CancellationToken cancellationToken)
     {
@@ -451,7 +451,7 @@ internal static class McpEndpointExtensions
     /// </summary>
     private static async Task<McpJsonRpcResponse?> ProcessMessageAsync(
         HttpContext context,
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         JsonElement message,
         CancellationToken cancellationToken)
     {
