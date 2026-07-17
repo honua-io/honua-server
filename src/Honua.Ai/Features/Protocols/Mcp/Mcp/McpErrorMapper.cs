@@ -28,6 +28,15 @@ internal static class McpErrorMapper
     {
         public const string Unauthenticated = "unauthenticated";
         public const string PermissionDenied = "permission_denied";
+
+        /// <summary>
+        /// A validated bearer token's OAuth scopes did not permit the operation
+        /// (honua-server#2851). Distinct from <see cref="PermissionDenied"/> — which means the
+        /// principal's operator grants were insufficient — so an operator can tell an
+        /// under-scoped agent token apart from an under-privileged principal. Mirrors RFC 6750
+        /// <c>insufficient_scope</c>.
+        /// </summary>
+        public const string InsufficientScope = "insufficient_scope";
         public const string FailedPrecondition = "failed_precondition";
         public const string NotFound = "not_found";
         public const string InvalidArgument = "invalid_argument";
@@ -69,6 +78,16 @@ internal static class McpErrorMapper
             {
                 Code = Codes.Unauthenticated,
                 RequiresReauthentication = true
+            }
+        },
+
+        GeoprocessingAuthorizationException authEx when authEx.DenialReason == AuthorizationDenialReason.InsufficientScope => new McpJsonRpcError
+        {
+            Code = JsonRpcServerError,
+            Message = authEx.Message,
+            Data = new McpErrorData
+            {
+                Code = Codes.InsufficientScope
             }
         },
 

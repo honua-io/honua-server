@@ -47,6 +47,23 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
+    public void AuthorizationException_ScopeDenial_MapsToInsufficientScopeDistinctFromPermissionDenied()
+    {
+        // A scope denial (#2851) must be a distinct structured reason from a grant denial so an
+        // operator can tell an under-scoped agent token apart from an under-privileged principal.
+        var error = McpErrorMapper.Map(new GeoprocessingAuthorizationException(
+            requiresAuthentication: false,
+            "The access token's scopes do not permit 'Execute' on Process.",
+            denialReason: AuthorizationDenialReason.InsufficientScope));
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.InsufficientScope);
+        error.Data.Code.Should().NotBe(McpErrorMapper.Codes.PermissionDenied);
+        error.Data.RequiresReauthentication.Should().BeNull(
+            "an insufficient scope is not fixed by re-authenticating; a differently-scoped token is required");
+    }
+
+    [UnitTest]
     public void ApprovalRequiredException_MapsToFailedPreconditionWithPolicyRef()
     {
         var error = McpErrorMapper.Map(new GeoprocessingApprovalRequiredException("policy/publish"));

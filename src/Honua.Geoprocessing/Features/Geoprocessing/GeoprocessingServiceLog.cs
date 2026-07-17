@@ -54,6 +54,12 @@ internal static partial class GeoprocessingServiceLog
         string resourceType,
         string operation);
 
+    [LoggerMessage(8034, LogLevel.Warning, "Authorization denied by OAuth scope for geoprocessing: ResourceType={ResourceType}, Operation={Operation}")]
+    public static partial void AuthorizationScopeDenied(
+        ILogger logger,
+        string resourceType,
+        string operation);
+
     [LoggerMessage(8008, LogLevel.Information, "Job submitted (idempotent replay): JobId={JobId}")]
     public static partial void JobSubmittedIdempotent(
         ILogger logger,

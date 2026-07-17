@@ -115,11 +115,63 @@ The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `p
 
 - **`unauthenticated` on `tools/call` or `resources/read`** — handshake methods work anonymously but tool calls do not; attach the `X-API-Key` header (or token) to the client config. See [troubleshooting](../deploy/troubleshooting.md).
 - **`permission_denied`** — the identity authenticates but lacks the operator grant for that tool family; grant the relevant operator permission to the calling identity.
+- **`insufficient_scope`** — distinct from `permission_denied`: the identity *is* authorized by grant, but the OAuth bearer token's scopes do not cover the operation (or the token carries no recognized `honua.mcp.*` scope, which is fail-closed). Mint a token whose `scope` claim includes the scope for that operation — see [OAuth scopes](#oauth-21-bearer-tokens-and-scope-mapping). Does not apply to X-API-Key callers.
 - **HTTP 202 with an empty body** — not an error: MCP notifications (`notifications/*` without an `id`) are acknowledged with 202 by design.
 - **`invalid_request` (-32600)** — malformed JSON-RPC envelope; common causes are a missing `id` on a non-notification method or batching the `initialize` call (it must be sent alone).
 - **Agent "succeeds" but reports a tool error** — tool failures are returned inside `result` with `isError: true` and a structured `code` (`invalid_argument`, `not_found`, `failed_precondition`, …) per the MCP error contract; read the embedded message.
 
 A separate read-only discovery/query MCP server (`@honua/mcp-server`, from the `honua-sdk-js` repository) is also available for agents that only need to browse services and query features rather than run operator workflows.
+
+## OAuth 2.1 bearer tokens and scope mapping
+
+`/mcp` is an OAuth 2.1 resource server: it accepts `Authorization: Bearer` tokens
+validated against your configured OIDC authorities (Entra, Keycloak, Okta, Auth0,
+Google, or a generic provider), and advertises how to discover the authorization
+server through RFC 9728 protected-resource metadata at
+`/.well-known/oauth-protected-resource/mcp`. Honua is never the authorization
+server — your IdP mints the tokens; Honua only validates and consumes them.
+
+Authorization is a two-layer intersection. The per-tool **operator grant** model
+(`EnsureCallerAuthorizedAsync`) remains the authority for *what a principal may do*.
+A bearer token's **scopes** then narrow that: a scope can only ever restrict what
+the principal's grants already permit — it can never widen them. So the effective
+authority of a bearer caller is `grants ∩ scopes`.
+
+**This applies only to OAuth bearer tokens.** X-API-Key callers, interactive
+sessions, and the dev-auth bypass are not scope-governed and are unaffected.
+
+### Scope taxonomy
+
+Scopes are defined at operation granularity across every operator resource type
+(catalog, workspace, process, package, deployment, job, published service). Mint a
+token whose `scope` claim (space-delimited, per RFC 9068; `scp` is also read) lists
+the scopes the agent needs:
+
+| Scope | Authorizes |
+|---|---|
+| `honua.mcp.full` | Every operation — the token is bounded only by its grants (no narrowing). Use for a full-authority agent. |
+| `honua.mcp.discover` | Catalog/capability discovery (`Discover`). |
+| `honua.mcp.read` | Read resource state and results (`Read`; implies `Discover`). |
+| `honua.mcp.create` | Create new resources or artifacts (`Create`). |
+| `honua.mcp.execute` | Execute built-in analytic tools and jobs (`Execute`). |
+| `honua.mcp.execute.mutating` | Mutating built-in geoprocessing (`ExecuteMutatingProcess`; implies `Execute`). |
+| `honua.mcp.execute.customcode` | Operator-supplied custom-code geoprocessing (`ExecuteCustomCode`; implies `Execute`). |
+| `honua.mcp.promote` | Promote workspace artifacts (`Promote`). |
+| `honua.mcp.publish` | Publish/deploy packages (`Publish`). |
+
+The full vocabulary is advertised in the RFC 9728 metadata's `scopes_supported`.
+
+**Fail-closed default.** A bearer token that presents **no recognized `honua.mcp.*`
+scope** authorizes nothing — every tool call returns `insufficient_scope` — even
+when its principal's grants (or `admin` role) would allow the operation. This is
+deliberate: least-privilege delegation is the reason to issue an agent an OAuth
+token rather than a shared API key. To restore full grant-bounded authority
+explicitly, include `honua.mcp.full`.
+
+**Least-privilege example.** Issue an ops-monitoring agent a token scoped
+`honua.mcp.discover honua.mcp.read`: it can browse the catalog and read job
+results and ops-evidence, but a `tools/call` that submits a geoprocessing plan is
+denied with `insufficient_scope` — without ever touching the principal's grants.
 
 ## Harden the MCP endpoint (production)
 
