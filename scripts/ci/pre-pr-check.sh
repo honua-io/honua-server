@@ -55,6 +55,15 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 1
 fi
 
+# CR-safe jq: the Windows jq binary writes stdout in text mode and appends a CR
+# to every line, so captured values ("$(jq ...)"), emptiness/`:-` fallbacks
+# (the shard monolith fallback and `run_all` comparison below) and shard-field
+# env exports would carry a trailing CR. This wrapper strips it (no-op on Linux,
+# so CI is unaffected) and supersedes the earlier per-call-site `tr -d '\r'` /
+# `${var%$'\r'}` patches, which are now redundant. Sourced AFTER the presence
+# guard above so that guard still probes the real jq binary, not this function.
+source "$(dirname "${BASH_SOURCE[0]}")/lib/jq-cr-safe.sh"
+
 # Resolve the base ref; if it is missing locally, fall back to a full run so we
 # never silently under-test.
 if [[ "${FULL}" != "1" ]] && ! git rev-parse --verify --quiet "${BASE_REF}" >/dev/null 2>&1; then
@@ -161,9 +170,9 @@ SHARD_REASON="$(jq -r '.reason // "unknown"' <<< "${TARGETED}")"
 if [[ "${FAST}" == "1" ]]; then
     SELECTED_SHARDS=""
 elif [[ "${RUN_ALL_SHARDS}" == "true" ]]; then
-    SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json | tr -d '\r')"
+    SELECTED_SHARDS="$(jq -r '.shards[].shard_name' .github/ci-shards.json)"
 else
-    SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}" | tr -d '\r')"
+    SELECTED_SHARDS="$(jq -r '.shards[]?' <<< "${TARGETED}")"
 fi
 
 # A shard without a csproj runs against the Honua.Server.Tests monolith
@@ -381,7 +390,6 @@ else
 
         run_one_shard() {
             local shard_name="$1"
-            shard_name="${shard_name%$'\r'}"
             local safe="${shard_name//[^A-Za-z0-9_]/_}"
             local shard_json log_name filter max_cpu_count test_timeout_minutes csproj
             shard_json="$(jq -c --arg n "${shard_name}" '.shards[] | select(.shard_name==$n)' .github/ci-shards.json)"
