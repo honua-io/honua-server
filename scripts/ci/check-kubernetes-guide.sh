@@ -4,7 +4,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 guide="${repo_root}/docs/guides/deploy/kubernetes.md"
 
-python3 - "${guide}" <<'PY'
+# Resolve a Python 3 that actually runs (see scripts/ci/lib/python-resolve.sh);
+# the Windows Store python3 alias satisfies `command -v` but does not run (#2886).
+# shellcheck source=scripts/ci/lib/python-resolve.sh
+. "${repo_root}/scripts/ci/lib/python-resolve.sh"
+if ! PYTHON_BIN="$(honua_resolve_python)"; then
+  echo "⚠️  Skipping Kubernetes guide contract check (no working Python 3: tried python3/python/py)"
+  exit 0
+fi
+
+"${PYTHON_BIN}" - "${guide}" <<'PY'
 from __future__ import annotations
 
 import re
@@ -154,7 +163,7 @@ if [[ -n "${HONUA_HELM_CHART:-}" ]]; then
     temp_dir="$(mktemp -d)"
     trap 'rm -rf "${temp_dir}"' EXIT
 
-    python3 - "${guide}" "${temp_dir}" <<'PY'
+    "${PYTHON_BIN}" - "${guide}" "${temp_dir}" <<'PY'
 import re
 import sys
 from pathlib import Path
