@@ -1,66 +1,18 @@
 {
-  "$comment": "Seed list for the cap/<category> issue-label namespace (#2896, child of #2892). Hand-committed today: the 20 entries with source \"feature-catalog\" are copied from src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs (Categories class), and the 5 entries with source \"community\" cover obvious Community-tier protocol-serving families that have no FeatureCatalog entry because they are not edition-gated. TODO(#2893): once honua-server publishes the canonical capability-keys.v1.json artifact, point .github/workflows/label-sync.yml's seed_path at that artifact instead of this file and retire this seed. Keep every \"slug\" value stable across that swap so existing cap/* labels, open issues, and the issue-form capability field keep working without a relabel.",
+  "$comment": "Seed list for the cap/<category> issue-label namespace (#2896, child of #2892). Hand-committed; converged with capability-keys.v1.json (#2893) before any cap/* labels were applied: the 20 entries with source \"feature-catalog\" are copied from src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs (Categories class), and the 5 entries with source \"community\" cover obvious Community-tier protocol-serving families that have no FeatureCatalog entry because they are not edition-gated. TODO(#2893): once honua-server publishes the canonical capability-keys.v1.json artifact, point .github/workflows/label-sync.yml's seed_path at that artifact instead of this file and retire this seed. Keep every \"slug\" value stable across that swap so existing cap/* labels, open issues, and the issue-form capability field keep working without a relabel.",
   "version": 1,
   "categories": [
+    {
+      "slug": "ai",
+      "source": "feature-catalog",
+      "displayName": "AI",
+      "description": "Agentic AI ops: MCP discovery/query, spec plan/apply, guardrails"
+    },
     {
       "slug": "alerts",
       "source": "feature-catalog",
       "displayName": "Alerts",
       "description": "Alerting and geofence features"
-    },
-    {
-      "slug": "channels",
-      "source": "feature-catalog",
-      "displayName": "Channels",
-      "description": "Alert delivery channel features"
-    },
-    {
-      "slug": "import",
-      "source": "feature-catalog",
-      "displayName": "Import",
-      "description": "Data import and ingestion features"
-    },
-    {
-      "slug": "geocoding",
-      "source": "feature-catalog",
-      "displayName": "Geocoding",
-      "description": "Geocoding and address resolution features"
-    },
-    {
-      "slug": "routing",
-      "source": "feature-catalog",
-      "displayName": "Routing",
-      "description": "Network routing and service-area analysis features"
-    },
-    {
-      "slug": "identity",
-      "source": "feature-catalog",
-      "displayName": "Identity",
-      "description": "Identity and authentication features"
-    },
-    {
-      "slug": "caching",
-      "source": "feature-catalog",
-      "displayName": "Caching",
-      "description": "Caching and performance features"
-    },
-    {
-      "slug": "static-map",
-      "source": "feature-catalog",
-      "displayName": "StaticMap",
-      "description": "Static map image rendering features"
-    },
-    {
-      "slug": "styling",
-      "source": "feature-catalog",
-      "displayName": "Styling",
-      "description": "Styling and cartographic features"
-    },
-    {
-      "slug": "raster",
-      "source": "feature-catalog",
-      "displayName": "Raster",
-      "description": "Raster and imagery features"
     },
     {
       "slug": "analytics",
@@ -69,52 +21,34 @@
       "description": "Spatial analytics: clustering, joins, density, buffer aggregate"
     },
     {
-      "slug": "streaming",
+      "slug": "caching",
       "source": "feature-catalog",
-      "displayName": "Streaming",
-      "description": "Real-time feature streaming and subscriptions"
+      "displayName": "Caching",
+      "description": "Caching and performance features"
     },
     {
-      "slug": "scene",
+      "slug": "channels",
       "source": "feature-catalog",
-      "displayName": "Scene",
-      "description": "3D scene features: CityGML/BIM ingest, Building Scene Layer publish"
+      "displayName": "Channels",
+      "description": "Alert delivery channel features"
     },
     {
-      "slug": "temporal",
-      "source": "feature-catalog",
-      "displayName": "Temporal",
-      "description": "Temporal animation, time-aware filtering, time-series tiles"
+      "slug": "collaboration",
+      "source": "capability-keys",
+      "displayName": "Collaboration",
+      "description": "Sharing, portal collaboration, and multi-user coordination features"
     },
     {
-      "slug": "printing",
-      "source": "feature-catalog",
-      "displayName": "Printing",
-      "description": "Printing and layout export features"
+      "slug": "control-plane",
+      "source": "capability-keys",
+      "displayName": "Control Plane",
+      "description": "Admin control-plane, configuration, and management APIs"
     },
     {
-      "slug": "editing",
-      "source": "feature-catalog",
-      "displayName": "Editing",
-      "description": "Branch versioning, reconcile/post, multi-user editing"
-    },
-    {
-      "slug": "field-ops",
-      "source": "feature-catalog",
-      "displayName": "FieldOps",
-      "description": "Offline field operations and disconnected sync features"
-    },
-    {
-      "slug": "ai",
-      "source": "feature-catalog",
-      "displayName": "AI",
-      "description": "Agentic AI ops: MCP discovery/query, spec plan/apply, guardrails"
-    },
-    {
-      "slug": "extensibility",
-      "source": "feature-catalog",
-      "displayName": "Extensibility",
-      "description": "Server extensibility features: plugin/extension SDK"
+      "slug": "demo",
+      "source": "capability-keys",
+      "displayName": "Demo",
+      "description": "Demo provisioning and showcase enablement features"
     },
     {
       "slug": "disaster-recovery",
@@ -123,34 +57,118 @@
       "description": "HA/DR: backup automation, failover, RTO/RPO reporting"
     },
     {
-      "slug": "serve-geoservices",
-      "source": "community",
-      "displayName": "Serve: GeoServices REST",
-      "description": "GeoServices REST serving: FeatureServer, MapServer, ImageServer, GPServer"
+      "slug": "discovery",
+      "source": "capability-keys",
+      "displayName": "Discovery",
+      "description": "Catalog search, metadata discovery, and service registry features"
     },
     {
-      "slug": "serve-ogc",
-      "source": "community",
-      "displayName": "Serve: OGC",
-      "description": "OGC API Features/Tiles/Maps/Processes plus classic WFS/WMS/WMTS"
+      "slug": "editing",
+      "source": "feature-catalog",
+      "displayName": "Editing",
+      "description": "Branch versioning, reconcile/post, multi-user editing"
     },
     {
-      "slug": "serve-tiles",
-      "source": "community",
-      "displayName": "Serve: Tiles",
-      "description": "Vector/raster tile serving: MVT, TileJSON, OGC API Tiles"
+      "slug": "enrichment",
+      "source": "capability-keys",
+      "displayName": "Enrichment",
+      "description": "Spatial data enrichment features"
     },
     {
-      "slug": "serve-odata",
-      "source": "community",
-      "displayName": "Serve: OData",
-      "description": "OData v4 query surface"
+      "slug": "extensibility",
+      "source": "feature-catalog",
+      "displayName": "Extensibility",
+      "description": "Server extensibility features: plugin/extension SDK"
     },
     {
-      "slug": "serve-stac",
-      "source": "community",
-      "displayName": "Serve: STAC",
-      "description": "STAC catalog and search surface"
+      "slug": "field-ops",
+      "source": "feature-catalog",
+      "displayName": "FieldOps",
+      "description": "Offline field operations and disconnected sync features"
+    },
+    {
+      "slug": "geocoding",
+      "source": "feature-catalog",
+      "displayName": "Geocoding",
+      "description": "Geocoding and address resolution features"
+    },
+    {
+      "slug": "identity",
+      "source": "feature-catalog",
+      "displayName": "Identity",
+      "description": "Identity and authentication features"
+    },
+    {
+      "slug": "import",
+      "source": "feature-catalog",
+      "displayName": "Import",
+      "description": "Data import and ingestion features"
+    },
+    {
+      "slug": "ops",
+      "source": "capability-keys",
+      "displayName": "Ops",
+      "description": "Operations, observability, health, and self-driving platform features"
+    },
+    {
+      "slug": "printing",
+      "source": "feature-catalog",
+      "displayName": "Printing",
+      "description": "Printing and layout export features"
+    },
+    {
+      "slug": "process",
+      "source": "capability-keys",
+      "displayName": "Process",
+      "description": "Geoprocessing, jobs, and process execution features"
+    },
+    {
+      "slug": "raster",
+      "source": "feature-catalog",
+      "displayName": "Raster",
+      "description": "Raster and imagery features"
+    },
+    {
+      "slug": "routing",
+      "source": "feature-catalog",
+      "displayName": "Routing",
+      "description": "Network routing and service-area analysis features"
+    },
+    {
+      "slug": "scene",
+      "source": "feature-catalog",
+      "displayName": "Scene",
+      "description": "3D scene features: CityGML/BIM ingest, Building Scene Layer publish"
+    },
+    {
+      "slug": "serve",
+      "source": "capability-keys",
+      "displayName": "Serve",
+      "description": "Protocol serving surfaces (GeoServices REST, OGC, tiles, OData, STAC, gRPC)"
+    },
+    {
+      "slug": "static-map",
+      "source": "feature-catalog",
+      "displayName": "StaticMap",
+      "description": "Static map image rendering features"
+    },
+    {
+      "slug": "streaming",
+      "source": "feature-catalog",
+      "displayName": "Streaming",
+      "description": "Real-time feature streaming and subscriptions"
+    },
+    {
+      "slug": "styling",
+      "source": "feature-catalog",
+      "displayName": "Styling",
+      "description": "Styling and cartographic features"
+    },
+    {
+      "slug": "temporal",
+      "source": "feature-catalog",
+      "displayName": "Temporal",
+      "description": "Temporal animation, time-aware filtering, time-series tiles"
     }
   ]
 }

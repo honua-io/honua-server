@@ -1,0 +1,246 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
+  "trackingIssue": "#2893",
+  "description": "Explicit no-surface allowlist (issue #2893 acceptance criteria): every capability key in capability-keys.v1.json must have >=1 feature-catalog.json entry OR appear here with a reviewed reason. These are all existing FeatureCatalog Pro/Enterprise entitlement keys that gate a configuration value, a cross-cutting behavior, a background job, or an SDK/MCP-only surface rather than a distinct catalogued HTTP route.",
+  "reasonCodes": {
+    "config-flag": "Gates a parameter or configuration value on an existing routed capability, not a distinct route.",
+    "cross-cutting-gate": "A policy/validation layer applied across several existing routes.",
+    "cross-cutting-default": "Applies automatically as a default behavior, not a distinct route.",
+    "ops-background-job": "An operational background job or scheduled task, not an HTTP route.",
+    "sdk-only": "Exposed to SDKs/MCP tooling without a distinct catalogued HTTP route in this slice."
+  },
+  "noSurfaceCapabilities": [
+    {
+      "capability": "ai.agent-operations",
+      "reasonCode": "cross-cutting-gate",
+      "reason": "Validation-layer gate applied across several existing MCP/spec routes rather than a distinct route of its own; see ai.spec-apply, ai.grounding, ai.workflow-generation for the gated route surfaces.",
+      "category": "Ai",
+      "edition": "Pro"
+    },
+    {
+      "capability": "ai.approval-workflows",
+      "reasonCode": "cross-cutting-gate",
+      "reason": "Human-in-the-loop approval policy layered over ai.agent-operations routes; no distinct route of its own.",
+      "category": "Ai",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "ai.spec-apply",
+      "reasonCode": "sdk-only",
+      "reason": "Spec-apply execution is invoked via MCP tool call and internal job submission, not a distinct catalogued HTTP route in this slice.",
+      "category": "Ai",
+      "edition": "Pro"
+    },
+    {
+      "capability": "ai.workflow-generation",
+      "reasonCode": "sdk-only",
+      "reason": "Workflow/content generation is invoked via MCP tool call, not a distinct catalogued HTTP route in this slice.",
+      "category": "Ai",
+      "edition": "Pro"
+    },
+    {
+      "capability": "alerts.dwell",
+      "reasonCode": "config-flag",
+      "reason": "Dwell is a trigger-type value on the same alert-rule admin routes as alerts.enter-exit (admin.control-plane), not a distinct route.",
+      "category": "Alerts",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "alerts.enter-exit",
+      "reasonCode": "config-flag",
+      "reason": "Enter/exit is a trigger-type value on the same alert-rule admin routes as alerts.evaluation, not a distinct route.",
+      "category": "Alerts",
+      "edition": "Pro"
+    },
+    {
+      "capability": "alerts.threshold",
+      "reasonCode": "config-flag",
+      "reason": "Threshold is a trigger-type value on the same alert-rule admin routes as alerts.evaluation, not a distinct route.",
+      "category": "Alerts",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "caching.output-cache",
+      "reasonCode": "config-flag",
+      "reason": "Output caching is a server configuration setting (Cache:ResponseCachingEnabled), not a distinct route.",
+      "category": "Caching",
+      "edition": "Pro"
+    },
+    {
+      "capability": "caching.redis",
+      "reasonCode": "config-flag",
+      "reason": "Redis distributed cache is a deployment configuration setting, not a distinct route.",
+      "category": "Caching",
+      "edition": "Pro"
+    },
+    {
+      "capability": "channels.aws-sns",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "channels.azure-eventgrid",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "channels.digest",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "channels.email",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "channels.slack",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "channels.teams",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "channels.webhook",
+      "reasonCode": "config-flag",
+      "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+      "category": "Channels",
+      "edition": "Pro"
+    },
+    {
+      "capability": "dr.backup-automation",
+      "reasonCode": "ops-background-job",
+      "reason": "Scheduled backup automation is an operational background job, not an HTTP route.",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "dr.cache-backup",
+      "reasonCode": "ops-background-job",
+      "reason": "Cache-state backup/restore is an operational background job, not an HTTP route.",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "dr.failover",
+      "reasonCode": "ops-background-job",
+      "reason": "Failover playbooks are operational health-check-driven automation, not an HTTP route.",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "dr.rto-rpo-reporting",
+      "reasonCode": "ops-background-job",
+      "reason": "RTO/RPO objective tracking is a reporting computation surfaced through the operational status surface (ops.observability), not a distinct route.",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "geocoding.failover",
+      "reasonCode": "config-flag",
+      "reason": "Provider failover is a configuration behavior of the geocoding.forward/reverse routes, not a distinct route.",
+      "category": "Geocoding",
+      "edition": "Pro"
+    },
+    {
+      "capability": "identity.claims-mapping",
+      "reasonCode": "config-flag",
+      "reason": "Claims-to-role mapping is an OIDC configuration setting under identity.oidc admin routes, not a distinct route.",
+      "category": "Identity",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "identity.oidc-multi-provider",
+      "reasonCode": "config-flag",
+      "reason": "Multi-provider configuration is a setting on the identity.oidc admin routes, not a distinct route.",
+      "category": "Identity",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "plugin.sdk",
+      "reasonCode": "sdk-only",
+      "reason": "Server plugin/extension SDK is a compile-time, AOT-safe registration surface, not an HTTP route.",
+      "category": "Extensibility",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "printing.layout-templates",
+      "reasonCode": "config-flag",
+      "reason": "Layout template selection is a parameter on the printing.pdf-output GPServer route, not a distinct route.",
+      "category": "Printing",
+      "edition": "Pro"
+    },
+    {
+      "capability": "raster.cloud-storage-config",
+      "reasonCode": "config-flag",
+      "reason": "Cloud storage connection configuration is an admin setting under raster.cloud-cog-serving, not a distinct route.",
+      "category": "Raster",
+      "edition": "Pro"
+    },
+    {
+      "capability": "raster.temporal-mosaic",
+      "reasonCode": "config-flag",
+      "reason": "Temporal mosaic selection is a query parameter on ImageServer/raster serve routes (serve.geoservices-imageserver), not a distinct route.",
+      "category": "Raster",
+      "edition": "Pro"
+    },
+    {
+      "capability": "staticmap.high-dpi",
+      "reasonCode": "config-flag",
+      "reason": "DPI is a request parameter on the static-map export route, not a distinct route.",
+      "category": "StaticMap",
+      "edition": "Pro"
+    },
+    {
+      "capability": "staticmap.large-dimensions",
+      "reasonCode": "config-flag",
+      "reason": "Image dimensions are a request parameter on the static-map export route, not a distinct route.",
+      "category": "StaticMap",
+      "edition": "Pro"
+    },
+    {
+      "capability": "staticmap.rich-overlays",
+      "reasonCode": "config-flag",
+      "reason": "Marker/path overlay counts are a request parameter on the static-map export route, not a distinct route.",
+      "category": "StaticMap",
+      "edition": "Pro"
+    },
+    {
+      "capability": "styling.defaults",
+      "reasonCode": "cross-cutting-default",
+      "reason": "Smart style defaults apply automatically when a layer publishes; not a distinct route of their own.",
+      "category": "Styling",
+      "edition": "Community"
+    },
+    {
+      "capability": "temporal.animation-api",
+      "reasonCode": "sdk-only",
+      "reason": "Capability flag advertised for SDK/admin TimeSlider integration; no server-side route of its own.",
+      "category": "Temporal",
+      "edition": "Pro"
+    },
+    {
+      "capability": "temporal.time-series-tiles",
+      "reasonCode": "config-flag",
+      "reason": "Time-range filtering is a query parameter (time) on tile routes (serve.vector-tiles / serve.ogc-api-tiles), not a distinct route.",
+      "category": "Temporal",
+      "edition": "Pro"
+    }
+  ]
+}
