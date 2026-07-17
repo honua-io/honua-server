@@ -15,7 +15,16 @@ require_command() {
 }
 
 require_command jq
-require_command python3
+
+# Resolve a Python 3 that actually runs (see scripts/ci/lib/python-resolve.sh).
+# `require_command python3` is not enough on Windows, where the Microsoft Store
+# python3 alias satisfies `command -v` but exits without running (#2886). When
+# no interpreter runs, skip the Python-driven checks gracefully — the jq/shell
+# validations above and below still run, and CI (where python3 is real) is
+# unaffected.
+# shellcheck source=scripts/ci/lib/python-resolve.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/python-resolve.sh"
+PYTHON_BIN="$(honua_resolve_python || true)"
 
 # CR-safe jq: strip the CRLF the Windows jq binary emits in text mode (no-op on
 # Linux). Sourced AFTER require_command above so that guard probes the real
@@ -86,14 +95,15 @@ scripts/ci/validate-shell-syntax.sh
 echo "Checking local pre-PR change routing..."
 scripts/ci/fixtures/validate-pre-pr-routing.sh
 
-echo "Checking Python helper syntax..."
-python3 -m py_compile scripts/ci/*.py
+if [[ -n "${PYTHON_BIN}" ]]; then
+  echo "Checking Python helper syntax..."
+  "${PYTHON_BIN}" -m py_compile scripts/ci/*.py
 
-echo "Checking Docker integration gate timeout budget..."
-python3 scripts/ci/validate-docker-gate-timeouts.py
+  echo "Checking Docker integration gate timeout budget..."
+  "${PYTHON_BIN}" scripts/ci/validate-docker-gate-timeouts.py
 
-echo "Checking workflow YAML syntax..."
-python3 - <<'PY'
+  echo "Checking workflow YAML syntax..."
+  "${PYTHON_BIN}" - <<'PY'
 from pathlib import Path
 try:
     import yaml
@@ -105,6 +115,9 @@ for path in sorted(Path(".github/workflows").glob("*.yml")):
     with path.open("r", encoding="utf-8") as handle:
         yaml.safe_load(handle)
 PY
+else
+  echo "⚠️  Skipping Python helper/timeout/YAML checks (no working Python 3: tried python3/python/py)"
+fi
 
 assert_descriptor() {
   local name="$1"
@@ -857,8 +870,9 @@ assert_descriptor \
 # the anti-regression check for the coverage hole — a new test class in an
 # unmapped namespace fails CI here instead of silently never running.
 # ---------------------------------------------------------------------------
+if [[ -n "${PYTHON_BIN}" ]]; then
 echo "Checking server-test shard coverage (no orphaned test classes)..."
-python3 scripts/ci/check-server-test-shard-coverage.py \
+"${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
@@ -887,5 +901,8 @@ python3 scripts/ci/check-server-test-shard-coverage.py \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Misc"
+else
+  echo "⚠️  Skipping server-test shard coverage check (no working Python 3: tried python3/python/py)"
+fi
 
 echo "CI router validation passed."
