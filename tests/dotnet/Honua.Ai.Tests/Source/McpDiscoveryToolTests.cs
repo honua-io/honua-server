@@ -136,7 +136,7 @@ public sealed class McpDiscoveryToolTests
         DiscoveryJsonContext.Default.McpListCapabilitiesOutput.Should().NotBeNull();
     }
 
-    private McpOperatorSurface BuildSurface() => new(
+    private McpDataAccessSurface BuildSurface() => new(
         [
             new ResolveEntityTool(_jobService, NullLogger<ResolveEntityTool>.Instance),
             new ListCapabilitiesTool(_jobService, NullLogger<ListCapabilitiesTool>.Instance)
@@ -144,7 +144,7 @@ public sealed class McpDiscoveryToolTests
         [
             new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance)
         ],
-        NullLogger<McpOperatorSurface>.Instance);
+        NullLogger<McpDataAccessSurface>.Instance);
 
     private static TestMetadataV2GraphProvider BuildGraphProvider() =>
         new TestMetadataV2GraphBuilder()
@@ -158,7 +158,7 @@ public sealed class McpDiscoveryToolTests
             .AddPublication("pub-roads", "svc-roads", "res-roads", layerIndex: 0, storageBindingId: "bind-roads")
             .BuildProvider();
 
-    private static ServiceProvider BuildServices(McpOperatorSurface? surface = null)
+    private static ServiceProvider BuildServices(McpDataAccessSurface? surface = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());

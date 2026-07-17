@@ -67,13 +67,13 @@ public sealed class McpRegistryCompositionTests
     public void OrphanTool_WithoutRegistryDescriptor_IsDetectedAsDrift()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [
                 new ListCapabilitiesTool(jobService, NullLogger<ListCapabilitiesTool>.Instance),
                 new StubOrphanTool(),
             ],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         McpRegistryCompositionValidator.FindDrift(surface, Registry)
             .Should().ContainSingle()
@@ -84,10 +84,10 @@ public sealed class McpRegistryCompositionTests
     public void OrphanResource_WithoutRegistryDescriptor_IsDetectedAsDrift()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new ListCapabilitiesTool(jobService, NullLogger<ListCapabilitiesTool>.Instance)],
             [new StubOrphanResource()],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         McpRegistryCompositionValidator.FindDrift(surface, Registry)
             .Should().ContainSingle()
@@ -98,7 +98,7 @@ public sealed class McpRegistryCompositionTests
     public async Task StartupCheck_Throws_OnDrift_WhenRegistryBindingEnabled()
     {
         var check = new McpRegistryBindingStartupCheck(
-            new McpOperatorSurface([new StubOrphanTool()], [], NullLogger<McpOperatorSurface>.Instance),
+            new McpDataAccessSurface([new StubOrphanTool()], [], NullLogger<McpDataAccessSurface>.Instance),
             Registry,
             Options.Create(new CapabilityRegistryBindingOptions { RegistryBinding = true }));
 
@@ -112,7 +112,7 @@ public sealed class McpRegistryCompositionTests
     public async Task StartupCheck_Skips_WhenRegistryBindingDisabled()
     {
         var check = new McpRegistryBindingStartupCheck(
-            new McpOperatorSurface([new StubOrphanTool()], [], NullLogger<McpOperatorSurface>.Instance),
+            new McpDataAccessSurface([new StubOrphanTool()], [], NullLogger<McpDataAccessSurface>.Instance),
             Registry,
             Options.Create(new CapabilityRegistryBindingOptions { RegistryBinding = false }));
 
@@ -147,10 +147,10 @@ public sealed class McpRegistryCompositionTests
     private static string TitleCase(string value) =>
         string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..];
 
-    private static McpOperatorSurface BuildConformantSurface()
+    private static McpDataAccessSurface BuildConformantSurface()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
-        return new McpOperatorSurface(
+        return new McpDataAccessSurface(
             [
                 new ValidatePlanTool(jobService, NullLogger<ValidatePlanTool>.Instance),
                 new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
@@ -163,7 +163,7 @@ public sealed class McpRegistryCompositionTests
                 new WorkspaceResource(jobService, NullLogger<WorkspaceResource>.Instance),
                 new FeatureCatalogResource(jobService, NullLogger<FeatureCatalogResource>.Instance),
             ],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
     }
 
     /// <summary>A tool with a name no capability-registry descriptor advertises.</summary>
