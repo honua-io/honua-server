@@ -36,6 +36,8 @@ public sealed class McpProtectedResourceMetadataTests
     // path, and it cannot see through a const reference. This route is registry-tracked
     // but only conditionally deployed (no OIDC authority => absent), so that source-level
     // proof is its only drift gate — keep the literal at the call site.
+    private static readonly string[] ExpectedBearerMethods = ["header"];
+
     private const string GenericAuthority = "https://auth.example.com";
     private const string PublicBaseUrl = "https://mcp.example.com";
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
@@ -86,7 +88,7 @@ public sealed class McpProtectedResourceMetadataTests
                     "the surface now accepts Authorization: Bearer tokens as a resource server (#2850)");
                 bearerMethods.ValueKind.Should().Be(JsonValueKind.Array);
                 bearerMethods.EnumerateArray().Select(element => element.GetString())
-                    .Should().Equal(new[] { "header" },
+                    .Should().Equal(ExpectedBearerMethods,
                         "the /mcp resource reads the token only from the Authorization header (RFC 6750)");
             }
         }
