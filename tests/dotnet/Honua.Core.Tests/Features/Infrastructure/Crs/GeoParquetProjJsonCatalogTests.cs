@@ -16,14 +16,13 @@ namespace Honua.Core.Tests.Features.Infrastructure.Crs;
 /// </summary>
 public sealed class GeoParquetProjJsonCatalogTests
 {
-    [UnitTest]
+    [Theory]
     [InlineData(3857)]
     [InlineData(25832)]
     [InlineData(27700)]
     [InlineData(32633)]
     [InlineData(2193)]
     [InlineData(4269)]
-    [Theory]
     public void TryGetProjJson_KnownSrid_ReturnsProjJsonWithMatchingEpsgId(int srid)
     {
         var found = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson);
@@ -40,12 +39,11 @@ public sealed class GeoParquetProjJsonCatalogTests
         id.GetProperty("code").GetInt32().Should().Be(srid);
     }
 
-    [UnitTest]
+    [Theory]
     [InlineData(102100)]
     [InlineData(900913)]
     [InlineData(102113)]
     [InlineData(3785)]
-    [Theory]
     public void TryGetProjJson_WebMercatorAlias_ResolvesToEpsg3857(int aliasSrid)
     {
         var found = GeoParquetProjJsonCatalog.TryGetProjJson(aliasSrid, out var projJson);

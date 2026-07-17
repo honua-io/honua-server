@@ -197,15 +197,32 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithGeoParquetFormatAndNon4326OutSR_ReturnsBadRequest()
+    public async Task Query_WithGeoParquetFormatAndResolvableNon4326OutSR_ReturnsParquetWithProjJsonCrs()
     {
+        // #2844: EPSG:3857 has a resolvable PROJJSON definition, so GeoParquet output reprojects
+        // through the shared query pipeline and emits the authoritative PROJJSON crs metadata.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.apache.parquet");
+        var payload = await response.Content.ReadAsByteArrayAsync();
+        await AssertGeoParquetCrsAsync(payload, expectedEpsg: 3857);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithGeoParquetFormatAndUnresolvableOutSR_ReturnsBadRequest()
+    {
+        // 987654 has no PROJJSON definition, so spec-compliant CRS metadata cannot be emitted.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=987654");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("GeoParquet output does not yet support non-4326 outSR");
+        content.Should().Contain("no PROJJSON CRS definition is resolvable");
     }
 
     [IntegrationTest]
@@ -800,6 +817,25 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             var hasGeoKey = reader.Schema.Metadata?.ContainsKey("geo") ?? false;
             hasGeoKey.Should().BeFalse();
         }
+    }
+
+    private static async Task AssertGeoParquetCrsAsync(byte[] payload, int expectedEpsg)
+    {
+        payload.Should().NotBeEmpty();
+        Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        await batchReader.ReadNextRecordBatchAsync(); // materialize schema
+
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geomCol.TryGetProperty("crs", out var crs).Should().BeTrue("non-4326 output must carry a PROJJSON crs");
+        var id = crs.GetProperty("id");
+        id.GetProperty("authority").GetString().Should().Be("EPSG");
+        id.GetProperty("code").GetInt32().Should().Be(expectedEpsg);
     }
 
     // BH2-001 regression: returnDistinctValues=true combined with a very large resultOffset
