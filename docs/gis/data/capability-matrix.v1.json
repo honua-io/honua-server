@@ -102,7 +102,7 @@
       "category": "AI",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 60,
+      "provingTestCount": 65,
       "maturity": {
         "implemented": 4
       },
@@ -1583,7 +1583,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 293,
+      "provingTestCount": 307,
       "maturity": {
         "implemented": 45
       },
