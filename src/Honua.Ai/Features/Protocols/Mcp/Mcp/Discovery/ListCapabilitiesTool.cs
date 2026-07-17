@@ -84,13 +84,13 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         {
             ServerName = serverInfo.Name,
             ServerVersion = serverInfo.Version,
-            ProtocolVersions = McpOperatorSurface.SupportedProtocolVersions
+            ProtocolVersions = McpDataAccessSurface.SupportedProtocolVersions
         };
 
         // Project the live in-process catalog. Resolved leniently so a lightweight
         // host that did not register the surface still returns a valid (if empty)
         // manifest rather than throwing.
-        var surface = httpContext.RequestServices.GetService<McpOperatorSurface>();
+        var surface = httpContext.RequestServices.GetService<McpDataAccessSurface>();
         if (surface is not null)
         {
             // The unified capability registry (ADR-0058 B2, #2334) is the source of
@@ -127,7 +127,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
     }
 
     private static List<McpCapabilityTool> BuildToolManifest(
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         ICapabilityRegistry? registry)
     {
         var registryToolNames = registry is null
@@ -165,7 +165,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
     }
 
     private static List<McpCapabilityResource> BuildResourceManifest(
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         ICapabilityRegistry? registry)
     {
         var registryFamilies = registry is null

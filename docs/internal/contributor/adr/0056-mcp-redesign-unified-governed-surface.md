@@ -38,7 +38,7 @@ lands in; that sequencing decision is this ADR's purpose.
 
 | Capability | Reality in `src/Honua.Ai/.../Mcp/` | Owning issue |
 |---|---|---|
-| Tool/resource dispatch over `POST /mcp` | `McpEndpointExtensions` (JSON-RPC, pinned MCP `2025-03-26`), `McpOperatorSurface` | base |
+| Tool/resource dispatch over `POST /mcp` | `McpEndpointExtensions` (JSON-RPC, pinned MCP `2025-03-26`), `McpDataAccessSurface` | base |
 | Grounding-as-tools | `GroundCandidatesTool`, `ClarifyIntentTool`, `ValidatePlanTool`, `DryRunPlanTool` exist | #1949 (partial) |
 | Tool annotations + output schemas | `McpToolAnnotationSets`, `McpToolOutputSchemas`, `McpToolDescriptor.annotations` | #1953 (in flight) |
 | Live planner | `LivePlanAnalysisService` on the `IPlanAnalysisService` seam, config-gated by `WorkflowGeneration:DefaultProvider` (`ShouldUseLivePlanner`), `FixturePlanAnalysisService` fallback | #1955 (in flight) |
