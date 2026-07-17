@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# CR-safe jq: strip the CRLF the Windows jq binary emits in text mode so the
+# @tsv fields read below are not contaminated with a trailing CR (no-op on Linux).
+source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 CONFIG="${REPO_ROOT}/.github/server-test-transfer-benchmark.json"
 REGISTRY="${REPO_ROOT}/.github/server-test-artifact-projects.json"
 WORKFLOW="${REPO_ROOT}/.github/workflows/server-test-transfer-benchmark.yml"
