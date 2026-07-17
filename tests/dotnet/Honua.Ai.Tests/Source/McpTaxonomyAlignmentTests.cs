@@ -6,7 +6,9 @@ using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Resources;
@@ -420,6 +422,77 @@ public sealed partial class McpTaxonomyAlignmentTests
     [UnitTest]
     public void StructuredTools_ErrorEnvelopeMatchesEveryAdvertisedOutputSchema()
     {
+        // BuildLiveToolRoster() advertises the full static /mcp roster the DI
+        // registration wires — including the package-review tools
+        // (honua_validate_package / honua_preview_package) that BuildTools() omits
+        // because they take extra service dependencies (#2853). Certifying against
+        // the full roster closes the coverage gap where those two tools were only
+        // asserted non-null-and-object by PackageReviewTools_AreReadOnly_WithOutputSchemas.
+        foreach (var tool in BuildLiveToolRoster())
+        {
+            AssertSharedErrorEnvelopeValidates(tool.Describe());
+        }
+    }
+
+    [UnitTest]
+    public void DynamicOperationTools_ErrorEnvelopeMatchesAdvertisedOutputSchema()
+    {
+        // The honua_op_* family is projected from the operations catalog at runtime
+        // and never appears in the static roster, so it is validated separately here
+        // (#2853). Its advertised outputSchema flows through the same
+        // McpToolDescriptor.OutputSchema widening setter, so the shared error
+        // envelope must validate against both a read-only and a mutating projection.
+        var descriptors = new[]
+        {
+            DeterministicReadOnlyOperationDescriptor(),
+            MutatingOperationDescriptor(),
+        };
+
+        foreach (var descriptor in descriptors)
+        {
+            var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger<PublishedOperationTool>.Instance);
+            AssertSharedErrorEnvelopeValidates(tool.Describe());
+        }
+    }
+
+    [UnitTest]
+    public void ErrorEnvelopeRoster_CoversEveryStaticallyRegisteredTool()
+    {
+        // Drift guard (mirrors the guard in
+        // McpGeospatialMcpSchemaConformanceTests.EveryImplementedTool_IsMappedToAStandardSchema):
+        // every concrete IMcpTool in the production assembly — except the dynamic
+        // honua_op_* projection (certified by
+        // DynamicOperationTools_ErrorEnvelopeMatchesAdvertisedOutputSchema) and
+        // not-implemented stubs — must appear in BuildLiveToolRoster(). A newly
+        // registered tool that is not added to the roster fails here loudly rather
+        // than silently escaping envelope certification (#2853).
+        var mcpAssembly = typeof(ValidatePackageTool).Assembly;
+        var registeredToolTypes = mcpAssembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false })
+            .Where(t => typeof(IMcpTool).IsAssignableFrom(t))
+            .Where(t => !typeof(IStubMcpTool).IsAssignableFrom(t))
+            .Where(t => t != typeof(PublishedOperationTool))
+            .ToArray();
+
+        var certifiedTypes = BuildLiveToolRoster().Select(t => t.GetType()).ToHashSet();
+
+        var uncertified = registeredToolTypes
+            .Where(t => !certifiedTypes.Contains(t))
+            .Select(t => t.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        uncertified.Should().BeEmpty(
+            "every statically registered MCP tool must appear in BuildLiveToolRoster() so the shared "
+            + "error-envelope certification cannot silently omit it; add the missing tool(s) to "
+            + $"BuildLiveToolRoster(): {string.Join(", ", uncertified)}");
+    }
+
+    private static void AssertSharedErrorEnvelopeValidates(McpToolDescriptor descriptor)
+    {
+        descriptor.OutputSchema.Should().NotBeNull(
+            $"tool '{descriptor.Name}' must advertise an output schema before its shared error envelope can be validated");
+
         var errorEnvelope = JObject.Parse(
             """
             {
@@ -433,17 +506,58 @@ public sealed partial class McpTaxonomyAlignmentTests
             }
             """);
 
-        foreach (var tool in BuildTools())
-        {
-            var descriptor = tool.Describe();
-            descriptor.OutputSchema.Should().NotBeNull(
-                $"tool '{tool.Name}' must advertise an output schema before its shared error envelope can be validated");
-
-            var schema = JSchema.Parse(descriptor.OutputSchema!.Value.GetRawText());
-            errorEnvelope.IsValid(schema, out IList<string> errors).Should().BeTrue(
-                $"the shared MCP error envelope must validate against '{tool.Name}' outputSchema; errors: {string.Join("; ", errors)}");
-        }
+        var schema = JSchema.Parse(descriptor.OutputSchema!.Value.GetRawText());
+        errorEnvelope.IsValid(schema, out IList<string> errors).Should().BeTrue(
+            $"the shared MCP error envelope must validate against '{descriptor.Name}' outputSchema; errors: {string.Join("; ", errors)}");
     }
+
+    private static OperationDescriptor DeterministicReadOnlyOperationDescriptor() => new()
+    {
+        OperationId = "geo.summary",
+        ProviderId = "test",
+        Title = "Summarize layer",
+        Description = "Compute a deterministic summary for a layer.",
+        Category = "analysis",
+        InputSchema = [OperationParam("layerId", required: true)],
+        OutputSchema = [],
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.None,
+        Policy = new OperationPolicyMetadata
+        {
+            BlastRadiusClass = OperationBlastRadiusClass.None,
+            SideEffectClass = OperationSideEffectClass.ReadOnly,
+            Determinism = OperationDeterminism.Deterministic,
+            SupportsDryRun = false,
+        },
+    };
+
+    private static OperationDescriptor MutatingOperationDescriptor() => new()
+    {
+        OperationId = "geo.export",
+        ProviderId = "test",
+        Title = "Export layer",
+        Description = "Export a layer, mutating data.",
+        Category = "lifecycle",
+        InputSchema = [OperationParam("layerId", required: true)],
+        OutputSchema = [],
+        ExecutionKind = OperationExecutionKind.Job,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
+        Policy = new OperationPolicyMetadata
+        {
+            BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,
+            SideEffectClass = OperationSideEffectClass.MutatesData,
+            Determinism = OperationDeterminism.AiAssisted,
+            SupportsDryRun = true,
+        },
+    };
+
+    private static OperationParameterDescriptor OperationParam(string name, bool required) => new()
+    {
+        Name = name,
+        Title = name + " title",
+        Required = required,
+        Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text },
+    };
 
     [UnitTest]
     public void RenderMap_AdvertisesOutputSchema_AndRemainsReadOnly()
