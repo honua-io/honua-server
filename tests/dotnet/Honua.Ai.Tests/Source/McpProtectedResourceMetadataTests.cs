@@ -86,7 +86,8 @@ public sealed class McpProtectedResourceMetadataTests
                     "the surface now accepts Authorization: Bearer tokens as a resource server (#2850)");
                 bearerMethods.ValueKind.Should().Be(JsonValueKind.Array);
                 bearerMethods.EnumerateArray().Select(element => element.GetString())
-                    .Should().Equal("header", because: "the /mcp resource reads the token only from the Authorization header (RFC 6750)");
+                    .Should().Equal(new[] { "header" },
+                        "the /mcp resource reads the token only from the Authorization header (RFC 6750)");
             }
         }
         finally
