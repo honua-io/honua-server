@@ -1,0 +1,9 @@
+{
+  "$comment": "Configurable performance-parity budget for the GeoServices parity gate (issue #1249). Honua/source latency ratios at or above failP95/failP99 fail the gate; at or above warnP95/warnP99 (but below fail) warn. Mirrors PerfParityBudget.GeoServicesDefault. Tighten/relax here without recompiling; consumed by scripts/ci/check-import-fidelity-perf-budget.sh.",
+  "profileName": "geoservices-parity-default-v1",
+  "warnP95": 1.5,
+  "failP95": 2.0,
+  "warnP99": 1.75,
+  "failP99": 2.5,
+  "minSamples": 5
+}

@@ -1,5 +1,5 @@
 {
-  "$comment": "Deterministic fixture exercising the perf-parity gate PASS path offline (issue #1249). Used by parity-scorecard-governance.yml to smoke-test scripts/ci/check-parity-perf-budget.sh without a live benchmark run.",
+  "$comment": "Deterministic fixture exercising the perf-parity gate PASS path offline (issue #1249). Used by import-fidelity-scorecard-governance.yml to smoke-test scripts/ci/check-import-fidelity-perf-budget.sh without a live benchmark run.",
   "GeneratedAtUtc": "2026-06-18T00:00:00+00:00",
   "Cases": [
     {

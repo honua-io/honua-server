@@ -21,7 +21,7 @@ namespace Honua.Core.Features.Migration.Services;
 /// <para>
 /// Wiring: the GeoServices parity integration suite calls <see cref="Evaluate"/> with the ratios it
 /// already measures and embeds the returned verdict into the emitted scorecard; CI then enforces the
-/// verdict via <c>scripts/ci/check-parity-perf-budget.sh</c>.
+/// verdict via <c>scripts/ci/check-import-fidelity-perf-budget.sh</c>.
 /// </para>
 /// </remarks>
 public static class GeoServicesPerfParityGate
