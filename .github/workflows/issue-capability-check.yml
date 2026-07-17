@@ -1,0 +1,124 @@
+name: Issue Capability Key Check
+
+# Lightweight companion to the "Validate PR Template Compliance" job in ci.yml
+# (#2896, child of #2892): when a bug or feature issue is opened, check whether
+# its "Capability Key(s)" field (bug.yml / feature.yml) is filled in and looks
+# like it maps to a known cap/<category>. This is advisory only:
+#   - Missing value       -> comment with guidance, no label/status change.
+#   - Unrecognized prefix -> gentle correction comment suggesting known
+#                            categories; the key may simply be more granular
+#                            than the category-level seed knows about.
+#   - Present and known   -> no comment at all (stay quiet on the happy path).
+# It never closes, labels, or edits the issue — the seed list (see TODO below)
+# is still category-level, not the full canonical key vocabulary, so a "warn"
+# posture (not a hard-fail) is intentional until #2893 publishes that
+# vocabulary. Tech-debt issues are skipped: the field is optional there.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: issue-capability-check-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check capability key
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Only bug/feature issues carry the field as validated; tech-debt is
+    # optional there and intentionally not nagged.
+    if: contains(github.event.issue.labels.*.name, 'bug') || contains(github.event.issue.labels.*.name, 'enhancement')
+    steps:
+      - name: Checkout (seed list only)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            docs/gis/data/capability-categories.seed.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check capability key field
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const MARKER = '<!-- capability-key-check -->';
+
+            const seed = JSON.parse(fs.readFileSync('docs/gis/data/capability-categories.seed.json', 'utf8'));
+            const knownSlugs = new Set((seed.categories || []).map(c => c.slug));
+
+            const issueBody = context.payload.issue.body || '';
+
+            // Issue forms render each field as "### <Label>\n\n<answer>\n" in the
+            // body. Match the Capability Key(s) heading (bug.yml / feature.yml
+            // both use the exact label "Capability Key(s)") up to the next
+            // heading or end of body.
+            const match = issueBody.match(/###\s*Capability Key\(s\)\s*\n+([\s\S]*?)(?=\n###\s|\s*$)/i);
+            const rawValue = match ? match[1].trim() : '';
+            const isEmpty = !rawValue || /^_no response_$/i.test(rawValue);
+
+            let comment = null;
+
+            if (isEmpty) {
+              comment = [
+                MARKER,
+                '### Capability key needed',
+                '',
+                "This issue doesn't have a **Capability Key(s)** value yet. Adding one lets us tie the ticket to the `cap/<category>` label taxonomy and surface it in the capability evidence roadmap.",
+                '',
+                'Comma-separate one or more keys, e.g. `editing.feature-edits, geocoding.single-line`. If you only know the general area, the category slug alone is fine (e.g. `editing`, `serve-ogc`).',
+                '',
+                'Current categories: `' + Array.from(knownSlugs).join('`, `') + '`',
+                '(see `docs/gis/data/capability-categories.seed.json`).',
+                '',
+                'This is advisory — no action is required to keep the issue open.',
+              ].join('\n');
+            } else {
+              const keys = rawValue.split(',').map(k => k.trim()).filter(Boolean);
+              const unknown = keys.filter(k => {
+                const prefix = k.includes('.') ? k.split('.')[0] : k;
+                return !knownSlugs.has(prefix.toLowerCase());
+              });
+
+              if (unknown.length > 0) {
+                comment = [
+                  MARKER,
+                  '### Capability key(s) not recognized',
+                  '',
+                  'These capability key(s) don\'t match a known `cap/<category>` prefix: `' + unknown.join('`, `') + '`.',
+                  '',
+                  "If the key is just more granular than our category list knows about, that's fine — this is a heads-up, not a blocker. Known categories: `" + Array.from(knownSlugs).join('`, `') + '`',
+                  '(see `docs/gis/data/capability-categories.seed.json`). Feel free to correct the field or ignore this if the key is intentional.',
+                ].join('\n');
+              }
+            }
+
+            if (!comment) {
+              core.notice('Capability key present and recognized; no comment needed.');
+              return;
+            }
+
+            // Idempotency guard: avoid a duplicate comment if this job is
+            // ever re-run for the same issue (e.g. a manual workflow re-run).
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            if (comments.some(c => c.body && c.body.includes(MARKER))) {
+              core.notice('Capability key guidance comment already posted; skipping.');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment,
+            });
