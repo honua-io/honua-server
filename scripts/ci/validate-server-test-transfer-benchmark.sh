@@ -9,6 +9,11 @@ CONFIG="${REPO_ROOT}/.github/server-test-transfer-benchmark.json"
 REGISTRY="${REPO_ROOT}/.github/server-test-artifact-projects.json"
 WORKFLOW="${REPO_ROOT}/.github/workflows/server-test-transfer-benchmark.yml"
 
+# Resolve a Python 3 that actually runs (see scripts/ci/lib/python-resolve.sh);
+# the Windows Store python3 alias satisfies `command -v` but does not run (#2886).
+# shellcheck source=scripts/ci/lib/python-resolve.sh
+. "${SCRIPT_DIR}/lib/python-resolve.sh"
+
 jq -e '
   .contract_version == 1 and
   .decision_thresholds.require_initial_time_to_first_test_improvement == true and
@@ -42,14 +47,21 @@ if grep -qE 'pull_request:|schedule:' "${WORKFLOW}"; then
 fi
 
 bash -n "${SCRIPT_DIR}/benchmark-server-test-transfer.sh"
-python3 -m py_compile "${SCRIPT_DIR}/summarize-server-test-transfer-benchmark.py"
+
+if ! PYTHON_BIN="$(honua_resolve_python)"; then
+  echo "⚠️  Skipping server-test transfer benchmark synthetic proof (no working Python 3: tried python3/python/py)"
+  echo "Server-test transfer benchmark validation passed (structural checks only)."
+  exit 0
+fi
+
+"${PYTHON_BIN}" -m py_compile "${SCRIPT_DIR}/summarize-server-test-transfer-benchmark.py"
 
 fixture="$(mktemp -d "${RUNNER_TEMP:-/tmp}/honua-transfer-summary.XXXXXX")"
 cleanup() { rm -rf "${fixture}"; }
 trap cleanup EXIT
 mkdir -p "${fixture}/metrics" "${fixture}/out"
 
-CONFIG_PATH="${CONFIG}" METRICS_PATH="${fixture}/metrics" python3 - <<'PY'
+CONFIG_PATH="${CONFIG}" METRICS_PATH="${fixture}/metrics" "${PYTHON_BIN}" - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -88,7 +100,7 @@ for shard in config["shards"]:
           transfer_ms=100, total_with_transfer_ms=400)
 PY
 
-"${SCRIPT_DIR}/summarize-server-test-transfer-benchmark.py" \
+"${PYTHON_BIN}" "${SCRIPT_DIR}/summarize-server-test-transfer-benchmark.py" \
   --metrics "${fixture}/metrics" --config "${CONFIG}" \
   --output "${fixture}/out/summary.json" --markdown "${fixture}/out/summary.md" >/dev/null
 jq -e '.decision == "no-shared-producer" and all(.profiles[]; .complete == true)' \

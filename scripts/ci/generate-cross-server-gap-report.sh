@@ -16,7 +16,16 @@ fi
 
 mkdir -p "$(dirname "$report_path")"
 
-python3 - "$trx_file" "$report_path" <<'PY'
+# Resolve a Python 3 that actually runs (see scripts/ci/lib/python-resolve.sh);
+# the Windows Store python3 alias satisfies `command -v` but does not run (#2886).
+# shellcheck source=scripts/ci/lib/python-resolve.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/python-resolve.sh"
+if ! PYTHON_BIN="$(honua_resolve_python)"; then
+  echo "⚠️  Skipping cross-server gap report (no working Python 3: tried python3/python/py)" >&2
+  exit 0
+fi
+
+"${PYTHON_BIN}" - "$trx_file" "$report_path" <<'PY'
 from __future__ import annotations
 
 import re
