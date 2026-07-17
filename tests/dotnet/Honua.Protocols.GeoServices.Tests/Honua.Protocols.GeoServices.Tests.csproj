@@ -25,10 +25,21 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <!-- Real JSON Schema validation for the server↔SDK GeoParquet interop conformance lane
+         (#2845): validates emitted geo metadata against the authoritative GeoParquet 1.1.0 /
+         PROJJSON v0.7 schemas rather than the server's own encoder. -->
+    <PackageReference Include="Newtonsoft.Json.Schema" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- Bundled authoritative schemas for the GeoParquet interop conformance lane (#2845). -->
+    <None Update="Source\FeatureServer\Services\Conformance\geoparquet-v1.1.0.schema.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Source\FeatureServer\Services\Conformance\projjson-v0.7.schema.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
