@@ -1463,8 +1463,22 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
             {
-                return (null, null, StandardErrorHelpers.CreateBadRequest(context,
-                    $"{formatLabel} output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference."));
+                // GeoParquet emits a PROJJSON `crs` for any SRID with a resolvable definition
+                // (#2844); GeoArrow does not yet carry non-4326 CRS metadata. Reject a
+                // non-resolvable GeoParquet SRID up-front with a precise error rather than
+                // letting the shared writer throw deeper in the pipeline.
+                var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
+                if (!isParquet)
+                {
+                    return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                        $"{formatLabel} output does not yet support non-4326 outSR. CRS metadata cannot be written correctly for the requested spatial reference."));
+                }
+
+                if (!GeoParquetProjJsonCatalog.IsSupported(outputSrid.Value))
+                {
+                    return (null, null, StandardErrorHelpers.CreateBadRequest(context,
+                        $"GeoParquet output does not support outSR {outputSrid.Value}: no PROJJSON CRS definition is resolvable for this spatial reference."));
+                }
             }
 
             outputSrid ??= wgs84Srid;
