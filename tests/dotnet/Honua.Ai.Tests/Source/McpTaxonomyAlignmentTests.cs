@@ -11,6 +11,7 @@ using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
