@@ -1,17 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Honua.Protocols.GeoServices.Catalog;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Protocols.GeoServices.GPServer.Models;
-using Honua.Protocols.GeoServices.ImageServer.Models;
-using Honua.Protocols.GeoServices.MapServer.Models;
-using Honua.Protocols.GeoServices.Sharing;
-using Honua.Protocols.GeoServices.VersionManagementServer.Models;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
@@ -23,34 +19,60 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 /// fields previously hardcoded <c>10.81</c> (and <c>10.91</c>/<c>11.1</c>), which falsely
 /// claimed to be a specific ArcGIS release.
 ///
-/// This test asserts on the actual source-generated JSON wire contract for each edited
-/// response type, so it FAILS the moment anyone re-adds a <c>currentVersion</c>/<c>fullVersion</c>
-/// property to any of these models. Do not weaken it; remove the offending property instead.
+/// This test asserts on the actual source-generated JSON wire contract for every type registered
+/// in the GeoServices assembly's serialization contexts, so it FAILS the moment anyone re-adds a
+/// <c>currentVersion</c>/<c>fullVersion</c> property to any of these models. Do not weaken it;
+/// remove the offending property instead.
 /// </summary>
 public sealed class NoArcGisServerVersionTests
 {
     private static readonly string[] ForbiddenWireNames = ["currentVersion", "fullVersion"];
 
     /// <summary>
-    /// Every GeoServices metadata response type, paired with the source-generated
-    /// <see cref="JsonTypeInfo"/> that production uses to serialize it. Covers the service-
-    /// directory root (<c>/rest/services</c>), <c>/rest/info</c>, FeatureServer service + layer,
-    /// MapServer service + layer, ImageServer service, GPServer service, the VersionManagementServer
-    /// info, and the ArcGIS Portal/Sharing facade documents.
+    /// Every type registered in a GeoServices source-generated <see cref="JsonSerializerContext"/>,
+    /// paired with the <see cref="JsonTypeInfo"/> production uses to serialize it. The set is DERIVED
+    /// by reflecting over every <see cref="JsonSerializerContext"/> in the GeoServices protocol
+    /// assembly rather than enumerated by hand — an enumerated allowlist is how
+    /// <c>VectorTileServerMetadataResponse</c> escaped this guard (honua-server#2878). Anything a
+    /// context can serialize (service directory, <c>/rest/info</c>, FeatureServer / MapServer /
+    /// ImageServer / GPServer / VersionManagementServer / VectorTileServer metadata, Portal/Sharing
+    /// facades, and any future model) is covered automatically the moment it is registered.
     /// </summary>
     private static IEnumerable<(string TypeName, JsonTypeInfo TypeInfo)> MetadataResponseTypes()
     {
-        yield return (nameof(ServicesDirectoryResponse), GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse);
-        yield return (nameof(RestInfoResponse), GeoservicesCatalogJsonContext.Default.RestInfoResponse);
-        yield return (nameof(FeatureServerResponse), FeatureServerJsonContext.Default.FeatureServerResponse);
-        yield return (nameof(LayerResponse), FeatureServerJsonContext.Default.LayerResponse);
-        yield return (nameof(MapServerResponse), MapServerJsonContext.Default.MapServerResponse);
-        yield return (nameof(MapServerLayerResponse), MapServerJsonContext.Default.MapServerLayerResponse);
-        yield return (nameof(ImageServerServiceInfo), ImageServerJsonContext.Default.ImageServerServiceInfo);
-        yield return (nameof(GPServiceInfoResponse), GPServerJsonContext.Default.GPServiceInfoResponse);
-        yield return (nameof(VersionManagementServiceInfo), VersionManagementJsonContext.Default.VersionManagementServiceInfo);
-        yield return (nameof(SharingInfoResponse), SharingRestJsonContext.Default.SharingInfoResponse);
-        yield return (nameof(PortalSelfResponse), SharingRestJsonContext.Default.PortalSelfResponse);
+        // Anchor on a known GeoServices context to locate the production assembly, then discover
+        // every JsonSerializerContext it declares and enumerate each context's generated
+        // JsonTypeInfo<T> properties.
+        var assembly = typeof(GeoservicesCatalogJsonContext).Assembly;
+
+        var contextTypes = assembly.GetTypes()
+            .Where(static type => type is { IsClass: true, IsAbstract: false }
+                && typeof(JsonSerializerContext).IsAssignableFrom(type))
+            .OrderBy(static type => type.Name, StringComparer.Ordinal);
+
+        foreach (var contextType in contextTypes)
+        {
+            var defaultProperty = contextType.GetProperty(
+                "Default", BindingFlags.Public | BindingFlags.Static);
+            if (defaultProperty?.GetValue(null) is not JsonSerializerContext context)
+            {
+                continue;
+            }
+
+            var typeInfoProperties = contextType
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(static property => property.PropertyType.IsGenericType
+                    && property.PropertyType.GetGenericTypeDefinition() == typeof(JsonTypeInfo<>))
+                .OrderBy(static property => property.Name, StringComparer.Ordinal);
+
+            foreach (var property in typeInfoProperties)
+            {
+                if (property.GetValue(context) is JsonTypeInfo typeInfo)
+                {
+                    yield return ($"{contextType.Name}.{typeInfo.Type.Name}", typeInfo);
+                }
+            }
+        }
     }
 
     [UnitTest]
@@ -58,7 +80,12 @@ public sealed class NoArcGisServerVersionTests
     {
         using var scope = new AssertionScope();
 
-        foreach (var (typeName, typeInfo) in MetadataResponseTypes())
+        var metadataResponseTypes = MetadataResponseTypes().ToArray();
+        metadataResponseTypes.Should().NotBeEmpty(
+            "the guard must discover the GeoServices serialization contexts; an empty set would "
+            + "silently pass and re-open the hole this test exists to close.");
+
+        foreach (var (typeName, typeInfo) in metadataResponseTypes)
         {
             var wireNames = typeInfo.Properties
                 .Select(static property => property.Name)
