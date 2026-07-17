@@ -52,17 +52,13 @@ public sealed class DependencyInjectionLimitsTests
     private static readonly HashSet<string> AllowedHandlerExceptions = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Service/coordinator/facade god objects accepted as tracked debt. Add a type here only with a
-    /// follow-up issue; do not grow this list for new code. A prior aggregate
-    /// (GeoservicesImportService) was decomposed rather than allowlisted; the current entry is
-    /// tracked for the same treatment.
+    /// Service/coordinator/facade god objects accepted as tracked debt. Now empty: prior aggregates
+    /// (GeoservicesImportService, then GeoprocessingJobService — whose 9th approval-lane
+    /// IOperationGateway collaborator was folded into the dispatcher's approval-proposal routing,
+    /// #2859) were decomposed rather than allowlisted. Add a type here only with a follow-up issue;
+    /// do not grow this list for new code.
     /// </summary>
-    private static readonly HashSet<string> AllowedServiceExceptions = new(StringComparer.Ordinal)
-    {
-        // #2814 added the approval-lane IOperationGateway as the 9th collaborator; decomposition
-        // back within the 8-collaborator ceiling is tracked by #2859.
-        "Honua.Geoprocessing.GeoprocessingJobService",
-    };
+    private static readonly HashSet<string> AllowedServiceExceptions = new(StringComparer.Ordinal);
 
     [ArchitectureTest]
     public void EndpointHandlers_ShouldNotExceedParameterLimit()
