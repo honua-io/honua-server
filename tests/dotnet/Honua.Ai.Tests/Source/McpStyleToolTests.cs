@@ -277,14 +277,14 @@ public sealed class McpStyleToolTests
         IMetadataV2StyleGraphSync? graphSync = null,
         IRasterMapRenderer? renderer = null)
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [
                 new GetStyleTool(_jobService, NullLogger<GetStyleTool>.Instance),
                 new ApplyStylePresetTool(_jobService, NullLogger<ApplyStylePresetTool>.Instance),
                 new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance),
             ],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());

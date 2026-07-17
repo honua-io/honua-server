@@ -12,7 +12,12 @@ using Honua.Ai.Protocols.Mcp.Tools;
 namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
-/// Central JSON-RPC dispatcher and registry for the MCP operator surface.
+/// Central JSON-RPC dispatcher and registry for the open MCP data-access
+/// surface — the studio/data-access tools plus the bounded, read-only
+/// ops-evidence tools this repo serves publicly. This is the evidence side of
+/// the evidence-vs-intelligence boundary (ADR-0066); operator <em>intelligence</em>
+/// (diagnose/tune/upgrade-planning with rollback gates) lives in the private
+/// <c>honua-devops</c> operator surface, not here.
 /// Hosts the tool and resource catalogs, routes <c>initialize</c>,
 /// <c>notifications/initialized</c>, <c>tools/list</c>, <c>tools/call</c>,
 /// <c>resources/list</c>, <c>resources/templates/list</c>,
@@ -20,7 +25,7 @@ namespace Honua.Ai.Protocols.Mcp;
 /// and converts domain exceptions into JSON-RPC errors via
 /// <see cref="McpErrorMapper"/>.
 /// </summary>
-internal sealed class McpOperatorSurface
+internal sealed class McpDataAccessSurface
 {
     /// <summary>
     /// MCP protocol revisions this server can negotiate during <c>initialize</c>.
@@ -43,12 +48,12 @@ internal sealed class McpOperatorSurface
     private readonly List<IMcpToolSource> _toolSources;
     private readonly IReadOnlyList<IMcpResource> _resources;
     private readonly McpSurfaceLimits _limits;
-    private readonly ILogger<McpOperatorSurface> _logger;
+    private readonly ILogger<McpDataAccessSurface> _logger;
 
-    public McpOperatorSurface(
+    public McpDataAccessSurface(
         IEnumerable<IMcpTool> tools,
         IEnumerable<IMcpResource> resources,
-        ILogger<McpOperatorSurface> logger,
+        ILogger<McpDataAccessSurface> logger,
         McpSurfaceLimits? limits = null,
         IEnumerable<IMcpToolSource>? toolSources = null)
     {

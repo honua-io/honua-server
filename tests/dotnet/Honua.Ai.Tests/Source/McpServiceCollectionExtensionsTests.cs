@@ -30,10 +30,10 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class McpServiceCollectionExtensionsTests
 {
     [UnitTest]
-    public void AddMcpOperatorSurface_DoesNotRegisterPromotionResourceHandlers()
+    public void AddMcpDataAccessSurface_DoesNotRegisterPromotionResourceHandlers()
     {
         var services = BuildBaseServices();
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredResourceHandlers(services)
             .Should().NotContain(new[]
@@ -47,10 +47,10 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_RegistersFeatureCatalogResource()
+    public void AddMcpDataAccessSurface_RegistersFeatureCatalogResource()
     {
         var services = BuildBaseServices();
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredResourceHandlers(services)
             .Should().Contain(typeof(FeatureCatalogResource),
@@ -60,10 +60,10 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_RegistersPublishServiceTool()
+    public void AddMcpDataAccessSurface_RegistersPublishServiceTool()
     {
         var services = BuildBaseServices();
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredToolHandlers(services)
             .Should().Contain(typeof(PublishServiceTool),
@@ -72,10 +72,10 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_DoesNotRegisterFallbackPromotionStores()
+    public void AddMcpDataAccessSurface_DoesNotRegisterFallbackPromotionStores()
     {
         var services = BuildBaseServices();
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         services.Any(d => d.ServiceType == typeof(IPublishedServiceStore))
             .Should().BeFalse("the transport registrar must not invent canonical publishing persistence");
@@ -86,13 +86,13 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_WithLocationServicesRegistered_RegistersGeocodeAndRouteTools()
+    public void AddMcpDataAccessSurface_WithLocationServicesRegistered_RegistersGeocodeAndRouteTools()
     {
         var services = BuildBaseServices();
         services.AddScoped(_ => Substitute.For<IGeocodeCoordinatorService>());
         services.AddScoped(_ => Substitute.For<IRoutingProvider>());
 
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredToolHandlers(services)
             .Should().Contain(new[]
@@ -103,11 +103,11 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_WithoutOpsObservabilityReader_DoesNotRegisterOpsObservabilitySurface()
+    public void AddMcpDataAccessSurface_WithoutOpsObservabilityReader_DoesNotRegisterOpsObservabilitySurface()
     {
         var services = BuildBaseServices();
 
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredToolHandlers(services)
             .Should().NotContain(new[]
@@ -126,12 +126,12 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_WithOpsObservabilityReader_RegistersOpsObservabilitySurface()
+    public void AddMcpDataAccessSurface_WithOpsObservabilityReader_RegistersOpsObservabilitySurface()
     {
         var services = BuildBaseServices();
         services.AddScoped(_ => Substitute.For<IMcpOpsObservabilityReader>());
 
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredToolHandlers(services)
             .Should().Contain(new[]
@@ -150,11 +150,11 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_WithoutPlatformOpsReader_DoesNotRegisterPlatformOpsTools()
+    public void AddMcpDataAccessSurface_WithoutPlatformOpsReader_DoesNotRegisterPlatformOpsTools()
     {
         var services = BuildBaseServices();
 
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredToolHandlers(services)
             .Should().NotContain(new[]
@@ -167,12 +167,12 @@ public sealed class McpServiceCollectionExtensionsTests
     }
 
     [UnitTest]
-    public void AddMcpOperatorSurface_WithPlatformOpsReader_RegistersPlatformOpsTools()
+    public void AddMcpDataAccessSurface_WithPlatformOpsReader_RegistersPlatformOpsTools()
     {
         var services = BuildBaseServices();
         services.AddScoped(_ => Substitute.For<IMcpPlatformOpsReader>());
 
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
         RegisteredToolHandlers(services)
             .Should().Contain(new[]
@@ -188,7 +188,7 @@ public sealed class McpServiceCollectionExtensionsTests
     public void AddMcpPromotionSurface_RegistersPromotionResourceHandlersOnly()
     {
         var services = BuildBaseServices();
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
         services.AddMcpPromotionSurface();
 
         RegisteredResourceHandlers(services)
@@ -218,7 +218,7 @@ public sealed class McpServiceCollectionExtensionsTests
         var services = BuildBaseServices();
         services.AddSingleton(canonicalPublishedServices);
         services.AddSingleton(canonicalDeployments);
-        services.AddMcpOperatorSurface(new ConfigurationBuilder().Build());
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
         services.AddMcpPromotionSurface();
 
         using var provider = services.BuildServiceProvider();

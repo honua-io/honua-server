@@ -49,7 +49,7 @@ internal interface IMcpResource
 
     /// <summary>
     /// Reads the resource at <paramref name="uri"/>. Implementations throw
-    /// domain exceptions on failure; <see cref="McpOperatorSurface"/> converts
+    /// domain exceptions on failure; <see cref="McpDataAccessSurface"/> converts
     /// them to JSON-RPC errors via <see cref="McpErrorMapper"/>.
     /// </summary>
     Task<McpResourcesReadResult> ReadAsync(

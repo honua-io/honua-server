@@ -17,12 +17,12 @@ namespace Honua.Ai.Protocols.Mcp;
 /// </summary>
 internal sealed class McpRegistryBindingStartupCheck : IHostedService
 {
-    private readonly McpOperatorSurface _surface;
+    private readonly McpDataAccessSurface _surface;
     private readonly ICapabilityRegistry _registry;
     private readonly CapabilityRegistryBindingOptions _options;
 
     public McpRegistryBindingStartupCheck(
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         ICapabilityRegistry registry,
         IOptions<CapabilityRegistryBindingOptions> options)
     {
