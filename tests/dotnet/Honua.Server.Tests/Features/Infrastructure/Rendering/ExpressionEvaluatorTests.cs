@@ -19,6 +19,16 @@ public class ExpressionEvaluatorTests
     private static readonly ImmutableDictionary<string, object?> _emptyProps =
         ImmutableDictionary<string, object?>.Empty;
 
+    /// <summary>
+    /// The zoom passed by every test whose expression contains no <c>["zoom"]</c> input.
+    /// <see cref="RenderZoom.NotDerivable"/> makes these tests prove the non-goal guard for
+    /// honua-server#2873 rather than merely satisfy a parameter: evaluating <c>["zoom"]</c> against
+    /// it throws, so each of these tests passing unchanged is evidence that the expression never
+    /// consulted zoom and that its result is unaffected by zoom support.
+    /// </summary>
+    private static readonly RenderZoom _noZoom =
+        RenderZoom.NotDerivable("this test evaluates no zoom expression");
+
     private static ImmutableDictionary<string, object?> Props(params (string Key, object? Value)[] items) =>
         items.ToImmutableDictionary(i => i.Key, i => i.Value);
 
@@ -28,7 +38,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["get", "name"]""");
         var props = Props(("name", "Test"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("Test");
     }
@@ -38,7 +48,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = MapLibreExpressionParser.Parse("""["get", "missing"]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps, _noZoom);
 
         result.Should().BeNull();
     }
@@ -49,7 +59,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["has", "name"]""");
         var props = Props(("name", "Test"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(true);
     }
@@ -59,7 +69,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = MapLibreExpressionParser.Parse("""["has", "missing"]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps, _noZoom);
 
         result.Should().Be(false);
     }
@@ -69,7 +79,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = MapLibreExpressionParser.Parse("""["!", ["has", "name"]]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps, _noZoom);
 
         result.Should().Be(true);
     }
@@ -80,7 +90,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["==", ["get", "type"], "road"]""");
         var props = Props(("type", "road"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(true);
     }
@@ -91,7 +101,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["==", ["get", "type"], "road"]""");
         var props = Props(("type", "building"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(false);
     }
@@ -102,7 +112,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["<", ["get", "population"], 1000]""");
         var props = Props(("population", 500));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(true);
     }
@@ -113,7 +123,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse(""" [">", ["get", "population"], 1000]""");
         var props = Props(("population", 500));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(false);
     }
@@ -124,7 +134,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["all", ["has", "name"], ["has", "type"]]""");
         var props = Props(("name", "test"), ("type", "road"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(true);
     }
@@ -135,7 +145,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["all", ["has", "name"], ["has", "missing"]]""");
         var props = Props(("name", "test"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(false);
     }
@@ -146,7 +156,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["any", ["has", "missing"], ["has", "name"]]""");
         var props = Props(("name", "test"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be(true);
     }
@@ -157,7 +167,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["match", ["get", "type"], "road", "blue", "building", "red", "gray"]""");
         var props = Props(("type", "road"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("blue");
     }
@@ -168,7 +178,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["match", ["get", "type"], "road", "blue", "building", "red", "gray"]""");
         var props = Props(("type", "park"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("gray");
     }
@@ -179,7 +189,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""");
         var props = Props(("type", "road"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("blue");
     }
@@ -190,7 +200,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""");
         var props = Props(("type", "park"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("gray");
     }
@@ -200,7 +210,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = MapLibreExpressionParser.Parse("""["+", 10, 20]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps, _noZoom);
 
         result.Should().BeOfType<double>().Which.Should().Be(30.0);
     }
@@ -211,7 +221,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["coalesce", ["get", "missing"], ["get", "name"]]""");
         var props = Props(("name", "test"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("test");
     }
@@ -222,7 +232,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "value"]]""");
         var props = Props(("value", 42.0));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("number");
     }
@@ -233,7 +243,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "value"]]""");
         var props = Props(("value", "N/A"));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("string");
     }
@@ -243,7 +253,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "missing"]]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps);
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps, _noZoom);
 
         result.Should().Be("null");
     }
@@ -254,7 +264,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse("""["typeof", ["get", "flag"]]""");
         var props = Props(("flag", true));
 
-        var result = ExpressionEvaluator.Evaluate(expr, props);
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
 
         result.Should().Be("boolean");
     }
@@ -323,7 +333,7 @@ public class ExpressionEvaluatorTests
     {
         var expr = MapLibreExpressionParser.Parse("5.0");
 
-        var result = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, 0f);
+        var result = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, _noZoom, 0f);
 
         result.Should().Be(5.0f);
     }
@@ -359,7 +369,7 @@ public class ExpressionEvaluatorTests
         """["interpolate", ["linear"], ["get", "value"], 0, "#ff0000", 50, "#00ff00", 100, "#0000ff"]""";
 
     private static SKColor EvaluateRamp(string expression, object? value) =>
-        ExpressionEvaluator.EvaluateColor(MapLibreExpressionParser.Parse(expression), Props(("value", value)));
+        ExpressionEvaluator.EvaluateColor(MapLibreExpressionParser.Parse(expression), Props(("value", value)), _noZoom);
 
     /// <summary>
     /// Expected colors are the output of MapLibre GL JS's own reference implementation
@@ -488,7 +498,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse(
             """["interpolate", ["linear"], ["get", "value"], 0, 0, 100, 10]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, Props(("value", value)));
+        var result = ExpressionEvaluator.Evaluate(expr, Props(("value", value)), _noZoom);
 
         result.Should().BeOfType<double>().Which.Should().BeApproximately(expected, 1e-9);
     }
@@ -499,7 +509,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse(
             """["interpolate", ["linear"], ["get", "value"], 0, "0", 100, "10"]""");
 
-        var result = ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)));
+        var result = ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)), _noZoom);
 
         result.Should().BeOfType<double>().Which.Should().BeApproximately(5.0, 1e-9);
     }
@@ -516,7 +526,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse(
             """["interpolate", ["linear"], ["get", "value"], 0, "#ff0000", 100, 42]""");
 
-        var act = () => ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)));
+        var act = () => ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)), _noZoom);
 
         act.Should().Throw<StyleExpressionEvaluationException>()
             .WithMessage("*color*number*");
@@ -532,7 +542,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse(
             """["interpolate", ["linear"], ["get", "value"], 0, "not-a-color", 100, "#08306b"]""");
 
-        var act = () => ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)));
+        var act = () => ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)), _noZoom);
 
         act.Should().Throw<StyleExpressionEvaluationException>();
     }
@@ -543,7 +553,7 @@ public class ExpressionEvaluatorTests
         var expr = MapLibreExpressionParser.Parse(
             """["interpolate", ["linear"], ["get", "value"], 0, ["get", "missing"], 100, 10]""");
 
-        var act = () => ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)));
+        var act = () => ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)), _noZoom);
 
         act.Should().Throw<StyleExpressionEvaluationException>();
     }
@@ -588,5 +598,228 @@ public class ExpressionEvaluatorTests
         ExpressionEvaluator.ParseColor("#ff0000").Should().Be(SKColors.Red);
         ExpressionEvaluator.ParseColor("rgb(1,2,3)").Should().Be(new SKColor(1, 2, 3, 255));
         ExpressionEvaluator.ParseColor("rgb(bad)").Should().Be(SKColors.Black);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // ["zoom"] as an expression input (honua-server#2873).
+    //
+    // Every expected value below is the output of MapLibre GL JS's own reference implementation
+    // (@maplibre/maplibre-gl-style-spec v26.1.0) for the same expression at the same zoom, obtained
+    // via createExpression(expr, rootKey, propertySpec).evaluate({ zoom }, { properties }) — the
+    // method PR #2870 established. They are not derived from this implementation.
+    // ---------------------------------------------------------------------------------------
+
+    private const string ZoomWidthRamp =
+        """["interpolate", ["linear"], ["zoom"], 8, 1, 16, 6]""";
+
+    private const string ZoomColorSteps =
+        """["step", ["zoom"], "#ccc", 10, "#3a6", 14, "#083"]""";
+
+    private const string ZoomColorRamp =
+        """["interpolate", ["linear"], ["zoom"], 0, "#f7fbff", 22, "#08306b"]""";
+
+    /// <summary>
+    /// Numeric zoom ramps are compared with a tolerance rather than exactly because this evaluator
+    /// keeps the interpolation factor <c>t</c> in <see cref="float"/> while MapLibre computes it in
+    /// float64 (the caveat recorded on PR #2870). The two agree exactly wherever the zoom and the
+    /// resulting factor are representable in <see cref="float"/> — every case here except z=13.7 —
+    /// and differ only in the last few ulps otherwise, far below a pixel of stroke width.
+    /// </summary>
+    private const double ZoomRampTolerance = 1e-5;
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(0, 1)]
+    [InlineData(4, 1)]
+    [InlineData(8, 1)]
+    [InlineData(10, 2.25)]
+    [InlineData(11.5, 3.1875)]
+    [InlineData(12, 3.5)]
+    [InlineData(13.7, 4.5625)]
+    [InlineData(14, 4.75)]
+    [InlineData(16, 6)]
+    [InlineData(18, 6)]
+    [InlineData(22, 6)]
+    public void EvaluateFloat_ZoomInterpolate_MatchesMapLibreOutput(double zoom, double expected)
+    {
+        var expr = MapLibreExpressionParser.Parse(ZoomWidthRamp);
+
+        var result = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, RenderZoom.At(zoom), 0f);
+
+        result.Should().BeApproximately((float)expected, (float)ZoomRampTolerance);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(0, 204, 204, 204)]
+    [InlineData(4, 204, 204, 204)]
+    [InlineData(8, 204, 204, 204)]
+    [InlineData(10, 51, 170, 102)]
+    [InlineData(11.5, 51, 170, 102)]
+    [InlineData(12, 51, 170, 102)]
+    [InlineData(13.7, 51, 170, 102)]
+    [InlineData(14, 0, 136, 51)]
+    [InlineData(16, 0, 136, 51)]
+    [InlineData(18, 0, 136, 51)]
+    [InlineData(22, 0, 136, 51)]
+    public void EvaluateColor_ZoomStep_MatchesMapLibreOutput(double zoom, byte r, byte g, byte b)
+    {
+        var expr = MapLibreExpressionParser.Parse(ZoomColorSteps);
+
+        var result = ExpressionEvaluator.EvaluateColor(expr, _emptyProps, RenderZoom.At(zoom));
+
+        result.Should().Be(new SKColor(r, g, b, 255));
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(0, 247, 251, 255)]
+    [InlineData(4, 204, 214, 228)]
+    [InlineData(8, 160, 177, 201)]
+    [InlineData(10, 138, 159, 188)]
+    [InlineData(11.5, 122, 145, 178)]
+    [InlineData(12, 117, 140, 174)]
+    [InlineData(13.7, 98, 125, 163)]
+    [InlineData(14, 95, 122, 161)]
+    [InlineData(16, 73, 103, 147)]
+    [InlineData(18, 51, 85, 134)]
+    [InlineData(22, 8, 48, 107)]
+    public void EvaluateColor_ZoomColorInterpolate_MatchesMapLibreOutput(double zoom, byte r, byte g, byte b)
+    {
+        var expr = MapLibreExpressionParser.Parse(ZoomColorRamp);
+
+        var result = ExpressionEvaluator.EvaluateColor(expr, _emptyProps, RenderZoom.At(zoom));
+
+        result.Should().Be(new SKColor(r, g, b, 255));
+    }
+
+    /// <summary>
+    /// MapLibre's <c>step</c> selects a stop at exactly its boundary (<c>&gt;=</c>), not above it.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(9.5, 0)]
+    [InlineData(10, 100)]
+    [InlineData(13.5, 100)]
+    [InlineData(14, 200)]
+    [InlineData(20, 200)]
+    public void EvaluateFloat_ZoomStepBoundary_MatchesMapLibreOutput(double zoom, double expected)
+    {
+        var expr = MapLibreExpressionParser.Parse("""["step", ["zoom"], 0, 10, 100, 14, 200]""");
+
+        var result = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, RenderZoom.At(zoom), -1f);
+
+        result.Should().BeApproximately((float)expected, (float)ZoomRampTolerance);
+    }
+
+    /// <summary>
+    /// Zoom and feature attributes compose: the stop outputs are themselves data-driven here, so
+    /// each feature gets its own ramp evaluated at the render's zoom.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(8, 3)]
+    [InlineData(10, 5.25)]
+    [InlineData(12, 7.5)]
+    [InlineData(14, 9.75)]
+    [InlineData(16, 12)]
+    public void EvaluateFloat_ZoomCombinedWithGet_MatchesMapLibreOutput(double zoom, double expected)
+    {
+        var expr = MapLibreExpressionParser.Parse(
+            """["interpolate", ["linear"], ["zoom"], 8, ["get", "w"], 16, ["*", ["get", "w"], 4]]""");
+
+        var result = ExpressionEvaluator.EvaluateFloat(expr, Props(("w", 3.0)), RenderZoom.At(zoom), 0f);
+
+        result.Should().BeApproximately((float)expected, (float)ZoomRampTolerance);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(0, 0)]
+    [InlineData(7.25, 7.25)]
+    [InlineData(14, 14)]
+    [InlineData(22, 22)]
+    public void Evaluate_BareZoomExpression_ReturnsTheRenderZoomLikeMapLibre(double zoom, double expected)
+    {
+        var expr = MapLibreExpressionParser.Parse("""["zoom"]""");
+
+        var result = ExpressionEvaluator.Evaluate(expr, _emptyProps, RenderZoom.At(zoom));
+
+        result.Should().BeOfType<double>().Which.Should().BeApproximately(expected, 1e-9);
+    }
+
+    /// <summary>
+    /// The regression witness for honua-server#2873. Before the fix, <c>["zoom"]</c> hit the
+    /// evaluator's unknown-operator arm and returned <see langword="null"/>, which
+    /// <c>ConvertToFloat(result, 0f)</c> then silently turned into <c>0f</c> — the same
+    /// permissive-default failure as #2867. Every zoom ramp therefore evaluated as if the map were
+    /// at zoom 0 and pinned to its lowest stop, at every zoom, with no throw, warning, or log. A
+    /// zoom well inside the ramp must now produce the interpolated value, not the zoom-0 one.
+    /// </summary>
+    [UnitTest]
+    public void EvaluateFloat_ZoomInterpolate_IsNotPinnedToTheLowestStop()
+    {
+        var expr = MapLibreExpressionParser.Parse(ZoomWidthRamp);
+
+        var atZoom12 = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, RenderZoom.At(12), 0f);
+        var atZoom0 = ExpressionEvaluator.EvaluateFloat(expr, _emptyProps, RenderZoom.At(0), 0f);
+
+        atZoom0.Should().BeApproximately(1f, 1e-5f);
+        atZoom12.Should().BeApproximately(3.5f, 1e-5f);
+        atZoom12.Should().NotBe(atZoom0, "a zoom ramp must vary with zoom rather than stay at its zoom-0 value");
+    }
+
+    /// <summary>
+    /// A render that could not derive a zoom must not render a zoom-dependent style as a confident
+    /// wrong picture. Substituting any level here would reinstate the shared root cause of #2867 and
+    /// #2868, so the evaluator raises and carries the render path's own reason into the message.
+    /// </summary>
+    [UnitTest]
+    public void Evaluate_ZoomExpression_WithNotDerivableZoom_ThrowsRatherThanSubstitutingALevel()
+    {
+        var expr = MapLibreExpressionParser.Parse(ZoomWidthRamp);
+        var zoom = RenderZoom.NotDerivable("the render extent is empty or degenerate");
+
+        var act = () => ExpressionEvaluator.Evaluate(expr, _emptyProps, zoom);
+
+        act.Should().Throw<StyleExpressionEvaluationException>()
+            .WithMessage("*the render extent is empty or degenerate*");
+    }
+
+    /// <summary>
+    /// The throw is scoped to expressions that actually read zoom: a style with no zoom input
+    /// evaluates normally on a render that has no derivable zoom, which is what keeps the
+    /// non-derivable case from failing renders it has no bearing on.
+    /// </summary>
+    [UnitTest]
+    public void Evaluate_NonZoomExpression_WithNotDerivableZoom_EvaluatesNormally()
+    {
+        var expr = MapLibreExpressionParser.Parse(
+            """["interpolate", ["linear"], ["get", "value"], 0, 0, 100, 10]""");
+
+        var result = ExpressionEvaluator.Evaluate(expr, Props(("value", 50.0)), _noZoom);
+
+        result.Should().BeOfType<double>().Which.Should().BeApproximately(5.0, 1e-9);
+    }
+
+    /// <summary>
+    /// A zoom expression on a branch that is not taken must not fail the render: only an evaluated
+    /// <c>["zoom"]</c> needs a zoom.
+    /// </summary>
+    [UnitTest]
+    public void Evaluate_UnreachedZoomBranch_WithNotDerivableZoom_DoesNotThrow()
+    {
+        var expr = MapLibreExpressionParser.Parse(
+            """["case", ["==", ["get", "kind"], "fixed"], 5, ["zoom"]]""");
+
+        var result = ExpressionEvaluator.Evaluate(expr, Props(("kind", "fixed")), _noZoom);
+
+        result.Should().BeOfType<double>().Which.Should().Be(5.0);
     }
 }

@@ -171,13 +171,21 @@ internal sealed class SkiaMapRenderer : IDisposable
         ImmutableDictionary<string, object?>? properties = null)
     {
         var featureProps = properties ?? ImmutableDictionary<string, object?>.Empty;
+
+        // A swatch is drawn without a map viewport, so no render zoom exists to evaluate a
+        // zoom-dependent paint against. Passing NotDerivable rather than a placeholder level keeps
+        // a zoom-dependent legend from rendering as a confident wrong swatch (honua-server#2873);
+        // for the zoom-independent styles legends resolve today this changes nothing. A scale-driven
+        // legend zoom, when one is threaded here, comes from RenderZoom.FromScaleDenominator
+        // (honua-server#2866).
+        var swatchZoom = RenderZoom.NotDerivable("a legend swatch is drawn without a map viewport");
         var padding = 2f;
 
         switch (styleLayer.Type)
         {
             case "fill":
                 {
-                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, featureProps);
+                    var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, featureProps, swatchZoom);
                     using var fillPaint = new SKPaint
                     {
                         Style = SKPaintStyle.Fill,
@@ -202,7 +210,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 }
             case "line":
                 {
-                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, featureProps);
+                    var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, featureProps, swatchZoom);
                     using var linePaint = new SKPaint
                     {
                         Style = SKPaintStyle.Stroke,
@@ -224,7 +232,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 }
             case "circle":
                 {
-                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, featureProps);
+                    var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, featureProps, swatchZoom);
                     var radius = Math.Min(circleStyle.Radius, Math.Min(width, height) / 2f - padding);
                     using var circlePaint = new SKPaint
                     {
@@ -296,7 +304,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                 continue;
             }
 
-            if (TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform))
+            if (TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform, zoom))
             {
                 continue;
             }
@@ -314,12 +322,12 @@ internal sealed class SkiaMapRenderer : IDisposable
                 }
 
                 // Check filter
-                if (styleLayer.Filter is { } filter && !EvaluateFilter(filter, feature.Attributes))
+                if (styleLayer.Filter is { } filter && !EvaluateFilter(filter, feature.Attributes, zoom))
                 {
                     continue;
                 }
 
-                RenderFeatureWithStyle(canvas, feature, styleLayer, transform);
+                RenderFeatureWithStyle(canvas, feature, styleLayer, transform, zoom);
             }
         }
     }
@@ -385,7 +393,8 @@ internal sealed class SkiaMapRenderer : IDisposable
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer styleLayer,
-        Func<double, double, SKPoint> transform)
+        Func<double, double, SKPoint> transform,
+        RenderZoom zoom)
     {
         if (!string.Equals(styleLayer.Type, "circle", StringComparison.Ordinal) ||
             styleLayer.Filter is not null ||
@@ -394,7 +403,7 @@ internal sealed class SkiaMapRenderer : IDisposable
             return false;
         }
 
-        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, ImmutableDictionary<string, object?>.Empty);
+        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, ImmutableDictionary<string, object?>.Empty, zoom);
         RenderCirclePoints(canvas, features, transform, circleStyle);
         return true;
     }
@@ -550,7 +559,8 @@ internal sealed class SkiaMapRenderer : IDisposable
         SKCanvas canvas,
         Feature feature,
         MapLibreStyleLayer styleLayer,
-        Func<double, double, SKPoint> transform)
+        Func<double, double, SKPoint> transform,
+        RenderZoom zoom)
     {
         var result = WkbToSkiaConverter.Convert(feature.Geometry!, transform);
         try
@@ -559,7 +569,7 @@ internal sealed class SkiaMapRenderer : IDisposable
             {
                 case "fill":
                     {
-                        var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes);
+                        var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes, zoom);
                         using var fillPaint = new SKPaint
                         {
                             Style = SKPaintStyle.Fill,
@@ -588,7 +598,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                     }
                 case "line":
                     {
-                        var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes);
+                        var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes, zoom);
                         using var linePaint = new SKPaint
                         {
                             Style = SKPaintStyle.Stroke,
@@ -614,7 +624,7 @@ internal sealed class SkiaMapRenderer : IDisposable
                     }
                 case "circle":
                     {
-                        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes);
+                        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes, zoom);
                         using var circlePaint = new SKPaint
                         {
                             Style = SKPaintStyle.Fill,
@@ -682,9 +692,9 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    private static bool EvaluateFilter(MapLibreExpression filter, ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateFilter(MapLibreExpression filter, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
-        var result = ExpressionEvaluator.Evaluate(filter, properties);
+        var result = ExpressionEvaluator.Evaluate(filter, properties, zoom);
         // MapLibre spec treats non-boolean filter results as falsy (exclude).
         // Consistent with RasterMapRenderingPipeline.EvaluateFilter.
         return result is bool b && b;

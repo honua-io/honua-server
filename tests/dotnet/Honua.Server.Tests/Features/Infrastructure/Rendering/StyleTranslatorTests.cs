@@ -20,6 +20,14 @@ public class StyleTranslatorTests
     private static readonly ImmutableDictionary<string, object?> _emptyProps =
         ImmutableDictionary<string, object?>.Empty;
 
+    /// <summary>
+    /// The zoom passed by every test whose style contains no <c>["zoom"]</c> input; evaluating a
+    /// zoom expression against it throws, so these tests passing unchanged shows their styles are
+    /// unaffected by zoom support (honua-server#2873).
+    /// </summary>
+    private static readonly RenderZoom _noZoom =
+        RenderZoom.NotDerivable("this test resolves no zoom expression");
+
     [UnitTest]
     public void ParseStyleLayers_NullJson_ReturnsEmpty()
     {
@@ -124,7 +132,7 @@ public class StyleTranslatorTests
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
 
-        var style = StyleTranslator.ResolveFillStyle(layer, _emptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layer, _emptyProps, _noZoom);
 
         style.FillColor.Alpha.Should().BeGreaterThan(0);
     }
@@ -134,7 +142,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"#ff0000","fill-opacity":1.0}}]""");
 
-        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps, _noZoom);
 
         style.FillColor.Red.Should().Be(255);
         style.FillColor.Green.Should().Be(0);
@@ -146,7 +154,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"rgba(255,0,0,0.5)","fill-opacity":0.5}}]""");
 
-        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps, _noZoom);
 
         style.FillColor.Alpha.Should().BeInRange((byte)63, (byte)64);
     }
@@ -156,7 +164,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"f","type":"fill","paint":{"fill-color":"#ff0000","fill-outline-color":"#00ff00"}}]""");
 
-        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps);
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps, _noZoom);
 
         style.OutlineColor.Should().NotBeNull();
         style.OutlineColor!.Value.Green.Should().Be(255);
@@ -167,7 +175,7 @@ public class StyleTranslatorTests
     {
         var layer = new MapLibreStyleLayer { Type = "line" };
 
-        var style = StyleTranslator.ResolveLineStyle(layer, _emptyProps);
+        var style = StyleTranslator.ResolveLineStyle(layer, _emptyProps, _noZoom);
 
         style.LineWidth.Should().BeGreaterThan(0);
     }
@@ -177,7 +185,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"l","type":"line","paint":{"line-color":"#0000ff","line-width":3}}]""");
 
-        var style = StyleTranslator.ResolveLineStyle(layers[0], _emptyProps);
+        var style = StyleTranslator.ResolveLineStyle(layers[0], _emptyProps, _noZoom);
 
         style.LineColor.Blue.Should().Be(255);
         style.LineWidth.Should().Be(3f);
@@ -188,7 +196,7 @@ public class StyleTranslatorTests
     {
         var layer = new MapLibreStyleLayer { Type = "circle" };
 
-        var style = StyleTranslator.ResolveCircleStyle(layer, _emptyProps);
+        var style = StyleTranslator.ResolveCircleStyle(layer, _emptyProps, _noZoom);
 
         style.Radius.Should().BeGreaterThan(0);
     }
@@ -198,7 +206,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","paint":{"circle-radius":8,"circle-color":"#00ff00","circle-stroke-color":"#000000","circle-stroke-width":2}}]""");
 
-        var style = StyleTranslator.ResolveCircleStyle(layers[0], _emptyProps);
+        var style = StyleTranslator.ResolveCircleStyle(layers[0], _emptyProps, _noZoom);
 
         style.Radius.Should().Be(8f);
         style.FillColor.Green.Should().Be(255);
@@ -211,7 +219,7 @@ public class StyleTranslatorTests
     {
         var layers = StyleTranslator.ParseStyleLayers("""[{"id":"c","type":"circle","paint":{"circle-color":"rgba(0,255,0,0.5)","circle-opacity":0.5}}]""");
 
-        var style = StyleTranslator.ResolveCircleStyle(layers[0], _emptyProps);
+        var style = StyleTranslator.ResolveCircleStyle(layers[0], _emptyProps, _noZoom);
 
         style.FillColor.Alpha.Should().BeInRange((byte)63, (byte)64);
     }
@@ -280,6 +288,111 @@ public class StyleTranslatorTests
     public void IsAnyLayerInZoomRange_EmptyStyle_ReturnsTrue()
     {
         StyleTranslator.IsAnyLayerInZoomRange([], RenderZoom.At(4)).Should().BeTrue();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Zoom-dependent paint resolution (honua-server#2873).
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Expected widths are MapLibre GL JS's own output for this expression
+    /// (<c>@maplibre/maplibre-gl-style-spec</c>, <c>createExpression(expr, 'line-width',
+    /// latest.paint_line['line-width'])</c>) at each zoom.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(8, 1f)]
+    [InlineData(10, 2.25f)]
+    [InlineData(12, 3.5f)]
+    [InlineData(14, 4.75f)]
+    [InlineData(16, 6f)]
+    public void ResolveLineStyle_ZoomDependentWidth_ResolvesAtTheRenderZoom(double zoom, float expected)
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"line","paint":{"line-width":["interpolate",["linear"],["zoom"],8,1,16,6]}}]""");
+
+        var style = StyleTranslator.ResolveLineStyle(layers[0], _emptyProps, RenderZoom.At(zoom));
+
+        style.LineWidth.Should().BeApproximately(expected, 1e-5f);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(8, 204, 204, 204)]
+    [InlineData(10, 51, 170, 102)]
+    [InlineData(14, 0, 136, 51)]
+    public void ResolveFillStyle_ZoomDependentColor_ResolvesAtTheRenderZoom(double zoom, byte r, byte g, byte b)
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"fill","paint":{"fill-color":["step",["zoom"],"#ccc",10,"#3a6",14,"#083"]}}]""");
+
+        var style = StyleTranslator.ResolveFillStyle(layers[0], _emptyProps, RenderZoom.At(zoom));
+
+        style.FillColor.Should().Be(new SKColor(r, g, b, 255));
+    }
+
+    [UnitTest]
+    public void ResolveLineStyle_ZoomDependentWidth_WithNotDerivableZoom_Throws()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"line","paint":{"line-width":["interpolate",["linear"],["zoom"],8,1,16,6]}}]""");
+
+        var act = () => StyleTranslator.ResolveLineStyle(layers[0], _emptyProps, _noZoom);
+
+        act.Should().Throw<StyleExpressionEvaluationException>();
+    }
+
+    [UnitTest]
+    public void UsesZoomExpression_PaintExpressionReadingZoom_ReturnsTrue()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"circle","paint":{"circle-radius":["interpolate",["linear"],["zoom"],5,2,15,20]}}]""");
+
+        StyleTranslator.UsesZoomExpression(layers[0]).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void UsesZoomExpression_FilterReadingZoom_ReturnsTrue()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"circle","filter":["<",["zoom"],10]}]""");
+
+        StyleTranslator.UsesZoomExpression(layers[0]).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void UsesZoomExpression_LayoutReadingZoom_ReturnsTrue()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"line","layout":{"line-cap":["step",["zoom"],"butt",10,"round"]}}]""");
+
+        StyleTranslator.UsesZoomExpression(layers[0]).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A layer whose min/maxzoom scope it to a zoom range is not itself zoom-dependent: the gate is
+    /// applied by <see cref="StyleTranslator.ShouldRenderLayer"/>, and the paint it resolves to is
+    /// the same at every zoom it draws at. Reporting it as zoom-dependent would needlessly give up
+    /// the pre-resolved fast paths.
+    /// </summary>
+    [UnitTest]
+    public void UsesZoomExpression_DataDrivenAndZoomScopedStyles_ReturnFalse()
+    {
+        var dataDriven = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"circle","minzoom":5,"maxzoom":12,"paint":{"circle-radius":["interpolate",["linear"],["get","pop"],0,2,100,20]}}]""");
+
+        StyleTranslator.UsesZoomExpression(dataDriven[0]).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void UsesZoomExpression_StaticStyle_ReturnsFalse()
+    {
+        var layers = StyleTranslator.ParseStyleLayers(
+            """[{"id":"a","type":"circle","paint":{"circle-radius":6,"circle-color":"#f00"}}]""");
+
+        StyleTranslator.UsesZoomExpression(layers[0]).Should().BeFalse();
     }
 
     [UnitTest]
