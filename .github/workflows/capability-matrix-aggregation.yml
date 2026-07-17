@@ -1,0 +1,84 @@
+name: Capability Matrix Aggregation
+
+# Phase-A aggregation for the canonical capability layer (issue #2893, epic
+# #2892). Joins feature-catalog.json, docs/cite-status.md, the geoservices
+# REST parity index, and capability-keys.v1.json's crosswalks into
+# docs/gis/data/capability-matrix.v1.json.
+#
+# ci.yml intentionally has no per-PR pull_request trigger (to avoid storming
+# the merge train's workflow_run event with the heavy ~45-job matrix -- see
+# ci.yml's header comment). This workflow is a single dependency-light Python
+# script (no dotnet build, no services:), so it follows the same lightweight
+# pattern as openapi-drift.yml: a pull_request drift-check plus a push-to-trunk
+# regeneration/publish job, rather than living inside ci.yml.
+on:
+  pull_request:
+    branches:
+      - trunk
+    paths:
+      - 'docs/gis/data/feature-catalog.json'
+      - 'docs/cite-status.md'
+      - 'docs/gis/data/geoservices-rest-parity.json'
+      - 'docs/gis/data/capability-keys.v1.json'
+      - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
+      - 'docs/gis/data/capability-matrix.v1.json'
+      - 'scripts/ci/generate-capability-matrix.py'
+      - '.github/workflows/capability-matrix-aggregation.yml'
+  push:
+    branches:
+      - trunk
+    paths:
+      - 'docs/gis/data/feature-catalog.json'
+      - 'docs/cite-status.md'
+      - 'docs/gis/data/geoservices-rest-parity.json'
+      - 'docs/gis/data/capability-keys.v1.json'
+      - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
+      - 'scripts/ci/generate-capability-matrix.py'
+  schedule:
+    # Weekly freshness check: cite-status.md and geoservices-rest-parity.json
+    # are hand-refreshed on their own cadence (not every push touches this
+    # workflow's paths), so a schedule catches drift between a source doc
+    # update and the next matching push/PR.
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capability-matrix-aggregation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aggregate:
+    name: Generate and validate capability-matrix.v1.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Regenerate capability-matrix.v1.json
+        run: python3 scripts/ci/generate-capability-matrix.py
+
+      - name: Drift check against the committed artifact
+        run: |
+          if ! git diff --exit-code -- docs/gis/data/capability-matrix.v1.json; then
+            echo "::error::docs/gis/data/capability-matrix.v1.json is stale. Run 'python3 scripts/ci/generate-capability-matrix.py' and commit the result." >&2
+            exit 1
+          fi
+          echo "docs/gis/data/capability-matrix.v1.json is up to date."
+
+      - name: Upload capability-matrix.v1.json artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: capability-matrix-${{ github.run_id }}
+          path: docs/gis/data/capability-matrix.v1.json
+          retention-days: 90
