@@ -1003,7 +1003,7 @@ public sealed class McpMapToolTests
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
     }
 
-    private McpOperatorSurface BuildSurface() => new(
+    private McpDataAccessSurface BuildSurface() => new(
         [
             new ListLayersTool(_jobService, NullLogger<ListLayersTool>.Instance),
             new DescribeLayerTool(_jobService, NullLogger<DescribeLayerTool>.Instance),
@@ -1011,7 +1011,7 @@ public sealed class McpMapToolTests
             new RenderMapTool(_jobService, NullLogger<RenderMapTool>.Instance)
         ],
         [],
-        NullLogger<McpOperatorSurface>.Instance);
+        NullLogger<McpDataAccessSurface>.Instance);
 
     private static TestMetadataV2GraphProvider BuildGraphProvider()
     {

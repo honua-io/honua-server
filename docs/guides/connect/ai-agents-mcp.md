@@ -8,6 +8,29 @@ For operations work, MCP is the agent seat in the same control loop that Console
 
 The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches), MCP protocol revision `2025-03-26`. The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant.
 
+## Two MCP surfaces: data-access (open) vs. operator (proprietary)
+
+There are two distinct MCP surfaces in the Honua platform, and it is easy to
+conflate them. This page documents the **open** one. The boundary between them is
+**evidence vs. intelligence** (ADR-0066), which is also the open-core licensing
+line (ADR-0024).
+
+| | **This repo — MCP data-access surface** | **`honua-devops` — operator surface** |
+|---|---|---|
+| Dispatcher | `McpDataAccessSurface` in `honua-server` | operator agent in `honua-devops` (private) |
+| Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`--mcp`) |
+| Roster | ~27 studio/data-access tools (query, render, style, geocode/route, plan/execute, authoring/packaging) + **8 bounded, read-only ops-*evidence* tools** | ~35 operator-*intelligence* tools |
+| What it does | Serves geospatial data-access and studio workflows, and reads bounded operational **evidence**; at most it *proposes* a control-plane action that a human approves in the Console inbox (ADR-0062) | Reasons over that evidence and acts: diagnose, tune, upgrade planning with rollback gates, GitOps rollout, remediation planning. Consumes this repo's evidence tools via its `honua_observe_diagnose_propose` day-2 loop |
+| Licensing | Open-core (ELv2); included in Community (ADR-0024) | Private/proprietary; **not** part of the open-core runtime promise |
+
+The 8 ops-evidence tools (`honua_ops_health`, `honua_ops_findings`,
+`honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`,
+`honua_deploy_operations`, `honua_supported_operation_kinds`,
+`honua_propose_rollback`) are deliberately public: they expose bounded read-only
+facts and human-gated proposals, not operator reasoning. This repo serves the
+*evidence*; `honua-devops` supplies the *intelligence* that acts on it. Nothing
+named "operator surface" ships in this repo.
+
 ## Steps
 
 1. Confirm the endpoint answers:

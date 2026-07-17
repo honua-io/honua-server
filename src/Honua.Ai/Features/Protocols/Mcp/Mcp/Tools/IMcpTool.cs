@@ -34,7 +34,7 @@ internal interface IMcpTool
 
     /// <summary>
     /// Invokes the tool. Implementations throw domain exceptions on failure;
-    /// <see cref="McpOperatorSurface"/> converts those exceptions into JSON-RPC
+    /// <see cref="McpDataAccessSurface"/> converts those exceptions into JSON-RPC
     /// error envelopes via <see cref="McpErrorMapper"/>.
     /// </summary>
     Task<McpToolsCallResult> InvokeAsync(

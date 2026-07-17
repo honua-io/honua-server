@@ -396,7 +396,9 @@ internal static class ExpressionEvaluator
             return null;
         }
 
-        // interpolate, ["linear"], input, stop1, output1, stop2, output2, ...
+        // interpolate, <interpolation>, input, stop1, output1, stop2, output2, ...
+        // <interpolation> is ["linear"], ["exponential", base], or ["cubic-bezier", x1, y1, x2, y2].
+        var interpolation = ParseInterpolation(array[1]);
         var input = ConvertToFloat(Evaluate(array[2], properties, zoom), 0f);
 
         float? prevStop = null;
@@ -414,7 +416,7 @@ internal static class ExpressionEvaluator
                     return output;
                 }
 
-                var t = (input - prevStop.Value) / (stop - prevStop.Value);
+                var t = InterpolationFactor(interpolation, input, prevStop.Value, stop);
                 return InterpolateValues(prevOutput, output, t);
             }
 
@@ -423,6 +425,196 @@ internal static class ExpressionEvaluator
         }
 
         return prevOutput;
+    }
+
+    /// <summary>
+    /// The interpolation curve declared as the second operand of a MapLibre
+    /// <c>interpolate</c> expression. Selects how the fractional position between two
+    /// consecutive stops is computed before the stop outputs are blended.
+    /// </summary>
+    private enum InterpolationKind
+    {
+        Linear,
+        Exponential,
+        CubicBezier
+    }
+
+    private readonly record struct InterpolationCurve(
+        InterpolationKind Kind,
+        double Base,
+        double X1,
+        double Y1,
+        double X2,
+        double Y2)
+    {
+        public static readonly InterpolationCurve Linear = new(InterpolationKind.Linear, 1.0, 0, 0, 0, 0);
+    }
+
+    /// <summary>
+    /// Reads the <c>interpolate</c> curve operand (<c>["linear"]</c>,
+    /// <c>["exponential", base]</c>, or <c>["cubic-bezier", x1, y1, x2, y2]</c>). Anything
+    /// unrecognized falls back to <see cref="InterpolationKind.Linear"/>, matching the
+    /// evaluator's historical behavior of treating the operand as linear.
+    /// </summary>
+    private static InterpolationCurve ParseInterpolation(MapLibreExpression operand)
+    {
+        if (operand.Kind != MapLibreExpressionKind.Array || operand.Items is not { Length: > 0 } items)
+        {
+            return InterpolationCurve.Linear;
+        }
+
+        if (!TryGetString(items[0], out var name) || name == null)
+        {
+            return InterpolationCurve.Linear;
+        }
+
+        if (string.Equals(name, "exponential", StringComparison.Ordinal))
+        {
+            if (items.Length >= 2 && items[1].Kind == MapLibreExpressionKind.Number)
+            {
+                return new InterpolationCurve(InterpolationKind.Exponential, items[1].NumberValue, 0, 0, 0, 0);
+            }
+
+            return InterpolationCurve.Linear;
+        }
+
+        if (string.Equals(name, "cubic-bezier", StringComparison.Ordinal))
+        {
+            if (items.Length >= 5 &&
+                items[1].Kind == MapLibreExpressionKind.Number &&
+                items[2].Kind == MapLibreExpressionKind.Number &&
+                items[3].Kind == MapLibreExpressionKind.Number &&
+                items[4].Kind == MapLibreExpressionKind.Number)
+            {
+                return new InterpolationCurve(
+                    InterpolationKind.CubicBezier,
+                    1.0,
+                    items[1].NumberValue,
+                    items[2].NumberValue,
+                    items[3].NumberValue,
+                    items[4].NumberValue);
+            }
+
+            return InterpolationCurve.Linear;
+        }
+
+        return InterpolationCurve.Linear;
+    }
+
+    /// <summary>
+    /// Computes the interpolation factor <c>t</c> for <paramref name="input"/> between two
+    /// adjacent stop inputs, honoring the declared curve. Mirrors MapLibre GL JS's
+    /// <c>Interpolate.interpolationFactor</c> in
+    /// <c>maplibre-style-spec/src/expression/definitions/interpolate.ts</c>. The
+    /// <see cref="InterpolationKind.Linear"/> branch is deliberately the same
+    /// single-precision expression the evaluator has always used, so existing linear ramps
+    /// stay bit-for-bit unchanged; the non-linear curves compute in double precision to
+    /// match MapLibre's <c>Math.pow</c>/unit-bezier math.
+    /// </summary>
+    private static float InterpolationFactor(in InterpolationCurve curve, float input, float lower, float upper) =>
+        curve.Kind switch
+        {
+            InterpolationKind.Exponential => (float)ExponentialInterpolation(input, curve.Base, lower, upper),
+            InterpolationKind.CubicBezier =>
+                (float)SolveCubicBezier(curve, ExponentialInterpolation(input, 1.0, lower, upper)),
+            _ => (input - lower) / (upper - lower),
+        };
+
+    /// <summary>
+    /// The ratio used to interpolate between two exponential-function stops, ported verbatim
+    /// from MapLibre's <c>exponentialInterpolation</c>. <c>base == 1</c> collapses to the
+    /// linear ratio <c>progress / difference</c> (MapLibre's own degenerate case), so an
+    /// <c>["exponential", 1]</c> curve is identical to <c>["linear"]</c>. The exponents are
+    /// the raw stop-relative progress and difference (not a pre-normalized 0..1 factor):
+    /// <c>(base^progress - 1) / (base^difference - 1)</c>.
+    /// </summary>
+    private static double ExponentialInterpolation(double input, double @base, double lower, double upper)
+    {
+        var difference = upper - lower;
+        var progress = input - lower;
+
+        if (difference == 0.0)
+        {
+            return 0.0;
+        }
+
+        if (@base == 1.0)
+        {
+            return progress / difference;
+        }
+
+        return (Math.Pow(@base, progress) - 1.0) / (Math.Pow(@base, difference) - 1.0);
+    }
+
+    /// <summary>
+    /// Solves the unit cubic Bézier <c>y</c> for a given <c>x</c> using Newton-Raphson with a
+    /// bisection fallback, a verbatim port of MapLibre's <c>UnitBezier.solve</c>
+    /// (<c>@mapbox/unitbezier</c>). The cubic-bezier curve feeds the linear stop factor in as
+    /// <c>x</c> and returns the eased factor as <c>y</c>.
+    /// </summary>
+    private static double SolveCubicBezier(in InterpolationCurve curve, double x)
+    {
+        const double epsilon = 1e-6;
+
+        var cx = 3 * curve.X1;
+        var bx = 3 * (curve.X2 - curve.X1) - cx;
+        var ax = 1 - cx - bx;
+        var cy = 3 * curve.Y1;
+        var by = 3 * (curve.Y2 - curve.Y1) - cy;
+        var ay = 1 - cy - by;
+
+        if (x <= 0)
+        {
+            return 0;
+        }
+
+        if (x >= 1)
+        {
+            return 1;
+        }
+
+        var t = x;
+        for (int i = 0; i < 8; i++)
+        {
+            var x2 = ((ax * t + bx) * t + cx) * t - x;
+            if (Math.Abs(x2) < epsilon)
+            {
+                return ((ay * t + by) * t + cy) * t;
+            }
+
+            var d2 = (3 * ax * t + 2 * bx) * t + cx;
+            if (Math.Abs(d2) < 1e-6)
+            {
+                break;
+            }
+
+            t -= x2 / d2;
+        }
+
+        double t0 = 0;
+        double t1 = 1;
+        t = x;
+        for (int i = 0; i < 20; i++)
+        {
+            var x2 = ((ax * t + bx) * t + cx) * t;
+            if (Math.Abs(x2 - x) < epsilon)
+            {
+                break;
+            }
+
+            if (x > x2)
+            {
+                t0 = t;
+            }
+            else
+            {
+                t1 = t;
+            }
+
+            t = (t0 + t1) * 0.5;
+        }
+
+        return ((ay * t + by) * t + cy) * t;
     }
 
     [SuppressMessage(

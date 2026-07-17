@@ -89,7 +89,7 @@ internal sealed class CreateMapPackageTool : IMcpTool
         }
 
         // Resolve the generation service per-request: it is registered in the
-        // host composition root after AddMcpOperatorSurface, so a descriptor-list
+        // host composition root after AddMcpDataAccessSurface, so a descriptor-list
         // gate at registration time would miss it. When no service is composed
         // (e.g. an isolated test container) return a structured
         // capability-unavailable result rather than failing the call.
