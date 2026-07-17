@@ -8282,7 +8282,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerKmlTests.GetKml_UnknownLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented"
+      "maturity": "implemented",
+      "capability": "serve.geoservices-imageserver"
     },
     {
       "id": "get-rest-services-id-imageserver-legend",
@@ -10093,7 +10094,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented"
+      "maturity": "implemented",
+      "capability": "serve.geoservices-imageserver"
     },
     {
       "id": "get-rest-services-serviceid-imageserver-legend",
