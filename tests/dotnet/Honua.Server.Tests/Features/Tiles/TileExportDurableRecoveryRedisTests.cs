@@ -53,6 +53,10 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
         new HashSet<string>(StringComparer.Ordinal) { TileExportExecutionSpecBuilder.RuntimeProfile };
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
     public async Task Submit_OnOneReplica_StatusAndResult_ConvergeOnAnother()
     {
         await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
@@ -82,6 +86,9 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel")]
     public async Task Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued()
     {
         await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
@@ -102,6 +109,9 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
     public async Task WorkerLoss_LeaseExpiry_Recovers_WithoutDuplicateTerminalArtifact()
     {
         await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
@@ -160,6 +170,9 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
     public async Task Retry_WithFreshKey_ReusesCompletedPackageCheckpoint()
     {
         await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
@@ -185,6 +198,10 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
     public async Task ArtifactExpiry_AfterSuccess_ProducesStableNotFound()
     {
         await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
@@ -215,6 +232,9 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}")]
     public async Task Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers()
     {
         await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
