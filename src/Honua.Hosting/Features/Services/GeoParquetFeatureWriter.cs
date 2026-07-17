@@ -8,6 +8,7 @@ using Apache.Arrow;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
@@ -59,7 +60,7 @@ public static partial class GeoParquetFeatureWriter
     /// <param name="resource">Metadata v2 resource describing the layer schema.</param>
     /// <param name="objectIdFieldName">Resolved object-id field name for the layer.</param>
     /// <param name="returnGeometry">Whether to include the geometry column.</param>
-    /// <param name="outputSrid">Output SRID for CRS metadata (4326 only when geometry is included).</param>
+    /// <param name="outputSrid">Output SRID for CRS metadata. EPSG:4326 emits the GeoParquet default (OGC:CRS84); any other SRID must have a resolvable PROJJSON definition.</param>
     /// <param name="returnZ">Whether to retain Z ordinates.</param>
     /// <param name="returnM">Whether M ordinates were requested (rejected for GeoParquet).</param>
     /// <param name="geometryLimits">Geometry output limits.</param>
@@ -84,7 +85,9 @@ public static partial class GeoParquetFeatureWriter
         var includeGeometry = returnGeometry && HasGeometry(resource);
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
-        EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoParquet");
+        // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
+        // SRID fails fast with a precise error before any geometry encoding work happens.
+        _ = ResolveGeoParquetCrsProjJson(includeGeometry, srid);
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
         if (features.Length == 0)
@@ -293,18 +296,25 @@ public static partial class GeoParquetFeatureWriter
         }
 
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoParquet");
+        var crsProjJson = ResolveGeoParquetCrsProjJson(includeGeometry: true, srid);
 
         var geometryTypesPart = isEmpty
             ? "[]"
             : $"[\"{MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), advertiseZ)}\"]";
+
+        // GeoParquet stores the column CRS as PROJJSON. EPSG:4326 output keeps the default
+        // OGC:CRS84 (longitude, latitude) by omitting the `crs` field; a resolvable non-4326
+        // SRID emits its authoritative PROJJSON so readers (GDAL/pyproj/GeoPandas) reconstruct
+        // the exact CRS. Coordinates in the WKB stay in (x, y) order per the GeoParquet spec,
+        // which overrides the CRS axis order, so no coordinate swap is applied.
+        var crsPart = crsProjJson is null ? string.Empty : $@",""crs"":{crsProjJson}";
 
         // GeoParquet 1.1 "covering" declares the per-row bbox column used for spatial pruning.
         // The paths point at the fields of the emitted `bbox` struct column so a reader can map
         // xmin/ymin/xmax/ymax without decoding geometry (honua-server#2843).
         var coveringPart =
             $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{BboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{BboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{BboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{BboxColumnName}"",""{BboxYMaxFieldName}""]}}}}";
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{coveringPart}}}}}}}";
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{coveringPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 
@@ -314,6 +324,12 @@ public static partial class GeoParquetFeatureWriter
     /// <summary>
     /// Validates that a cloud-native geometry export uses the only spec-compliant SRID (EPSG:4326).
     /// </summary>
+    /// <remarks>
+    /// Used by the GeoArrow formatter, which does not yet emit non-4326 CRS metadata. The
+    /// GeoParquet path instead resolves a PROJJSON definition via
+    /// <see cref="ResolveGeoParquetCrsProjJson"/> and supports any SRID with a resolvable
+    /// definition.
+    /// </remarks>
     public static void EnsureSupportedCloudNativeGeometrySrid(bool includeGeometry, int srid, string formatLabel)
     {
         if (!includeGeometry || srid == 4326)
@@ -323,6 +339,40 @@ public static partial class GeoParquetFeatureWriter
 
         throw new InvalidOperationException(
             $"{formatLabel} geometry output only supports EPSG:4326. Requested SRID {srid} cannot be encoded with spec-compliant CRS metadata.");
+    }
+
+    /// <summary>
+    /// Resolves the GeoParquet column <c>crs</c> PROJJSON for an output SRID.
+    /// </summary>
+    /// <param name="includeGeometry">Whether geometry (and therefore CRS metadata) is emitted.</param>
+    /// <param name="srid">Output EPSG SRID.</param>
+    /// <returns>
+    /// The authoritative PROJJSON object as a JSON string when a non-default CRS applies, or
+    /// <see langword="null"/> when no <c>crs</c> field should be written (geometry excluded, or
+    /// EPSG:4326 which uses the GeoParquet default of OGC:CRS84 / longitude-latitude).
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a non-4326 SRID has no resolvable PROJJSON definition, so the output cannot
+    /// carry spec-compliant CRS metadata.
+    /// </exception>
+    public static string? ResolveGeoParquetCrsProjJson(bool includeGeometry, int srid)
+    {
+        // EPSG:4326 is emitted as the GeoParquet default (OGC:CRS84, lon/lat) by omitting `crs`.
+        if (!includeGeometry || srid == 4326)
+        {
+            return null;
+        }
+
+        if (GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson))
+        {
+            return projJson;
+        }
+
+        throw new InvalidOperationException(
+            $"GeoParquet geometry output for SRID {srid} is not supported: no PROJJSON CRS "
+            + "definition is resolvable for this SRID, so the column CRS cannot be encoded "
+            + "with spec-compliant metadata. Request EPSG:4326 output, or add the SRID to the "
+            + "GeoParquet PROJJSON catalog.");
     }
 
     /// <summary>
