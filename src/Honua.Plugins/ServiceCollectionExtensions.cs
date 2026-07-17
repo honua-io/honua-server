@@ -17,13 +17,16 @@ namespace Honua.Plugins;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the plugin edit pipeline, computed-field pipeline, background-service host, and
-    /// any compile-time plugins supplied via <paramref name="configure"/>. The pipelines are
-    /// always registered (as no-ops when no plugins are present or the Enterprise
-    /// <c>plugin.sdk</c> entitlement is inactive) so protocol handlers can depend on
-    /// <see cref="IPluginEditPipeline"/> / <see cref="IComputedFieldPipeline"/> unconditionally.
-    /// Declared inter-plugin dependencies and minimum-server-version constraints are validated at
-    /// registration time and fail fast.
+    /// Registers the plugin edit pipeline, computed-field pipeline, output-format registry,
+    /// background-service host, any read-only data-store providers, and any compile-time plugins
+    /// supplied via <paramref name="configure"/>. The pipelines and the output-format registry are
+    /// always registered (as no-ops when no plugins are present or the Enterprise <c>plugin.sdk</c>
+    /// entitlement is inactive) so protocol/export handlers can depend on
+    /// <see cref="IPluginEditPipeline"/> / <see cref="IComputedFieldPipeline"/> /
+    /// <see cref="IFeatureOutputFormatRegistry"/> unconditionally. Data-store plugins are registered
+    /// as additional <c>IFeatureDataProvider</c>s picked up by the server's existing provider
+    /// registry/router (issue #2856, ADR-0067). Declared inter-plugin dependencies and
+    /// minimum-server-version constraints are validated at registration time and fail fast.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">Application configuration (binds the <c>Plugins</c> section).</param>
@@ -56,6 +59,20 @@ public static class ServiceCollectionExtensions
         // Computed-field pipeline is read-path only and consumes singleton providers + the
         // singleton license service, so it can be a singleton.
         services.TryAddSingleton<IComputedFieldPipeline, ComputedFieldPipeline>();
+
+        // Output-format registry (issue #2856, ADR-0067). Registered as the real, license-gated
+        // registry only when at least one output-format plugin is present; otherwise the export /
+        // format-negotiation seam gets the zero-overhead no-op so it can depend on
+        // IFeatureOutputFormatRegistry unconditionally. It aggregates singleton IFeatureOutputFormat
+        // registrations and the singleton license service, so it can be a singleton.
+        if (builder.Registrations.Any(r => r.ProvidesOutputFormat))
+        {
+            services.TryAddSingleton<IFeatureOutputFormatRegistry, FeatureOutputFormatRegistry>();
+        }
+        else
+        {
+            services.TryAddSingleton<IFeatureOutputFormatRegistry>(NoOpFeatureOutputFormatRegistry.Instance);
+        }
 
         // Host plugin background services with failure isolation. Only registered when at least
         // one is present so the common path adds no hosted service.
