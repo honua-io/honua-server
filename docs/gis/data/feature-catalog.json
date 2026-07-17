@@ -5341,7 +5341,7 @@
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
-      "capability": "ops.health"
+      "capability": "discovery.capability-manifest"
     },
     {
       "id": "get-edr",
@@ -5598,7 +5598,7 @@
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
-      "capability": "ops.health"
+      "capability": "ops.observability"
     },
     {
       "id": "get-monitoring-alerts",
@@ -16187,7 +16187,7 @@
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",
-      "capability": "ops.health"
+      "capability": "ops.observability"
     },
     {
       "id": "post-elevation-datasetid-line-of-sight",
