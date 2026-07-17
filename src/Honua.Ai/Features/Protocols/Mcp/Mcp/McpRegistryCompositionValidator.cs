@@ -31,7 +31,7 @@ internal static class McpRegistryCompositionValidator
     /// </summary>
     /// <param name="surface">The live MCP operator surface (the served catalog).</param>
     /// <param name="registry">The unified capability registry (source of truth).</param>
-    public static IReadOnlyList<string> FindDrift(McpOperatorSurface surface, ICapabilityRegistry registry)
+    public static IReadOnlyList<string> FindDrift(McpDataAccessSurface surface, ICapabilityRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(registry);

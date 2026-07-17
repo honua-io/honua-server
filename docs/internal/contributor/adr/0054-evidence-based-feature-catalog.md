@@ -124,7 +124,7 @@ So a new endpoint added without regenerating, or a hand-edit, fails the build.
 server with no repo checkout serves *exactly what CI gated* — reading the
 embedded text verbatim keeps it AOT-safe and prevents a runtime re-projection
 from disagreeing with the committed file. The resource is registered in the
-**default** server composition (`AddMcpOperatorSurface` → `FeatureRegistrationExtensions`),
+**default** server composition (`AddMcpDataAccessSurface` → `FeatureRegistrationExtensions`),
 unlike the persistence-backed promotion resources which stay opt-in: the catalog
 has no runtime dependency and cannot advertise an empty or stale surface.
 

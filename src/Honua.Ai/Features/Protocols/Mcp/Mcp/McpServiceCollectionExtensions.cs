@@ -34,7 +34,7 @@ internal static class McpServiceCollectionExtensions
     /// <see cref="AddMcpPromotionSurface"/> to advertise those resources; the
     /// Postgres server profile does this through the server composition gate.
     /// </summary>
-    public static IServiceCollection AddMcpOperatorSurface(
+    public static IServiceCollection AddMcpDataAccessSurface(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -48,7 +48,7 @@ internal static class McpServiceCollectionExtensions
         // with a live default provider, otherwise the deterministic fixture
         // replay. The fixture catalog is always registered as the fallback, so
         // CI (no provider configured) stays AI-credit-free. Hosts can still call
-        // services.Replace(...) after AddMcpOperatorSurface to force a specific
+        // services.Replace(...) after AddMcpDataAccessSurface to force a specific
         // implementation.
         services.AddAiBuilderPlanAnalysis(configuration);
 
@@ -65,7 +65,7 @@ internal static class McpServiceCollectionExtensions
         // paging) over the canonical IGeoprocessingJobService.ListJobsAsync, so an
         // agent can find a queued/stuck job to feed honua_cancel_job. Registered
         // unconditionally alongside honua_cancel_job — both depend only on the
-        // IGeoprocessingJobService that is composed before AddMcpOperatorSurface,
+        // IGeoprocessingJobService that is composed before AddMcpDataAccessSurface,
         // and the service enforces the job-read grant + per-job ownership itself.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListJobsTool>());
         // (honua_describe_layer is registered below in the Metadata v2 + feature
@@ -77,7 +77,7 @@ internal static class McpServiceCollectionExtensions
         // ServicePublishExecutor → ILayerPublishingService rather than
         // reimplementing publish. Registered unconditionally and gated at
         // invocation time: the operations toolset (AddOperationsToolset) is wired
-        // later in the server composition root than AddMcpOperatorSurface, so a
+        // later in the server composition root than AddMcpDataAccessSurface, so a
         // descriptor-list check here would never see IOperationInvoker. Instead
         // the tool resolves the invoker per-request and returns a structured
         // "unavailable" handle when no operations toolset is composed — the same
@@ -91,14 +91,14 @@ internal static class McpServiceCollectionExtensions
         // same canonical IOperationInvoker (service.publish) as PublishServiceTool.
         // Registered unconditionally and gated at invocation time for the same
         // reason PublishServiceTool is: the operations toolset is composed later
-        // than AddMcpOperatorSurface, so the tool resolves the invoker per-request
+        // than AddMcpDataAccessSurface, so the tool resolves the invoker per-request
         // and returns a structured "unavailable" handle when none is composed.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishResultTool>());
 
         // Authoring tools (#1951): create_map_package / create_app_package route
         // through the canonical IMapGenerationService / IAppGenerationService
         // generation pipelines. Those services are registered later in the host
-        // composition root than AddMcpOperatorSurface, so the tools resolve them
+        // composition root than AddMcpDataAccessSurface, so the tools resolve them
         // per-request (like PublishServiceTool resolves IOperationInvoker) and
         // return a structured capability-unavailable result when no generation
         // service is composed. Registered unconditionally so the catalog is
@@ -144,11 +144,11 @@ internal static class McpServiceCollectionExtensions
 
         // Geocode/route tools (#1597) are only advertised when the host
         // composition has wired the underlying canonical services (AddGeocoding
-        // / AddRouting run before AddMcpOperatorSurface in the server
+        // / AddRouting run before AddMcpDataAccessSurface in the server
         // composition root). Checking the descriptor list here keeps
         // tools/list honest: hosts without the capability never advertise a
         // tool that could only fail at invocation time, and tests that call
-        // AddMcpOperatorSurface in isolation keep working.
+        // AddMcpDataAccessSurface in isolation keep working.
         if (services.Any(d => d.ServiceType == typeof(Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GeocodeTool>());
@@ -161,7 +161,7 @@ internal static class McpServiceCollectionExtensions
         // honua_ingest_dataset: inline CSV/GeoJSON → catalog table through the
         // canonical IFileImportService pipeline (the REST admin import service).
         // Gated on the import service being wired (the Postgres provider
-        // registers it before AddMcpOperatorSurface) so tools/list stays honest
+        // registers it before AddMcpDataAccessSurface) so tools/list stays honest
         // in compositions without an import-capable data provider.
         if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.FileImport.Abstractions.IFileImportService)))
         {
@@ -178,7 +178,7 @@ internal static class McpServiceCollectionExtensions
         // pipeline. They are only advertised when the host composition has wired
         // IMetadataV2GraphProvider (the same provider that backs /rest/services
         // and FeatureServer query). Gating keeps tools/list honest in tests that
-        // call AddMcpOperatorSurface in isolation without a data provider.
+        // call AddMcpDataAccessSurface in isolation without a data provider.
         if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, MapTools.ListLayersTool>());
@@ -255,13 +255,13 @@ internal static class McpServiceCollectionExtensions
         // IAnalysisReportService. AddAnalysisReporting is the canonical
         // registrar and is gated on Reporting:Enabled; checking for the
         // service here covers both the disabled-feature case and tests that
-        // call AddMcpOperatorSurface in isolation.
+        // call AddMcpDataAccessSurface in isolation.
         if (services.Any(d => d.ServiceType == typeof(IAnalysisReportService)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpResource, AnalysisReportResource>());
         }
 
-        services.TryAddSingleton<McpOperatorSurface>();
+        services.TryAddSingleton<McpDataAccessSurface>();
 
         // MCP transport + session-lifecycle options (A3 hardening; #2537):
         // server-initiated GET-stream toggle, idle TTL, session cap, and eviction
@@ -315,7 +315,7 @@ internal static class McpServiceCollectionExtensions
     /// AFTER the operations toolset is composed (<c>AddOperationsToolset</c>), because
     /// the tool source resolves the canonical <see cref="Honua.Core.Features.Operations.Abstractions.IOperationCatalog"/>
     /// — call it from a host that has the operations toolset wired, not from a bare
-    /// <see cref="AddMcpOperatorSurface"/> composition.
+    /// <see cref="AddMcpDataAccessSurface"/> composition.
     /// </summary>
     public static IServiceCollection AddMcpPublishedOperationTools(
         this IServiceCollection services,

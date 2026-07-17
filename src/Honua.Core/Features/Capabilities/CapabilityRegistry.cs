@@ -10,7 +10,7 @@ namespace Honua.Core.Features.Capabilities;
 /// The default <see cref="ICapabilityRegistry"/> — the single source of truth
 /// for the platform capability roster (ADR-0058, Decision B). B1 populates it to
 /// <b>faithfully mirror the live roster that exists today</b>: the <c>/mcp</c>
-/// tools and resources (from <c>McpOperatorSurface</c> /
+/// tools and resources (from <c>McpDataAccessSurface</c> /
 /// <c>McpServiceCollectionExtensions</c>), the #1186 capability-manifest
 /// capabilities (from <c>CapabilityManifestService</c>), and the platform data
 /// formats (from <c>SupportedFileFormat</c> and the shared format readers/writers).

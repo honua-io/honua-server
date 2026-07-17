@@ -201,10 +201,10 @@ public sealed class McpGeocodeAddressesToolTests
         services.AddSingleton(license);
         services.AddSingleton(coordinator);
 
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new GeocodeAddressesTool(_jobService, NullLogger<GeocodeAddressesTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services.BuildServiceProvider();
