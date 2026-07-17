@@ -424,6 +424,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/slices")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/slices")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/conf.json")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/kml/image.kmz")]
     [Operation(Operations.Metadata)]
     public async Task ServiceNameRoutes_DispatchToImageServerSurface()
     {
@@ -454,6 +455,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
             $"/rest/services/{serviceId}/ImageServer/multidimensionalInfo?f=json",
             $"/rest/services/{serviceId}/ImageServer/slices?f=json",
             $"/rest/services/{serviceId}/ImageServer/conf.json",
+            $"/rest/services/{serviceId}/ImageServer/kml/image.kmz",
         };
 
         foreach (var uri in getUris)
