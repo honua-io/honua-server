@@ -184,4 +184,18 @@ public sealed class McpErrorMappingTests
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
         error.Data.RequiresReauthentication.Should().BeTrue();
     }
+
+    [UnitTest]
+    public void InvalidTokenFactory_EmitsUnauthenticatedWithReauthSignal()
+    {
+        // A presented-but-invalid bearer token (bad signature, expired, wrong issuer, or an
+        // audience minted for another resource) is an RFC 6750 invalid_token rejection. It
+        // shares the unauthenticated code and re-authentication signal with the no-credential
+        // case so a client reacts identically (#2850).
+        var error = McpErrorMapper.InvalidToken();
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
+        error.Data.RequiresReauthentication.Should().BeTrue();
+    }
 }
