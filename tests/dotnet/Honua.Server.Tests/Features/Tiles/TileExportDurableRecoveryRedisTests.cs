@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Diagnostics.Metrics;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.ControlPlane;
@@ -44,6 +45,8 @@ namespace Honua.Server.Tests.Features.Tiles;
 public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
 {
     private const string Submitter = "user-alice";
+    // Matches Honua.ServiceDefaults.HonuaTelemetry.ServiceName, the meter the control plane records against.
+    private const string HonuaMeterName = "Honua";
     private static readonly IReadOnlySet<ExecutionJobKind> AcceptedKinds =
         new HashSet<ExecutionJobKind> { ExecutionJobKind.TileExport };
     private static readonly IReadOnlySet<string> AcceptedProfiles =
@@ -179,6 +182,93 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
         });
 
         harness.ProducerInvocations.Should().Be(1, "the completed package checkpoint is reused, not regenerated");
+    }
+
+    [IntegrationTest]
+    public async Task ArtifactExpiry_AfterSuccess_ProducesStableNotFound()
+    {
+        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        var plan = CreatePlan("world-basemap-expiry");
+        var replicaA = harness.CreateService();
+        var replicaB = harness.CreateService();
+        var scope = ScopeFor(plan);
+
+        string artifactKey = string.Empty;
+        await harness.RunWorkerAsync(async () =>
+        {
+            var submitted = await replicaA.SubmitAsync(plan, idempotencyKey: null, correlationId: null, Principal(), default);
+            var terminal = await harness.WaitForStatusAsync(submitted.OperationId, ExecutionJobStatus.Succeeded);
+            artifactKey = terminal.ArtifactReferences.Single();
+
+            // Expire the stored artifact out from under a completed job.
+            harness.Storage.Expire(artifactKey);
+
+            // The job stays terminally successful (stable status), but the result read maps the
+            // missing/expired artifact to a sanitized not-found rather than minting a dead URL.
+            var status = await replicaB.GetStatusAsync(submitted.OperationId, scope, Principal(), default);
+            status.Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+            await FluentActions
+                .Awaiting(() => replicaB.GetResultAsync(submitted.OperationId, scope, Principal(), default))
+                .Should().ThrowAsync<TileExportNotFoundException>();
+        });
+    }
+
+    [IntegrationTest]
+    public async Task Execution_EmitsJobTransitionMetricsCarryingJobIdentifiers()
+    {
+        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        var plan = CreatePlan("world-basemap-metrics");
+        var replica = harness.CreateService();
+        var transitions = new ConcurrentBag<(string Kind, string Status)>();
+
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == HonuaMeterName
+                    && instrument.Name == ControlPlaneTelemetry.Metrics.ExecutionJobTransitions)
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            string? kind = null;
+            string? status = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == ControlPlaneTelemetry.Tags.ExecutionJobKind)
+                {
+                    kind = tag.Value?.ToString();
+                }
+                else if (tag.Key == ControlPlaneTelemetry.Tags.ExecutionJobStatus)
+                {
+                    status = tag.Value?.ToString();
+                }
+            }
+
+            if (kind is not null && status is not null)
+            {
+                transitions.Add((kind, status));
+            }
+        });
+        listener.Start();
+
+        await harness.RunWorkerAsync(async () =>
+        {
+            var submitted = await replica.SubmitAsync(plan, idempotencyKey: null, correlationId: null, Principal(), default);
+            await harness.WaitForStatusAsync(submitted.OperationId, ExecutionJobStatus.Succeeded);
+        });
+
+        listener.Dispose();
+
+        // The control-plane transition metric exposes the job kind and status across the run,
+        // so tile-export jobs are sliceable by identity on the same substrate observability surface.
+        var tileExportTransitions = transitions.Where(t => t.Kind == ExecutionJobKind.TileExport.ToString()).ToArray();
+        tileExportTransitions.Should().NotBeEmpty();
+        tileExportTransitions.Should().Contain(t => t.Status == ExecutionJobStatus.Succeeded.ToString());
     }
 
     private static TileExportJobPlan CreatePlan(string resourceId)
@@ -421,6 +511,15 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
             };
             _files[key] = file;
             return UploadResult.CreateSuccess(file);
+        }
+
+        /// <summary>Expires a stored artifact in place to certify the expiry-driven result response.</summary>
+        public void Expire(string fileId)
+        {
+            if (_files.TryGetValue(fileId, out var file))
+            {
+                _files[fileId] = file with { ExpiresAt = timeProvider.GetUtcNow().AddMinutes(-1) };
+            }
         }
 
         public Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
