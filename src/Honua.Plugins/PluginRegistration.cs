@@ -16,6 +16,8 @@ namespace Honua.Plugins;
 /// <param name="ProvidesComputedField">Whether the plugin implements <c>IComputedFieldProvider</c>.</param>
 /// <param name="ProvidesBackgroundService">Whether the plugin implements <c>IPluginBackgroundService</c>.</param>
 /// <param name="ProvidesCustomEndpoint">Whether the plugin implements <c>ICustomEndpoint</c>.</param>
+/// <param name="ProvidesOutputFormat">Whether the plugin implements <c>IFeatureOutputFormat</c>.</param>
+/// <param name="ProvidesDataStore">Whether the plugin implements <c>IFeatureDataProvider</c> (read-only data store).</param>
 public sealed record PluginRegistration(
     PluginManifest Manifest,
     Type ImplementationType,
@@ -24,7 +26,9 @@ public sealed record PluginRegistration(
     bool ProvidesEditHook,
     bool ProvidesComputedField,
     bool ProvidesBackgroundService,
-    bool ProvidesCustomEndpoint)
+    bool ProvidesCustomEndpoint,
+    bool ProvidesOutputFormat,
+    bool ProvidesDataStore)
 {
     /// <summary>Gets the stable plugin identifier.</summary>
     public string Id => Manifest.Id;
