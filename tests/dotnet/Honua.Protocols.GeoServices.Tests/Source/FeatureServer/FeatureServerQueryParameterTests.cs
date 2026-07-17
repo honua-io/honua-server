@@ -215,14 +215,19 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoParquetFormatAndUnresolvableOutSR_ReturnsBadRequest()
     {
-        // 987654 has no PROJJSON definition, so spec-compliant CRS metadata cannot be emitted.
+        // #2844/#2907: EPSG:2000 (Anguilla 1957 / British West Indies Grid) is a valid CRS the
+        // registry resolves from spatial_ref_sys, but it is NOT in the GeoParquet PROJJSON
+        // catalog. This exercises the catalog-resolvability branch of the endpoint guard (a
+        // made-up SRID would be rejected earlier by CRS-registry validation, never reaching it).
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=987654");
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=2000");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("no PROJJSON CRS definition is resolvable");
+        // Assert against the endpoint guard's own message (not the deeper writer message), so
+        // removing the catalog-resolvability branch makes this test fail (branch coverage).
+        content.Should().Contain("GeoParquet output does not support outSR 2000");
     }
 
     [IntegrationTest]
