@@ -117,10 +117,10 @@ public sealed class McpListJobsToolTests
 
     private async Task<McpJsonRpcResponse?> Dispatch(McpJsonRpcRequest request)
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new ListJobsTool(_jobService, NullLogger<ListJobsTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var services = new ServiceCollection().BuildServiceProvider();
         var context = McpTestFactory.AuthenticatedHttpContext();

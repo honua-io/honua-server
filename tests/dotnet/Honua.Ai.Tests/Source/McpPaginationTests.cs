@@ -137,10 +137,10 @@ public sealed class McpPaginationTests
     [UnitTest]
     public async Task ToolsList_OverDispatcher_PagesWithNextCursor()
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             tools: Enumerable.Range(0, 5).Select(i => (IMcpTool)new StubTool($"honua_tool_{i}")),
             resources: [],
-            logger: NullLogger<McpOperatorSurface>.Instance,
+            logger: NullLogger<McpDataAccessSurface>.Instance,
             limits: new McpSurfaceLimits(ListPageSize: 2, MaxResourceReadChars: 1000));
 
         var firstNames = await ListToolPageAsync(surface, cursor: null);
@@ -158,10 +158,10 @@ public sealed class McpPaginationTests
     [UnitTest]
     public async Task ToolsList_WithInvalidCursor_ReturnsInvalidParams()
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             tools: [new StubTool("honua_tool_0")],
             resources: [],
-            logger: NullLogger<McpOperatorSurface>.Instance,
+            logger: NullLogger<McpDataAccessSurface>.Instance,
             limits: new McpSurfaceLimits(ListPageSize: 2, MaxResourceReadChars: 1000));
 
         var response = await DispatchAsync(
@@ -177,10 +177,10 @@ public sealed class McpPaginationTests
     public async Task ResourcesRead_OverDispatcher_ChunksLargeDocument()
     {
         var text = new string('z', 50);
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             tools: [],
             resources: [new StubResource("honua://big/doc", text)],
-            logger: NullLogger<McpOperatorSurface>.Instance,
+            logger: NullLogger<McpDataAccessSurface>.Instance,
             limits: new McpSurfaceLimits(ListPageSize: 50, MaxResourceReadChars: 20));
 
         var context = McpTestFactory.AuthenticatedHttpContext();
@@ -206,7 +206,7 @@ public sealed class McpPaginationTests
     }
 
     private static async Task<(string[] Names, string? NextCursor)> ListToolPageAsync(
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         string? cursor)
     {
         var paramsJson = cursor is null
@@ -226,7 +226,7 @@ public sealed class McpPaginationTests
     }
 
     private static async Task<McpJsonRpcResponse?> DispatchAsync(
-        McpOperatorSurface surface,
+        McpDataAccessSurface surface,
         string body,
         HttpContext? context = null)
     {
