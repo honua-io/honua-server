@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.ControlPlane;
@@ -37,10 +38,13 @@ internal readonly record struct RemoteCancelResult(
 
 /// <summary>
 /// Compute-placement and execution-dispatch runtime for <see cref="GeoprocessingJobService"/>:
-/// execution admission, workload (job-definition) selection, the local in-process queue, and
-/// remote batch-compute-backend submission and cancellation. Owns the optional
+/// execution admission, workload (job-definition) selection, the local in-process queue,
+/// remote batch-compute-backend submission and cancellation, and the approval-lane routing that
+/// parks a gated submission as an <see cref="IOperationGateway"/> proposal instead of dispatching
+/// it to compute. Owns the optional
 /// <see cref="IJobQueue"/>, <see cref="IExecutionJobDefinitionRegistry"/>,
-/// <see cref="IBatchComputeBackend"/> set, and <see cref="IExecutionAdmissionEvaluator"/>
+/// <see cref="IBatchComputeBackend"/> set, <see cref="IExecutionAdmissionEvaluator"/>, and
+/// <see cref="IOperationGateway"/>
 /// collaborators (each default-off when the supporting infrastructure is absent) plus the
 /// shared <see cref="IUniversalProgressStore"/> used to bridge backend progress. The durable
 /// <see cref="IExecutionJobStore"/> stays owned by the job service and is threaded in per call
@@ -61,10 +65,12 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IExecutionJobDefinitionRegistry? _workloadRegistry;
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
+    private readonly IOperationGateway? _operationGateway;
 
     /// <summary>
-    /// Creates the dispatcher over the admission evaluator, workload registry, queue, and
-    /// batch compute backends, falling back to null-object/empty semantics when any are absent.
+    /// Creates the dispatcher over the admission evaluator, workload registry, queue,
+    /// batch compute backends, and approval-lane operation gateway, falling back to
+    /// null-object/empty semantics when any are absent.
     /// </summary>
     public GeoprocessingJobDispatcher(
         ILogger<GeoprocessingJobService> logger,
@@ -73,7 +79,8 @@ internal sealed class GeoprocessingJobDispatcher
         IJobQueue? jobQueue = null,
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
-        IExecutionAdmissionEvaluator? admissionEvaluator = null)
+        IExecutionAdmissionEvaluator? admissionEvaluator = null,
+        IOperationGateway? operationGateway = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -82,6 +89,7 @@ internal sealed class GeoprocessingJobDispatcher
         _workloadRegistry = workloadRegistry;
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
+        _operationGateway = operationGateway;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -133,6 +141,61 @@ internal sealed class GeoprocessingJobDispatcher
             decision.PolicyRef ?? "unknown",
             decision.Reason ?? "Execution admission rejected the request.",
             decision.RetryAfterSeconds ?? 10);
+    }
+
+    /// <summary>
+    /// Routes an approval-gated submission onto the approval lane instead of dispatching it to
+    /// compute. When a durable proposal surface (<see cref="IOperationGateway"/>) is available and
+    /// the submission is not custom code, persists an <c>AwaitingApproval</c> proposal reusing the
+    /// shared control-plane proposal/gateway surface so the gated plan is resumable via
+    /// <c>honua://proposals/{id}</c> instead of dead-ending (ADR-0064, #2814), then throws
+    /// <see cref="GeoprocessingApprovalRequiredException"/> carrying the proposal id. A custom-code
+    /// submission is never persisted as a proposal — the resume path cannot re-mint its scoped
+    /// callback token without the live principal — so it continues to hard-fail; likewise when the
+    /// gateway is unavailable (lightweight hosts / Redis-free configs). This method always throws.
+    /// </summary>
+    public async Task CreateApprovalProposalOrThrowAsync(
+        string policyRef,
+        AnalysisPlan plan,
+        string? idempotencyKey,
+        string? requestedBy,
+        IReadOnlyDictionary<string, string>? protocolMetadata,
+        bool isCustomCode,
+        string? approvalGatedProcessId,
+        CancellationToken cancellationToken)
+    {
+        if (_operationGateway == null || isCustomCode)
+        {
+            throw new GeoprocessingApprovalRequiredException(policyRef);
+        }
+
+        var payload = new GeoprocessExecutionPayload
+        {
+            Plan = plan,
+            IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey,
+            RequestedBy = requestedBy,
+            Metadata = protocolMetadata == null
+                ? null
+                : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal),
+        };
+
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.Geoprocess,
+            RequestedBy = payload.RequestedBy,
+            Reason = approvalGatedProcessId == null
+                ? "Destructive geoprocessing plan requires approval."
+                : $"Geoprocessing plan step '{approvalGatedProcessId}' requires approval.",
+            IdempotencyKey = payload.IdempotencyKey,
+            ExecutionPayload = payload.Serialize(),
+            Plan = GeoprocessOperationExecutor.BuildPlanSummary(payload, executionPayload: null),
+        };
+
+        var result = await _operationGateway
+            .CreateApprovalProposalAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
+        throw new GeoprocessingApprovalRequiredException(policyRef, detail: null, proposalId: result.ProposalId);
     }
 
     /// <summary>
