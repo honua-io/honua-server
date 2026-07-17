@@ -440,13 +440,41 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
-    public void FormatAsGeoParquet_EmptyResultWithNon4326Srid_ThrowsInvalidOperation()
+    public void FormatAsGeoParquet_EmptyResultWithUnresolvableSrid_ThrowsInvalidOperation()
     {
         var layer = CreateLayer(
             Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
 
+        // 987654 has no PROJJSON definition in the catalog, so it cannot carry spec-compliant
+        // CRS metadata and must fail with a precise error.
         var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Empty(),
+            layer,
+            returnGeometry: true,
+            outputSrid: 987654,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*SRID 987654*no PROJJSON*");
+    }
+
+    [Fact]
+    public async Task FormatAsGeoParquet_WithNon4326Srid_EmitsProjJsonCrs()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        // Web Mercator easting/northing (x, y) for central London; stored in the WKB in (x, y)
+        // order per the GeoParquet spec, which overrides the CRS axis order.
+        const double easting = -14000.0;
+        const double northing = 6711000.0;
+        var feature = Feature.Create(
+            1,
+            new WKBWriter().Write(new Point(easting, northing) { SRID = 3857 }),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
             layer,
             returnGeometry: true,
             outputSrid: 3857,
@@ -454,8 +482,103 @@ public sealed class GeoParquetQueryFormatterTests
             returnM: false,
             new GeometryLimits());
 
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        // geo.crs must carry the authoritative PROJJSON for EPSG:3857.
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geomCol.TryGetProperty("crs", out var crs).Should().BeTrue("non-4326 output must carry a PROJJSON crs");
+        crs.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+        var id = crs.GetProperty("id");
+        id.GetProperty("authority").GetString().Should().Be("EPSG");
+        id.GetProperty("code").GetInt32().Should().Be(3857);
+
+        // Coordinates are stored in (x, y) order regardless of the CRS axis order.
+        batch.Should().NotBeNull();
+        var geometryColumn = (BinaryArray)batch!.Column("geometry");
+        var point = new WKBReader().Read(geometryColumn.GetBytes(0).ToArray()).Should().BeOfType<Point>().Subject;
+        point.X.Should().BeApproximately(easting, 1e-6);
+        point.Y.Should().BeApproximately(northing, 1e-6);
+    }
+
+    [Fact]
+    public void FormatAsGeoParquet_WithWebMercatorAliasSrid_EmitsEpsg3857Crs()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        var feature = Feature.Create(
+            1,
+            new WKBWriter().Write(new Point(0.0, 0.0) { SRID = 102100 }),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        // 102100 is the Esri Web Mercator alias; it must resolve to the canonical EPSG:3857 CRS.
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 102100,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        var id = geomCol.GetProperty("crs").GetProperty("id");
+        id.GetProperty("authority").GetString().Should().Be("EPSG");
+        id.GetProperty("code").GetInt32().Should().Be(3857);
+    }
+
+    [Fact]
+    public void FormatAsGeoParquet_WithNon4326SridEmptyResult_EmitsProjJsonCrs()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Empty(),
+            layer,
+            returnGeometry: true,
+            outputSrid: 25832,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        var geomCol = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geomCol.GetProperty("geometry_types").EnumerateArray().Should().BeEmpty();
+        geomCol.GetProperty("crs").GetProperty("id").GetProperty("code").GetInt32().Should().Be(25832);
+    }
+
+    [Fact]
+    public void FormatAsGeoParquet_WithUnresolvableSrid_ThrowsPreciseError()
+    {
+        var layer = CreateLayer(Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(0, 0),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: true,
+            outputSrid: 987654,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*GeoParquet*EPSG:4326*3857*");
+            .WithMessage("*SRID 987654*no PROJJSON*");
     }
 
     [Fact]
