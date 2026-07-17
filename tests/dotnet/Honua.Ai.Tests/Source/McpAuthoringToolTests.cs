@@ -37,13 +37,13 @@ public sealed class McpAuthoringToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task ToolsList_IncludesAuthoringTools()
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [
                 new CreateMapPackageTool(_jobService, NullLogger<CreateMapPackageTool>.Instance),
                 new CreateAppPackageTool(_jobService, NullLogger<CreateAppPackageTool>.Instance),
             ],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(new ServiceCollection().BuildServiceProvider()),
@@ -80,10 +80,10 @@ public sealed class McpAuthoringToolTests
             .AddSingleton(mapGen)
             .BuildServiceProvider();
 
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new CreateMapPackageTool(_jobService, NullLogger<CreateMapPackageTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
@@ -133,10 +133,10 @@ public sealed class McpAuthoringToolTests
             .AddSingleton(appGen)
             .BuildServiceProvider();
 
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new CreateAppPackageTool(_jobService, NullLogger<CreateAppPackageTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
@@ -163,10 +163,10 @@ public sealed class McpAuthoringToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_CreateMapPackage_WithoutGenerationService_ReturnsCapabilityUnavailable()
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new CreateMapPackageTool(_jobService, NullLogger<CreateMapPackageTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(new ServiceCollection().BuildServiceProvider()),
@@ -190,10 +190,10 @@ public sealed class McpAuthoringToolTests
         var mapGen = Substitute.For<IMapGenerationService>();
         var services = new ServiceCollection().AddSingleton(mapGen).BuildServiceProvider();
 
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new CreateMapPackageTool(_jobService, NullLogger<CreateMapPackageTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
