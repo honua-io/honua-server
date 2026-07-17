@@ -339,10 +339,10 @@ public sealed class PublishedOperationToolTests
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
             NullLogger<PublishedOperationToolSource>.Instance);
 
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [],
             [],
-            NullLogger<McpOperatorSurface>.Instance,
+            NullLogger<McpDataAccessSurface>.Instance,
             limits: null,
             toolSources: [source]);
 
@@ -383,8 +383,8 @@ public sealed class PublishedOperationToolTests
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
             NullLogger<PublishedOperationToolSource>.Instance);
 
-        var surface = new McpOperatorSurface(
-            [staticTool], [], NullLogger<McpOperatorSurface>.Instance, limits: null, toolSources: [source]);
+        var surface = new McpDataAccessSurface(
+            [staticTool], [], NullLogger<McpDataAccessSurface>.Instance, limits: null, toolSources: [source]);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(new ServiceCollection().BuildServiceProvider()),

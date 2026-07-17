@@ -5,7 +5,7 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// A source of dynamic, runtime-published MCP tools that the
-/// <see cref="McpOperatorSurface"/> merges into <c>tools/list</c> and
+/// <see cref="McpDataAccessSurface"/> merges into <c>tools/list</c> and
 /// <c>tools/call</c> in addition to the statically-registered
 /// <see cref="IMcpTool"/> set (#2483, ADR-0056 Increment 4).
 /// </summary>

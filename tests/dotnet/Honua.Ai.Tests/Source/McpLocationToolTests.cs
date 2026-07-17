@@ -69,10 +69,10 @@ public sealed class McpLocationToolTests
         var services = BuildServices(
             ActiveLicense(GeocodeTool.EntitlementKey),
             geocodeCoordinator: coordinator);
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
@@ -130,10 +130,10 @@ public sealed class McpLocationToolTests
         var services = BuildServices(
             ActiveLicense(RouteTool.EntitlementKey),
             routingProvider: routingProvider);
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new RouteTool(_jobService, NullLogger<RouteTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
@@ -183,13 +183,13 @@ public sealed class McpLocationToolTests
         string argumentsJson)
     {
         var services = BuildServices(InactiveLicense(entitlementKey));
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [
                 new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance),
                 new RouteTool(_jobService, NullLogger<RouteTool>.Instance)
             ],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
@@ -223,10 +223,10 @@ public sealed class McpLocationToolTests
         var services = BuildServices(
             ActiveLicense(GeocodeTool.EntitlementKey),
             geocodeCoordinator: Substitute.For<IGeocodeCoordinatorService>());
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
@@ -266,10 +266,10 @@ public sealed class McpLocationToolTests
         var services = BuildServices(
             ActiveLicense(GeocodeTool.EntitlementKey),
             geocodeCoordinator: coordinator);
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(services),
