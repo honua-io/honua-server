@@ -62,7 +62,7 @@ resp.raise_for_status()
 
 - Make loads idempotent: key features on a stable source identifier and update-or-insert rather than blind-appending, so a re-run after a partial failure converges instead of duplicating.
 - Respect edit limits (`Limits__Edits__MaxFeaturesPerEdit`, default 500 per operation) and batch accordingly.
-- For columnar hand-off to analytics stacks, export with `f=parquet` (GeoParquet 1.1.0, WKB geometry, EPSG:4326 unless `returnGeometry=false`) or `f=arrow` (Arrow IPC with `geoarrow.wkb` metadata) and read directly into pandas/GeoPandas, DuckDB, or Polars.
+- For columnar hand-off to analytics stacks, export with `f=parquet` (GeoParquet 1.1.0, WKB geometry) or `f=arrow` (Arrow IPC with `geoarrow.wkb` metadata) and read directly into pandas/GeoPandas, DuckDB, or Polars. GeoParquet output honours `outSR` for any CRS with a resolvable PROJJSON definition (EPSG:4326 emits the OGC:CRS84 default; other supported SRIDs carry an authoritative PROJJSON `crs` in the `geo` metadata); an `outSR` without a resolvable definition returns an error. GeoArrow output is EPSG:4326 only.
 - Orchestrate with your existing platform (Airflow, Dagster, Prefect); server-side geoprocessing sources/transforms/sinks can also run pipelines as jobs ([geoprocessing operations](geoprocessing-operations.md)).
 
 ## Related pages
