@@ -70,6 +70,7 @@ internal static class McpEndpointExtensions
         endpoints.MapPost(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandlePostAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
+            .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpOperatorSurface")
             .WithSummary("MCP JSON-RPC dispatcher for planning, execution, lifecycle, and results.")
@@ -79,6 +80,7 @@ internal static class McpEndpointExtensions
         endpoints.MapGet(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleGetAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
+            .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpOperatorSurfaceStream")
             .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
@@ -88,6 +90,7 @@ internal static class McpEndpointExtensions
         endpoints.MapDelete(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleDeleteAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
+            .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (session termination)")
             .WithName("McpOperatorSurfaceTerminate")
             .WithSummary("Terminates an MCP session.")
