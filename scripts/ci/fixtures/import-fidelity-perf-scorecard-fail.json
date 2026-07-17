@@ -1,5 +1,5 @@
 {
-  "$comment": "Deterministic fixture exercising the perf-parity gate FAIL path offline (issue #1249). The gate must exit non-zero on this scorecard. Used by parity-scorecard-governance.yml.",
+  "$comment": "Deterministic fixture exercising the perf-parity gate FAIL path offline (issue #1249). The gate must exit non-zero on this scorecard. Used by import-fidelity-scorecard-governance.yml.",
   "GeneratedAtUtc": "2026-06-18T00:00:00+00:00",
   "Cases": [
     {
