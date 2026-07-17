@@ -11,15 +11,38 @@ using Microsoft.AspNetCore.Hosting;
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
 /// <summary>
+/// Isolated <see cref="WebAppFixture"/> that opts the hosted Blazor static web assets back
+/// on for the STAC ops demo shell tests. The Test host skips ASP.NET's static-web-assets
+/// loader by default (honua-server#2904) because it aborts host construction when the
+/// sharded Release build has not materialized the Blazor <c>compressed/</c> content root; the
+/// few tests that actually assert the served demo shell set
+/// <c>HONUA_TEST_HOSTED_BLAZOR_ASSETS=true</c> so the resilient loader runs for this host only.
+/// </summary>
+public sealed class StacOpsDemoWebAppFixture : IAsyncLifetime
+{
+    private readonly WebAppFixture _inner = new WebAppFixture()
+        .ConfigureWebHost(builder => builder.UseSetting("HONUA_TEST_HOSTED_BLAZOR_ASSETS", "true"));
+
+    /// <summary>Gets the HTTP client bound to the demo-enabled test host.</summary>
+    public HttpClient Client => _inner.Client;
+
+    /// <inheritdoc />
+    public Task InitializeAsync() => _inner.InitializeAsync();
+
+    /// <inheritdoc />
+    public Task DisposeAsync() => _inner.DisposeAsync();
+}
+
+/// <summary>
 /// Integration tests for the hosted STAC operations demo shell.
 /// </summary>
 [Protocol(TestProtocols.Stac)]
 [Collection("Database")]
-public sealed class StacOpsDemoEndpointTests : IClassFixture<WebAppFixture>
+public sealed class StacOpsDemoEndpointTests : IClassFixture<StacOpsDemoWebAppFixture>
 {
-    private readonly WebAppFixture _fixture;
+    private readonly StacOpsDemoWebAppFixture _fixture;
 
-    public StacOpsDemoEndpointTests(WebAppFixture fixture) => _fixture = fixture;
+    public StacOpsDemoEndpointTests(StacOpsDemoWebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]

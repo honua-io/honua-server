@@ -147,9 +147,23 @@ var serveApiDocs = builder.Configuration.GetValue(
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
 var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !isTestEnvironment;
 var stacOpsDemoPathPrefix = new PathString("/samples/stac-ops");
-if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
+// ASP.NET's static-web-assets loader eagerly opens every content root listed in the runtime
+// manifest — including obj/<Config>/<tfm>/compressed/ (the hosted Blazor demo's precompressed
+// assets). In the sharded Release *test* build that directory is not reliably materialized, so
+// the loader throws DirectoryNotFoundException at host construction and fails every test in the
+// shard before any test logic runs (honua-server#2904). API integration tests do not need the
+// hosted Blazor assets, so the Test host skips the loader by default; the few tests that assert
+// the hosted STAC ops demo shell opt back in with HONUA_TEST_HOSTED_BLAZOR_ASSETS=true (loaded
+// through the resilient path below, which pre-creates any missing content roots).
+var loadHostedBlazorStaticWebAssets = serveStacOpsDemo && !builder.Environment.IsDevelopment();
+if (isTestEnvironment)
 {
-    builder.WebHost.UseStaticWebAssets();
+    loadHostedBlazorStaticWebAssets =
+        builder.Configuration.GetValue("HONUA_TEST_HOSTED_BLAZOR_ASSETS", false);
+}
+if (loadHostedBlazorStaticWebAssets)
+{
+    StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
 }
 
 // Load optional security configuration without overriding environment-specific settings.
