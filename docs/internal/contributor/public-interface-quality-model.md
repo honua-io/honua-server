@@ -28,6 +28,26 @@ The machine-readable source of truth is [`docs/gis/data/public-interface-proof.j
 
 The ledger is intentionally allowed to overlap at the surface level. Example: `map-server` covers the broad GeoServices MapServer route family while `wms-1.3` and `wmts-1.0` describe nested standards surfaces that reuse a subset of those routes but carry their own conformance or follow-up proof obligations.
 
+## Evidence Model — Why Existence Is Not Proof
+
+The ledger used to validate every `evidenceLocations` entry with a bare `File.Exists` check. Existence is not evidence: the check passed identically for a workflow that proves the claim and a document that merely happens to exist. That is how a fabricated GeoServices route (`computeClass`, never served) rode a green architecture gate to `contract-governance: implemented` (`#2861`/`#2864`) — the ADR-0058 "fake gate that manufactures confidence", literally. `#2879` repointed those six specific proofs at a real gate; `#2877` replaced the *mechanism* with the content-aware model enforced by [`ProofEvidenceValidator`](../../../tests/dotnet/Honua.Architecture.Tests/ProofEvidenceValidator.cs) and `PublicInterfaceProofLedgerTests`.
+
+Every evidence location falls into one of two tiers:
+
+- **Gate evidence** — an artifact an *automated* lane actually executes and that exercises the claim: an architecture test (`tests/dotnet/Honua.Architecture.Tests/**`), a dotnet test (`tests/dotnet/**Tests.cs`), a python/js/js-browser test, a `.github/workflows/*.yml` governance/conformance workflow, a source-generated `JsonSerializerContext` (a wire contract the warnings-as-errors Release build gates at compile time), or the published gRPC proto schema.
+- **Corroborating evidence** — prose docs (`*.md`), published data artifacts (`*.json`), non-gate source, and support files. Necessary context; never sufficient on its own.
+
+Rules enforced by the suite:
+
+1. **Existence remains necessary** — every non-external evidence path must resolve on disk.
+2. **Every `implemented` proof on an automated lane must cite a gate its lane runs.** An `architecture` lane must cite an architecture test; a `test-all` lane a dotnet test (or, for `contract-governance`, a build-enforced source-generated contract); a `nightly:<x>` lane the like-named workflow; a `ci:<x>` lane any executed test/workflow gate; a `repo:honua-io/geospatial-grpc` lane the proto schema. A doc/data/plain-source-only proof, or a proof whose declared lane does not run the cited gate, fails red.
+3. **Manual-lane proofs are corroboration only.** A proof on `docs+review` / `release:*` is admissible only when its surface *also* carries a real automated-gate proof — manual/doc evidence can never be a surface's sole substantiation. (Today: `forms-runtime` and `wcs-2.0.1` `contract-governance`, and `odata-v4` and `ogc-api-features` `real-client-certification`, are corroborating proofs riding gated siblings — under the old `File.Exists` model these passed on documentation alone.)
+4. **Surfaces and operation keys may not over-claim.** Every surface must match at least one served `EndpointRegistry` route or registered `OperationRegistry` operation, and every declared `operationKey` must resolve to a real registered operation — the `computeClass` over-claim, generalized to the whole ledger.
+
+**What this prevents:** a document, model, or unrelated workflow that merely exists standing in for proof; a proof whose declared lane does not execute its cited gate; a surface or operation the ledger vouches for that the server does not serve.
+
+**What it still admits (stated deliberately, not silently):** the model verifies that a gate the lane runs *exists and is of the right kind*; it cannot mechanically judge that the gate's assertions are *strong enough* to cover the full claim, nor that a prose doc's sentences match runtime behaviour. A test that runs in the right lane but under-asserts, or a source-generated contract whose companion doc drifts from behaviour, still passes. Closing that residue requires a claim-specific gate (as `#2879` built for the GeoServices parity matrix), not a generic ledger check.
+
 ## Release Evidence Ledgers
 
 ### Named Client Lanes
