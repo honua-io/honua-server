@@ -80,6 +80,72 @@ internal static class StyleTranslator
     }
 
     /// <summary>
+    /// Returns whether any of a layer's filter, paint, or layout expressions read <c>["zoom"]</c>,
+    /// and so resolve to different values at different zooms.
+    /// </summary>
+    /// <remarks>
+    /// Callers use this to keep zoom-dependent styles out of caches and precomputes that are not
+    /// keyed by zoom. Unlike feature attributes — which vary per feature and are detected by
+    /// <see cref="CollectReferencedFields(MapLibreStyleLayer[])"/> — zoom is constant across a single render but varies
+    /// between renders, so a style value resolved once and reused across requests silently freezes
+    /// at whatever zoom happened to resolve it first. The walk deliberately errs toward reporting
+    /// <see langword="true"/> (it descends into <c>literal</c> arrays as well): a false positive only
+    /// gives up a fast path, whereas a false negative reinstates the stale-value bug.
+    /// </remarks>
+    public static bool UsesZoomExpression(MapLibreStyleLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+
+        return ContainsZoomExpression(layer.Filter) ||
+               ContainsZoomExpression(layer.Paint) ||
+               ContainsZoomExpression(layer.Layout);
+    }
+
+    private static bool ContainsZoomExpression(Dictionary<string, MapLibreExpression>? expressions)
+    {
+        if (expressions == null || expressions.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var expression in expressions.Values)
+        {
+            if (ContainsZoomExpression(expression))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsZoomExpression(MapLibreExpression? expression)
+    {
+        if (!expression.HasValue ||
+            expression.Value.Kind != MapLibreExpressionKind.Array ||
+            expression.Value.Items is not { Length: > 0 } items)
+        {
+            return false;
+        }
+
+        if (TryGetString(items[0], out var op) &&
+            string.Equals(op, "zoom", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        foreach (var item in items)
+        {
+            if (ContainsZoomExpression(item))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Returns whether a style layer should be rendered at the supplied <paramref name="zoom"/>.
     /// Layer visibility is always honored; minzoom/maxzoom apply when the render carries a derived
     /// zoom and are left unapplied when <see cref="RenderZoom.NotDerivable"/> states that no zoom
@@ -97,7 +163,7 @@ internal static class StyleTranslator
             return false;
         }
 
-        return IsLayerVisible(layer, properties ?? ImmutableDictionary<string, object?>.Empty);
+        return IsLayerVisible(layer, properties ?? ImmutableDictionary<string, object?>.Empty, zoom);
     }
 
     /// <summary>
@@ -128,12 +194,16 @@ internal static class StyleTranslator
     }
 
     /// <summary>
-    /// Resolves a fill style from a MapLibre layer for a specific feature.
+    /// Resolves a fill style from a MapLibre layer for a specific feature at the supplied
+    /// <paramref name="zoom"/>, which zoom-dependent paint expressions are evaluated against.
     /// </summary>
     public static ResolvedFillStyle ResolveFillStyle(
         MapLibreStyleLayer layer,
-        ImmutableDictionary<string, object?> properties)
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
+        ArgumentNullException.ThrowIfNull(zoom);
+
         var paint = layer.Paint;
         if (paint == null || paint.Count == 0)
         {
@@ -144,10 +214,10 @@ internal static class StyleTranslator
             };
         }
 
-        var fillColor = ResolveColor(paint, "fill-color", properties, new SKColor(0, 0, 0));
-        var fillOpacity = ResolveFloat(paint, "fill-opacity", properties, 1f);
-        var outlineColor = ResolveOptionalColor(paint, "fill-outline-color", properties);
-        var antialias = ResolveBool(paint, "fill-antialias", properties, true);
+        var fillColor = ResolveColor(paint, "fill-color", properties, zoom, new SKColor(0, 0, 0));
+        var fillOpacity = ResolveFloat(paint, "fill-opacity", properties, zoom, 1f);
+        var outlineColor = ResolveOptionalColor(paint, "fill-outline-color", properties, zoom);
+        var antialias = ResolveBool(paint, "fill-antialias", properties, zoom, true);
 
         fillColor = ApplyOpacity(fillColor, fillOpacity);
 
@@ -161,12 +231,16 @@ internal static class StyleTranslator
     }
 
     /// <summary>
-    /// Resolves a line style from a MapLibre layer for a specific feature.
+    /// Resolves a line style from a MapLibre layer for a specific feature at the supplied
+    /// <paramref name="zoom"/>, which zoom-dependent paint expressions are evaluated against.
     /// </summary>
     public static ResolvedLineStyle ResolveLineStyle(
         MapLibreStyleLayer layer,
-        ImmutableDictionary<string, object?> properties)
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
+        ArgumentNullException.ThrowIfNull(zoom);
+
         var paint = layer.Paint;
         if (paint == null || paint.Count == 0)
         {
@@ -177,9 +251,9 @@ internal static class StyleTranslator
             };
         }
 
-        var lineColor = ResolveColor(paint, "line-color", properties, SKColors.Black);
-        var lineWidth = ResolveFloat(paint, "line-width", properties, 1f);
-        var lineOpacity = ResolveFloat(paint, "line-opacity", properties, 1f);
+        var lineColor = ResolveColor(paint, "line-color", properties, zoom, SKColors.Black);
+        var lineWidth = ResolveFloat(paint, "line-width", properties, zoom, 1f);
+        var lineOpacity = ResolveFloat(paint, "line-opacity", properties, zoom, 1f);
 
         float[]? dashArray = ResolveFloatArray(paint, "line-dasharray");
 
@@ -189,7 +263,7 @@ internal static class StyleTranslator
         var layout = layer.Layout;
         if (layout != null && layout.Count > 0)
         {
-            var cap = ResolveString(layout, "line-cap", properties);
+            var cap = ResolveString(layout, "line-cap", properties, zoom);
             if (cap != null)
             {
                 lineCap = cap switch
@@ -200,7 +274,7 @@ internal static class StyleTranslator
                 };
             }
 
-            var join = ResolveString(layout, "line-join", properties);
+            var join = ResolveString(layout, "line-join", properties, zoom);
             if (join != null)
             {
                 lineJoin = join switch
@@ -226,12 +300,16 @@ internal static class StyleTranslator
     }
 
     /// <summary>
-    /// Resolves a circle style from a MapLibre layer for a specific feature.
+    /// Resolves a circle style from a MapLibre layer for a specific feature at the supplied
+    /// <paramref name="zoom"/>, which zoom-dependent paint expressions are evaluated against.
     /// </summary>
     public static ResolvedCircleStyle ResolveCircleStyle(
         MapLibreStyleLayer layer,
-        ImmutableDictionary<string, object?> properties)
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
+        ArgumentNullException.ThrowIfNull(zoom);
+
         var paint = layer.Paint;
         if (paint == null || paint.Count == 0)
         {
@@ -242,12 +320,12 @@ internal static class StyleTranslator
             };
         }
 
-        var radius = ResolveFloat(paint, "circle-radius", properties, 5f);
-        var fillColor = ResolveColor(paint, "circle-color", properties, SKColors.Black);
-        var fillOpacity = ResolveFloat(paint, "circle-opacity", properties, 1f);
-        var strokeColor = ResolveOptionalColor(paint, "circle-stroke-color", properties);
-        var strokeOpacity = ResolveFloat(paint, "circle-stroke-opacity", properties, 1f);
-        var strokeWidth = ResolveFloat(paint, "circle-stroke-width", properties, 0f);
+        var radius = ResolveFloat(paint, "circle-radius", properties, zoom, 5f);
+        var fillColor = ResolveColor(paint, "circle-color", properties, zoom, SKColors.Black);
+        var fillOpacity = ResolveFloat(paint, "circle-opacity", properties, zoom, 1f);
+        var strokeColor = ResolveOptionalColor(paint, "circle-stroke-color", properties, zoom);
+        var strokeOpacity = ResolveFloat(paint, "circle-stroke-opacity", properties, zoom, 1f);
+        var strokeWidth = ResolveFloat(paint, "circle-stroke-width", properties, zoom, 0f);
 
         fillColor = ApplyOpacity(fillColor, fillOpacity);
 
@@ -318,14 +396,15 @@ internal static class StyleTranslator
 
     private static bool IsLayerVisible(
         MapLibreStyleLayer layer,
-        ImmutableDictionary<string, object?> properties)
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
         if (layer.Layout == null || layer.Layout.Count == 0)
         {
             return true;
         }
 
-        var visibility = ResolveString(layer.Layout, "visibility", properties);
+        var visibility = ResolveString(layer.Layout, "visibility", properties, zoom);
         return !string.Equals(visibility, "none", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -354,6 +433,7 @@ internal static class StyleTranslator
         Dictionary<string, MapLibreExpression> paint,
         string property,
         ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom,
         SKColor defaultColor)
     {
         if (!TryGetExpression(paint, property, out var expression))
@@ -364,7 +444,7 @@ internal static class StyleTranslator
         return expression.Kind switch
         {
             MapLibreExpressionKind.String => ExpressionEvaluator.ParseColor(expression.StringValue),
-            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties, zoom),
             _ => defaultColor
         };
     }
@@ -421,7 +501,8 @@ internal static class StyleTranslator
     private static SKColor? ResolveOptionalColor(
         Dictionary<string, MapLibreExpression> paint,
         string property,
-        ImmutableDictionary<string, object?> properties)
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
         if (!TryGetExpression(paint, property, out var expression))
         {
@@ -431,7 +512,7 @@ internal static class StyleTranslator
         return expression.Kind switch
         {
             MapLibreExpressionKind.String => ExpressionEvaluator.ParseColor(expression.StringValue),
-            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateColor(expression, properties, zoom),
             _ => null
         };
     }
@@ -440,6 +521,7 @@ internal static class StyleTranslator
         Dictionary<string, MapLibreExpression> paint,
         string property,
         ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom,
         float defaultValue)
     {
         if (!TryGetExpression(paint, property, out var expression))
@@ -451,7 +533,7 @@ internal static class StyleTranslator
         {
             MapLibreExpressionKind.Number => (float)expression.NumberValue,
             MapLibreExpressionKind.String => ExpressionEvaluator.ConvertToFloat(expression.StringValue, defaultValue),
-            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateFloat(expression, properties, defaultValue),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.EvaluateFloat(expression, properties, zoom, defaultValue),
             _ => defaultValue
         };
     }
@@ -460,6 +542,7 @@ internal static class StyleTranslator
         Dictionary<string, MapLibreExpression> paint,
         string property,
         ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom,
         bool defaultValue)
     {
         if (!TryGetExpression(paint, property, out var expression))
@@ -470,7 +553,7 @@ internal static class StyleTranslator
         return expression.Kind switch
         {
             MapLibreExpressionKind.Boolean => expression.BoolValue,
-            MapLibreExpressionKind.Array => ExpressionEvaluator.Evaluate(expression, properties) is bool b ? b : defaultValue,
+            MapLibreExpressionKind.Array => ExpressionEvaluator.Evaluate(expression, properties, zoom) is bool b ? b : defaultValue,
             _ => defaultValue
         };
     }
@@ -478,7 +561,8 @@ internal static class StyleTranslator
     private static string? ResolveString(
         Dictionary<string, MapLibreExpression> values,
         string property,
-        ImmutableDictionary<string, object?> properties)
+        ImmutableDictionary<string, object?> properties,
+        RenderZoom zoom)
     {
         if (!TryGetExpression(values, property, out var expression))
         {
@@ -488,7 +572,7 @@ internal static class StyleTranslator
         return expression.Kind switch
         {
             MapLibreExpressionKind.String => expression.StringValue,
-            MapLibreExpressionKind.Array => ExpressionEvaluator.Evaluate(expression, properties)?.ToString(),
+            MapLibreExpressionKind.Array => ExpressionEvaluator.Evaluate(expression, properties, zoom)?.ToString(),
             _ => null
         };
     }
