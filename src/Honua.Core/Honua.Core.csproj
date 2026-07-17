@@ -45,6 +45,8 @@
     <EmbeddedResource Include="Features/Reporting/Templates/Resources/report.css" />
     <!-- CRS feature: Esri default datum-transformation parity table. -->
     <EmbeddedResource Include="Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json" />
+    <!-- CRS feature: authoritative PROJJSON catalog for GeoParquet non-4326 output CRS metadata. -->
+    <EmbeddedResource Include="Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json" />
   </ItemGroup>
 
   <ItemGroup>
