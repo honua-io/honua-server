@@ -1998,12 +1998,14 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Tile data (tile/{z}/{y}/{x}.pbf), style/resources (default styles + root.json, scoped-minimal sprites and glyph ranges), and tileMap routes are implemented as thin adapters over the shared vector-tile pipeline; sprite/glyphs are referenced from the composed style only when it has symbol layers.",
+          "proofMechanism": "Tile data (tile/{z}/{y}/{x}.pbf), style/resources (default styles + root.json, scoped-minimal sprites and glyph ranges), and tileMap routes are implemented as thin adapters over the shared vector-tile pipeline; sprite/glyphs are referenced from the composed style only when it has symbol layers. VectorTileServerEndpointTests exercises happy-path plus negative-path depth (bad coordinates, out-of-range zoom, unknown service, empty tile, absurd tileMap dimension) across tile, resources, and tileMap.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
             "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
-            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs"
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
