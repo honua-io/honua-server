@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 
@@ -16,10 +17,10 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <remarks>
 /// Only the members Honua can honestly answer for are modelled. <c>bearer_methods_supported</c>
 /// advertises <c>header</c> now that the surface accepts <c>Authorization: Bearer</c> tokens
-/// as a resource server (honua-server#2850). <c>scopes_supported</c> remains deliberately
-/// absent while the surface authenticates but does not yet enforce OAuth scopes
-/// (honua-server#2851) — advertising a scope vocabulary the runtime does not enforce is the
-/// advertised-vs-actual gap #2803 exists to close.
+/// as a resource server (honua-server#2850). <c>scopes_supported</c> advertises the canonical
+/// <c>honua.mcp.*</c> scope vocabulary now that the runtime enforces it (honua-server#2851) —
+/// the surface both authenticates bearer tokens and narrows their authority to their scopes,
+/// so advertising the vocabulary is honest.
 /// </remarks>
 internal sealed class McpProtectedResourceMetadataDocument
 {
@@ -44,6 +45,14 @@ internal sealed class McpProtectedResourceMetadataDocument
     /// </summary>
     [JsonPropertyName("bearer_methods_supported")]
     public IReadOnlyList<string>? BearerMethodsSupported { get; init; }
+
+    /// <summary>
+    /// The OAuth scope values this resource understands and enforces (RFC 9728
+    /// <c>scopes_supported</c>). The canonical <c>honua.mcp.*</c> taxonomy from
+    /// <see cref="OperatorScopeCatalog"/> (honua-server#2851).
+    /// </summary>
+    [JsonPropertyName("scopes_supported")]
+    public IReadOnlyList<string>? ScopesSupported { get; init; }
 
     /// <summary>
     /// Human-readable name of the protected resource (RFC 9728 <c>resource_name</c>).
@@ -91,6 +100,12 @@ internal static class McpProtectedResourceMetadata
     /// the <c>Authorization</c> request header (honua-server#2850).
     /// </summary>
     public static readonly IReadOnlyList<string> BearerMethodsSupported = ["header"];
+
+    /// <summary>
+    /// The OAuth scope vocabulary advertised in <c>scopes_supported</c>: the canonical
+    /// <c>honua.mcp.*</c> taxonomy the resource server enforces (honua-server#2851).
+    /// </summary>
+    public static readonly IReadOnlyList<string> ScopesSupported = OperatorScopeCatalog.SupportedScopes;
 
     /// <summary>
     /// Resolves the issuer identifiers of every configured, valid OIDC provider. Returns an
