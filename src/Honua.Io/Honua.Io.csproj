@@ -35,6 +35,14 @@
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
     <!-- Export writers (Shapefile / GeoPackage / CSV) emit NTS geometries. -->
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <!--
+      Lean plugin contract surface (issue #2856, ADR-0067): the export endpoint consults the
+      IFeatureOutputFormatRegistry to serve plugin-contributed feature output formats, and the
+      built-in CSV writer is expressed as an IFeatureOutputFormat. Consuming only the dependency-
+      minimal Abstractions package (never the host-side Honua.Plugins runtime) mirrors how protocol
+      assemblies depend on IPluginEditPipeline.
+    -->
+    <ProjectReference Include="..\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
   </ItemGroup>

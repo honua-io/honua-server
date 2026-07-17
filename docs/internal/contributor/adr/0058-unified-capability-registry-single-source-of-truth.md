@@ -59,9 +59,10 @@ two further published routes (`/rest/services/geometry/{area,length}`) that were
 never served.
 
 Note the name collision that let roster 6 hide in the first place: the repo's
-`parity-scorecard-*` machinery is **data-import fidelity** over ten dataset cases
-and has never read this artifact. Renaming that side is still open on
-honua-server#2861.
+import-fidelity scorecard machinery (`import-fidelity-scorecard-*`,
+`GeoservicesImportFidelityIntegrationTests`) is **data-import fidelity** over ten
+dataset cases and has never read this artifact. That side was renamed off
+`parity` in honua-server#2861.
 
 Each is hand-maintained against the others. The predictable failure is exactly
 what the pre-release audit found: the MCP conformance `FULL` verdict passing

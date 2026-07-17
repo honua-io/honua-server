@@ -15,7 +15,8 @@ namespace Honua.Plugins.Abstractions;
 /// The base validation extension points (<see cref="IFeatureValidator"/>,
 /// <see cref="IFieldValidator"/>, <see cref="IEditHook"/>, <see cref="IComputedFieldProvider"/>)
 /// are considered low-risk read/validate surfaces and do not require an explicit capability.
-/// Higher-impact surfaces — running background work and contributing HTTP endpoints — do.
+/// Higher-impact surfaces — running background work, contributing HTTP endpoints, contributing a
+/// feature output format, and contributing a read-only data store — do.
 /// </remarks>
 [Flags]
 public enum PluginCapability
@@ -35,4 +36,23 @@ public enum PluginCapability
     /// validation, and telemetry middleware.
     /// </summary>
     CustomEndpoints = 1 << 1,
+
+    /// <summary>
+    /// Permits the plugin to contribute a feature output format via the
+    /// <see cref="IFeatureOutputFormat"/> extension point (issue #2856, ADR-0067). Contributed
+    /// formats are consulted by the host's export/format-negotiation seam after the built-in
+    /// formats and remain Enterprise-gated (<c>plugin.sdk</c>) plus honor the operator kill-switch.
+    /// </summary>
+    OutputFormats = 1 << 2,
+
+    /// <summary>
+    /// Permits the plugin to contribute a read-only vector data store by implementing the Core
+    /// provider seam (<c>Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProvider</c>)
+    /// (issue #2856, ADR-0067). The host registers the plugin as an additional feature-data
+    /// provider so the existing provider registry/router bind layers to it by provider name —
+    /// no runtime assembly loading, no router changes. Because the provider contract lives in
+    /// <c>Honua.Core</c> rather than this minimal contract package, a data-store plugin
+    /// necessarily references <c>Honua.Core</c> in addition to this SDK.
+    /// </summary>
+    DataStore = 1 << 3,
 }

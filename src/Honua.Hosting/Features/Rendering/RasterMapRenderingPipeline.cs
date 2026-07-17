@@ -743,7 +743,7 @@ internal static class RasterMapRenderingPipeline
                     continue;
                 }
 
-                if (TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform))
+                if (TryRenderBatchedStyleLayer(canvas, features, styleLayer, transform, zoom))
                 {
                     continue;
                 }
@@ -755,12 +755,12 @@ internal static class RasterMapRenderingPipeline
                         continue;
                     }
 
-                    if (styleLayer.Filter is { } filter && !EvaluateFilter(filter, feature.Attributes))
+                    if (styleLayer.Filter is { } filter && !EvaluateFilter(filter, feature.Attributes, zoom))
                     {
                         continue;
                     }
 
-                    RenderStyledFeature(canvas, feature, styleLayer, transform);
+                    RenderStyledFeature(canvas, feature, styleLayer, transform, zoom);
                 }
             }
         }
@@ -822,7 +822,8 @@ internal static class RasterMapRenderingPipeline
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer styleLayer,
-        Func<double, double, SKPoint> transform)
+        Func<double, double, SKPoint> transform,
+        RenderZoom zoom)
     {
         if (!string.Equals(styleLayer.Type, "circle", StringComparison.Ordinal) ||
             styleLayer.Filter is not null ||
@@ -831,7 +832,7 @@ internal static class RasterMapRenderingPipeline
             return false;
         }
 
-        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, ImmutableDictionary<string, object?>.Empty);
+        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, ImmutableDictionary<string, object?>.Empty, zoom);
         RenderCirclePoints(canvas, features, transform, circleStyle);
         return true;
     }
@@ -987,7 +988,8 @@ internal static class RasterMapRenderingPipeline
         SKCanvas canvas,
         Feature feature,
         MapLibreStyleLayer styleLayer,
-        Func<double, double, SKPoint> transform)
+        Func<double, double, SKPoint> transform,
+        RenderZoom zoom)
     {
         var result = WkbToSkiaConverter.Convert(feature.Geometry!, transform);
         try
@@ -996,7 +998,7 @@ internal static class RasterMapRenderingPipeline
             {
                 case "fill":
                     {
-                        var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes);
+                        var fillStyle = StyleTranslator.ResolveFillStyle(styleLayer, feature.Attributes, zoom);
                         using var fillPaint = new SKPaint
                         {
                             Style = SKPaintStyle.Fill,
@@ -1025,7 +1027,7 @@ internal static class RasterMapRenderingPipeline
                     }
                 case "line":
                     {
-                        var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes);
+                        var lineStyle = StyleTranslator.ResolveLineStyle(styleLayer, feature.Attributes, zoom);
                         using var linePaint = new SKPaint
                         {
                             Style = SKPaintStyle.Stroke,
@@ -1051,7 +1053,7 @@ internal static class RasterMapRenderingPipeline
                     }
                 case "circle":
                     {
-                        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes);
+                        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayer, feature.Attributes, zoom);
                         using var circlePaint = new SKPaint
                         {
                             Style = SKPaintStyle.Fill,
@@ -1159,6 +1161,25 @@ internal static class RasterMapRenderingPipeline
         };
     }
 
+    /// <summary>
+    /// Pre-resolves the circle style for the single-layer point fast path, or returns
+    /// <see langword="null"/> when the style is not eligible for it.
+    /// </summary>
+    /// <remarks>
+    /// <para>This runs while building a <see cref="RasterStylePlan"/>, which is cached per layer and
+    /// reused across every subsequent request for that layer — at any extent, image size, and
+    /// therefore any zoom. A zoom-dependent style must not be pre-resolved here: the first request to
+    /// build the plan would bake its own zoom into a value every later request then reuses, so a
+    /// zoom ramp would freeze at whichever zoom happened to be rendered first. Such styles are
+    /// declared ineligible and fall back to the per-render path, where
+    /// <see cref="StyleTranslator.ResolveCircleStyle"/> is called with the request's real
+    /// <see cref="RenderZoom"/>.</para>
+    /// <para>Because the zoom check above has already excluded every style that could read
+    /// <c>["zoom"]</c>, the <see cref="RenderZoom.NotDerivable"/> passed here is unreachable by
+    /// construction. It is passed rather than a placeholder level so that if that invariant is ever
+    /// broken, the result is a loud <see cref="StyleExpressionEvaluationException"/> naming this
+    /// path — not a silently stale radius.</para>
+    /// </remarks>
     private static ResolvedCircleStyle? TryResolveSimpleCircleStyle(
         MapLibreStyleLayer[] styleLayers,
         string[] referencedFields)
@@ -1166,12 +1187,16 @@ internal static class RasterMapRenderingPipeline
         if (styleLayers.Length != 1 ||
             !string.Equals(styleLayers[0].Type, "circle", StringComparison.Ordinal) ||
             styleLayers[0].Filter is not null ||
-            referencedFields.Length != 0)
+            referencedFields.Length != 0 ||
+            StyleTranslator.UsesZoomExpression(styleLayers[0]))
         {
             return null;
         }
 
-        var circleStyle = StyleTranslator.ResolveCircleStyle(styleLayers[0], ImmutableDictionary<string, object?>.Empty);
+        var circleStyle = StyleTranslator.ResolveCircleStyle(
+            styleLayers[0],
+            ImmutableDictionary<string, object?>.Empty,
+            RenderZoom.NotDerivable("a cached style plan is built without a render zoom"));
         return circleStyle.Radius > 0 ? circleStyle : null;
     }
 
@@ -1583,9 +1608,9 @@ internal static class RasterMapRenderingPipeline
     internal static SpatialFilter CreateBboxSpatialFilter(SkiaMapRenderer.RenderExtent extent, int srid)
         => SpatialFilterHelpers.CreateBboxSpatialFilter(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY, srid);
 
-    private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties)
+    private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {
-        var result = ExpressionEvaluator.Evaluate(filter, properties);
+        var result = ExpressionEvaluator.Evaluate(filter, properties, zoom);
         return result is bool b && b;
     }
 }

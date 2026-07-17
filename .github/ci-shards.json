@@ -316,7 +316,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesCredentialResolutionTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesGeoportalImportIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",

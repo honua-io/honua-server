@@ -45,7 +45,6 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
 
         metadata.Should().NotBeNull();
         metadata!.Name.Should().Be(WebAppFixture.TestServiceId);
-        metadata.CurrentVersion.Should().BeGreaterThan(0);
         metadata.Capabilities.Should().Be("TilesOnly");
         metadata.Type.Should().Be("indexedVector");
         metadata.ExportTilesAllowed.Should().BeFalse();

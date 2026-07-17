@@ -29,6 +29,6 @@ Standardized scorecards, checklists, and readout templates for lighthouse migrat
 | Historical procurement readiness materials | Removed from the live repo; not maintained in the archive tree |
 | [Operator Runbooks](../../role-indexes/operator-runbooks-README.md) | Current deployment and infrastructure procedures |
 | [Release Checklist](../../../internal/contributor/RELEASE_CHECKLIST.md) | Current release gate integration |
-| [`parity-scorecard-governance.yml`](../../../../.github/workflows/parity-scorecard-governance.yml) | Parity scorecard CI governance |
-| [`geoservices-parity-nightly.yml`](../../../../.github/workflows/geoservices-parity-nightly.yml) | Nightly geoservices parity runs |
-| [`parity-scorecard-baseline.json`](../../../../tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json) | Existing parity baseline data |
+| [`import-fidelity-scorecard-governance.yml`](../../../../.github/workflows/import-fidelity-scorecard-governance.yml) | Parity scorecard CI governance |
+| [`geoservices-import-fidelity-nightly.yml`](../../../../.github/workflows/geoservices-import-fidelity-nightly.yml) | Nightly geoservices parity runs |
+| [`import-fidelity-scorecard-baseline.json`](../../../../tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json) | Existing parity baseline data |

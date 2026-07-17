@@ -30,7 +30,7 @@ namespace Honua.Server.Tests.Import;
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
 [Operation(Operations.Query)]
-public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposable
+public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, IDisposable
 {
     private const string ExternalServicesEnv = "HONUA_TEST_ESRI_PARITY";
     private const int SampleFeatureCount = 15;
@@ -171,7 +171,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
     {
         await _fixture.InitializeAsync();
         _adminClient = _fixture.CreateAdminClient();
-        _schema = _fixture.CurrentSchema ?? await _fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesParityIntegrationTests));
+        _schema = _fixture.CurrentSchema ?? await _fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportFidelityIntegrationTests));
     }
 
     public async Task DisposeAsync()
@@ -4090,12 +4090,12 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             Cases: _scorecardEntries.ToArray());
 
         // Path.Combine args are a temp-root plus a literal/generated relative fragment; no rooted-segment risk.
-        var directory = Path.Combine(Path.GetTempPath(), "honua-parity-scorecards");
+        var directory = Path.Combine(Path.GetTempPath(), "honua-import-fidelity-scorecards");
         Directory.CreateDirectory(directory);
         // Path.Combine args are a directory plus a generated relative file name; no rooted-segment risk.
         var filePath = Path.Combine(
             directory,
-            $"geoservices-parity-scorecard-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");
+            $"geoservices-import-fidelity-scorecard-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");
         var json = JsonSerializer.Serialize(payload, _scorecardJsonOptions);
         await File.WriteAllTextAsync(filePath, json);
     }

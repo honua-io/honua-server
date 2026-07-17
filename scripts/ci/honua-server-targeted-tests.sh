@@ -118,6 +118,11 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 2
 fi
 
+# CR-safe jq: strip the CRLF the Windows jq binary emits in text mode so the
+# emitted JSON descriptor and every captured value stays clean (no-op on Linux).
+# Sourced AFTER the presence guard above so it still probes the real jq binary.
+source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
+
 # Compute the changed-file list.
 if [[ "${READ_STDIN}" == "true" ]]; then
   CHANGED_FILES="$(cat || true)"

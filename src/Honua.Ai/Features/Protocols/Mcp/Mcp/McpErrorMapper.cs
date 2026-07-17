@@ -284,6 +284,27 @@ internal static class McpErrorMapper
     };
 
     /// <summary>
+    /// Creates the structured error returned when a request presents an
+    /// <c>Authorization: Bearer</c> credential that fails OAuth 2.1 resource-server
+    /// validation — a bad signature, an expired token, a wrong issuer, or an
+    /// audience minted for another resource (honua-server#2850). Carries the same
+    /// <c>unauthenticated</c> code and re-authentication signal as
+    /// <see cref="Unauthenticated"/> so a client reacts identically whether a token
+    /// was rejected or never presented; the transport pairs this envelope with an
+    /// HTTP 401 and the RFC 9728 <c>WWW-Authenticate</c> challenge.
+    /// </summary>
+    public static McpJsonRpcError InvalidToken() => new()
+    {
+        Code = JsonRpcServerError,
+        Message = "The bearer token is invalid, expired, or issued for a different resource.",
+        Data = new McpErrorData
+        {
+            Code = Codes.Unauthenticated,
+            RequiresReauthentication = true
+        }
+    };
+
+    /// <summary>
     /// Creates the structured error returned when a request presents a valid
     /// <c>Mcp-Session-Id</c> that is bound to a different principal than the caller
     /// (A3 session binding; honua-server#2537). Signals

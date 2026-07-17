@@ -116,6 +116,7 @@ internal static class McpProtectedResourceMetadataEndpointExtensions
         {
             Resource = resource.AbsoluteUri,
             AuthorizationServers = authorizationServers,
+            BearerMethodsSupported = McpProtectedResourceMetadata.BearerMethodsSupported,
             ResourceName = McpProtectedResourceMetadata.ResourceName
         };
 
