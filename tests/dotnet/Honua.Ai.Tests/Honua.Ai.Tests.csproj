@@ -23,6 +23,9 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Newtonsoft.Json.Schema" />
+    <!-- OAuth 2.1 bearer-token integration tests mint HS256 JWTs for the /mcp
+         resource-server acceptance suite (honua-server#2850). -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 
   <ItemGroup>
