@@ -35,7 +35,8 @@ namespace Honua.Geoprocessing;
 /// process catalog, and orchestrates submit/cancel/read lifecycles. The remaining
 /// cross-cutting concerns are delegated to four cohesive collaborators —
 /// <see cref="GeoprocessingJobAuthorizer"/> (authorization/approval),
-/// <see cref="GeoprocessingJobDispatcher"/> (admission/queue/workload/backend),
+/// <see cref="GeoprocessingJobDispatcher"/> (admission/queue/workload/backend plus the
+/// approval-lane proposal routing that owns the <see cref="IOperationGateway"/>),
 /// <see cref="CustomCodeJobSubmissionGate"/> (custom-code token gate), and
 /// <see cref="GeoprocessingJobArtifactService"/> (raster input + result-package artifacts) —
 /// so the orchestration here stays focused while behavior is preserved exactly.
@@ -53,11 +54,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly GeoprocessingJobArtifactService _artifacts;
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
-    private readonly IOperationGateway? _operationGateway;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
-    /// delegating sub-services. The sub-services are registered in DI alongside this type.
+    /// delegating sub-services. The sub-services are registered in DI alongside this type; the
+    /// approval-lane operation gateway is owned by the <see cref="GeoprocessingJobDispatcher"/>.
     /// </summary>
     public GeoprocessingJobService(
         IUniversalProgressStore progressStore,
@@ -70,8 +71,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
-        IOptions<LimitsOptions>? limitsOptions = null,
-        IOperationGateway? operationGateway = null)
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
@@ -84,7 +84,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         _executorOptions = executorOptions;
         _analyticsLimits = limitsOptions?.Value.Analytics ?? new AnalyticsLimits();
         _jobStore = jobStore;
-        _operationGateway = operationGateway;
     }
 
     /// <summary>
@@ -119,7 +118,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             processCatalog,
             new GeoprocessingJobAuthorizer(authEvaluator, approvalEvaluator, logger),
             new GeoprocessingJobDispatcher(
-                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator),
+                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
@@ -127,8 +126,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             logger,
             executorOptions,
             jobStore,
-            limitsOptions,
-            operationGateway)
+            limitsOptions)
     {
     }
 
@@ -923,45 +921,22 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var policyRef = approval.PolicyRef ?? "unknown";
         GeoprocessingServiceLog.SubmitRejectedApprovalRequired(_logger, policyRef);
 
-        // Persist an AwaitingApproval proposal reusing the shared control-plane
-        // proposal/gateway surface so the gated plan is resumable via
-        // honua://proposals/{id} instead of dead-ending (ADR-0064, #2814). A
-        // custom-code submission is never persisted as a proposal — the resume path
-        // cannot re-mint its scoped callback token without the live principal — so it
-        // continues to hard-fail. When the durable proposal surface is unavailable
-        // (lightweight hosts / Redis-free configs) submission also hard-fails.
-        if (_operationGateway == null || isCustomCode)
-        {
-            throw new GeoprocessingApprovalRequiredException(policyRef);
-        }
-
-        var payload = new GeoprocessExecutionPayload
-        {
-            Plan = plan,
-            IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey,
-            RequestedBy = ResolvePrincipalId(principal),
-            Metadata = protocolMetadata == null
-                ? null
-                : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal),
-        };
-
-        var request = new OperationGatewayRequest
-        {
-            Kind = OperationClass.Geoprocess,
-            RequestedBy = payload.RequestedBy,
-            Reason = approvalGatedProcessId == null
-                ? "Destructive geoprocessing plan requires approval."
-                : $"Geoprocessing plan step '{approvalGatedProcessId}' requires approval.",
-            IdempotencyKey = payload.IdempotencyKey,
-            ExecutionPayload = payload.Serialize(),
-            Plan = GeoprocessOperationExecutor.BuildPlanSummary(payload, executionPayload: null),
-        };
-
-        var result = await _operationGateway
-            .CreateApprovalProposalAsync(request, cancellationToken)
+        // Park the gated plan on the approval lane. The dispatcher owns the durable
+        // proposal/gateway surface (ADR-0064, #2814): when it is available and the
+        // submission is not custom code it persists an AwaitingApproval proposal so the
+        // plan is resumable via honua://proposals/{id}, then throws carrying the proposal
+        // id; otherwise (custom code, or no gateway on lightweight/Redis-free hosts) it
+        // hard-fails without a proposal id. This call always throws.
+        await _dispatcher.CreateApprovalProposalOrThrowAsync(
+                policyRef,
+                plan,
+                idempotencyKey,
+                ResolvePrincipalId(principal),
+                protocolMetadata,
+                isCustomCode,
+                approvalGatedProcessId,
+                cancellationToken)
             .ConfigureAwait(false);
-
-        throw new GeoprocessingApprovalRequiredException(policyRef, detail: null, proposalId: result.ProposalId);
     }
 
     public async Task<ExecutionJobRecord> ResumeApprovedJobAsync(
