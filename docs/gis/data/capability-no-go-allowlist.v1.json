@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "docs/gis/data/capability-keys.v1.json (hand-maintained companion file)",
+  "trackingIssue": "#2893",
+  "description": "Explicit allowlist of known evidence-source keys that intentionally have NO capability crosswalk because Honua does not support them. This file exists so a hard Esri lock-in (Utility Network, Parcel Fabric, Linear Referencing) is a loud, reviewed 'not-supported' marker rather than a silent omission from capability-keys.v1.json. CapabilityCrosswalkDriftTests requires every honua-esri-assess CAPABILITY_REGISTRY 'no-go' (hard_lock_in) key to appear here, and forbids it from also appearing in capability-keys.v1.json's crosswalks.esriAssess section.",
+  "notSupported": [
+    {
+      "source": "esri-assess",
+      "key": "utility-network",
+      "marker": "not-supported",
+      "boundary": "Utility Network is a hard Esri lock-in: the network topology, rules, and trace engine do not migrate. Federate-only or no-go.",
+      "reference": "honua-esri-assess/src/honua_esri_assess/verdict/registry.py CAPABILITY_REGISTRY['utility-network'] (hard_lock_in=true)"
+    },
+    {
+      "source": "esri-assess",
+      "key": "parcel-fabric",
+      "marker": "not-supported",
+      "boundary": "Parcel Fabric is a hard Esri lock-in: the fabric topology and record lineage do not migrate. Parcels move as features only. Federate-only or no-go.",
+      "reference": "honua-esri-assess/src/honua_esri_assess/verdict/registry.py CAPABILITY_REGISTRY['parcel-fabric'] (hard_lock_in=true)"
+    },
+    {
+      "source": "esri-assess",
+      "key": "lrs",
+      "marker": "not-supported",
+      "boundary": "Linear Referencing System (LRS) is a hard Esri lock-in: route/measure calibration and event behaviors do not migrate. Federate-only or no-go.",
+      "reference": "honua-esri-assess/src/honua_esri_assess/verdict/registry.py CAPABILITY_REGISTRY['lrs'] (hard_lock_in=true)"
+    }
+  ]
+}
