@@ -223,11 +223,13 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
+        // notBefore is intentionally omitted: for the expired-token case a negative
+        // expiry would fall before any non-null notBefore and the JwtSecurityToken
+        // constructor rejects that (IDX12401). Lifetime validation keys off expiry.
         var token = new JwtSecurityToken(
             issuer: issuer,
             audience: audience,
             claims: claims,
-            notBefore: DateTime.UtcNow.AddMinutes(-1),
             expires: DateTime.UtcNow.AddMinutes(expiresInMinutes),
             signingCredentials: credentials);
 
