@@ -81,7 +81,7 @@ tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issue
 - Integration coverage:
   `tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs`,
   `tests/dotnet/Honua.Postgres.Tests/Features/Import/GeoservicesImportServiceAuthenticatedImportTests.cs`,
-  `GeoservicesParityIntegrationTests.cs`, and
+  `GeoservicesImportFidelityIntegrationTests.cs`, and
   `GeoservicesGeoportalImportIntegrationTests.cs`
 
 The importer validates a public HTTPS ArcGIS service root, discovers layer

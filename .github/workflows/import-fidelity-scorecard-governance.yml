@@ -1,4 +1,4 @@
-name: Parity Scorecard Governance
+name: Import Fidelity Scorecard Governance
 
 on:
   pull_request:
@@ -6,27 +6,27 @@ on:
       - trunk
       - main
     paths:
-      - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesParityIntegrationTests.cs'
-      - 'tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json'
-      - 'tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json'
-      - 'scripts/ci/check-parity-scorecard-regression.sh'
-      - 'scripts/ci/check-parity-scorecard-baseline-sync.sh'
-      - 'scripts/ci/check-parity-perf-budget.sh'
-      - 'scripts/ci/fixtures/parity-perf-scorecard-pass.json'
-      - 'scripts/ci/fixtures/parity-perf-scorecard-fail.json'
-      - '.github/workflows/geoservices-parity-nightly.yml'
-      - '.github/workflows/parity-scorecard-governance.yml'
+      - 'tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json'
+      - 'tests/dotnet/Honua.Server.Tests/Import/import-fidelity-perf-budget.json'
+      - 'scripts/ci/check-import-fidelity-scorecard-regression.sh'
+      - 'scripts/ci/check-import-fidelity-scorecard-baseline-sync.sh'
+      - 'scripts/ci/check-import-fidelity-perf-budget.sh'
+      - 'scripts/ci/fixtures/import-fidelity-perf-scorecard-pass.json'
+      - 'scripts/ci/fixtures/import-fidelity-perf-scorecard-fail.json'
+      - '.github/workflows/geoservices-import-fidelity-nightly.yml'
+      - '.github/workflows/import-fidelity-scorecard-governance.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: parity-scorecard-governance-${{ github.ref }}
+  group: import-fidelity-scorecard-governance-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate-parity-scorecard:
+  validate-import-fidelity-scorecard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -34,27 +34,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Smoke test parity regression gate
+      - name: Smoke test import-fidelity regression gate
         run: |
-          bash scripts/ci/check-parity-scorecard-regression.sh \
-            tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json \
-            tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
+          bash scripts/ci/check-import-fidelity-scorecard-regression.sh \
+            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json \
+            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json
 
-      - name: Verify parity baseline sync
+      - name: Verify import-fidelity baseline sync
         run: |
-          bash scripts/ci/check-parity-scorecard-baseline-sync.sh
+          bash scripts/ci/check-import-fidelity-scorecard-baseline-sync.sh
 
       - name: Smoke test perf-parity gate (pass fixture)
         run: |
-          bash scripts/ci/check-parity-perf-budget.sh \
-            scripts/ci/fixtures/parity-perf-scorecard-pass.json \
-            tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json
+          bash scripts/ci/check-import-fidelity-perf-budget.sh \
+            scripts/ci/fixtures/import-fidelity-perf-scorecard-pass.json \
+            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-perf-budget.json
 
       - name: Smoke test perf-parity gate (fail fixture must be rejected)
         run: |
-          if bash scripts/ci/check-parity-perf-budget.sh \
-               scripts/ci/fixtures/parity-perf-scorecard-fail.json \
-               tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json; then
+          if bash scripts/ci/check-import-fidelity-perf-budget.sh \
+               scripts/ci/fixtures/import-fidelity-perf-scorecard-fail.json \
+               tests/dotnet/Honua.Server.Tests/Import/import-fidelity-perf-budget.json; then
             echo "::error::Perf-parity gate accepted a regressing scorecard; the gate is not enforcing the budget." >&2
             exit 1
           fi

@@ -1,4 +1,4 @@
-name: GeoServices Parity (External, On-Demand)
+name: GeoServices Import Fidelity (External, On-Demand)
 
 # This suite imports from LIVE public ArcGIS endpoints (geodata.hawaii.gov,
 # maps.kauai.gov, sampleserver6.arcgisonline.com) and compares query results
@@ -6,7 +6,7 @@ name: GeoServices Parity (External, On-Demand)
 # feature count changes), producing non-deterministic failures unrelated to
 # Honua — so it is no longer run on a nightly schedule. Run it on demand to
 # validate parity against live Esri services. Deterministic parity coverage
-# stays in the per-PR Parity Scorecard Governance gate + the in-repo parity
+# stays in the per-PR Import Fidelity Scorecard Governance gate + the in-repo parity
 # matrix/JSON; see docs/internal/ci/gate-model.md. (honua-server#1570)
 on:
   workflow_dispatch:
@@ -21,12 +21,12 @@ permissions:
   packages: read
 
 concurrency:
-  group: geoservices-parity-nightly-${{ github.ref }}
+  group: geoservices-import-fidelity-nightly-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   parity:
-    name: External GeoServices Parity
+    name: External GeoServices Import Fidelity
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -53,7 +53,7 @@ jobs:
             --no-build \
             --no-restore \
             --configuration Release \
-            --filter GeoservicesParityIntegrationTests \
+            --filter GeoservicesImportFidelityIntegrationTests \
             --logger "trx;LogFileName=geoservices-parity.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
@@ -62,27 +62,27 @@ jobs:
         id: collect
         run: |
           mkdir -p artifacts/parity
-          latest_scorecard="$(ls -1t /tmp/honua-parity-scorecards/geoservices-parity-scorecard-*.json 2>/dev/null | head -n 1 || true)"
+          latest_scorecard="$(ls -1t /tmp/honua-import-fidelity-scorecards/geoservices-import-fidelity-scorecard-*.json 2>/dev/null | head -n 1 || true)"
           if [[ -z "$latest_scorecard" ]]; then
-            echo "No generated parity scorecard found in /tmp/honua-parity-scorecards" >&2
+            echo "No generated parity scorecard found in /tmp/honua-import-fidelity-scorecards" >&2
             exit 1
           fi
 
           cp "$latest_scorecard" artifacts/parity/current-scorecard.json
-          cp tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json artifacts/parity/baseline-scorecard.json
+          cp tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json artifacts/parity/baseline-scorecard.json
           echo "scorecard_path=artifacts/parity/current-scorecard.json" >> "$GITHUB_OUTPUT"
 
       - name: Baseline regression gate
         run: |
-          bash scripts/ci/check-parity-scorecard-regression.sh \
+          bash scripts/ci/check-import-fidelity-scorecard-regression.sh \
             artifacts/parity/current-scorecard.json \
-            tests/dotnet/Honua.Server.Tests/Import/parity-scorecard-baseline.json
+            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json
 
       - name: Performance-parity gate
         run: |
-          bash scripts/ci/check-parity-perf-budget.sh \
+          bash scripts/ci/check-import-fidelity-perf-budget.sh \
             artifacts/parity/current-scorecard.json \
-            tests/dotnet/Honua.Server.Tests/Import/parity-perf-budget.json
+            tests/dotnet/Honua.Server.Tests/Import/import-fidelity-perf-budget.json
 
       - name: Write parity summary
         if: always()
