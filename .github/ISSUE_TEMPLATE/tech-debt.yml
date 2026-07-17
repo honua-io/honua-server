@@ -33,6 +33,19 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: capability-keys
+    attributes:
+      label: Capability Key(s) (optional)
+      description: |
+        If this work is tied to a specific capability, list the key(s) here (comma-separated):
+        the FeatureCatalog entitlement key if one exists (src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs),
+        otherwise the `cap/<category>` slug from docs/gis/data/capability-categories.seed.json
+        (e.g. `serve-ogc`, `editing`). Leave blank for cross-cutting or infra-only tech debt.
+      placeholder: "editing.feature-edits, geocoding.single-line"
+    validations:
+      required: false
+
   - type: dropdown
     id: affected-repos
     attributes:
