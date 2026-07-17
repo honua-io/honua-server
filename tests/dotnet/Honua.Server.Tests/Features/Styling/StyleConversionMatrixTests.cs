@@ -1372,7 +1372,7 @@ public class StyleConversionMatrixTests
         var props = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", dirtyValue);
 
-        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
+        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
 
         // Must be the gray fallback color (#CCCCCC), NOT the first bucket color (#440154)
         Assert.Equal("#CCCCCC", result?.ToString());
@@ -1437,7 +1437,7 @@ public class StyleConversionMatrixTests
         var props = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", null);
 
-        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
+        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
 
         Assert.Equal("#CCCCCC", result?.ToString());
     }
@@ -1499,13 +1499,13 @@ public class StyleConversionMatrixTests
         // Value 25.0 < break 50.0 → first bucket color
         var propsLow = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", 25.0);
-        var resultLow = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsLow);
+        var resultLow = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsLow, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
         Assert.Equal("#440154", resultLow?.ToString());
 
         // Value 75.0 >= break 50.0 → second bucket color
         var propsHigh = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", 75.0);
-        var resultHigh = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsHigh);
+        var resultHigh = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsHigh, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
         Assert.Equal("#FDE725", resultHigh?.ToString());
     }
 
@@ -1762,18 +1762,18 @@ public class StyleConversionMatrixTests
         // Key exists but value is null — must hit fallback, not the "" category
         var propsNull = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("category", null);
-        var resultNull = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsNull);
+        var resultNull = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsNull, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
         Assert.Equal("#CCCCCC", resultNull?.ToString());
 
         // Key missing entirely — must also hit fallback
         var propsMissing = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty;
-        var resultMissing = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsMissing);
+        var resultMissing = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsMissing, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
         Assert.Equal("#CCCCCC", resultMissing?.ToString());
 
         // Non-null value "A" — must match category color
         var propsA = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("category", "A");
-        var resultA = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsA);
+        var resultA = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsA, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
         Assert.Equal("#377EB8", resultA?.ToString());
     }
 
@@ -1979,7 +1979,7 @@ public class StyleConversionMatrixTests
         var props = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", stringValue);
 
-        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
+        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props, Honua.Infrastructure.Rendering.RenderZoom.NotDerivable("this test evaluates no zoom expression"));
 
         Assert.Equal(expectedColor, result?.ToString());
     }
