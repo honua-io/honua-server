@@ -1,0 +1,1096 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
+  "trackingIssue": "#2893",
+  "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from esriAssess below -- see capability-no-go-allowlist.v1.json.",
+  "capabilities": [
+    {
+      "key": "admin.control-plane",
+      "displayName": "Admin Control Plane",
+      "category": "ControlPlane",
+      "edition": "Community",
+      "description": "General administrative CRUD surfaces (connections, metadata, services, tenants, users, roles, configuration) with no dedicated entitlement of their own."
+    },
+    {
+      "key": "ai.agent-operations",
+      "displayName": "Agent Operations (Validation Layer)",
+      "category": "AI",
+      "edition": "Pro",
+      "description": "Agent-initiated changes run through a validation layer \u2014 planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
+    },
+    {
+      "key": "ai.approval-workflows",
+      "displayName": "Agent Approval Workflows",
+      "category": "AI",
+      "edition": "Enterprise",
+      "description": "Human-in-the-loop approval, policy-scoped agent permissions, and immutable audit for agent-initiated operations."
+    },
+    {
+      "key": "ai.grounding",
+      "displayName": "Spec Grounding Mutations",
+      "category": "AI",
+      "edition": "Pro",
+      "description": "Ground natural-language turns into validated spec mutation plans."
+    },
+    {
+      "key": "ai.mcp-discovery",
+      "displayName": "MCP Discovery & Query",
+      "category": "AI",
+      "edition": "Community",
+      "description": "Discover, search, and query Honua through MCP and the agent read surface without a license."
+    },
+    {
+      "key": "ai.spec-apply",
+      "displayName": "Spec Apply Execution",
+      "category": "AI",
+      "edition": "Pro",
+      "description": "Apply executable specs and submit MCP plan execution jobs from agentic tooling."
+    },
+    {
+      "key": "ai.spec-artifacts",
+      "displayName": "Spec Artifact Retrieval",
+      "category": "AI",
+      "edition": "Community",
+      "description": "Read-only retrieval of executable spec artifacts by content hash. Applying a spec plan remains Pro-gated (ai.spec-apply)."
+    },
+    {
+      "key": "ai.workflow-generation",
+      "displayName": "AI Workflow and Content Generation",
+      "category": "AI",
+      "edition": "Pro",
+      "description": "Generate or refine workflows, maps, apps, forms, reports, dashboards, saved queries, and analysis packages from natural-language prompts."
+    },
+    {
+      "key": "alerts.dwell",
+      "displayName": "Dwell Trigger",
+      "category": "Alerts",
+      "edition": "Enterprise",
+      "description": "Trigger alerts when features remain inside a zone for a configured duration."
+    },
+    {
+      "key": "alerts.enter-exit",
+      "displayName": "Enter/Exit Geofence Triggers",
+      "category": "Alerts",
+      "edition": "Pro",
+      "description": "Trigger alerts when features enter or exit geofence zones."
+    },
+    {
+      "key": "alerts.evaluation",
+      "displayName": "Alert Evaluation Engine",
+      "category": "Alerts",
+      "edition": "Pro",
+      "description": "Background worker for evaluating geofence rules against feature changes."
+    },
+    {
+      "key": "alerts.threshold",
+      "displayName": "Threshold Trigger",
+      "category": "Alerts",
+      "edition": "Enterprise",
+      "description": "Trigger alerts based on attribute threshold conditions."
+    },
+    {
+      "key": "analytics.buffer-aggregate",
+      "displayName": "Buffer Aggregate",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Buffer features by a fixed distance and dissolve or aggregate per group."
+    },
+    {
+      "key": "analytics.clustering",
+      "displayName": "Spatial Clustering",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Server-side DBSCAN and K-Means clustering with optional cluster hulls."
+    },
+    {
+      "key": "analytics.content",
+      "displayName": "Analysis Artifact Content",
+      "category": "Analytics",
+      "edition": "Community",
+      "description": "Store and retrieve spatial-analysis artifacts. The analytics compute operations themselves (clustering, spatial join, etc.) remain Pro-gated."
+    },
+    {
+      "key": "analytics.density",
+      "displayName": "Density Binning",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Hex or square grid density (heatmap) binning over a filtered subset."
+    },
+    {
+      "key": "analytics.line-of-sight",
+      "displayName": "Line of Sight",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Determine terrain visibility between an observer and target over the elevation surface."
+    },
+    {
+      "key": "analytics.reporting",
+      "displayName": "Analysis Reporting",
+      "category": "Analytics",
+      "edition": "Community",
+      "description": "Retrieve generated analysis reports."
+    },
+    {
+      "key": "analytics.slice",
+      "displayName": "Slice/Volumetric Analysis",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Intersect a vertical slice plane with the elevation surface and return cross-section metadata."
+    },
+    {
+      "key": "analytics.spatial-join",
+      "displayName": "Spatial Join",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Cross-layer spatial join with intersects/contains/within/dwithin predicates."
+    },
+    {
+      "key": "analytics.sun-shadow",
+      "displayName": "Sun/Shadow Analysis",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Compute solar position from date/time/location and cast the shadow extent against the elevation surface."
+    },
+    {
+      "key": "analytics.viewshed",
+      "displayName": "Viewshed",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Compute the radially-sampled visible area around an observer over the elevation surface."
+    },
+    {
+      "key": "caching.output-cache",
+      "displayName": "Output Caching",
+      "category": "Caching",
+      "edition": "Pro",
+      "description": "HTTP response caching with tag-based invalidation."
+    },
+    {
+      "key": "caching.redis",
+      "displayName": "Redis Distributed Cache",
+      "category": "Caching",
+      "edition": "Pro",
+      "description": "Redis-backed distributed cache for multi-node deployments."
+    },
+    {
+      "key": "channels.aws-sns",
+      "displayName": "AWS SNS Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "description": "Deliver alert notifications via AWS Simple Notification Service."
+    },
+    {
+      "key": "channels.azure-eventgrid",
+      "displayName": "Azure Event Grid Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "description": "Deliver alert notifications via Azure Event Grid."
+    },
+    {
+      "key": "channels.digest",
+      "displayName": "Digest Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "description": "Aggregate and deliver batched alert summaries."
+    },
+    {
+      "key": "channels.email",
+      "displayName": "Email Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "description": "Deliver alert notifications via email."
+    },
+    {
+      "key": "channels.slack",
+      "displayName": "Slack Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "description": "Deliver alert notifications to Slack channels."
+    },
+    {
+      "key": "channels.teams",
+      "displayName": "Microsoft Teams Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "description": "Deliver alert notifications to Microsoft Teams."
+    },
+    {
+      "key": "channels.webhook",
+      "displayName": "Webhook Delivery",
+      "category": "Channels",
+      "edition": "Pro",
+      "description": "Deliver alert notifications via webhook HTTP callbacks."
+    },
+    {
+      "key": "collaboration.map-sessions",
+      "displayName": "Map Collaboration Sessions",
+      "category": "Collaboration",
+      "edition": "Community",
+      "description": "Collaborative saved-map session operations (comments, activity, shared editing coordination)."
+    },
+    {
+      "key": "demo.showcase",
+      "displayName": "Demo Showcase Surfaces",
+      "category": "Demo",
+      "edition": "Community",
+      "description": "Non-sellable demo/showcase endpoints used for product demonstrations."
+    },
+    {
+      "key": "discovery.capability-manifest",
+      "displayName": "Capability Manifest",
+      "category": "Discovery",
+      "edition": "Community",
+      "description": "Advertise the server's capability manifest for SDK/agent discovery (#1186)."
+    },
+    {
+      "key": "dr.backup-automation",
+      "displayName": "Backup Automation",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "description": "Scheduled PostgreSQL base backups plus WAL archiving enabling point-in-time recovery."
+    },
+    {
+      "key": "dr.cache-backup",
+      "displayName": "Cache State Backup",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "description": "Backup and restore Redis cache state so warm cache contents survive a regional failover."
+    },
+    {
+      "key": "dr.failover",
+      "displayName": "Failover Playbooks",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "description": "Active-passive failover playbooks driven by automated health checks against the primary serving surface."
+    },
+    {
+      "key": "dr.rto-rpo-reporting",
+      "displayName": "RTO/RPO Reporting",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "description": "Track recovery time and recovery point objectives and report recovery readiness, last successful backup, and restorable point."
+    },
+    {
+      "key": "editing.branch-versioning",
+      "displayName": "Branch Versioning",
+      "category": "Editing",
+      "edition": "Enterprise",
+      "description": "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."
+    },
+    {
+      "key": "editing.featureserver-edits",
+      "displayName": "FeatureServer Editing",
+      "category": "Editing",
+      "edition": "Pro",
+      "description": "Create, update, and delete features through the Esri GeoServices FeatureServer write surface \u2014 applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
+    },
+    {
+      "key": "enrichment.datasets",
+      "displayName": "Data Enrichment Datasets",
+      "category": "Enrichment",
+      "edition": "Community",
+      "description": "Register and manage third-party data-enrichment dataset sources."
+    },
+    {
+      "key": "fieldops.forms",
+      "displayName": "Field Collection Forms",
+      "category": "FieldOps",
+      "edition": "Community",
+      "description": "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."
+    },
+    {
+      "key": "fieldops.offline-sync",
+      "displayName": "Offline/Field Sync",
+      "category": "FieldOps",
+      "edition": "Pro",
+      "description": "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."
+    },
+    {
+      "key": "geocoding.batch",
+      "displayName": "Batch Geocoding",
+      "category": "Geocoding",
+      "edition": "Enterprise",
+      "description": "Geocode multiple addresses in a single request."
+    },
+    {
+      "key": "geocoding.failover",
+      "displayName": "Provider Failover",
+      "category": "Geocoding",
+      "edition": "Pro",
+      "description": "Automatic failover between geocoding providers on error."
+    },
+    {
+      "key": "geocoding.forward",
+      "displayName": "Forward Geocoding",
+      "category": "Geocoding",
+      "edition": "Pro",
+      "description": "Convert addresses to coordinates using configured providers."
+    },
+    {
+      "key": "geocoding.reverse",
+      "displayName": "Reverse Geocoding",
+      "category": "Geocoding",
+      "edition": "Pro",
+      "description": "Convert coordinates to addresses using configured providers."
+    },
+    {
+      "key": "identity.claims-mapping",
+      "displayName": "Claims Mapping",
+      "category": "Identity",
+      "edition": "Enterprise",
+      "description": "Custom claim-to-role mapping and identity governance for OIDC providers."
+    },
+    {
+      "key": "identity.mtls-client-certificate",
+      "displayName": "mTLS Client-Certificate Authentication",
+      "category": "Identity",
+      "edition": "Enterprise",
+      "description": "Native client-certificate (mTLS) authentication: trust profiles, issuer/chain validation with CRL/OCSP revocation, and certificate-to-principal mapping."
+    },
+    {
+      "key": "identity.oidc",
+      "displayName": "OIDC Authentication",
+      "category": "Identity",
+      "edition": "Pro",
+      "description": "Single-provider OpenID Connect authentication with Azure AD, Google, Okta, Auth0, or generic OIDC."
+    },
+    {
+      "key": "identity.oidc-multi-provider",
+      "displayName": "OIDC Multi-Provider SSO",
+      "category": "Identity",
+      "edition": "Enterprise",
+      "description": "Configure multiple OIDC identity providers in one deployment."
+    },
+    {
+      "key": "identity.portal-sharing",
+      "displayName": "ArcGIS Portal Sharing Read Surface",
+      "category": "Identity",
+      "edition": "Community",
+      "description": "Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so Esri clients can discover Honua content as portal items."
+    },
+    {
+      "key": "identity.portal-token",
+      "displayName": "ArcGIS Portal Token Issuance",
+      "category": "Identity",
+      "edition": "Community",
+      "description": "Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services."
+    },
+    {
+      "key": "identity.saml",
+      "displayName": "SAML 2.0 Authentication",
+      "category": "Identity",
+      "edition": "Community",
+      "description": "SAML 2.0 service-provider metadata and assertion consumer endpoints."
+    },
+    {
+      "key": "identity.scim",
+      "displayName": "SCIM 2.0 Provisioning",
+      "category": "Identity",
+      "edition": "Community",
+      "description": "User/group provisioning through the SCIM 2.0 protocol surface."
+    },
+    {
+      "key": "import.file",
+      "displayName": "File Import",
+      "category": "Import",
+      "edition": "Community",
+      "description": "Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage)."
+    },
+    {
+      "key": "import.geoserver",
+      "displayName": "GeoServer Import",
+      "category": "Import",
+      "edition": "Enterprise",
+      "description": "Import layers from GeoServer REST API."
+    },
+    {
+      "key": "import.geoservices",
+      "displayName": "GeoServices Import",
+      "category": "Import",
+      "edition": "Enterprise",
+      "description": "Import layers from ArcGIS REST services."
+    },
+    {
+      "key": "ops.health",
+      "displayName": "Health Checks",
+      "category": "Ops",
+      "edition": "Community",
+      "description": "Liveness/readiness health-check endpoints."
+    },
+    {
+      "key": "ops.observability",
+      "displayName": "Observability",
+      "category": "Ops",
+      "edition": "Community",
+      "description": "Metrics and monitoring surfaces for operational visibility."
+    },
+    {
+      "key": "plugin.sdk",
+      "displayName": "Plugin/Extension SDK",
+      "category": "Extensibility",
+      "edition": "Enterprise",
+      "description": "Register compile-time, AOT-safe server plugins (custom feature validators and pre/post-edit hooks) discovered and gated at startup."
+    },
+    {
+      "key": "printing.layout-templates",
+      "displayName": "Print Layout Templates",
+      "category": "Printing",
+      "edition": "Pro",
+      "description": "Use full print layout templates beyond MAP_ONLY."
+    },
+    {
+      "key": "printing.pdf-output",
+      "displayName": "PDF Print Output",
+      "category": "Printing",
+      "edition": "Pro",
+      "description": "Export print jobs as PDF files."
+    },
+    {
+      "key": "process.geoprocessing",
+      "displayName": "Geoprocessing Task Execution",
+      "category": "Process",
+      "edition": "Community",
+      "description": "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."
+    },
+    {
+      "key": "process.ogc-api-processes",
+      "displayName": "OGC API Processes",
+      "category": "Process",
+      "edition": "Community",
+      "description": "Submit and poll jobs through OGC API - Processes."
+    },
+    {
+      "key": "raster.cloud-cog-serving",
+      "displayName": "COG Serving",
+      "category": "Raster",
+      "edition": "Pro",
+      "description": "Serve COG files directly from S3/Azure via HTTP range requests."
+    },
+    {
+      "key": "raster.cloud-storage-config",
+      "displayName": "Cloud Storage Configuration",
+      "category": "Raster",
+      "edition": "Pro",
+      "description": "Configure cloud storage connections for direct raster serving."
+    },
+    {
+      "key": "raster.multidim-coverage",
+      "displayName": "Multidimensional Coverage (NetCDF/HDF5/Zarr)",
+      "category": "Raster",
+      "edition": "Pro",
+      "description": "Register and serve cloud-hosted NetCDF4/HDF5/Zarr datacubes as multidimensional coverages (OGC API Coverages / WCS / ImageServer multidimensional)."
+    },
+    {
+      "key": "raster.temporal-mosaic",
+      "displayName": "Temporal Raster Mosaic",
+      "category": "Raster",
+      "edition": "Pro",
+      "description": "Select raster mosaics by acquisition timestamp for time-series imagery."
+    },
+    {
+      "key": "raster.terrain-rgb",
+      "displayName": "Terrain-RGB Tiles",
+      "category": "Raster",
+      "edition": "Community",
+      "description": "Serve Terrain-RGB encoded elevation tiles."
+    },
+    {
+      "key": "routing.solve",
+      "displayName": "Network Routing",
+      "category": "Routing",
+      "edition": "Pro",
+      "description": "Solve multi-stop routes with the configured routing engine (MCP honua_solve_route and future gated surfaces)."
+    },
+    {
+      "key": "scene.bim-ingest",
+      "displayName": "CityGML/BIM Scene Ingest",
+      "category": "Scene",
+      "edition": "Enterprise",
+      "description": "Ingest CityGML building models into a servable Building Scene Layer 3D Tiles tileset with per-feature discipline / sub-layer semantics."
+    },
+    {
+      "key": "scene.catalog",
+      "displayName": "Scene Catalog",
+      "category": "Scene",
+      "edition": "Community",
+      "description": "Discover published 3D scene layers through the scene catalog surface."
+    },
+    {
+      "key": "scene.pointcloud-ingest",
+      "displayName": "Point Cloud Scene Ingest",
+      "category": "Scene",
+      "edition": "Enterprise",
+      "description": "Ingest LAS point clouds into a servable 3D Tiles point tileset preserving per-point classification, intensity, and RGB."
+    },
+    {
+      "key": "serve.3d-tiles-scene",
+      "displayName": "3D Tiles Scene Serving",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."
+    },
+    {
+      "key": "serve.elevation",
+      "displayName": "Elevation Query",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."
+    },
+    {
+      "key": "serve.geoservices-featureserver",
+      "displayName": "FeatureServer Query",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Query and read features through the Esri GeoServices FeatureServer surface (query, metadata, related records, domains, shared templates)."
+    },
+    {
+      "key": "serve.geoservices-geocodeserver",
+      "displayName": "GeocodeServer Discovery",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Discover GeocodeServer service and layer metadata. Forward/reverse/batch geocode execution is gated by the geocoding.* entitlement keys."
+    },
+    {
+      "key": "serve.geoservices-geometry-service",
+      "displayName": "Geometry Service",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the Esri GeometryServer surface."
+    },
+    {
+      "key": "serve.geoservices-imageserver",
+      "displayName": "ImageServer",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."
+    },
+    {
+      "key": "serve.geoservices-mapserver",
+      "displayName": "MapServer",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve map images, identify, and export through the Esri GeoServices MapServer surface."
+    },
+    {
+      "key": "serve.geoservices-root",
+      "displayName": "GeoServices REST Root",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Discover the GeoServices REST catalog root and service-directory info."
+    },
+    {
+      "key": "serve.geoservices-vectortileserver",
+      "displayName": "VectorTileServer",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve Esri vector tile services through the GeoServices VectorTileServer surface."
+    },
+    {
+      "key": "serve.i3s-scene",
+      "displayName": "I3S Scene Serving",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve published I3S scene layers Esri clients consume directly."
+    },
+    {
+      "key": "serve.odata",
+      "displayName": "OData v4",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Query and edit features through the OData v4 protocol surface."
+    },
+    {
+      "key": "serve.ogc-api-coverages",
+      "displayName": "OGC API Coverages",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve coverage data through OGC API - Coverages."
+    },
+    {
+      "key": "serve.ogc-api-edr",
+      "displayName": "OGC API - EDR",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Query environmental data resources through OGC API - Environmental Data Retrieval."
+    },
+    {
+      "key": "serve.ogc-api-features",
+      "displayName": "OGC API Features",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Read and query collections/items through OGC API - Features. Mutation is Community via the shared edit pipeline (distinct from the Pro FeatureServer write gate)."
+    },
+    {
+      "key": "serve.ogc-api-maps",
+      "displayName": "OGC API Maps",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Render maps through OGC API - Maps."
+    },
+    {
+      "key": "serve.ogc-api-records",
+      "displayName": "OGC API Records",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Search and retrieve catalog records through OGC API - Records."
+    },
+    {
+      "key": "serve.ogc-api-tiles",
+      "displayName": "OGC API Tiles",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve vector and raster tiles through OGC API - Tiles."
+    },
+    {
+      "key": "serve.sensorthings",
+      "displayName": "OGC SensorThings API",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Query sensor observation data through OGC SensorThings API v1.1."
+    },
+    {
+      "key": "serve.stac",
+      "displayName": "STAC API",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Search and browse spatiotemporal asset catalogs through the STAC API."
+    },
+    {
+      "key": "serve.vector-tiles",
+      "displayName": "Vector Tiles (MVT/TileJSON/PMTiles)",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve Mapbox Vector Tiles, TileJSON descriptors, and PMTiles archives."
+    },
+    {
+      "key": "serve.wcs",
+      "displayName": "WCS 2.0.1",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve coverage data through WCS 2.0.1."
+    },
+    {
+      "key": "serve.wfs",
+      "displayName": "WFS 2.0",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Query and read features through WFS 2.0."
+    },
+    {
+      "key": "serve.wms",
+      "displayName": "WMS 1.3",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve map images through WMS 1.3 (GetMap, GetFeatureInfo, GetCapabilities)."
+    },
+    {
+      "key": "serve.wmts",
+      "displayName": "WMTS 1.0",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Serve pre-rendered tile pyramids through WMTS 1.0."
+    },
+    {
+      "key": "staticmap.high-dpi",
+      "displayName": "High-DPI Static Maps",
+      "category": "StaticMap",
+      "edition": "Pro",
+      "description": "Render static map images at 150 and 300 DPI."
+    },
+    {
+      "key": "staticmap.large-dimensions",
+      "displayName": "Large Static Maps",
+      "category": "StaticMap",
+      "edition": "Pro",
+      "description": "Render static map images up to 4096x4096 pixels."
+    },
+    {
+      "key": "staticmap.rich-overlays",
+      "displayName": "Rich Static Map Overlays",
+      "category": "StaticMap",
+      "edition": "Pro",
+      "description": "Render up to 100 markers and 500 path vertices on static maps."
+    },
+    {
+      "key": "streaming.feature-subscriptions",
+      "displayName": "Real-Time Feature Streams",
+      "category": "Streaming",
+      "edition": "Pro",
+      "description": "Subscribe to WebSocket and SSE feature-change streams with filters and replay cursors."
+    },
+    {
+      "key": "styling.auto-suggest",
+      "displayName": "Auto-Cartographic Styling",
+      "category": "Styling",
+      "edition": "Pro",
+      "description": "Style suggestions based on field analysis and classification."
+    },
+    {
+      "key": "styling.defaults",
+      "displayName": "Smart Style Defaults",
+      "category": "Styling",
+      "edition": "Community",
+      "description": "Enhanced geometry-aware default styles for published layers."
+    },
+    {
+      "key": "styling.ogc-api-styles",
+      "displayName": "OGC API Styles",
+      "category": "Styling",
+      "edition": "Community",
+      "description": "Read and manage styles through OGC API - Styles (Part 1)."
+    },
+    {
+      "key": "temporal.animation-api",
+      "displayName": "Animation API Contract",
+      "category": "Temporal",
+      "edition": "Pro",
+      "description": "Capability flag for SDK/admin TimeSlider and playback integration."
+    },
+    {
+      "key": "temporal.extent-discovery",
+      "displayName": "Temporal Extent Discovery",
+      "category": "Temporal",
+      "edition": "Community",
+      "description": "Expose timeInfo, dedicated extent endpoint, and OGC time dimension metadata for time-aware layers."
+    },
+    {
+      "key": "temporal.filtering",
+      "displayName": "Temporal Query Filtering",
+      "category": "Temporal",
+      "edition": "Community",
+      "description": "Filter feature queries by a bounded or open-ended time range."
+    },
+    {
+      "key": "temporal.histogram",
+      "displayName": "Temporal Histogram (Date Bins)",
+      "category": "Temporal",
+      "edition": "Pro",
+      "description": "Count features per time bucket using calendar or fixed bins for animation frame planning."
+    },
+    {
+      "key": "temporal.time-series-tiles",
+      "displayName": "Time-Series Tile Filtering",
+      "category": "Temporal",
+      "edition": "Pro",
+      "description": "Filter vector tile requests to a bounded time range via the time parameter."
+    }
+  ],
+  "crosswalks": {
+    "esriAssess": [
+      {
+        "assessKey": "web-map",
+        "capability": "identity.portal-sharing",
+        "note": "Web Map/Web Scene portal items are discovered through the Portal Sharing facade."
+      },
+      {
+        "assessKey": "feature-service",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "assessKey": "map-service",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "assessKey": "vector-tiles",
+        "capability": "serve.geoservices-vectortileserver"
+      },
+      {
+        "assessKey": "editing",
+        "capability": "editing.featureserver-edits"
+      },
+      {
+        "assessKey": "image-service",
+        "capability": "serve.geoservices-imageserver"
+      },
+      {
+        "assessKey": "scene-service",
+        "capability": "serve.i3s-scene",
+        "note": "Esri SceneServer/Scene Layer Package fidelity maps to Honua's I3S scene serving; 3D Tiles (serve.3d-tiles-scene) is the OGC-native alternative."
+      },
+      {
+        "assessKey": "survey123",
+        "capability": "fieldops.forms",
+        "note": "Form-logic re-authoring boundary; submissions migrate as feature data, the Survey123 form runtime does not."
+      },
+      {
+        "assessKey": "dashboards-apps",
+        "capability": "collaboration.map-sessions",
+        "note": "Best-fit approximation only: dashboards/configurable apps have no direct Honua analog and are rebuilt on Honua app surfaces per the assess registry's own boundary text."
+      },
+      {
+        "assessKey": "geocoding",
+        "capability": "geocoding.forward",
+        "note": "Represents the geocoding.* key family (forward/reverse/batch/failover)."
+      },
+      {
+        "assessKey": "geoprocessing",
+        "capability": "process.geoprocessing"
+      }
+    ],
+    "interop": [
+      {
+        "clientLane": "js",
+        "protocol": "featureserver",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "mapserver",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "ogc-features",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "ogc-maps",
+        "capability": "serve.ogc-api-maps"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "mvt",
+        "capability": "serve.vector-tiles"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "wfs",
+        "capability": "serve.wfs"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "wms",
+        "capability": "serve.wms"
+      },
+      {
+        "clientLane": "js",
+        "protocol": "wmts",
+        "capability": "serve.wmts"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "wms",
+        "capability": "serve.wms"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "wmts",
+        "capability": "serve.wmts"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "ogc-tiles",
+        "capability": "serve.ogc-api-tiles"
+      },
+      {
+        "clientLane": "js-cesium",
+        "protocol": "ogc-maps",
+        "capability": "serve.ogc-api-maps"
+      },
+      {
+        "clientLane": "desktop-qgis",
+        "protocol": "ogc-features",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "clientLane": "desktop-qgis",
+        "protocol": "wfs",
+        "capability": "serve.wfs"
+      },
+      {
+        "clientLane": "desktop-qgis",
+        "protocol": "wms",
+        "capability": "serve.wms"
+      },
+      {
+        "clientLane": "desktop-qgis",
+        "protocol": "wmts",
+        "capability": "serve.wmts"
+      },
+      {
+        "clientLane": "desktop-arcgis",
+        "protocol": "featureserver",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "clientLane": "desktop-arcgis",
+        "protocol": "mapserver",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "clientLane": "arcgis-stub",
+        "protocol": "featureserver",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "clientLane": "arcgis-stub",
+        "protocol": "mapserver",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "clientLane": "cli",
+        "protocol": "featureserver",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "clientLane": "cli",
+        "protocol": "ogc-features",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "clientLane": "cli",
+        "protocol": "wfs",
+        "capability": "serve.wfs"
+      },
+      {
+        "clientLane": "cli",
+        "protocol": "odata",
+        "capability": "serve.odata"
+      },
+      {
+        "clientLane": "cli",
+        "protocol": "admin-api",
+        "capability": "admin.control-plane"
+      },
+      {
+        "clientLane": "ci-desktop",
+        "protocol": "featureserver",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "clientLane": "ci-desktop",
+        "protocol": "ogc-features",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "clientLane": "ci-desktop",
+        "protocol": "mapserver",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "clientLane": "ci-bi",
+        "protocol": "odata",
+        "capability": "serve.odata"
+      },
+      {
+        "clientLane": "bi-powerbi",
+        "protocol": "odata",
+        "capability": "serve.odata"
+      },
+      {
+        "clientLane": "bi-excel",
+        "protocol": "odata",
+        "capability": "serve.odata"
+      }
+    ],
+    "esriCompatMatrix": [
+      {
+        "serviceId": "feature-server",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "serviceId": "map-server",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "serviceId": "image-server",
+        "capability": "serve.geoservices-imageserver"
+      },
+      {
+        "serviceId": "vector-tile-server",
+        "capability": "serve.geoservices-vectortileserver"
+      },
+      {
+        "serviceId": "geometry-service",
+        "capability": "serve.geoservices-geometry-service"
+      },
+      {
+        "serviceId": "gp-server",
+        "capability": "process.geoprocessing"
+      },
+      {
+        "serviceId": "geocode-server",
+        "capability": "serve.geoservices-geocodeserver"
+      },
+      {
+        "serviceId": "na-server",
+        "capability": "routing.solve"
+      },
+      {
+        "serviceId": "version-management-server",
+        "capability": "editing.branch-versioning"
+      },
+      {
+        "serviceId": "geoservices-catalog",
+        "capability": "serve.geoservices-root"
+      },
+      {
+        "serviceId": "portal-sharing",
+        "capability": "identity.portal-sharing"
+      }
+    ],
+    "geobench": [
+      {
+        "scenario": "attribute-filter",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "scenario": "spatial-bbox",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "scenario": "concurrent",
+        "capability": "serve.ogc-api-features"
+      },
+      {
+        "scenario": "wfs-getfeature",
+        "capability": "serve.wfs"
+      },
+      {
+        "scenario": "wfs-filtered",
+        "capability": "serve.wfs"
+      },
+      {
+        "scenario": "wms-getmap",
+        "capability": "serve.wms"
+      },
+      {
+        "scenario": "wms-reprojection",
+        "capability": "serve.wms"
+      },
+      {
+        "scenario": "wms-getfeatureinfo",
+        "capability": "serve.wms"
+      },
+      {
+        "scenario": "wms-filtered",
+        "capability": "serve.wms"
+      },
+      {
+        "scenario": "wmts",
+        "capability": "serve.wmts"
+      },
+      {
+        "scenario": "wcs",
+        "capability": "serve.wcs"
+      },
+      {
+        "scenario": "geoservices-query",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "scenario": "geoservices-query-diagnostics",
+        "capability": "serve.geoservices-featureserver"
+      },
+      {
+        "scenario": "geoservices-export",
+        "capability": "serve.geoservices-mapserver"
+      },
+      {
+        "scenario": "geoservices-identify",
+        "capability": "serve.geoservices-mapserver"
+      }
+    ]
+  }
+}
