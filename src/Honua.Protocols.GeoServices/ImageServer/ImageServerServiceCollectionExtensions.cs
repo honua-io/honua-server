@@ -72,6 +72,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerRasterMetadataHandler>();
         services.AddScoped<ImageServerCoordinateMetadataHandler>();
         services.AddScoped<ImageServerProjectHandler>();
+        services.AddScoped<ImageServerKmlHandler>();
         services.AddScoped<ImageServerComputeTiePointsHandler>();
         services.AddScoped<ImageServerCalculateVolumeHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
