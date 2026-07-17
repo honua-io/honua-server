@@ -292,6 +292,11 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Io, ModuleRole.Geometry),
         (ModuleRole.Io, ModuleRole.Hosting),
         (ModuleRole.Io, ModuleRole.ServiceDefaults),
+        // Io consumes the lean plugin contract surface to serve plugin-contributed feature output
+        // formats from the export endpoint (issue #2856, ADR-0066) — the same allowance protocol
+        // assemblies have for IPluginEditPipeline. It must NOT couple to the host-side runtime
+        // (ModuleRole.Plugins), which only Server composes.
+        (ModuleRole.Io, ModuleRole.PluginsAbstractions),
 
         // Import: the data-ingest / migration HTTP surface (Migration endpoints
         // + job managers, file-import upload plumbing, raster-import endpoints).

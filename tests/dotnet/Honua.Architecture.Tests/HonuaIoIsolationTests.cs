@@ -32,6 +32,12 @@ public sealed class HonuaIoIsolationTests
         "Honua.Geometry",
         "Honua.Hosting",
         "Honua.ServiceDefaults",
+        // Lean plugin contract surface (issue #2856, ADR-0066): the export endpoint consumes
+        // IFeatureOutputFormatRegistry to serve plugin-contributed feature output formats and
+        // expresses the built-in CSV writer as an IFeatureOutputFormat. This is the dependency-
+        // minimal Abstractions package (never the host-side Honua.Plugins runtime), mirroring how
+        // protocol assemblies depend on IPluginEditPipeline.
+        "Honua.Plugins.Abstractions",
     };
 
     [ArchitectureTest]
