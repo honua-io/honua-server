@@ -71,7 +71,16 @@ public sealed class ImageServerKmlTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/99999/ImageServer/kml/image.kmz");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // GeoServices convention (PA-070/PA-117): the transport is HTTP 200; the not-found
+            // code lives in the Esri error envelope. The unknown layer must NOT fabricate a KMZ.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType
+                .Should().NotBe("application/vnd.google-earth.kmz");
+
+            using var json = System.Text.Json.JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                .Should().Be(404);
         }
         finally
         {
