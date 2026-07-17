@@ -12,7 +12,7 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// Projects validated operations-toolset descriptors from the <see cref="IOperationCatalog"/>
 /// into first-class, typed, policy-governed MCP tools (#2483, ADR-0056 Increment 4).
 /// A descriptor present in the catalog is "published"; this source turns each one into a
-/// <see cref="PublishedOperationTool"/> that the <see cref="McpOperatorSurface"/> merges into
+/// <see cref="PublishedOperationTool"/> that the <see cref="McpDataAccessSurface"/> merges into
 /// <c>tools/list</c> and <c>tools/call</c>.
 /// </summary>
 /// <remarks>

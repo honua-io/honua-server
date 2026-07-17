@@ -382,10 +382,10 @@ public sealed class McpIngestDatasetToolTests
 
     private async Task<McpJsonRpcResponse?> DispatchAsync(ServiceProvider services, string argumentsJson)
     {
-        var surface = new McpOperatorSurface(
+        var surface = new McpDataAccessSurface(
             [new IngestDatasetTool(_jobService, NullLogger<IngestDatasetTool>.Instance)],
             [],
-            NullLogger<McpOperatorSurface>.Instance);
+            NullLogger<McpDataAccessSurface>.Instance);
 
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services;
