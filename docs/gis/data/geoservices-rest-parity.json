@@ -1600,7 +1600,8 @@
         "image coordinate system transformation warps for project (composed with datumTransformation)",
         "spatial WHERE pushdown for raster catalog query (provider-side)",
         "transformed multidimensional/Zarr slice exports (reprojection, JPEG/TIFF, interpolation, renderingRule) via exportImage and classic WCS GetCoverage",
-        "richer image child resources (imageSupportData, thumbnail, rasterFile)"
+        "richer image child resources (imageSupportData, thumbnail, rasterFile)",
+        "KML resource (kml/image.kmz GroundOverlay over the WGS84 service extent)"
       ],
       "knownGaps": [
         "shadow-based and photogrammetric height and the remaining 3D mensuration operations (DEM-backed height is supported)",
@@ -1623,6 +1624,7 @@
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
+          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerKmlHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
@@ -1648,6 +1650,7 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerAnalyzeHandlerTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerKmlTests.cs",
           "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
         ]
       },
@@ -1741,6 +1744,21 @@
               "implemented"
             ],
             "notes": "Returns the Esri key-properties document for the primary raster, including BandProperties and cell-size metadata, from the shared raster store; non-applicable cases return spec-shaped empty documents."
+          },
+          {
+            "name": "KML",
+            "status": "implemented",
+            "esriPaths": [
+              "/ImageServer/kml/image.kmz"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{id}/ImageServer/kml/image.kmz",
+              "GET /rest/services/{serviceId}/ImageServer/kml/image.kmz"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Returns an OGC KML 2.2 KMZ (doc.kml) carrying a single GroundOverlay whose Icon href references the service exportImage operation over the WGS84 service extent and whose LatLonBox is that extent, mirroring the ArcGIS ImageServer KML resource. The resource reads only the aggregate catalog extent (reprojected to WGS84 via the shared transform service when the native SR is not geographic) and renders no pixels itself; the overlay image is produced on demand by the shared export pipeline when a KML client resolves the icon href. The self-referential exportImage href preserves whichever service addressing form (numeric-layer id or service name) the request used."
           },
           {
             "name": "Multidimensional Info and Slices",
