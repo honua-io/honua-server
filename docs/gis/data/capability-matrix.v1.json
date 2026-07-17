@@ -1,0 +1,2329 @@
+{
+  "unjoinedCiteSuites": [
+    "GML 3.2",
+    "GeoPackage 1.2",
+    "KML 2.2"
+  ],
+  "schemaVersion": "1.0.0",
+  "generator": "scripts/ci/generate-capability-matrix.py",
+  "trackingIssue": "#2893",
+  "sourceArtifacts": [
+    "docs/gis/data/feature-catalog.json",
+    "docs/cite-status.md",
+    "docs/gis/data/geoservices-rest-parity.json",
+    "docs/gis/data/capability-keys.v1.json",
+    "docs/gis/data/capability-no-surface-allowlist.v1.json"
+  ],
+  "capabilities": [
+    {
+      "key": "admin.control-plane",
+      "displayName": "Admin Control Plane",
+      "category": "ControlPlane",
+      "edition": "Community",
+      "entryCount": 365,
+      "provingTestCount": 947,
+      "maturity": {
+        "implemented": 365
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "cli",
+          "protocol": "admin-api"
+        }
+      ],
+      "geobench": []
+    },
+    {
+      "key": "ai.agent-operations",
+      "displayName": "Agent Operations (Validation Layer)",
+      "category": "AI",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "ai.agent-operations",
+        "reasonCode": "cross-cutting-gate",
+        "reason": "Validation-layer gate applied across several existing MCP/spec routes rather than a distinct route of its own; see ai.spec-apply, ai.grounding, ai.workflow-generation for the gated route surfaces.",
+        "category": "Ai",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ai.approval-workflows",
+      "displayName": "Agent Approval Workflows",
+      "category": "AI",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "ai.approval-workflows",
+        "reasonCode": "cross-cutting-gate",
+        "reason": "Human-in-the-loop approval policy layered over ai.agent-operations routes; no distinct route of its own.",
+        "category": "Ai",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ai.grounding",
+      "displayName": "Spec Grounding Mutations",
+      "category": "AI",
+      "edition": "Pro",
+      "entryCount": 2,
+      "provingTestCount": 11,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ai.mcp-discovery",
+      "displayName": "MCP Discovery & Query",
+      "category": "AI",
+      "edition": "Community",
+      "entryCount": 4,
+      "provingTestCount": 65,
+      "maturity": {
+        "implemented": 4
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ai.spec-apply",
+      "displayName": "Spec Apply Execution",
+      "category": "AI",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "ai.spec-apply",
+        "reasonCode": "sdk-only",
+        "reason": "Spec-apply execution is invoked via MCP tool call and internal job submission, not a distinct catalogued HTTP route in this slice.",
+        "category": "Ai",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ai.spec-artifacts",
+      "displayName": "Spec Artifact Retrieval",
+      "category": "AI",
+      "edition": "Community",
+      "entryCount": 5,
+      "provingTestCount": 36,
+      "maturity": {
+        "implemented": 5
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ai.workflow-generation",
+      "displayName": "AI Workflow and Content Generation",
+      "category": "AI",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "ai.workflow-generation",
+        "reasonCode": "sdk-only",
+        "reason": "Workflow/content generation is invoked via MCP tool call, not a distinct catalogued HTTP route in this slice.",
+        "category": "Ai",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "alerts.dwell",
+      "displayName": "Dwell Trigger",
+      "category": "Alerts",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "alerts.dwell",
+        "reasonCode": "config-flag",
+        "reason": "Dwell is a trigger-type value on the same alert-rule admin routes as alerts.enter-exit (admin.control-plane), not a distinct route.",
+        "category": "Alerts",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "alerts.enter-exit",
+      "displayName": "Enter/Exit Geofence Triggers",
+      "category": "Alerts",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "alerts.enter-exit",
+        "reasonCode": "config-flag",
+        "reason": "Enter/exit is a trigger-type value on the same alert-rule admin routes as alerts.evaluation, not a distinct route.",
+        "category": "Alerts",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "alerts.evaluation",
+      "displayName": "Alert Evaluation Engine",
+      "category": "Alerts",
+      "edition": "Pro",
+      "entryCount": 18,
+      "provingTestCount": 39,
+      "maturity": {
+        "implemented": 18
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "alerts.threshold",
+      "displayName": "Threshold Trigger",
+      "category": "Alerts",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "alerts.threshold",
+        "reasonCode": "config-flag",
+        "reason": "Threshold is a trigger-type value on the same alert-rule admin routes as alerts.evaluation, not a distinct route.",
+        "category": "Alerts",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.buffer-aggregate",
+      "displayName": "Buffer Aggregate",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 10,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.clustering",
+      "displayName": "Spatial Clustering",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 16,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.content",
+      "displayName": "Analysis Artifact Content",
+      "category": "Analytics",
+      "edition": "Community",
+      "entryCount": 15,
+      "provingTestCount": 23,
+      "maturity": {
+        "implemented": 15
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.density",
+      "displayName": "Density Binning",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 8,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.line-of-sight",
+      "displayName": "Line of Sight",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 4,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.reporting",
+      "displayName": "Analysis Reporting",
+      "category": "Analytics",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 3,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.slice",
+      "displayName": "Slice/Volumetric Analysis",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 3,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.spatial-join",
+      "displayName": "Spatial Join",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 10,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.sun-shadow",
+      "displayName": "Sun/Shadow Analysis",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 4,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "analytics.viewshed",
+      "displayName": "Viewshed",
+      "category": "Analytics",
+      "edition": "Pro",
+      "entryCount": 1,
+      "provingTestCount": 3,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "caching.output-cache",
+      "displayName": "Output Caching",
+      "category": "Caching",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "caching.output-cache",
+        "reasonCode": "config-flag",
+        "reason": "Output caching is a server configuration setting (Cache:ResponseCachingEnabled), not a distinct route.",
+        "category": "Caching",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "caching.redis",
+      "displayName": "Redis Distributed Cache",
+      "category": "Caching",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "caching.redis",
+        "reasonCode": "config-flag",
+        "reason": "Redis distributed cache is a deployment configuration setting, not a distinct route.",
+        "category": "Caching",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.aws-sns",
+      "displayName": "AWS SNS Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.aws-sns",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.azure-eventgrid",
+      "displayName": "Azure Event Grid Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.azure-eventgrid",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.digest",
+      "displayName": "Digest Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.digest",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.email",
+      "displayName": "Email Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.email",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.slack",
+      "displayName": "Slack Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.slack",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.teams",
+      "displayName": "Microsoft Teams Delivery",
+      "category": "Channels",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.teams",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "channels.webhook",
+      "displayName": "Webhook Delivery",
+      "category": "Channels",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "channels.webhook",
+        "reasonCode": "config-flag",
+        "reason": "Delivery channel selection under the generic alerts/channels admin routes (admin.control-plane); no per-channel route.",
+        "category": "Channels",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "collaboration.map-sessions",
+      "displayName": "Map Collaboration Sessions",
+      "category": "Collaboration",
+      "edition": "Community",
+      "entryCount": 7,
+      "provingTestCount": 17,
+      "maturity": {
+        "implemented": 7
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [
+        "dashboards-apps"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "demo.showcase",
+      "displayName": "Demo Showcase Surfaces",
+      "category": "Demo",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 3,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "discovery.capability-manifest",
+      "displayName": "Capability Manifest",
+      "category": "Discovery",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 11,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "dr.backup-automation",
+      "displayName": "Backup Automation",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "dr.backup-automation",
+        "reasonCode": "ops-background-job",
+        "reason": "Scheduled backup automation is an operational background job, not an HTTP route.",
+        "category": "DisasterRecovery",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "dr.cache-backup",
+      "displayName": "Cache State Backup",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "dr.cache-backup",
+        "reasonCode": "ops-background-job",
+        "reason": "Cache-state backup/restore is an operational background job, not an HTTP route.",
+        "category": "DisasterRecovery",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "dr.failover",
+      "displayName": "Failover Playbooks",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "dr.failover",
+        "reasonCode": "ops-background-job",
+        "reason": "Failover playbooks are operational health-check-driven automation, not an HTTP route.",
+        "category": "DisasterRecovery",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "dr.rto-rpo-reporting",
+      "displayName": "RTO/RPO Reporting",
+      "category": "DisasterRecovery",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "dr.rto-rpo-reporting",
+        "reasonCode": "ops-background-job",
+        "reason": "RTO/RPO objective tracking is a reporting computation surfaced through the operational status surface (ops.observability), not a distinct route.",
+        "category": "DisasterRecovery",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "editing.branch-versioning",
+      "displayName": "Branch Versioning",
+      "category": "Editing",
+      "edition": "Enterprise",
+      "entryCount": 15,
+      "provingTestCount": 27,
+      "maturity": {
+        "experimental": 15
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "version-management-server",
+          "displayName": "VersionManagementServer (branch versioning)",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "editing.featureserver-edits",
+      "displayName": "FeatureServer Editing",
+      "category": "Editing",
+      "edition": "Pro",
+      "entryCount": 7,
+      "provingTestCount": 82,
+      "maturity": {
+        "implemented": 7
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [
+        "editing"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "enrichment.datasets",
+      "displayName": "Data Enrichment Datasets",
+      "category": "Enrichment",
+      "edition": "Community",
+      "entryCount": 7,
+      "provingTestCount": 22,
+      "maturity": {
+        "implemented": 7
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "fieldops.forms",
+      "displayName": "Field Collection Forms",
+      "category": "FieldOps",
+      "edition": "Community",
+      "entryCount": 22,
+      "provingTestCount": 37,
+      "maturity": {
+        "implemented": 22
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [
+        "survey123"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "fieldops.offline-sync",
+      "displayName": "Offline/Field Sync",
+      "category": "FieldOps",
+      "edition": "Pro",
+      "entryCount": 18,
+      "provingTestCount": 126,
+      "maturity": {
+        "experimental": 5,
+        "implemented": 13
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "geocoding.batch",
+      "displayName": "Batch Geocoding",
+      "category": "Geocoding",
+      "edition": "Enterprise",
+      "entryCount": 3,
+      "provingTestCount": 14,
+      "maturity": {
+        "implemented": 3
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "geocoding.failover",
+      "displayName": "Provider Failover",
+      "category": "Geocoding",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "geocoding.failover",
+        "reasonCode": "config-flag",
+        "reason": "Provider failover is a configuration behavior of the geocoding.forward/reverse routes, not a distinct route.",
+        "category": "Geocoding",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "geocoding.forward",
+      "displayName": "Forward Geocoding",
+      "category": "Geocoding",
+      "edition": "Pro",
+      "entryCount": 9,
+      "provingTestCount": 45,
+      "maturity": {
+        "implemented": 9
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [
+        "geocoding"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "geocoding.reverse",
+      "displayName": "Reverse Geocoding",
+      "category": "Geocoding",
+      "edition": "Pro",
+      "entryCount": 3,
+      "provingTestCount": 12,
+      "maturity": {
+        "implemented": 3
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.claims-mapping",
+      "displayName": "Claims Mapping",
+      "category": "Identity",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "identity.claims-mapping",
+        "reasonCode": "config-flag",
+        "reason": "Claims-to-role mapping is an OIDC configuration setting under identity.oidc admin routes, not a distinct route.",
+        "category": "Identity",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.mtls-client-certificate",
+      "displayName": "mTLS Client-Certificate Authentication",
+      "category": "Identity",
+      "edition": "Enterprise",
+      "entryCount": 13,
+      "provingTestCount": 23,
+      "maturity": {
+        "implemented": 13
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.oidc",
+      "displayName": "OIDC Authentication",
+      "category": "Identity",
+      "edition": "Pro",
+      "entryCount": 6,
+      "provingTestCount": 7,
+      "maturity": {
+        "implemented": 6
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.oidc-multi-provider",
+      "displayName": "OIDC Multi-Provider SSO",
+      "category": "Identity",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "identity.oidc-multi-provider",
+        "reasonCode": "config-flag",
+        "reason": "Multi-provider configuration is a setting on the identity.oidc admin routes, not a distinct route.",
+        "category": "Identity",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.portal-sharing",
+      "displayName": "ArcGIS Portal Sharing Read Surface",
+      "category": "Identity",
+      "edition": "Community",
+      "entryCount": 18,
+      "provingTestCount": 58,
+      "maturity": {
+        "implemented": 18
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "portal-sharing",
+          "displayName": "Portal Sharing",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [
+        "web-map"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.portal-token",
+      "displayName": "ArcGIS Portal Token Issuance",
+      "category": "Identity",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 14,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.saml",
+      "displayName": "SAML 2.0 Authentication",
+      "category": "Identity",
+      "edition": "Community",
+      "entryCount": 3,
+      "provingTestCount": 10,
+      "maturity": {
+        "implemented": 3
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "identity.scim",
+      "displayName": "SCIM 2.0 Provisioning",
+      "category": "Identity",
+      "edition": "Community",
+      "entryCount": 17,
+      "provingTestCount": 22,
+      "maturity": {
+        "implemented": 17
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "import.file",
+      "displayName": "File Import",
+      "category": "Import",
+      "edition": "Community",
+      "entryCount": 73,
+      "provingTestCount": 181,
+      "maturity": {
+        "implemented": 73
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "import.geoserver",
+      "displayName": "GeoServer Import",
+      "category": "Import",
+      "edition": "Enterprise",
+      "entryCount": 5,
+      "provingTestCount": 16,
+      "maturity": {
+        "implemented": 5
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "import.geoservices",
+      "displayName": "GeoServices Import",
+      "category": "Import",
+      "edition": "Enterprise",
+      "entryCount": 10,
+      "provingTestCount": 41,
+      "maturity": {
+        "implemented": 10
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ops.health",
+      "displayName": "Health Checks",
+      "category": "Ops",
+      "edition": "Community",
+      "entryCount": 15,
+      "provingTestCount": 54,
+      "maturity": {
+        "implemented": 15
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ops.observability",
+      "displayName": "Observability",
+      "category": "Ops",
+      "edition": "Community",
+      "entryCount": 16,
+      "provingTestCount": 33,
+      "maturity": {
+        "implemented": 16
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "plugin.sdk",
+      "displayName": "Plugin/Extension SDK",
+      "category": "Extensibility",
+      "edition": "Enterprise",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "plugin.sdk",
+        "reasonCode": "sdk-only",
+        "reason": "Server plugin/extension SDK is a compile-time, AOT-safe registration surface, not an HTTP route.",
+        "category": "Extensibility",
+        "edition": "Enterprise"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "printing.layout-templates",
+      "displayName": "Print Layout Templates",
+      "category": "Printing",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "printing.layout-templates",
+        "reasonCode": "config-flag",
+        "reason": "Layout template selection is a parameter on the printing.pdf-output GPServer route, not a distinct route.",
+        "category": "Printing",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "printing.pdf-output",
+      "displayName": "PDF Print Output",
+      "category": "Printing",
+      "edition": "Pro",
+      "entryCount": 8,
+      "provingTestCount": 22,
+      "maturity": {
+        "implemented": 8
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "process.geoprocessing",
+      "displayName": "Geoprocessing Task Execution",
+      "category": "Process",
+      "edition": "Community",
+      "entryCount": 13,
+      "provingTestCount": 75,
+      "maturity": {
+        "implemented": 13
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "gp-server",
+          "displayName": "GPServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [
+        "geoprocessing"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "process.ogc-api-processes",
+      "displayName": "OGC API Processes",
+      "category": "Process",
+      "edition": "Community",
+      "entryCount": 10,
+      "provingTestCount": 108,
+      "maturity": {
+        "implemented": 10
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "raster.cloud-cog-serving",
+      "displayName": "COG Serving",
+      "category": "Raster",
+      "edition": "Pro",
+      "entryCount": 5,
+      "provingTestCount": 11,
+      "maturity": {
+        "implemented": 5
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "raster.cloud-storage-config",
+      "displayName": "Cloud Storage Configuration",
+      "category": "Raster",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "raster.cloud-storage-config",
+        "reasonCode": "config-flag",
+        "reason": "Cloud storage connection configuration is an admin setting under raster.cloud-cog-serving, not a distinct route.",
+        "category": "Raster",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "raster.multidim-coverage",
+      "displayName": "Multidimensional Coverage (NetCDF/HDF5/Zarr)",
+      "category": "Raster",
+      "edition": "Pro",
+      "entryCount": 12,
+      "provingTestCount": 22,
+      "maturity": {
+        "implemented": 12
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "raster.temporal-mosaic",
+      "displayName": "Temporal Raster Mosaic",
+      "category": "Raster",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "raster.temporal-mosaic",
+        "reasonCode": "config-flag",
+        "reason": "Temporal mosaic selection is a query parameter on ImageServer/raster serve routes (serve.geoservices-imageserver), not a distinct route.",
+        "category": "Raster",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "raster.terrain-rgb",
+      "displayName": "Terrain-RGB Tiles",
+      "category": "Raster",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 14,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "routing.solve",
+      "displayName": "Network Routing",
+      "category": "Routing",
+      "edition": "Pro",
+      "entryCount": 19,
+      "provingTestCount": 75,
+      "maturity": {
+        "implemented": 19
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "na-server",
+          "displayName": "NAServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "scene.bim-ingest",
+      "displayName": "CityGML/BIM Scene Ingest",
+      "category": "Scene",
+      "edition": "Enterprise",
+      "entryCount": 1,
+      "provingTestCount": 6,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "scene.catalog",
+      "displayName": "Scene Catalog",
+      "category": "Scene",
+      "edition": "Community",
+      "entryCount": 3,
+      "provingTestCount": 4,
+      "maturity": {
+        "implemented": 3
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "scene.pointcloud-ingest",
+      "displayName": "Point Cloud Scene Ingest",
+      "category": "Scene",
+      "edition": "Enterprise",
+      "entryCount": 1,
+      "provingTestCount": 10,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.3d-tiles-scene",
+      "displayName": "3D Tiles Scene Serving",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 12,
+      "provingTestCount": 76,
+      "maturity": {
+        "implemented": 12
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.elevation",
+      "displayName": "Elevation Query",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 28,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.geoservices-featureserver",
+      "displayName": "FeatureServer Query",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 49,
+      "provingTestCount": 415,
+      "maturity": {
+        "implemented": 49
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "feature-server",
+          "displayName": "FeatureServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [
+        "feature-service"
+      ],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "featureserver"
+        },
+        {
+          "clientLane": "desktop-arcgis",
+          "protocol": "featureserver"
+        },
+        {
+          "clientLane": "arcgis-stub",
+          "protocol": "featureserver"
+        },
+        {
+          "clientLane": "cli",
+          "protocol": "featureserver"
+        },
+        {
+          "clientLane": "ci-desktop",
+          "protocol": "featureserver"
+        }
+      ],
+      "geobench": [
+        "geoservices-query",
+        "geoservices-query-diagnostics"
+      ]
+    },
+    {
+      "key": "serve.geoservices-geocodeserver",
+      "displayName": "GeocodeServer Discovery",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 4,
+      "provingTestCount": 10,
+      "maturity": {
+        "implemented": 4
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "geocode-server",
+          "displayName": "GeocodeServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.geoservices-geometry-service",
+      "displayName": "Geometry Service",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 48,
+      "provingTestCount": 115,
+      "maturity": {
+        "implemented": 48
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "geometry-service",
+          "displayName": "Geometry Service",
+          "parity": "complete"
+        }
+      ],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.geoservices-imageserver",
+      "displayName": "ImageServer",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 139,
+      "provingTestCount": 331,
+      "maturity": {
+        "implemented": 139
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "image-server",
+          "displayName": "ImageServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [
+        "image-service"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.geoservices-mapserver",
+      "displayName": "MapServer",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 45,
+      "provingTestCount": 307,
+      "maturity": {
+        "implemented": 45
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "map-server",
+          "displayName": "MapServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [
+        "map-service"
+      ],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "mapserver"
+        },
+        {
+          "clientLane": "desktop-arcgis",
+          "protocol": "mapserver"
+        },
+        {
+          "clientLane": "arcgis-stub",
+          "protocol": "mapserver"
+        },
+        {
+          "clientLane": "ci-desktop",
+          "protocol": "mapserver"
+        }
+      ],
+      "geobench": [
+        "geoservices-export",
+        "geoservices-identify"
+      ]
+    },
+    {
+      "key": "serve.geoservices-root",
+      "displayName": "GeoServices REST Root",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 14,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "geoservices-catalog",
+          "displayName": "Catalog / REST Info",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.geoservices-vectortileserver",
+      "displayName": "VectorTileServer",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 9,
+      "provingTestCount": 25,
+      "maturity": {
+        "implemented": 9
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [
+        {
+          "serviceId": "vector-tile-server",
+          "displayName": "VectorTileServer",
+          "parity": "partial"
+        }
+      ],
+      "esriAssess": [
+        "vector-tiles"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.i3s-scene",
+      "displayName": "I3S Scene Serving",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 6,
+      "provingTestCount": 25,
+      "maturity": {
+        "implemented": 6
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [
+        "scene-service"
+      ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.odata",
+      "displayName": "OData v4",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 30,
+      "provingTestCount": 181,
+      "maturity": {
+        "implemented": 30
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "cli",
+          "protocol": "odata"
+        },
+        {
+          "clientLane": "ci-bi",
+          "protocol": "odata"
+        },
+        {
+          "clientLane": "bi-powerbi",
+          "protocol": "odata"
+        },
+        {
+          "clientLane": "bi-excel",
+          "protocol": "odata"
+        }
+      ],
+      "geobench": []
+    },
+    {
+      "key": "serve.ogc-api-coverages",
+      "displayName": "OGC API Coverages",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 8,
+      "provingTestCount": 13,
+      "maturity": {
+        "implemented": 8
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.ogc-api-edr",
+      "displayName": "OGC API - EDR",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 6,
+      "provingTestCount": 9,
+      "maturity": {
+        "implemented": 6
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.ogc-api-features",
+      "displayName": "OGC API Features",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 21,
+      "provingTestCount": 242,
+      "maturity": {
+        "implemented": 21
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "OGC API Features 1.0",
+          "profile": "default",
+          "passed": 137,
+          "total": 137,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "ogc-features"
+        },
+        {
+          "clientLane": "desktop-qgis",
+          "protocol": "ogc-features"
+        },
+        {
+          "clientLane": "cli",
+          "protocol": "ogc-features"
+        },
+        {
+          "clientLane": "ci-desktop",
+          "protocol": "ogc-features"
+        }
+      ],
+      "geobench": [
+        "attribute-filter",
+        "spatial-bbox",
+        "concurrent"
+      ]
+    },
+    {
+      "key": "serve.ogc-api-maps",
+      "displayName": "OGC API Maps",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 10,
+      "provingTestCount": 116,
+      "maturity": {
+        "implemented": 10
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "ogc-maps"
+        },
+        {
+          "clientLane": "js-cesium",
+          "protocol": "ogc-maps"
+        }
+      ],
+      "geobench": []
+    },
+    {
+      "key": "serve.ogc-api-records",
+      "displayName": "OGC API Records",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 6,
+      "provingTestCount": 11,
+      "maturity": {
+        "implemented": 6
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.ogc-api-tiles",
+      "displayName": "OGC API Tiles",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 13,
+      "provingTestCount": 61,
+      "maturity": {
+        "implemented": 13
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "OGC API Tiles 1.0",
+          "profile": "default",
+          "passed": 16,
+          "total": 16,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js-cesium",
+          "protocol": "ogc-tiles"
+        }
+      ],
+      "geobench": []
+    },
+    {
+      "key": "serve.sensorthings",
+      "displayName": "OGC SensorThings API",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 15,
+      "provingTestCount": 29,
+      "maturity": {
+        "implemented": 15
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.stac",
+      "displayName": "STAC API",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 12,
+      "provingTestCount": 79,
+      "maturity": {
+        "implemented": 12
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.vector-tiles",
+      "displayName": "Vector Tiles (MVT/TileJSON/PMTiles)",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 7,
+      "provingTestCount": 35,
+      "maturity": {
+        "implemented": 7
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "mvt"
+        }
+      ],
+      "geobench": []
+    },
+    {
+      "key": "serve.wcs",
+      "displayName": "WCS 2.0.1",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 1,
+      "provingTestCount": 5,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "WCS 2.0",
+          "profile": "core",
+          "passed": 82,
+          "total": 82,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": [
+        "wcs"
+      ]
+    },
+    {
+      "key": "serve.wfs",
+      "displayName": "WFS 2.0",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 2,
+      "provingTestCount": 109,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "WFS 1.0",
+          "profile": "basic",
+          "passed": 162,
+          "total": 162,
+          "passRate": 100.0
+        },
+        {
+          "suite": "WFS 1.1",
+          "profile": "basic",
+          "passed": 39,
+          "total": 39,
+          "passRate": 100.0
+        },
+        {
+          "suite": "WFS 2.0",
+          "profile": "basic",
+          "passed": 167,
+          "total": 167,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "wfs"
+        },
+        {
+          "clientLane": "desktop-qgis",
+          "protocol": "wfs"
+        },
+        {
+          "clientLane": "cli",
+          "protocol": "wfs"
+        }
+      ],
+      "geobench": [
+        "wfs-getfeature",
+        "wfs-filtered"
+      ]
+    },
+    {
+      "key": "serve.wms",
+      "displayName": "WMS 1.3",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 1,
+      "provingTestCount": 4,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "WMS 1.3",
+          "profile": "default",
+          "passed": 199,
+          "total": 199,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "wms"
+        },
+        {
+          "clientLane": "js-cesium",
+          "protocol": "wms"
+        },
+        {
+          "clientLane": "desktop-qgis",
+          "protocol": "wms"
+        }
+      ],
+      "geobench": [
+        "wms-getmap",
+        "wms-reprojection",
+        "wms-getfeatureinfo",
+        "wms-filtered"
+      ]
+    },
+    {
+      "key": "serve.wmts",
+      "displayName": "WMTS 1.0",
+      "category": "Serve",
+      "edition": "Community",
+      "entryCount": 1,
+      "provingTestCount": 3,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "WMTS 1.0",
+          "profile": "default",
+          "passed": 60,
+          "total": 60,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [
+        {
+          "clientLane": "js",
+          "protocol": "wmts"
+        },
+        {
+          "clientLane": "js-cesium",
+          "protocol": "wmts"
+        },
+        {
+          "clientLane": "desktop-qgis",
+          "protocol": "wmts"
+        }
+      ],
+      "geobench": [
+        "wmts"
+      ]
+    },
+    {
+      "key": "staticmap.high-dpi",
+      "displayName": "High-DPI Static Maps",
+      "category": "StaticMap",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "staticmap.high-dpi",
+        "reasonCode": "config-flag",
+        "reason": "DPI is a request parameter on the static-map export route, not a distinct route.",
+        "category": "StaticMap",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "staticmap.large-dimensions",
+      "displayName": "Large Static Maps",
+      "category": "StaticMap",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "staticmap.large-dimensions",
+        "reasonCode": "config-flag",
+        "reason": "Image dimensions are a request parameter on the static-map export route, not a distinct route.",
+        "category": "StaticMap",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "staticmap.rich-overlays",
+      "displayName": "Rich Static Map Overlays",
+      "category": "StaticMap",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "staticmap.rich-overlays",
+        "reasonCode": "config-flag",
+        "reason": "Marker/path overlay counts are a request parameter on the static-map export route, not a distinct route.",
+        "category": "StaticMap",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "streaming.feature-subscriptions",
+      "displayName": "Real-Time Feature Streams",
+      "category": "Streaming",
+      "edition": "Pro",
+      "entryCount": 2,
+      "provingTestCount": 43,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "styling.auto-suggest",
+      "displayName": "Auto-Cartographic Styling",
+      "category": "Styling",
+      "edition": "Pro",
+      "entryCount": 2,
+      "provingTestCount": 7,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "styling.defaults",
+      "displayName": "Smart Style Defaults",
+      "category": "Styling",
+      "edition": "Community",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "styling.defaults",
+        "reasonCode": "cross-cutting-default",
+        "reason": "Smart style defaults apply automatically when a layer publishes; not a distinct route of their own.",
+        "category": "Styling",
+        "edition": "Community"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "styling.ogc-api-styles",
+      "displayName": "OGC API Styles",
+      "category": "Styling",
+      "edition": "Community",
+      "entryCount": 8,
+      "provingTestCount": 14,
+      "maturity": {
+        "implemented": 8
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "temporal.animation-api",
+      "displayName": "Animation API Contract",
+      "category": "Temporal",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "temporal.animation-api",
+        "reasonCode": "sdk-only",
+        "reason": "Capability flag advertised for SDK/admin TimeSlider integration; no server-side route of its own.",
+        "category": "Temporal",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "temporal.extent-discovery",
+      "displayName": "Temporal Extent Discovery",
+      "category": "Temporal",
+      "edition": "Community",
+      "entryCount": 1,
+      "provingTestCount": 7,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "temporal.filtering",
+      "displayName": "Temporal Query Filtering",
+      "category": "Temporal",
+      "edition": "Community",
+      "entryCount": 6,
+      "provingTestCount": 16,
+      "maturity": {
+        "implemented": 6
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "temporal.histogram",
+      "displayName": "Temporal Histogram (Date Bins)",
+      "category": "Temporal",
+      "edition": "Pro",
+      "entryCount": 2,
+      "provingTestCount": 5,
+      "maturity": {
+        "implemented": 2
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "temporal.time-series-tiles",
+      "displayName": "Time-Series Tile Filtering",
+      "category": "Temporal",
+      "edition": "Pro",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "temporal.time-series-tiles",
+        "reasonCode": "config-flag",
+        "reason": "Time-range filtering is a query parameter (time) on tile routes (serve.vector-tiles / serve.ogc-api-tiles), not a distinct route.",
+        "category": "Temporal",
+        "edition": "Pro"
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    }
+  ]
+}
