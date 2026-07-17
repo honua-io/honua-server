@@ -161,7 +161,6 @@ public sealed partial class PublicInterfaceProofLedgerTests
     public void ProofLedger_ShouldDeclareRequiredMetadata_ForEveryProof()
     {
         var ledger = LoadLedger();
-        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
         ledger.SchemaVersion.Should().Be("1.0.0");
         ledger.Surfaces.Should().NotBeEmpty();
@@ -203,19 +202,11 @@ public sealed partial class PublicInterfaceProofLedgerTests
                 proof.ExecutionLane.Should().NotBeNullOrWhiteSpace();
                 proof.OwnerRepo.Should().NotBeNullOrWhiteSpace();
                 proof.EvidenceLocations.Should().NotBeEmpty();
+                proof.EvidenceLocations.Should().OnlyContain(location => !string.IsNullOrWhiteSpace(location));
 
-                foreach (var evidenceLocation in proof.EvidenceLocations)
-                {
-                    evidenceLocation.Should().NotBeNullOrWhiteSpace();
-                    if (IsExternalEvidenceLocation(evidenceLocation))
-                    {
-                        continue;
-                    }
-
-                    File.Exists(ArchitectureTestHelpers.CombinePath(repoRoot, evidenceLocation))
-                        .Should()
-                        .BeTrue($"evidence location '{evidenceLocation}' for surface '{surface.SurfaceId}' must exist");
-                }
+                // Content-aware evidence validation (existence + gate/lane substantiation) lives in
+                // ProofEvidenceValidator and is asserted by
+                // ProofLedger_EveryImplementedProof_ShouldCiteAGateItsLaneRuns (honua-server#2877).
 
                 if (!string.Equals(proof.Status, "implemented", StringComparison.OrdinalIgnoreCase))
                 {
@@ -601,11 +592,6 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
         return ticketsByOwnerRepo.TryGetValue(ownerRepo, out linkedTicket!);
     }
-
-    private static bool IsExternalEvidenceLocation(string evidenceLocation)
-        => Uri.TryCreate(evidenceLocation, UriKind.Absolute, out var uri) &&
-           (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsGeospatialGrpcRepositoryUrl(string evidenceLocation)
         => Uri.TryCreate(evidenceLocation, UriKind.Absolute, out var uri) &&

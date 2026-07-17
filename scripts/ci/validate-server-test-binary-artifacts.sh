@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# CR-safe jq: strip the CRLF the Windows jq binary emits in text mode so
+# captured values, path checks, and comparisons below stay clean (no-op on Linux).
+source "${SCRIPT_DIR}/lib/jq-cr-safe.sh"
 REGISTRY="${REPO_ROOT}/.github/server-test-artifact-projects.json"
 SHARDS="${REPO_ROOT}/.github/ci-shards.json"
 

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -10,6 +11,8 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.Options;
@@ -222,5 +225,68 @@ internal static class StartupConfigurationHelpers
         services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
         services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
         services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
+    }
+
+    /// <summary>
+    /// Loads the ASP.NET static web assets for the hosted Blazor demo shells (currently the
+    /// optional STAC ops demo at <c>/samples/stac-ops</c>) after hardening the load against a
+    /// missing compressed-asset content root.
+    /// </summary>
+    /// <remarks>
+    /// The static-web-assets runtime manifest lists content-root directories that the loader
+    /// eagerly opens as <c>PhysicalFileProvider</c> instances during host construction. In
+    /// sharded Release builds one of those roots — <c>obj/&lt;Config&gt;/&lt;tfm&gt;/compressed/</c>,
+    /// the Blazor precompressed-assets output — is sometimes referenced by the manifest but not
+    /// materialized on disk, and <c>PhysicalFileProvider</c> throws
+    /// <see cref="DirectoryNotFoundException"/> for a missing root. That aborted host
+    /// construction and failed every test in the affected shard before any test logic ran
+    /// (honua-server#2904). Pre-creating any missing referenced roots lets the loader open them;
+    /// an empty <c>compressed/</c> root simply means content negotiation falls back to the
+    /// uncompressed asset, which is the behavior the hosted-demo integration tests assert.
+    /// </remarks>
+    public static void LoadHostedBlazorStaticWebAssets(WebApplicationBuilder builder)
+    {
+        EnsureStaticWebAssetContentRootsExist();
+        builder.WebHost.UseStaticWebAssets();
+    }
+
+    private static void EnsureStaticWebAssetContentRootsExist()
+    {
+        try
+        {
+            var manifests = Directory.EnumerateFiles(
+                AppContext.BaseDirectory,
+                "*.staticwebassets.runtime.json",
+                SearchOption.TopDirectoryOnly);
+
+            foreach (var manifestPath in manifests)
+            {
+                using var stream = File.OpenRead(manifestPath);
+                using var document = JsonDocument.Parse(stream);
+
+                if (!document.RootElement.TryGetProperty("ContentRoots", out var contentRoots) ||
+                    contentRoots.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                foreach (var contentRoot in contentRoots.EnumerateArray())
+                {
+                    var path = contentRoot.GetString();
+                    if (!string.IsNullOrWhiteSpace(path) && !Directory.Exists(path))
+                    {
+                        Directory.CreateDirectory(path);
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or NotSupportedException or
+                ArgumentException or JsonException)
+        {
+            // Best-effort hardening only. If a manifest cannot be read or a root cannot be
+            // created, fall through to the loader with its normal behavior — this guard must
+            // never be the reason host construction fails.
+        }
     }
 }

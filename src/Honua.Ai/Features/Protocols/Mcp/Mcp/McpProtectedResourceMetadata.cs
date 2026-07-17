@@ -14,10 +14,12 @@ namespace Honua.Ai.Protocols.Mcp;
 /// relying on a naming policy.
 /// </summary>
 /// <remarks>
-/// Only the members Honua can honestly answer for are modelled. <c>scopes_supported</c>
-/// and <c>bearer_methods_supported</c> are deliberately absent while the surface does
-/// not yet accept bearer tokens (honua-server#2850) — advertising a token vocabulary the
-/// runtime does not enforce is the advertised-vs-actual gap #2803 exists to close.
+/// Only the members Honua can honestly answer for are modelled. <c>bearer_methods_supported</c>
+/// advertises <c>header</c> now that the surface accepts <c>Authorization: Bearer</c> tokens
+/// as a resource server (honua-server#2850). <c>scopes_supported</c> remains deliberately
+/// absent while the surface authenticates but does not yet enforce OAuth scopes
+/// (honua-server#2851) — advertising a scope vocabulary the runtime does not enforce is the
+/// advertised-vs-actual gap #2803 exists to close.
 /// </remarks>
 internal sealed class McpProtectedResourceMetadataDocument
 {
@@ -33,6 +35,15 @@ internal sealed class McpProtectedResourceMetadataDocument
     /// </summary>
     [JsonPropertyName("authorization_servers")]
     public required IReadOnlyList<string> AuthorizationServers { get; init; }
+
+    /// <summary>
+    /// The bearer-token presentation methods the resource accepts (RFC 9728
+    /// <c>bearer_methods_supported</c>, values from RFC 6750). The <c>/mcp</c> surface reads
+    /// the token from the <c>Authorization</c> request header only, so the sole advertised
+    /// method is <c>header</c>.
+    /// </summary>
+    [JsonPropertyName("bearer_methods_supported")]
+    public IReadOnlyList<string>? BearerMethodsSupported { get; init; }
 
     /// <summary>
     /// Human-readable name of the protected resource (RFC 9728 <c>resource_name</c>).
@@ -73,6 +84,13 @@ internal static class McpProtectedResourceMetadata
     /// Human-readable resource name advertised in the metadata document.
     /// </summary>
     public const string ResourceName = "Honua MCP";
+
+    /// <summary>
+    /// The RFC 6750 bearer-token presentation methods advertised in
+    /// <c>bearer_methods_supported</c>. The <c>/mcp</c> surface accepts the token only from
+    /// the <c>Authorization</c> request header (honua-server#2850).
+    /// </summary>
+    public static readonly IReadOnlyList<string> BearerMethodsSupported = ["header"];
 
     /// <summary>
     /// Resolves the issuer identifiers of every configured, valid OIDC provider. Returns an

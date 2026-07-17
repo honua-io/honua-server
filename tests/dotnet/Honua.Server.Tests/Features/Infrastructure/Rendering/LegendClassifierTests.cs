@@ -17,6 +17,11 @@ public class LegendClassifierTests
     private static MapLibreStyleLayer ParseLayer(string json)
         => StyleTranslator.ParseStyleLayers(json).Single();
 
+    // A legend swatch is resolved without a map viewport, so it carries no render zoom; these
+    // classes are attribute-driven, not zoom-driven, so paint resolves identically (honua-server#2873).
+    private static readonly RenderZoom _noZoom =
+        RenderZoom.NotDerivable("legend classification resolves no zoom expression");
+
     [UnitTest]
     public void Classify_ConstantFillColor_ReturnsSingleClass()
     {
@@ -93,9 +98,9 @@ public class LegendClassifierTests
 
         // The classifier only enumerates the domain; the colour each class shows must
         // come from the same StyleTranslator path GetMap paints features with.
-        var residential = StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties);
-        var industrial = StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties);
-        var other = StyleTranslator.ResolveFillStyle(layer, result.Classes[2].Properties);
+        var residential = StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties, _noZoom);
+        var industrial = StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties, _noZoom);
+        var other = StyleTranslator.ResolveFillStyle(layer, result.Classes[2].Properties, _noZoom);
 
         residential.FillColor.Should().Be(new SKColor(0x00, 0xff, 0x00));
         industrial.FillColor.Should().Be(new SKColor(0xff, 0x00, 0x00));
@@ -122,11 +127,11 @@ public class LegendClassifierTests
         result.Field.Should().Be("population");
         result.Classes.Select(c => c.Label).Should().Equal("< 100", "100 - 1000", ">= 1000");
 
-        StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties)
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties, _noZoom)
             .FillColor.Should().Be(new SKColor(0xee, 0xee, 0xee));
-        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties)
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties, _noZoom)
             .FillColor.Should().Be(new SKColor(0x88, 0xaa, 0x88));
-        StyleTranslator.ResolveFillStyle(layer, result.Classes[2].Properties)
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[2].Properties, _noZoom)
             .FillColor.Should().Be(new SKColor(0x00, 0x44, 0x00));
     }
 
@@ -154,9 +159,9 @@ public class LegendClassifierTests
         result.Field.Should().Be("density");
         result.Classes.Select(c => c.Label).Should().Equal("0", "100");
 
-        StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties)
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[0].Properties, _noZoom)
             .FillColor.Should().Be(new SKColor(0xff, 0xff, 0xff));
-        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties)
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties, _noZoom)
             .FillColor.Should().Be(new SKColor(0xff, 0x00, 0x00));
     }
 
@@ -182,7 +187,7 @@ public class LegendClassifierTests
 
         result.UnrepresentableReason.Should().BeNull();
         result.Classes.Select(c => c.Label).Should().Equal("0", "50", "100");
-        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties)
+        StyleTranslator.ResolveFillStyle(layer, result.Classes[1].Properties, _noZoom)
             .FillColor.Should().Be(new SKColor(0x00, 0xff, 0x00));
     }
 
