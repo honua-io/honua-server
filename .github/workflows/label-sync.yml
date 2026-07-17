@@ -1,0 +1,185 @@
+name: Capability Label Sync
+
+# Keeps the cap/<category> issue-label namespace (#2896, child of #2892) in
+# sync with a canonical capability category list. Creates labels that are
+# missing and updates the description/color of labels that already exist;
+# it NEVER deletes or renames a label, so labels already applied to issues
+# are never disturbed and labels are never hand-created.
+#
+# Source of truth today: docs/gis/data/capability-categories.seed.json, a
+# small hand-committed seed derived from FeatureCatalog.Categories
+# (src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs) plus a handful
+# of obvious Community protocol-serving families that have no entitlement
+# key. TODO(#2893): once honua-server publishes the canonical
+# capability-keys.v1.json artifact, point `seed_path` at that artifact
+# instead and retire the seed file — this workflow only assumes a JSON file
+# with a top-level `categories: [{ slug, displayName, description }]` array,
+# so no workflow change should be needed beyond the path, and category slugs
+# must stay stable across the swap.
+#
+# Safety:
+#   - workflow_dispatch defaults to apply=false — a dry run that only prints
+#     the create/update diff (console + step summary). Labels are only
+#     created or updated when a human explicitly dispatches with apply=true.
+#   - A push that changes the seed file (or this workflow) always runs in
+#     dry-run mode, regardless of apply's default, so the taxonomy diff is
+#     visible in CI on trunk without any unattended label mutation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Create/update labels (false = dry-run diff only)'
+        required: false
+        type: boolean
+        default: false
+      seed_path:
+        description: 'Path to the capability category seed JSON'
+        required: false
+        type: string
+        default: 'docs/gis/data/capability-categories.seed.json'
+  push:
+    branches: [trunk]
+    paths:
+      - 'docs/gis/data/capability-categories.seed.json'
+      - '.github/workflows/label-sync.yml'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: label-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync cap/* labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Sync capability labels
+        uses: actions/github-script@v9
+        env:
+          SEED_PATH: ${{ github.event.inputs.seed_path || 'docs/gis/data/capability-categories.seed.json' }}
+          # Only a workflow_dispatch run can set apply=true; a push-triggered
+          # run has no `inputs`, so this always falls through to 'false'.
+          APPLY: ${{ github.event.inputs.apply == 'true' }}
+        with:
+          script: |
+            const fs = require('fs');
+
+            const CAP_COLOR = '006b75';
+            const MAX_DESCRIPTION_LENGTH = 100; // GitHub label description limit.
+            const seedPath = process.env.SEED_PATH;
+            const apply = process.env.APPLY === 'true';
+
+            const raw = fs.readFileSync(seedPath, 'utf8');
+            const seed = JSON.parse(raw);
+            const categories = seed.categories || [];
+
+            if (categories.length === 0) {
+              core.setFailed(`No categories found in ${seedPath}`);
+              return;
+            }
+
+            const slugs = new Set();
+            const desired = [];
+            for (const cat of categories) {
+              if (!cat.slug || !/^[a-z0-9][a-z0-9-]*$/.test(cat.slug)) {
+                core.setFailed(`Invalid or missing slug in seed entry: ${JSON.stringify(cat)}`);
+                return;
+              }
+              if (slugs.has(cat.slug)) {
+                core.setFailed(`Duplicate slug in seed: ${cat.slug}`);
+                return;
+              }
+              slugs.add(cat.slug);
+
+              let description = cat.description || cat.displayName || cat.slug;
+              if (description.length > MAX_DESCRIPTION_LENGTH) {
+                description = description.slice(0, MAX_DESCRIPTION_LENGTH - 1) + '…';
+              }
+              desired.push({ name: `cap/${cat.slug}`, description, color: CAP_COLOR });
+            }
+
+            const existing = await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const existingByName = new Map(existing.map(l => [l.name, l]));
+
+            const toCreate = [];
+            const toUpdate = [];
+            for (const label of desired) {
+              const current = existingByName.get(label.name);
+              if (!current) {
+                toCreate.push(label);
+              } else if (current.color !== label.color || (current.description || '') !== label.description) {
+                toUpdate.push({ ...label, from: { color: current.color, description: current.description || '' } });
+              }
+            }
+
+            const lines = [];
+            lines.push(`# Capability label sync (${apply ? 'APPLY' : 'DRY RUN'})`);
+            lines.push('');
+            lines.push(`Seed: \`${seedPath}\` (${desired.length} categories)`);
+            lines.push('');
+
+            if (toCreate.length === 0 && toUpdate.length === 0) {
+              lines.push('All cap/* labels already match the seed list. Nothing to do.');
+            } else {
+              if (toCreate.length > 0) {
+                lines.push(`## Create (${toCreate.length})`);
+                lines.push('');
+                for (const l of toCreate) {
+                  lines.push(`- \`${l.name}\` — "${l.description}" (#${l.color})`);
+                }
+                lines.push('');
+              }
+              if (toUpdate.length > 0) {
+                lines.push(`## Update (${toUpdate.length})`);
+                lines.push('');
+                for (const l of toUpdate) {
+                  lines.push(`- \`${l.name}\`: "${l.from.description}" (#${l.from.color}) -> "${l.description}" (#${l.color})`);
+                }
+                lines.push('');
+              }
+            }
+
+            lines.push('No label is ever deleted or renamed by this workflow.');
+
+            const summary = lines.join('\n');
+            console.log(summary);
+            await core.summary.addRaw(summary).write();
+
+            if (!apply) {
+              core.notice('Dry run: no labels were created or updated. Re-run via workflow_dispatch with apply=true to apply this diff.');
+              return;
+            }
+
+            for (const l of toCreate) {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: l.name,
+                color: l.color,
+                description: l.description,
+              });
+            }
+            for (const l of toUpdate) {
+              await github.rest.issues.updateLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: l.name,
+                color: l.color,
+                description: l.description,
+              });
+            }
+            core.notice(`Applied: created ${toCreate.length}, updated ${toUpdate.length} cap/* labels.`);
