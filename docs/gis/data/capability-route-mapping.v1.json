@@ -1,0 +1,455 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
+  "trackingIssue": "#2893",
+  "description": "Ordered route (family/routePrefix|routeContains/method) to capability-key mapping rules consumed by FeatureCatalogGenerator to stamp the capability field on every feature-catalog.json entry. Rules are evaluated top-down; the first rule whose family matches (and whose optional routePrefix/routeContains/method filters all match) wins. The final rule for a family with no route filter is the catch-all default for that family.",
+  "rules": [
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/applyEdits",
+        "/addFeatures",
+        "/updateFeatures",
+        "/deleteFeatures",
+        "/calculate"
+      ],
+      "capability": "editing.featureserver-edits"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/queryClusters"
+      ],
+      "capability": "analytics.clustering"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/spatialJoin"
+      ],
+      "capability": "analytics.spatial-join"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/queryBufferAggregate"
+      ],
+      "capability": "analytics.buffer-aggregate"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/queryDensity"
+      ],
+      "capability": "analytics.density"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/generateRenderer"
+      ],
+      "capability": "styling.auto-suggest"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/queryDateBins"
+      ],
+      "capability": "temporal.histogram"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/temporalExtent"
+      ],
+      "capability": "temporal.extent-discovery"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/replicas",
+        "createReplica",
+        "synchronizeReplica",
+        "unRegisterReplica",
+        "extractChanges"
+      ],
+      "capability": "fieldops.offline-sync"
+    },
+    {
+      "family": "GeoServices REST FeatureServer",
+      "capability": "serve.geoservices-featureserver"
+    },
+    {
+      "family": "GeoServices REST GeocodeServer",
+      "routeContains": [
+        "findAddressCandidates",
+        "/suggest"
+      ],
+      "capability": "geocoding.forward"
+    },
+    {
+      "family": "GeoServices REST GeocodeServer",
+      "routeContains": [
+        "reverseGeocode"
+      ],
+      "capability": "geocoding.reverse"
+    },
+    {
+      "family": "GeoServices REST GeocodeServer",
+      "routeContains": [
+        "geocodeAddresses"
+      ],
+      "capability": "geocoding.batch"
+    },
+    {
+      "family": "GeoServices REST GeocodeServer",
+      "capability": "serve.geoservices-geocodeserver"
+    },
+    {
+      "family": "GeoServices REST GPServer",
+      "routeContains": [
+        "PrintingTools"
+      ],
+      "capability": "printing.pdf-output"
+    },
+    {
+      "family": "GeoServices REST GPServer",
+      "capability": "process.geoprocessing"
+    },
+    {
+      "family": "GeoServices REST VersionManagementServer",
+      "capability": "editing.branch-versioning"
+    },
+    {
+      "family": "GeoServices REST NAServer",
+      "capability": "routing.solve"
+    },
+    {
+      "family": "GeoServices REST",
+      "capability": "serve.geoservices-root"
+    },
+    {
+      "family": "GeoServices REST Geometry Service",
+      "capability": "serve.geoservices-geometry-service"
+    },
+    {
+      "family": "GeoServices REST ImageServer",
+      "capability": "serve.geoservices-imageserver"
+    },
+    {
+      "family": "GeoServices REST MapServer",
+      "capability": "serve.geoservices-mapserver"
+    },
+    {
+      "family": "GeoServices REST VectorTileServer",
+      "capability": "serve.geoservices-vectortileserver"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/services/",
+      "routeContains": [
+        "/replicas"
+      ],
+      "capability": "fieldops.offline-sync"
+    },
+    {
+      "family": "Admin API",
+      "routeContains": [
+        "/VersionManagementServer"
+      ],
+      "capability": "editing.branch-versioning"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/security/client-certificates",
+      "capability": "identity.mtls-client-certificate"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/ingest/citygml",
+      "capability": "scene.bim-ingest"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/scenes/ingest/pointcloud",
+      "capability": "scene.pointcloud-ingest"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/import/arcgis",
+      "capability": "import.geoservices"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/import/geoservices",
+      "capability": "import.geoservices"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/import/geoserver",
+      "capability": "import.geoserver"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/import/",
+      "capability": "import.file"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/geocoding/",
+      "capability": "geocoding.forward"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/operations/geocoding/",
+      "capability": "geocoding.forward"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/field-workflows",
+      "capability": "fieldops.forms"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/forms",
+      "capability": "fieldops.forms"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/multidim-coverages",
+      "capability": "raster.multidim-coverage"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/zarr-stores",
+      "capability": "raster.multidim-coverage"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/cloud-rasters",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/oidc",
+      "capability": "identity.oidc"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/alerts",
+      "capability": "alerts.evaluation"
+    },
+    {
+      "family": "Admin API",
+      "routePrefix": "/api/v1/admin/network-datasets",
+      "capability": "routing.solve"
+    },
+    {
+      "family": "Admin API",
+      "capability": "admin.control-plane"
+    },
+    {
+      "family": "Admin API + HTTP",
+      "capability": "admin.control-plane"
+    },
+    {
+      "family": "3D-Tiles",
+      "capability": "serve.3d-tiles-scene"
+    },
+    {
+      "family": "Analysis Content",
+      "capability": "analytics.content"
+    },
+    {
+      "family": "Analysis Reporting",
+      "capability": "analytics.reporting"
+    },
+    {
+      "family": "ArcGIS Portal Sharing",
+      "routeContains": [
+        "generateToken"
+      ],
+      "capability": "identity.portal-token"
+    },
+    {
+      "family": "ArcGIS Portal Sharing",
+      "capability": "identity.portal-sharing"
+    },
+    {
+      "family": "Capability Manifest HTTP",
+      "capability": "discovery.capability-manifest"
+    },
+    {
+      "family": "Cloud Demo HTTP",
+      "capability": "demo.showcase"
+    },
+    {
+      "family": "Data Enrichment",
+      "capability": "enrichment.datasets"
+    },
+    {
+      "family": "Datacube Tiles HTTP",
+      "capability": "raster.multidim-coverage"
+    },
+    {
+      "family": "Elevation",
+      "routeContains": [
+        "/line-of-sight"
+      ],
+      "capability": "analytics.line-of-sight"
+    },
+    {
+      "family": "Elevation",
+      "routeContains": [
+        "/slice"
+      ],
+      "capability": "analytics.slice"
+    },
+    {
+      "family": "Elevation",
+      "routeContains": [
+        "/sun-shadow"
+      ],
+      "capability": "analytics.sun-shadow"
+    },
+    {
+      "family": "Elevation",
+      "routeContains": [
+        "/viewshed"
+      ],
+      "capability": "analytics.viewshed"
+    },
+    {
+      "family": "Elevation",
+      "capability": "serve.elevation"
+    },
+    {
+      "family": "Forms API",
+      "capability": "fieldops.forms"
+    },
+    {
+      "family": "Grounding",
+      "capability": "ai.grounding"
+    },
+    {
+      "family": "HTTP",
+      "capability": "ops.health"
+    },
+    {
+      "family": "HTTP+gRPC",
+      "capability": "ai.spec-artifacts"
+    },
+    {
+      "family": "I3S",
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "family": "MCP",
+      "capability": "ai.mcp-discovery"
+    },
+    {
+      "family": "MVT + TileJSON + PMTiles",
+      "capability": "serve.vector-tiles"
+    },
+    {
+      "family": "Metrics",
+      "capability": "ops.observability"
+    },
+    {
+      "family": "Mobile",
+      "capability": "fieldops.offline-sync"
+    },
+    {
+      "family": "Monitoring",
+      "capability": "ops.observability"
+    },
+    {
+      "family": "OData v4",
+      "capability": "serve.odata"
+    },
+    {
+      "family": "OGC API - EDR 1.1",
+      "capability": "serve.ogc-api-edr"
+    },
+    {
+      "family": "OGC API Coverages",
+      "capability": "serve.ogc-api-coverages"
+    },
+    {
+      "family": "OGC API Features",
+      "capability": "serve.ogc-api-features"
+    },
+    {
+      "family": "OGC API Maps",
+      "capability": "serve.ogc-api-maps"
+    },
+    {
+      "family": "OGC API Processes",
+      "capability": "process.ogc-api-processes"
+    },
+    {
+      "family": "OGC API Records",
+      "capability": "serve.ogc-api-records"
+    },
+    {
+      "family": "OGC API Styles",
+      "capability": "styling.ogc-api-styles"
+    },
+    {
+      "family": "OGC SensorThings API v1.1",
+      "capability": "serve.sensorthings"
+    },
+    {
+      "family": "Portal Collaboration HTTP",
+      "capability": "collaboration.map-sessions"
+    },
+    {
+      "family": "SAML 2.0",
+      "capability": "identity.saml"
+    },
+    {
+      "family": "SCIM 2.0",
+      "capability": "identity.scim"
+    },
+    {
+      "family": "STAC API",
+      "capability": "serve.stac"
+    },
+    {
+      "family": "Scene",
+      "capability": "scene.catalog"
+    },
+    {
+      "family": "Streaming",
+      "capability": "streaming.feature-subscriptions"
+    },
+    {
+      "family": "Temporal",
+      "capability": "temporal.filtering"
+    },
+    {
+      "family": "Terrain-RGB",
+      "capability": "raster.terrain-rgb"
+    },
+    {
+      "family": "WCS 2.0.1",
+      "capability": "serve.wcs"
+    },
+    {
+      "family": "WFS 2.0",
+      "capability": "serve.wfs"
+    },
+    {
+      "family": "WMS 1.3",
+      "capability": "serve.wms"
+    },
+    {
+      "family": "WMTS 1.0",
+      "capability": "serve.wmts"
+    },
+    {
+      "family": "OGC API Tiles",
+      "capability": "serve.ogc-api-tiles"
+    }
+  ]
+}
