@@ -2377,6 +2377,42 @@
       ]
     },
     {
+      "surfaceId": "wps-2.0.2",
+      "displayName": "WPS 2.0.2",
+      "surfaceKind": "http-route-family",
+      "protocol": "WPS 2.0.2",
+      "canonicalIdentifier": "/wps",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/wps"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [
+        "WPS-2.0.2::GetCapabilities",
+        "WPS-2.0.2::DescribeProcess",
+        "WPS-2.0.2::Execute",
+        "WPS-2.0.2::GetStatus",
+        "WPS-2.0.2::GetResult"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "WPS 2.0.2 endpoint integration tests cover capabilities, process descriptions, execution submission, status polling, result retrieval, and OWS exception responses.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#2450",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "odata-v4",
       "displayName": "OData v4",
       "surfaceKind": "http-route-family",
