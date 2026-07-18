@@ -95,6 +95,12 @@ def main() -> int:
         openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
         compliance = openapi.get("info", {}).get("x-honua-cite-compliance")
         if not isinstance(compliance, dict):
+            print(
+                f"::error::{openapi_path} is missing or malformed "
+                "x-honua-cite-compliance metadata; this is required for drift gating.",
+                file=sys.stderr,
+            )
+            failed = True
             continue
 
         source = normalize_source(compliance.get("authoritativeSource"))

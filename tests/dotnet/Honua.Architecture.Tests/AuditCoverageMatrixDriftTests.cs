@@ -119,9 +119,8 @@ public sealed class AuditCoverageMatrixDriftTests
             .Where(line => line.StartsWith('|'))
             .ToList();
 
-        foreach (var row in tableRows)
+        foreach (var line in tableRows.Select(row => row.Trim()))
         {
-            var line = row.Trim();
             if (line.StartsWith("|---", StringComparison.Ordinal))
             {
                 continue;
@@ -145,8 +144,7 @@ public sealed class AuditCoverageMatrixDriftTests
 
             var routes = Regex.Matches(routeCell, @"`([^`]+)`")
                 .Select(routeMatch => NormalizeRoute(routeMatch.Groups[1].Value))
-                .Where(route => !string.IsNullOrWhiteSpace(route))
-                .Select(route => route);
+                .Where(route => !string.IsNullOrWhiteSpace(route));
 
             var methods = methodCell
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
