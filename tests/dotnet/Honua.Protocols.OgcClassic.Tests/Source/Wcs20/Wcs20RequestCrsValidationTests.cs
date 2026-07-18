@@ -98,6 +98,19 @@ public sealed class Wcs20RequestCrsValidationTests
     }
 
     [Fact]
+    public void TryResolveRequestCrs_WithNativeSridOutsideSupportedSet_AcceptsNativeDefault()
+    {
+        var query = BuildQuery();
+
+        var resolved = Wcs20Handler.TryResolveRequestCrs(
+            query, CreateRaster(32632), SupportedSrids, out var subsettingCrs, out var outputSrid, out _);
+
+        resolved.Should().BeTrue();
+        outputSrid.Should().BeNull();
+        subsettingCrs.Srid.Should().Be(32632);
+    }
+
+    [Fact]
     public void TryResolveRequestCrs_WithSupportedSubsettingCrs_Accepts()
     {
         var query = BuildQuery(("SUBSETTINGCRS", "EPSG:3857"));
