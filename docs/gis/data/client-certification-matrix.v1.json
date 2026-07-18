@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "1.0.0",
+  "matrixSource": "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+  "evidenceRoot": "tests/baselines/client-compat",
+  "testCases": [
+    { "id": "CERT-CONN-01", "category": "CONN" },
+    { "id": "CERT-CONN-02", "category": "CONN" },
+    { "id": "CERT-AUTH-01", "category": "AUTH" },
+    { "id": "CERT-AUTH-02", "category": "AUTH" },
+    { "id": "CERT-DISC-01", "category": "DISC" },
+    { "id": "CERT-DISC-02", "category": "DISC" },
+    { "id": "CERT-SCHM-01", "category": "SCHM" },
+    { "id": "CERT-SCHM-02", "category": "SCHM" },
+    { "id": "CERT-QFLT-01", "category": "QFLT" },
+    { "id": "CERT-QFLT-02", "category": "QFLT" },
+    { "id": "CERT-PAGE-01", "category": "PAGE" },
+    { "id": "CERT-PAGE-02", "category": "PAGE" },
+    { "id": "CERT-GEOM-01", "category": "GEOM" },
+    { "id": "CERT-GEOM-02", "category": "GEOM" },
+    { "id": "CERT-ERRH-01", "category": "ERRH" },
+    { "id": "CERT-ERRH-02", "category": "ERRH" },
+    { "id": "CERT-RNDR-01", "category": "RNDR" },
+    { "id": "CERT-RNDR-02", "category": "RNDR" },
+    { "id": "CERT-RNDR-SYM-01", "category": "RNDR" },
+    { "id": "CERT-RNDR-LIN-01", "category": "RNDR" },
+    { "id": "CERT-RNDR-FIL-01", "category": "RNDR" },
+    { "id": "CERT-RNDR-LBL-01", "category": "RNDR" },
+    { "id": "CERT-RNDR-SPR-01", "category": "RNDR" },
+    { "id": "CERT-RNDR-URL-01", "category": "RNDR" },
+    { "id": "JS-EXT-01", "category": "JS" },
+    { "id": "JS-EXT-02", "category": "JS" },
+    { "id": "JS-EXT-OL-COLL-01", "category": "JS" },
+    { "id": "JS-EXT-OL-ITEMTYPE-01", "category": "JS" },
+    { "id": "JS-EXT-OL-ITEMS-01", "category": "JS" },
+    { "id": "JS-EXT-OL-GEOJSON-01", "category": "JS" },
+    { "id": "JS-EXT-OL-GEOJSON-02", "category": "JS" },
+    { "id": "JS-EXT-TILES-DISC-01", "category": "JS" },
+    { "id": "JS-EXT-TILES-DISC-02", "category": "JS" },
+    { "id": "JS-EXT-TILES-SCHM-01", "category": "JS" },
+    { "id": "JS-EXT-OGC-MAPS-01", "category": "JS" },
+    { "id": "EL-EXT-01", "category": "EL" },
+    { "id": "EL-EXT-02", "category": "EL" },
+    { "id": "EL-EXT-03", "category": "EL" },
+    { "id": "EL-EXT-04", "category": "EL" },
+    { "id": "JS-CES-IMG-01", "category": "CESIUM" },
+    { "id": "JS-CES-TILE-01", "category": "CESIUM" },
+    { "id": "DSK-EXT-01", "category": "DESKTOP" },
+    { "id": "DSK-EXT-02", "category": "DESKTOP" },
+    { "id": "CLI-EXT-01", "category": "CLI" },
+    { "id": "CLI-EXT-02", "category": "CLI" },
+    { "id": "BI-EXT-01", "category": "BI" },
+    { "id": "BI-EXT-02", "category": "BI" },
+    { "id": "CERT-PRTL-INFO-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-SELF-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-SRCH-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-ITEM-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-RBAC-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-TOKN-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-AUTH-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-OAUTH-01", "category": "PORTAL" }
+  ],
+  "lanes": [
+    {
+      "id": "js",
+      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-RNDR-*", "JS-EXT-01", "JS-EXT-02", "JS-EXT-OL-*", "JS-EXT-OGC-MAPS-01"],
+      "manual": ["JS-EXT-TILES-*"]
+    },
+    {
+      "id": "js-cesium",
+      "automated": ["JS-CES-IMG-01", "JS-CES-TILE-01"],
+      "manual": ["CERT-*"]
+    },
+    {
+      "id": "desktop-qgis",
+      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-RNDR-01", "CERT-RNDR-02", "CERT-RNDR-SYM-01", "CERT-RNDR-LIN-01", "CERT-RNDR-FIL-01"],
+      "manual": ["CERT-RNDR-LBL-01", "CERT-RNDR-SPR-01", "CERT-RNDR-URL-01", "DSK-EXT-01", "DSK-EXT-02"]
+    },
+    {
+      "id": "cli",
+      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*"],
+      "manual": ["CLI-EXT-01", "CLI-EXT-02"],
+      "notApplicable": ["CERT-RNDR-*"]
+    },
+    {
+      "id": "arcgis-stub",
+      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*", "CERT-PRTL-*"],
+      "manual": ["CERT-RNDR-*"]
+    }
+  ]
+}
