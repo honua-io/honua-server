@@ -6,6 +6,21 @@ using Honua.Core.Features.Authorization.Domain;
 namespace Honua.Geoprocessing;
 
 /// <summary>
+/// Distinguishes why an operator authorization check denied a caller so adapters can surface
+/// a distinct structured reason (honua-server#2851). A grant denial and a scope denial both
+/// produce an authorization failure, but an operator debugging a rejected OAuth agent needs to
+/// tell "the principal lacks the grant" apart from "the token's scopes are too narrow".
+/// </summary>
+internal enum AuthorizationDenialReason
+{
+    /// <summary>The principal's operator grants do not authorize the operation.</summary>
+    InsufficientGrant,
+
+    /// <summary>The presented OAuth bearer token's scopes do not permit the operation.</summary>
+    InsufficientScope,
+}
+
+/// <summary>
 /// Raised when a geoprocessing authorization check fails.
 /// </summary>
 internal sealed class GeoprocessingAuthorizationException : Exception
@@ -14,6 +29,14 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     /// Whether the caller needs authentication (vs. insufficient permissions).
     /// </summary>
     public bool RequiresAuthentication { get; }
+
+    /// <summary>
+    /// Why the check denied the caller. Defaults to
+    /// <see cref="AuthorizationDenialReason.InsufficientGrant"/> so existing grant-denial
+    /// call sites keep their meaning; scope narrowing sets
+    /// <see cref="AuthorizationDenialReason.InsufficientScope"/>.
+    /// </summary>
+    public AuthorizationDenialReason DenialReason { get; }
 
     /// <summary>
     /// The resource type the denied check evaluated, when known. Lets protocol adapters
@@ -34,6 +57,7 @@ internal sealed class GeoprocessingAuthorizationException : Exception
             : "You do not have permission to perform this operation.")
     {
         RequiresAuthentication = requiresAuthentication;
+        DenialReason = AuthorizationDenialReason.InsufficientGrant;
     }
 
     /// <summary>
@@ -46,16 +70,19 @@ internal sealed class GeoprocessingAuthorizationException : Exception
     /// <param name="message">The denial message surfaced to the caller.</param>
     /// <param name="resourceType">The resource type the denied check evaluated, when known.</param>
     /// <param name="operation">The operation the denied check evaluated, when known.</param>
+    /// <param name="denialReason">Why the check denied the caller (grant vs. OAuth scope).</param>
     public GeoprocessingAuthorizationException(
         bool requiresAuthentication,
         string message,
         OperatorResourceType? resourceType = null,
-        OperatorOperation? operation = null)
+        OperatorOperation? operation = null,
+        AuthorizationDenialReason denialReason = AuthorizationDenialReason.InsufficientGrant)
         : base(message)
     {
         RequiresAuthentication = requiresAuthentication;
         ResourceType = resourceType;
         Operation = operation;
+        DenialReason = denialReason;
     }
 }
 

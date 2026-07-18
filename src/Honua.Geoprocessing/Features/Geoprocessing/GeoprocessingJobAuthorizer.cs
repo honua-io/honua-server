@@ -20,18 +20,23 @@ internal sealed class GeoprocessingJobAuthorizer
 {
     private readonly IOperatorAuthorizationEvaluator _authEvaluator;
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
+    private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly ILogger<GeoprocessingJobService> _logger;
 
     /// <summary>
-    /// Creates the authorization gate over the operator authorization and approval evaluators.
+    /// Creates the authorization gate over the operator authorization and approval evaluators,
+    /// plus the OAuth scope authorizer that narrows a bearer token's authority to its scopes
+    /// (honua-server#2851).
     /// </summary>
     public GeoprocessingJobAuthorizer(
         IOperatorAuthorizationEvaluator authEvaluator,
         IOperatorApprovalEvaluator approvalEvaluator,
+        IOperatorScopeAuthorizer scopeAuthorizer,
         ILogger<GeoprocessingJobService> logger)
     {
         _authEvaluator = authEvaluator;
         _approvalEvaluator = approvalEvaluator;
+        _scopeAuthorizer = scopeAuthorizer;
         _logger = logger;
     }
 
@@ -55,22 +60,39 @@ internal sealed class GeoprocessingJobAuthorizer
             },
             cancellationToken).ConfigureAwait(false);
 
-        if (decision.IsAllowed)
+        if (!decision.IsAllowed)
         {
-            return;
+            // Carry the actual denied operation into both the structured security log and the
+            // surfaced exception message so a mutating-process denial is distinguishable from a
+            // baseline Execute denial rather than reading as a generic "Execute" 403 (#2798).
+            GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
+            throw new GeoprocessingAuthorizationException(
+                decision.RequiresAuthentication,
+                decision.RequiresAuthentication
+                    ? "Authentication is required for this operation."
+                    : $"You do not have permission to perform '{operation}' on {resourceType}.",
+                resourceType,
+                operation,
+                AuthorizationDenialReason.InsufficientGrant);
         }
 
-        // Carry the actual denied operation into both the structured security log and the
-        // surfaced exception message so a mutating-process denial is distinguishable from a
-        // baseline Execute denial rather than reading as a generic "Execute" 403 (#2798).
-        GeoprocessingServiceLog.AuthorizationDenied(_logger, resourceType.ToString(), operation.ToString());
-        throw new GeoprocessingAuthorizationException(
-            decision.RequiresAuthentication,
-            decision.RequiresAuthentication
-                ? "Authentication is required for this operation."
-                : $"You do not have permission to perform '{operation}' on {resourceType}.",
-            resourceType,
-            operation);
+        // OAuth 2.1 scope narrowing (honua-server#2851). The grant model above decides what the
+        // principal MAY do; when the caller authenticated with a bearer token, its scopes can
+        // only narrow that — never widen it. Non-OAuth principals (X-API-Key, interactive,
+        // dev-bypass) are not scope-governed and pass through untouched. A scope denial is a
+        // distinct structured reason from a grant denial so operators can tell the two apart.
+        var scopeDecision = _scopeAuthorizer.Evaluate(principal, resourceType, operation);
+        if (!scopeDecision.IsAllowed)
+        {
+            GeoprocessingServiceLog.AuthorizationScopeDenied(_logger, resourceType.ToString(), operation.ToString());
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                scopeDecision.Reason
+                    ?? $"The access token's scopes do not permit '{operation}' on {resourceType}.",
+                resourceType,
+                operation,
+                AuthorizationDenialReason.InsufficientScope);
+        }
     }
 
     /// <summary>
