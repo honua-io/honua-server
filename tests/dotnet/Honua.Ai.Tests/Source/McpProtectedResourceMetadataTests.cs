@@ -82,8 +82,12 @@ public sealed class McpProtectedResourceMetadataTests
                 root.TryGetProperty("resource_name", out var name).Should().BeTrue();
                 name.GetString().Should().NotBeNullOrWhiteSpace();
 
-                root.TryGetProperty("scopes_supported", out _).Should().BeFalse(
-                    "the surface authenticates but does not enforce OAuth scopes yet (#2851), so advertising them would be dishonest");
+                root.TryGetProperty("scopes_supported", out var scopes).Should().BeTrue(
+                    "the surface now enforces the honua.mcp.* OAuth scope taxonomy (#2851), so advertising it is honest");
+                scopes.ValueKind.Should().Be(JsonValueKind.Array);
+                scopes.EnumerateArray().Select(element => element.GetString())
+                    .Should().Contain("honua.mcp.full")
+                    .And.Contain("honua.mcp.execute");
                 root.TryGetProperty("bearer_methods_supported", out var bearerMethods).Should().BeTrue(
                     "the surface now accepts Authorization: Bearer tokens as a resource server (#2850)");
                 bearerMethods.ValueKind.Should().Be(JsonValueKind.Array);

@@ -13,6 +13,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// </summary>
 internal static class McpAuthorizationHelper
 {
+    private const string AnonymousPrincipalScheme = "anonymous";
+
     /// <summary>
     /// Resolves the caller's <see cref="ClaimsPrincipal"/> from the HTTP context.
     /// Throws <see cref="Geoprocessing.GeoprocessingAuthorizationException"/> when
@@ -38,24 +40,30 @@ internal static class McpAuthorizationHelper
     /// caller — this mirrors the existing endpoint auth posture (the surface allows
     /// anonymous handshake methods; a session established anonymously stays
     /// anonymous) and never invents a new authentication requirement. For an
-    /// authenticated caller the key prefers the stable subject/name-identifier
-    /// claim, falling back to the identity name, so it does not change across
-    /// requests within one identity.
+    /// authenticated caller the key prefixes the authentication scheme to the
+    /// stable subject/name-identifier claim, falling back to the identity name.
     /// </summary>
     public static string ResolvePrincipalKey(ClaimsPrincipal? principal)
     {
-        var identity = principal?.Identity;
+        var identity = principal?.Identity?.IsAuthenticated == true
+            ? principal.Identity
+            : principal?.Identities.FirstOrDefault(candidate => candidate.IsAuthenticated);
         if (identity is null || !identity.IsAuthenticated)
         {
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
+        var scheme = string.IsNullOrWhiteSpace(identity.AuthenticationType)
+            ? AnonymousPrincipalScheme
+            : identity.AuthenticationType;
         var subject = principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrEmpty(subject))
         {
-            return "sub:" + subject;
+            return $"{scheme}:sub:{subject}";
         }
 
-        return string.IsNullOrEmpty(identity.Name) ? "authenticated" : "name:" + identity.Name;
+        return string.IsNullOrEmpty(identity.Name)
+            ? $"{scheme}:authenticated"
+            : $"{scheme}:name:{identity.Name}";
     }
 }

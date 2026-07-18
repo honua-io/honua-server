@@ -206,6 +206,73 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             "an anonymous session accepts the same anonymous caller");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Post_InitializeWithBearerAndApiKey_PrefersBearerPrincipalBinding()
+    {
+        // When both credentials are present, bearer auth is the effective
+        // authentication path for this endpoint. The resulting session should be
+        // bearer-bound, so a follow-up request that presents only the API key gets
+        // a principal-mismatch error instead of being silently treated as the
+        // same authenticated caller.
+        var token = CreateToken(subject: "shared-user");
+
+        using var initialize = BuildInitialize(token, apiKey: "test-admin-key");
+        var initializeResponse = await _client.SendAsync(initialize);
+
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        initializeResponse.Headers.TryGetValues("Mcp-Session-Id", out var sessionIds).Should().BeTrue(
+            "a bearer-authenticated initialize should establish a session");
+        var sessionId = sessionIds!.Single();
+
+        using var followUp = BuildRpc(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId: sessionId,
+            bearer: null,
+            apiKey: "test-admin-key");
+        var followUpResponse = await _client.SendAsync(followUp);
+
+        followUpResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var followUpDocument = await ReadJsonAsync(followUpResponse);
+        var error = followUpDocument.RootElement.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be(
+            "permission_denied");
+        error.GetProperty("data").GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Post_InitializeWithApiKeyAndFollowUpBearerRequiresReauthentication()
+    {
+        // The same identity values on a different auth scheme do not get to
+        // continue a session created from API key auth. This blocks silent
+        // cross-scheme session rebinding.
+        using var initialize = BuildInitialize(bearer: null, apiKey: "test-admin-key");
+        var initializeResponse = await _client.SendAsync(initialize);
+
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        initializeResponse.Headers.TryGetValues("Mcp-Session-Id", out var sessionIds).Should().BeTrue(
+            "an API-key authenticated initialize should establish a session");
+        var sessionId = sessionIds!.Single();
+
+        var token = CreateToken(subject: "admin");
+        using var followUp = BuildRpc(
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            sessionId: sessionId,
+            bearer: token,
+            apiKey: null);
+        var followUpResponse = await _client.SendAsync(followUp);
+
+        followUpResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var followUpDocument = await ReadJsonAsync(followUpResponse);
+        var error = followUpDocument.RootElement.GetProperty("error");
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be(
+            "permission_denied");
+        error.GetProperty("data").GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
+    }
+
     private static string CreateToken(
         string subject,
         string issuer = Issuer,
@@ -236,7 +303,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static HttpRequestMessage BuildInitialize(string? bearer) => BuildRpc(
+    private static HttpRequestMessage BuildInitialize(string? bearer, string? apiKey = null) => BuildRpc(
         """
         {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
             "protocolVersion":"2025-06-18",
@@ -245,9 +312,14 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         }}
         """,
         sessionId: null,
-        bearer: bearer);
+        bearer: bearer,
+        apiKey: apiKey);
 
-    private static HttpRequestMessage BuildRpc(string body, string? sessionId, string? bearer)
+    private static HttpRequestMessage BuildRpc(
+        string body,
+        string? sessionId,
+        string? bearer,
+        string? apiKey = null)
     {
         var content = new StringContent(body, Encoding.UTF8);
         content.Headers.ContentType = new MediaTypeHeaderValue(JsonMediaType);
@@ -261,6 +333,10 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         if (bearer is not null)
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        }
+        if (apiKey is not null)
+        {
+            request.Headers.Add("X-API-Key", apiKey);
         }
 
         return request;

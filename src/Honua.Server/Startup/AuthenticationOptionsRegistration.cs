@@ -94,6 +94,12 @@ internal static class AuthenticationOptionsRegistration
         services.AddSingleton<IOperatorAuthorizationEvaluator, OperatorAuthorizationEvaluator>();
         services.AddSingleton<IOperatorApprovalEvaluator, DefaultOperatorApprovalEvaluator>();
 
+        // OAuth 2.1 scope narrowing (#2851): intersects a bearer token's scopes with the
+        // operator grant model so a scope can only narrow, never widen, what the principal's
+        // grants already permit. Non-OAuth principals (X-API-Key, interactive) are untouched.
+        services.AddSingleton<IOperatorScopeAuthorizer,
+            Honua.Core.Features.Authorization.OperatorScopeAuthorizer>();
+
         // AI-operations guardrail ladder by edition (#1631): the shared,
         // protocol-neutral policy that maps edition -> guardrail level
         // (Community direct, Pro validation layer, Enterprise approval + policy).

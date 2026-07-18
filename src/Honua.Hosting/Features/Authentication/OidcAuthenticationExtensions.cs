@@ -5,6 +5,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text;
+using Honua.Core.Features.Authorization.Domain;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -597,6 +598,20 @@ public static class OidcAuthenticationExtensions
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
                     OidcAuthenticationLog.JwtTokenValidated(logger);
+
+                    // Mark this principal as governed by OAuth access-token scopes (#2851). The
+                    // marker fires only for JwtBearer-validated access tokens — not interactive
+                    // OIDC sign-in and not X-API-Key — so the operator scope authorizer knows to
+                    // fail closed when a bearer token presents no recognized Honua MCP scope,
+                    // while leaving every non-OAuth principal's grant decision untouched.
+                    if (context.Principal?.Identity is ClaimsIdentity bearerIdentity
+                        && !bearerIdentity.HasClaim(
+                            static claim => claim.Type == OperatorScopeCatalog.ScopeGovernedClaimType))
+                    {
+                        bearerIdentity.AddClaim(new Claim(
+                            OperatorScopeCatalog.ScopeGovernedClaimType,
+                            OperatorScopeCatalog.ScopeGovernedClaimValue));
+                    }
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&
                         !context.HttpContext.IsAdminAuthSessionBridged())
