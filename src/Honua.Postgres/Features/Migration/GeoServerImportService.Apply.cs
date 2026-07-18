@@ -95,6 +95,7 @@ internal sealed partial class GeoServerImportService
         // apply path can resolve the underlying GeoServerStyleInfo (and its
         // SLD body) without re-running discovery.
         var stylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal);
+        var publishedLayerIdsBySourceId = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Slice 1: apply workspace-level catalog entries first so that any subsequent
         // layer-group / layer apply can reference them. These records are deterministic
@@ -118,7 +119,8 @@ internal sealed partial class GeoServerImportService
             .ConfigureAwait(false);
         stepResults.AddRange(dataSourceStepResults);
 
-        foreach (var step in applyPlan.Steps.OrderBy(static item => item.Sequence))
+        var orderedSteps = applyPlan.Steps.OrderBy(static item => item.Sequence).ToArray();
+        foreach (var step in orderedSteps.Where(static item => !string.Equals(item.Kind, "style", StringComparison.Ordinal)))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -130,6 +132,34 @@ internal sealed partial class GeoServerImportService
                     stylesById,
                     applyPlan,
                     filteredResources,
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            stepResults.Add(stepResult);
+            if (stepResult.HonuaLayerId is { } targetLayerId && string.Equals(step.Kind, "layer", StringComparison.Ordinal))
+            {
+                publishedLayerIdsBySourceId[step.SourceId] = targetLayerId;
+            }
+
+            progress?.Report(currentProgress with
+            {
+                Status = GeoServerImportStatus.Validating,
+                ResourcesProcessed = stepResults.Count,
+                CurrentPhase = $"Processed GeoServer migration step {stepResults.Count} of {applyPlan.Summary.TotalStepCount}"
+            });
+        }
+
+        // Style application depends on the canonical layer ids returned by publication.
+        // Execute these steps last even when the manifest interleaves them with layers.
+        foreach (var step in orderedSteps.Where(static item => string.Equals(item.Kind, "style", StringComparison.Ordinal)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stepResult = await ApplyStyleCatalogStepAsync(
+                    step,
+                    stylesById,
+                    publishedLayerIdsBySourceId,
+                    filteredResources,
+                    applyPlan,
                     request,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -177,23 +207,6 @@ internal sealed partial class GeoServerImportService
         GeoServerImportRequest request,
         CancellationToken cancellationToken)
     {
-        // Slice 3 (#1015): style steps still need to persist into the Honua
-        // style catalog even when the manifest translator marks them
-        // unsupported/manual-review, so the migration evidence pack carries
-        // explicit conversion diagnostics rather than silently dropping the
-        // source style. Dispatch to the style branch before the early
-        // unsupported/manual-review returns below.
-        if (string.Equals(step.Kind, "style", StringComparison.Ordinal))
-        {
-            return await ApplyStyleCatalogStepAsync(
-                    step,
-                    stylesById,
-                    applyPlan,
-                    request,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
         if (step.Disposition == "unsupported")
         {
             return CreateExecutionStepResult(
@@ -745,6 +758,8 @@ internal sealed partial class GeoServerImportService
     private async Task<MigrationApplyExecutionStepResult> ApplyStyleCatalogStepAsync(
         MigrationApplyPlanStep step,
         Dictionary<string, GeoServerStyleInfo> stylesById,
+        IReadOnlyDictionary<string, int> publishedLayerIdsBySourceId,
+        FilteredResources filteredResources,
         MigrationApplyPlanArtifact applyPlan,
         GeoServerImportRequest request,
         CancellationToken cancellationToken)
@@ -859,10 +874,8 @@ internal sealed partial class GeoServerImportService
 
         try
         {
-            var outcome = await _catalogWriter.EnsureStyleAsync(
-                    _connectionProvider.GetConnectionString(),
-                    new MigrationStyleRequest
-                    {
+            var styleRequest = new MigrationStyleRequest
+            {
                         SourceKind = applyPlan.SourceKind,
                         SourceId = step.SourceId,
                         TargetStyleId = targetStyleId,
@@ -874,27 +887,76 @@ internal sealed partial class GeoServerImportService
                         ConvertedBody = convertedBody,
                         ConvertedFormat = convertedFormat,
                         DiagnosticsJson = SerializeStyleDiagnostics(diagnostics),
-                        ReviewDisposition = disposition
-                    },
+                        // Stage evidence conservatively. This row is promoted to applied only
+                        // after the render-facing catalogs accept every assignment.
+                        ReviewDisposition = "manual-review"
+            };
+            var outcome = await _catalogWriter.EnsureStyleAsync(
+                    _connectionProvider.GetConnectionString(),
+                    styleRequest,
                     cancellationToken)
                 .ConfigureAwait(false);
 
             var diagnosticSummary = BuildStyleDiagnosticSummary(diagnostics);
-            return outcome switch
+            if (disposition == "manual-review")
             {
-                MigrationCatalogWriteOutcome.Created when disposition == "manual-review" => CreateExecutionStepResult(
+                return CreateExecutionStepResult(
                     step,
                     "manual-review",
-                    $"Persisted style '{step.SourceId}' with manual-review disposition. {diagnosticSummary} Do not claim visual parity until the diagnostics are resolved."),
-                MigrationCatalogWriteOutcome.Created => CreateExecutionStepResult(
+                    $"Persisted style '{step.SourceId}' with manual-review disposition. {diagnosticSummary} Do not claim visual parity until the diagnostics are resolved.");
+            }
+
+            if (_styleApplicator == null)
+            {
+                return CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    $"Persisted converted style '{step.SourceId}' as migration evidence, but the live style applicator is unavailable; no render-facing assignment was made.");
+            }
+
+            var layerTargets = BuildStyleLayerTargets(
+                step.SourceId,
+                filteredResources,
+                publishedLayerIdsBySourceId);
+            var liveOutcome = await _styleApplicator.ApplyAsync(
+                    new MigrationLiveStyleApplyRequest
+                    {
+                        TargetStyleId = targetStyleId,
+                        Title = style.Name,
+                        MapLibreLayersJson = convertedBody,
+                        ReviewDisposition = disposition,
+                        LayerTargets = layerTargets
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (liveOutcome is MigrationStyleApplyOutcome.Applied or MigrationStyleApplyOutcome.AlreadyApplied)
+            {
+                _ = await _catalogWriter.EnsureStyleAsync(
+                        _connectionProvider.GetConnectionString(),
+                        styleRequest with { ReviewDisposition = "applied" },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return liveOutcome switch
+            {
+                MigrationStyleApplyOutcome.Applied => CreateExecutionStepResult(
                     step,
                     "applied",
-                    $"Applied {sourceFormat} style '{step.SourceId}' to honua.migration_styles.{(diagnosticSummary.Length > 0 ? " " + diagnosticSummary : string.Empty)}"),
-                MigrationCatalogWriteOutcome.AlreadyExists => CreateExecutionStepResult(
+                    $"Applied {sourceFormat} style '{step.SourceId}' to migration evidence and {layerTargets.Count} published render-facing layer(s).{(diagnosticSummary.Length > 0 ? " " + diagnosticSummary : string.Empty)}"),
+                MigrationStyleApplyOutcome.AlreadyApplied => CreateExecutionStepResult(
                     step,
                     "already-applied",
-                    $"Style '{step.SourceId}' already present; idempotent re-apply made no changes."),
-                _ => CreateExecutionStepResult(step, "manual-review", "Catalog writer returned an unexpected outcome.")
+                    $"Style '{step.SourceId}' and its {layerTargets.Count} live layer assignment(s) already match; idempotent re-apply made no changes."),
+                MigrationStyleApplyOutcome.SkippedNoPublishedLayers => CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    $"Persisted converted style '{step.SourceId}' as migration evidence, but no successfully published target layer referenced it; no render-facing assignment was made."),
+                _ => CreateExecutionStepResult(
+                    step,
+                    outcome == MigrationCatalogWriteOutcome.AlreadyExists ? "already-applied" : "manual-review",
+                    $"Style '{step.SourceId}' was not applied to live storage because its conversion requires review.")
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -905,6 +967,41 @@ internal sealed partial class GeoServerImportService
                 "failed",
                 $"Style apply for '{step.SourceId}' failed unexpectedly and requires operator review.");
         }
+    }
+
+    private static List<MigrationStyleLayerTarget> BuildStyleLayerTargets(
+        string sourceStyleId,
+        FilteredResources filteredResources,
+        IReadOnlyDictionary<string, int> publishedLayerIdsBySourceId)
+    {
+        var styleIdsByReference = BuildStyleReferenceLookup(filteredResources.Styles);
+        var targets = new List<MigrationStyleLayerTarget>();
+        foreach (var layer in filteredResources.Layers.OrderBy(GetLayerId, StringComparer.Ordinal))
+        {
+            if (!publishedLayerIdsBySourceId.TryGetValue(GetLayerId(layer), out var targetLayerId))
+            {
+                continue;
+            }
+
+            if (ResolveStyleIds(styleIdsByReference, layer.WorkspaceName, layer.DefaultStyle)
+                .Contains(sourceStyleId, StringComparer.Ordinal))
+            {
+                targets.Add(new MigrationStyleLayerTarget(targetLayerId, 0));
+                continue;
+            }
+
+            for (var index = 0; index < layer.AlternativeStyles.Length; index++)
+            {
+                if (ResolveStyleIds(styleIdsByReference, layer.WorkspaceName, layer.AlternativeStyles[index])
+                    .Contains(sourceStyleId, StringComparer.Ordinal))
+                {
+                    targets.Add(new MigrationStyleLayerTarget(targetLayerId, index + 1));
+                    break;
+                }
+            }
+        }
+
+        return targets;
     }
 
     private static string BuildTargetStyleId(MigrationSourceIdentity source, GeoServerStyleInfo style)
