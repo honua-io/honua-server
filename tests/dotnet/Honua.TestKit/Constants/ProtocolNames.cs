@@ -175,6 +175,11 @@ public static class ProtocolNames
     public const string Wcs201 = "WCS-2.0.1";
 
     /// <summary>
+    /// OGC Web Processing Service 2.0.2 protocol.
+    /// </summary>
+    public const string Wps202 = "WPS-2.0.2";
+
+    /// <summary>
     /// OGC WFS 1.1.0 compatibility protocol.
     /// </summary>
     public const string Wfs11 = "WFS-1.1.0";
