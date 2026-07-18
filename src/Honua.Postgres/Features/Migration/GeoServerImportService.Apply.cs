@@ -953,6 +953,10 @@ internal sealed partial class GeoServerImportService
                     step,
                     "manual-review",
                     $"Persisted converted style '{step.SourceId}' as migration evidence, but no successfully published target layer referenced it; no render-facing assignment was made."),
+                MigrationStyleApplyOutcome.SkippedConflict => CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    $"Persisted style '{step.SourceId}' as migration evidence, but operator-owned live style content or stale associations conflict with replay; no live content was overwritten."),
                 _ => CreateExecutionStepResult(
                     step,
                     outcome == MigrationCatalogWriteOutcome.AlreadyExists ? "already-applied" : "manual-review",
