@@ -2398,7 +2398,7 @@
       "proofs": [
         {
           "proofClass": "operation-coverage",
-          "proofMechanism": "WPS 2.0.2 endpoint integration tests cover capabilities, process descriptions, execution submission, status polling, result retrieval, and OWS exception responses.",
+          "proofMechanism": "WPS 2.0.2 endpoint integration tests cover capabilities, process descriptions, execution submission, GetStatus request and error handling, result retrieval, and OWS exception responses.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
