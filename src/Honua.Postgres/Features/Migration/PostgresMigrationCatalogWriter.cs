@@ -266,10 +266,9 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // Idempotent upsert on (source_kind, source_id). Slice 3 deliberately
-        // does not overwrite existing rows because the source-of-truth for a
-        // migrated style is the source system being scanned; operators who
-        // need to refresh diagnostics should delete the row and re-apply.
+        // Idempotent upsert on (source_kind, source_id). Conversion evidence is
+        // refreshed on replay, and a conservatively staged manual-review row may
+        // be promoted to applied only after the live style catalogs succeed.
         const string sql = """
             INSERT INTO honua.migration_styles (
                 source_kind,
@@ -299,8 +298,18 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
                 CAST(@diagnostics AS jsonb),
                 @reviewDisposition
             )
-            ON CONFLICT (source_kind, source_id) DO NOTHING
-            RETURNING source_id;
+            ON CONFLICT (source_kind, source_id) DO UPDATE SET
+                workspace_name = EXCLUDED.workspace_name,
+                style_name = EXCLUDED.style_name,
+                source_format = EXCLUDED.source_format,
+                source_language_version = EXCLUDED.source_language_version,
+                target_style_id = EXCLUDED.target_style_id,
+                source_body = EXCLUDED.source_body,
+                converted_body = EXCLUDED.converted_body,
+                converted_format = EXCLUDED.converted_format,
+                diagnostics = EXCLUDED.diagnostics,
+                review_disposition = EXCLUDED.review_disposition
+            RETURNING (xmax = 0);
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -318,9 +327,9 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         command.Parameters.AddWithValue("@reviewDisposition", request.ReviewDisposition);
 
         var inserted = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        var outcome = inserted is null
-            ? MigrationCatalogWriteOutcome.AlreadyExists
-            : MigrationCatalogWriteOutcome.Created;
+        var outcome = inserted is true
+            ? MigrationCatalogWriteOutcome.Created
+            : MigrationCatalogWriteOutcome.AlreadyExists;
 
         Log.StylePersisted(_logger, request.SourceFormat, request.SourceId, request.ReviewDisposition, outcome.ToString());
         return outcome;
