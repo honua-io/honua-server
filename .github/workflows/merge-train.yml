@@ -68,6 +68,7 @@ jobs:
   train:
     name: Run Merge Train
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     # NOTE: do NOT put matrix.* in this job-level if: — there is no matrix on
     # this job, and a matrix.* reference in a job-level if: previously caused a
     # 0-job startup failure. This job runs on every listed trigger.
@@ -132,6 +133,7 @@ jobs:
 
       - name: Run train
         env:
+          MERGE_TRAIN_TOKEN_PRESENT: ${{ secrets.MERGE_TRAIN_TOKEN != '' }}
           # MERGE_TRAIN_TOKEN is preferred: a PAT can re-trigger downstream
           # workflows (a push by GITHUB_TOKEN does NOT retrigger other
           # workflows, so CI on the batch branch would not start). Fall back to
@@ -182,8 +184,9 @@ jobs:
           # Stamp a real ISO-8601 instant (the repository updated_at above is only
           # a stable fallback; prefer a fresh UTC timestamp for this run).
           export TRAIN_RUN_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          if [[ -z "${{ secrets.MERGE_TRAIN_TOKEN }}" ]]; then
-            echo "::warning::MERGE_TRAIN_TOKEN not set; using GITHUB_TOKEN. A GITHUB_TOKEN push does not retrigger downstream workflows, so live batch-branch CI may not start. Set MERGE_TRAIN_TOKEN before enabling live mode."
+          if [[ "${TRAIN_APPLY}" == "1" && "${MERGE_TRAIN_TOKEN_PRESENT}" != "true" ]]; then
+            echo "::error::MERGE_TRAIN_TOKEN is required for TRAIN_APPLY=1. Set MERGE_TRAIN_TOKEN before running live mode."
+            exit 1
           fi
           scripts/ci/merge-train/train.sh
 

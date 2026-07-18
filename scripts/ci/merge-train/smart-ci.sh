@@ -51,29 +51,59 @@ train_smart_ci_run() {
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
   gh workflow run ci.yml --ref "${batch}" 1>&2
 
+  local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
+  local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
+  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-1800}"
+  local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
+  local pre_dispatch_runs now timeout_at
+
+  # Prefer the newest run generated after the dispatch. If no NEW run appears on
+  # this branch, CI did not start (or is severely throttled). This is exactly
+  # the failure mode we must fail closed for in live mode (missing PAT or
+  # workflow dispatch auth issues).
+  pre_dispatch_runs="$(
+    gh run list --workflow ci.yml --branch "${batch}" \
+      --json databaseId,headBranch \
+      --jq '.[] | select(.headBranch=="'"${batch}"'") | .databaseId' \
+      2>/dev/null || true
+  )"
+
   # Find the dispatched run id (most recent ci.yml run on this ref).
   local run_id=""
-  local i
-  for i in $(seq 1 12); do
+  timeout_at=$(( $(train_now) + discovery_timeout ))
+  while :; do
     run_id="$(gh run list --workflow ci.yml --branch "${batch}" \
       --json databaseId,headBranch,event \
       --jq '[.[] | select(.headBranch=="'"${batch}"'")][0].databaseId' 2>/dev/null || echo "")"
-    [[ -n "${run_id}" && "${run_id}" != "null" ]] && break
-    sleep 10
+    if [[ -n "${run_id}" && "${run_id}" != "null" ]]; then
+      if ! grep -qx "${run_id}" <<<"${pre_dispatch_runs}" ; then
+        break
+      fi
+    fi
+    now="$(train_now)"
+    [[ "${now}" -ge "${timeout_at}" ]] && break
+    sleep "${discovery_interval}"
   done
+
   if [[ -z "${run_id}" || "${run_id}" == "null" ]]; then
-    train_err "could not locate dispatched CI run for ${batch}"
+    train_err "could not locate a newly dispatched ci.yml run for ${batch} within ${discovery_timeout}s; live mode requires MERGE_TRAIN_TOKEN for batch-branch CI dispatch"
     echo "FAILURE"; return 0
   fi
   train_log "smart-ci run id: ${run_id}"
   echo "${run_id}" >"${TRAIN_RUN_ID_FILE:-/dev/null}"
 
   # Poll until the CI Gate job completes.
+  timeout_at=$(( $(train_now) + poll_timeout ))
   while :; do
     local status conclusion
     status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
     if [[ "${status}" == "completed" ]]; then break; fi
-    sleep 30
+    now="$(train_now)"
+    if [[ "${now}" -ge "${timeout_at}" ]]; then
+      train_err "CI run ${run_id} for ${batch} did not finish within ${poll_timeout}s"
+      echo "FAILURE"; return 0
+    fi
+    sleep "${poll_interval}"
   done
 
   conclusion="$(gh run view "${run_id}" --json jobs \
