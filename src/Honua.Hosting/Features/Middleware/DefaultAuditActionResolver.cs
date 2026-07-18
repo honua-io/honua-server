@@ -9,7 +9,7 @@ namespace Honua.Infrastructure.Middleware;
 /// <summary>
 /// Default, data-driven implementation of <see cref="IAuditActionResolver"/>.
 /// Encodes the audit coverage matrix
-/// (<c>docs/operator/audit-coverage-matrix.md</c>) so that audit emission stays
+/// (<c>docs/internal/operator/audit-coverage-matrix.md</c>) so that audit emission stays
 /// middleware-driven instead of being scattered across endpoint handlers.
 /// </summary>
 /// <remarks>

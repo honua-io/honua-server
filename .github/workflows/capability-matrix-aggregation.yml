@@ -23,6 +23,12 @@ on:
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/validate-cite-openapi-compliance.py'
+      - 'src/Honua.Server/openapi.json'
+      - 'src/Honua.Server/ogc-tiles-openapi.json'
+      - 'src/Honua.Server/ogc-maps-openapi.json'
+      - 'src/Honua.Server/ogc-coverages-openapi.json'
+      - 'src/Honua.Server/ogc-processes-openapi.json'
       - '.github/workflows/capability-matrix-aggregation.yml'
   push:
     branches:
@@ -34,6 +40,12 @@ on:
       - 'docs/gis/data/capability-keys.v1.json'
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/validate-cite-openapi-compliance.py'
+      - 'src/Honua.Server/openapi.json'
+      - 'src/Honua.Server/ogc-tiles-openapi.json'
+      - 'src/Honua.Server/ogc-maps-openapi.json'
+      - 'src/Honua.Server/ogc-coverages-openapi.json'
+      - 'src/Honua.Server/ogc-processes-openapi.json'
   schedule:
     # Weekly freshness check: cite-status.md and geoservices-rest-parity.json
     # are hand-refreshed on their own cadence (not every push touches this
@@ -75,6 +87,9 @@ jobs:
           fi
           echo "docs/gis/data/capability-matrix.v1.json is up to date."
 
+      - name: Validate CITE evidence-table joins against OpenAPI metadata
+        run: python3 scripts/ci/validate-cite-openapi-compliance.py
+
       - name: Upload capability-matrix.v1.json artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -82,3 +97,4 @@ jobs:
           name: capability-matrix-${{ github.run_id }}
           path: docs/gis/data/capability-matrix.v1.json
           retention-days: 90
+

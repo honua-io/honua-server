@@ -8,7 +8,7 @@ still requires submission through the OGC Compliance Program for a specific
 product version and standard revision.
 
 Stable GitHub URL:
-`https://github.com/honua-io/honua-server/blob/trunk/docs/contributor/ogc-cite-conformance-evidence.md`
+`https://github.com/honua-io/honua-server/blob/trunk/docs/internal/contributor/ogc-cite-conformance-evidence.md`
 
 Latest successful trunk evidence run:
 [`CITE Evidence Report` run 26005533282](https://github.com/honua-io/honua-server/actions/runs/26005533282)
