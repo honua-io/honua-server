@@ -876,20 +876,20 @@ internal sealed partial class GeoServerImportService
         {
             var styleRequest = new MigrationStyleRequest
             {
-                        SourceKind = applyPlan.SourceKind,
-                        SourceId = step.SourceId,
-                        TargetStyleId = targetStyleId,
-                        StyleName = style.Name,
-                        WorkspaceName = string.IsNullOrWhiteSpace(style.WorkspaceName) ? null : style.WorkspaceName,
-                        SourceFormat = sourceFormat,
-                        SourceLanguageVersion = string.IsNullOrWhiteSpace(style.LanguageVersion) ? null : style.LanguageVersion,
-                        SourceBody = string.IsNullOrWhiteSpace(style.SldContent) ? null : style.SldContent,
-                        ConvertedBody = convertedBody,
-                        ConvertedFormat = convertedFormat,
-                        DiagnosticsJson = SerializeStyleDiagnostics(diagnostics),
-                        // Stage evidence conservatively. This row is promoted to applied only
-                        // after the render-facing catalogs accept every assignment.
-                        ReviewDisposition = "manual-review"
+                SourceKind = applyPlan.SourceKind,
+                SourceId = step.SourceId,
+                TargetStyleId = targetStyleId,
+                StyleName = style.Name,
+                WorkspaceName = string.IsNullOrWhiteSpace(style.WorkspaceName) ? null : style.WorkspaceName,
+                SourceFormat = sourceFormat,
+                SourceLanguageVersion = string.IsNullOrWhiteSpace(style.LanguageVersion) ? null : style.LanguageVersion,
+                SourceBody = string.IsNullOrWhiteSpace(style.SldContent) ? null : style.SldContent,
+                ConvertedBody = convertedBody,
+                ConvertedFormat = convertedFormat,
+                DiagnosticsJson = SerializeStyleDiagnostics(diagnostics),
+                // Stage evidence conservatively. This row is promoted to applied only
+                // after the render-facing catalogs accept every assignment.
+                ReviewDisposition = "manual-review"
             };
             var outcome = await _catalogWriter.EnsureStyleAsync(
                     _connectionProvider.GetConnectionString(),
