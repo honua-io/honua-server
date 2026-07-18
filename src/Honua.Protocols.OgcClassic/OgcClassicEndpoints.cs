@@ -3,6 +3,7 @@
 
 using Honua.Protocols.Ogc.Classic.Wms;
 using Honua.Protocols.Ogc.Classic.Wmts;
+using Honua.Protocols.Ogc.Classic.Wps20;
 
 namespace Honua.Protocols.Ogc.Classic;
 
@@ -17,6 +18,8 @@ internal static class OgcClassicEndpoints
     public static IEndpointRouteBuilder MapOgcClassicEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
+
+        endpoints.MapWps20Endpoint();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMTS",
                 static (HttpContext context, CancellationToken cancellationToken) => WmtsRequestHandlers.HandleWmts(context))
