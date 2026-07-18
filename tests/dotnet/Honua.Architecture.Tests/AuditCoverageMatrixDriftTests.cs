@@ -12,8 +12,8 @@ using Xunit;
 namespace Honua.Architecture.Tests;
 
 /// <summary>
-/// Guards against silent drift between <see cref="DefaultAuditActionResolver"/>
-/// and <c>docs/internal/operator/audit-coverage-matrix.md</c>. The resolver is
+/// Guards against silent drift between <c>DefaultAuditActionResolver</c> and
+/// <c>docs/internal/operator/audit-coverage-matrix.md</c>. The resolver is
 /// the code form for auth route handling, so these row-level claims need a hard
 /// join check.
 /// </summary>
