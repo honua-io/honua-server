@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Claims;
 
 namespace Honua.Core.Features.Authorization.Domain;
@@ -125,18 +126,11 @@ public static class OperatorScopeCatalog
     {
         ArgumentNullException.ThrowIfNull(principal);
 
-        foreach (var claim in principal.Claims)
-        {
-            if (claim.Type == ScopeGovernedClaimType
-                || claim.Type == ScopeClaimType
-                || claim.Type == ScpClaimType
-                || claim.Type == ScopeClaimUri)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return principal.Claims.Any(claim =>
+            claim.Type == ScopeGovernedClaimType
+            || claim.Type == ScopeClaimType
+            || claim.Type == ScpClaimType
+            || claim.Type == ScopeClaimUri);
     }
 
     /// <summary>
@@ -148,24 +142,14 @@ public static class OperatorScopeCatalog
     {
         ArgumentNullException.ThrowIfNull(principal);
 
-        var recognized = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var claim in principal.Claims)
-        {
-            if (claim.Type != ScopeClaimType && claim.Type != ScpClaimType && claim.Type != ScopeClaimUri)
-            {
-                continue;
-            }
-
-            foreach (var token in claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (ScopeOperations.ContainsKey(token))
-                {
-                    recognized.Add(token);
-                }
-            }
-        }
-
-        return recognized;
+        return principal.Claims
+            .Where(claim =>
+                claim.Type == ScopeClaimType
+                || claim.Type == ScpClaimType
+                || claim.Type == ScopeClaimUri)
+            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(token => ScopeOperations.ContainsKey(token))
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -175,15 +159,8 @@ public static class OperatorScopeCatalog
     {
         ArgumentNullException.ThrowIfNull(recognizedScopes);
 
-        foreach (var scope in recognizedScopes)
-        {
-            if (ScopeOperations.TryGetValue(scope, out var operations)
-                && Array.IndexOf(operations, operation) >= 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return recognizedScopes.Any(scope =>
+            ScopeOperations.TryGetValue(scope, out var operations)
+            && Array.IndexOf(operations, operation) >= 0);
     }
 }
