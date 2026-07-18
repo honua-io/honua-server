@@ -10,9 +10,15 @@ unless they are explicitly requested by a test.
 
 from __future__ import annotations
 
-# Names below are resolved lazily via module __getattr__ (PEP 562, see below)
-# rather than bound at module level, so static analyzers that don't model
-# PEP 562 (e.g. CodeQL py/undefined-export) will report false positives here.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .geometry import ALL_GEOMETRY_TYPES, GeometryGenerator
+    from .postgis import PostGISFixture, TestDataBuilder
+    from .seed import SeedRunner
+    from .server import HonuaServer
+
+
 __all__ = [
     "GeometryGenerator",
     "ALL_GEOMETRY_TYPES",
