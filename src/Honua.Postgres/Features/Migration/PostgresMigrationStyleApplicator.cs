@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Postgres.Features.Migration;
 
@@ -44,15 +45,74 @@ internal sealed class PostgresMigrationStyleApplicator(
             request.Title,
             request.MapLibreLayersJson,
             targets.Select(static target => target.LayerId).ToArray());
-        var changed = await EnsureCanonicalStyleAsync(request, canonicalJson, cancellationToken).ConfigureAwait(false);
+        var currentStyle = await styleCatalog.GetStyleAsync(request.TargetStyleId, cancellationToken).ConfigureAwait(false);
+        if (currentStyle != null &&
+            !JsonEquals(currentStyle.MapLibreStyleJson, canonicalJson) &&
+            !IsMigrationOwned(currentStyle.RevisedBy))
+        {
+            return MigrationStyleApplyOutcome.SkippedConflict;
+        }
 
+        var currentAssociations = await styleCatalog.ListAssociationsAsync(cancellationToken).ConfigureAwait(false);
+        var requestedAssociations = targets
+            .Select(target => new StyleLayerAssociation(target.LayerId, request.TargetStyleId, target.Ordinal))
+            .ToArray();
+        if (currentAssociations.Any(existing =>
+                string.Equals(existing.StyleId, request.TargetStyleId, StringComparison.Ordinal) &&
+                !requestedAssociations.Contains(existing)))
+        {
+            // IStyleCatalog currently has no remove-association operation. Refuse to
+            // claim a reordered/removed binding was reconciled when stale refs remain.
+            return MigrationStyleApplyOutcome.SkippedConflict;
+        }
+
+        var defaultTargets = targets.Where(static target => target.Ordinal == 0).ToArray();
+        var currentLayerStyles = new Dictionary<int, Honua.Core.Features.Styling.Domain.LayerStyleDefinition?>();
+        foreach (var target in defaultTargets)
+        {
+            var layerJson = BuildMapLibreStyleDocument(request.Title, request.MapLibreLayersJson, [target.LayerId]);
+            var current = await layerStyleCatalog.GetLayerStyleAsync(target.LayerId, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(current?.MapLibreStyleJson) &&
+                !JsonEquals(current.MapLibreStyleJson, layerJson) &&
+                !IsMigrationOwned(current.StyleRevisedBy))
+            {
+                return MigrationStyleApplyOutcome.SkippedConflict;
+            }
+
+            currentLayerStyles[target.LayerId] = current;
+        }
+
+        var changed = await EnsureCanonicalStyleAsync(request, canonicalJson, currentStyle, cancellationToken).ConfigureAwait(false);
+
+        // Apply associations before the render-facing layer value. A failed
+        // association leaves a resumable canonical record, but never exposes a
+        // partially replaced default layer style.
         foreach (var target in targets)
+        {
+            var association = new StyleLayerAssociation(target.LayerId, request.TargetStyleId, target.Ordinal);
+            var associationAlreadyPresent = currentAssociations.Contains(association);
+            if (!await styleCatalog.AssociateLayerAsync(
+                    target.LayerId,
+                    request.TargetStyleId,
+                    target.Ordinal,
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"Could not associate migrated style {request.TargetStyleId} with published target layer {target.LayerId}.");
+            }
+
+            changed |= !associationAlreadyPresent;
+        }
+
+        // Only GeoServer's default style owns the layer's render-facing value.
+        // Alternative styles remain independent-catalog associations by ordinal.
+        foreach (var target in defaultTargets)
         {
             var layerJson = BuildMapLibreStyleDocument(
                 request.Title,
                 request.MapLibreLayersJson,
                 [target.LayerId]);
-            var current = await layerStyleCatalog.GetLayerStyleAsync(target.LayerId, cancellationToken).ConfigureAwait(false);
+            var current = currentLayerStyles[target.LayerId];
             if (!JsonEquals(current?.MapLibreStyleJson, layerJson))
             {
                 var updated = await layerStyleCatalog.SetMapLibreStyleAsync(
@@ -69,20 +129,13 @@ internal sealed class PostgresMigrationStyleApplicator(
 
                 changed = true;
             }
+        }
 
-            if (!await styleCatalog.AssociateLayerAsync(
-                    target.LayerId,
-                    request.TargetStyleId,
-                    target.Ordinal,
-                    cancellationToken)
-                .ConfigureAwait(false))
+        if (styleGraphSync != null)
+        {
+            foreach (var layerId in targets.Select(static target => target.LayerId).Distinct())
             {
-                throw new InvalidOperationException($"Could not associate migrated style {request.TargetStyleId} with published target layer {target.LayerId}.");
-            }
-
-            if (styleGraphSync != null)
-            {
-                await styleGraphSync.SyncLayerStylesAsync(target.LayerId, cancellationToken).ConfigureAwait(false);
+                await styleGraphSync.SyncLayerStylesAsync(layerId, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -92,9 +145,9 @@ internal sealed class PostgresMigrationStyleApplicator(
     private async Task<bool> EnsureCanonicalStyleAsync(
         MigrationLiveStyleApplyRequest request,
         string canonicalJson,
+        Honua.Core.Features.Styling.Domain.StyleCatalogRecord? current,
         CancellationToken cancellationToken)
     {
-        var current = await styleCatalog.GetStyleAsync(request.TargetStyleId, cancellationToken).ConfigureAwait(false);
         if (current == null)
         {
             var created = await styleCatalog.CreateStyleAsync(
@@ -119,7 +172,7 @@ internal sealed class PostgresMigrationStyleApplicator(
             return false;
         }
 
-        _ = await styleCatalog.UpsertStyleAsync(
+        var updated = await styleCatalog.UpsertStyleAsync(
                 request.TargetStyleId,
                 canonicalJson,
                 request.Title,
@@ -128,8 +181,16 @@ internal sealed class PostgresMigrationStyleApplicator(
                 changeSummary: "Updated by GeoServer migration.",
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+        if (updated == null)
+        {
+            throw new InvalidOperationException($"Canonical style upsert returned no record for {request.TargetStyleId}.");
+        }
+
         return true;
     }
+
+    private static bool IsMigrationOwned(string? revisedBy) =>
+        string.Equals(revisedBy, "geoserver-migration", StringComparison.Ordinal);
 
     private static string BuildMapLibreStyleDocument(
         string title,

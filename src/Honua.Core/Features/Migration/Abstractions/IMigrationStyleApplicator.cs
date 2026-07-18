@@ -61,6 +61,9 @@ public enum MigrationStyleApplyOutcome
     /// <summary>The conversion requires manual review and was deliberately not applied.</summary>
     SkippedManualReview,
 
+    /// <summary>An operator-owned style or stale association conflicts with the migration replay.</summary>
+    SkippedConflict,
+
     /// <summary>No successfully published target layer referenced the style.</summary>
     SkippedNoPublishedLayers
 }
