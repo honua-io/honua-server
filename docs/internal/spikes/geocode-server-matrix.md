@@ -42,6 +42,8 @@ category parameter):
 
 ## Service resource
 
+The Honua endpoint columns in this section and the operation table below are projections of `docs/gis/data/feature-catalog.json`; `DocumentationMatrixDriftTests` gates the join in both directions. Behavioral status and provider notes remain hand-authored.
+
 | Esri resource | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | GeocodeServer metadata | `/GeocodeServer` | GET, POST | Partial | `GET/POST /rest/services/{locatorName}/GeocodeServer`, `GET/POST /rest/services/GeocodeServer` | Returns `currentVersion`, `serviceDescription`, `capabilities`, `spatialReference`, `singleLineAddressField`, `addressFields`, `candidateFields` (the attributes every candidate emits), the `categories` array (the address/place families candidates are classified into, e.g. `Address`, `POI`, `City`), and `locatorProperties`. |

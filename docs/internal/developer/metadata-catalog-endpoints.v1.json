@@ -1,6 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "title": "Honua metadata and catalog endpoint inventory",
+  "endpointSource": "docs/gis/data/feature-catalog.json",
   "canonicalIssue": "honua-io/honua-server#955",
   "parentEpic": "honua-io/honua-server#954",
   "relatedIssues": [
@@ -48,9 +49,6 @@
         "admin-sdk-capabilities",
         "admin-service-catalog",
         "admin-connection-layer-inventory",
-        "admin-metadata-resources",
-        "admin-metadata-manifests",
-        "admin-manifest-lifecycle",
         "admin-style-metadata",
         "admin-scene-dataset-registry"
       ],
@@ -253,7 +251,7 @@
     {
       "id": "admin-metadata-resources",
       "title": "Admin metadata resources, groups, and source descriptors",
-      "status": "implemented",
+      "status": "removed",
       "category": "admin-control-plane-metadata-read",
       "capabilities": [
         "metadata-resource-list",
@@ -262,10 +260,7 @@
         "group-read",
         "source-descriptor-read"
       ],
-      "endpointPatterns": [
-        "GET /api/v1/admin/metadata/resources",
-        "GET /api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"
-      ],
+      "endpointPatterns": [],
       "audience": "Operators and SDKs reading Honua metadata resources such as Group and SourceDescriptor.",
       "authPosture": "Admin authorization required.",
       "sdkTargets": {
@@ -280,7 +275,7 @@
     {
       "id": "admin-metadata-manifests",
       "title": "Admin metadata manifest export and apply",
-      "status": "implemented",
+      "status": "removed",
       "category": "admin-control-plane-metadata-read",
       "capabilities": [
         "manifest-export",
@@ -289,10 +284,7 @@
         "prune",
         "approval-handoff"
       ],
-      "endpointPatterns": [
-        "GET /api/v1/admin/manifest",
-        "POST /api/v1/admin/manifest/apply"
-      ],
+      "endpointPatterns": [],
       "audience": "Operators, GitOps automation, and SDKs that export or validate metadata manifests.",
       "authPosture": "Admin authorization required.",
       "sdkTargets": {
@@ -307,7 +299,7 @@
     {
       "id": "admin-manifest-lifecycle",
       "title": "Admin manifest drift, version, approval, and GitOps reads",
-      "status": "implemented",
+      "status": "removed",
       "category": "admin-control-plane-metadata-read",
       "capabilities": [
         "manifest-drift-read",
@@ -317,18 +309,7 @@
         "gitops-watch-read",
         "gitops-change-read"
       ],
-      "endpointPatterns": [
-        "GET /api/v1/admin/manifest/drift",
-        "GET /api/v1/admin/manifest/versions",
-        "GET /api/v1/admin/manifest/versions/{versionId}",
-        "GET /api/v1/admin/manifest/pending/",
-        "GET /api/v1/admin/manifest/pending/{id}",
-        "GET /api/v1/admin/manifest/pending/history",
-        "GET /api/v1/admin/gitops/watch",
-        "GET /api/v1/admin/gitops/changes",
-        "GET /api/v1/admin/gitops/changes/{id}",
-        "GET /api/v1/admin/gitops/changes/{id}/diff"
-      ],
+      "endpointPatterns": [],
       "audience": "Operators, GitOps automation, and admin SDKs that need manifest lifecycle state without applying changes.",
       "authPosture": "Admin authorization required. Approval and GitOps reads can be edition-gated by runtime capabilities.",
       "sdkTargets": {
