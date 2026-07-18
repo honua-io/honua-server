@@ -12,7 +12,7 @@ namespace Honua.Core.Features.AuditLog.Abstractions;
 /// <remarks>
 /// <para>
 /// The descriptor is the data-plane representation of a single row in the audit
-/// coverage matrix (see <c>docs/operator/audit-coverage-matrix.md</c>). It binds
+/// coverage matrix (see <c>docs/internal/operator/audit-coverage-matrix.md</c>). It binds
 /// a recognized operation to its stable <see cref="AuditEventType"/>, dotted
 /// <see cref="Action"/> verb, and the resource family the operation targets.
 /// Outcome and actor are resolved per-request by the middleware (from the final
