@@ -84,7 +84,7 @@ public sealed class NoHonuaServerArcGisVersionTests
             {
                 if (property.GetValue(context) is JsonTypeInfo typeInfo)
                 {
-                    yield return ($"{contextType.Name}.{typeInfo.Type.Name}", typeInfo);
+                    yield return (typeInfo.Type.FullName ?? typeInfo.Type.Name, typeInfo);
                 }
             }
         }

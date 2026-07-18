@@ -251,6 +251,33 @@ public class SkiaMapRendererTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
+    public void RenderMap_NonPositiveHeight_ThrowsArgumentOutOfRangeException(int height)
+    {
+        using var renderer = new SkiaMapRenderer();
+        var extent = new SkiaMapRenderer.RenderExtent(0, 0, 1, 1);
+
+        var act = () => renderer.RenderMap([], [], extent, 10, height, true, null, MetadataV2GeometryType.None, RenderZoom.NotDerivable("unit test"));
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("imageHeight");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void RenderLegendSwatch_NonPositiveWidth_ThrowsArgumentOutOfRangeException(int width)
+    {
+        var layer = new MapLibreStyleLayer { Type = "fill" };
+
+        var act = () => SkiaMapRenderer.RenderLegendSwatch(layer, MetadataV2GeometryType.Polygon, width: width, height: 20);
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .Which.ParamName.Should().Be("width");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
     public void RenderLegendSwatch_NonPositiveHeight_ThrowsArgumentOutOfRangeException(int height)
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
@@ -376,7 +403,7 @@ public class SkiaMapRendererTests
     }
 
     [UnitTest]
-    public void RenderExtent_Width_IsCorrect()
+    public void RenderExtent_WidthAndHeight_AreCorrect()
     {
         var extent = new SkiaMapRenderer.RenderExtent(10, 20, 30, 50);
 
