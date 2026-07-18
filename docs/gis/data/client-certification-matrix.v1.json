@@ -77,9 +77,9 @@
     },
     {
       "id": "cli",
-      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-GEOM-*", "CERT-ERRH-*"],
+      "automated": ["CERT-CONN-*", "CERT-AUTH-*", "CERT-DISC-*", "CERT-SCHM-*", "CERT-QFLT-*", "CERT-PAGE-*", "CERT-ERRH-*"],
       "manual": ["CLI-EXT-01", "CLI-EXT-02"],
-      "notApplicable": ["CERT-RNDR-*"]
+      "notApplicable": ["CERT-GEOM-*", "CERT-RNDR-*"]
     },
     {
       "id": "arcgis-stub",

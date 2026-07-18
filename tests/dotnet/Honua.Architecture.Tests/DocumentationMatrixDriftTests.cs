@@ -94,7 +94,12 @@ public sealed class DocumentationMatrixDriftTests
         declaredIds.Should().BeEquivalentTo(documentedIds, "the JSON vocabulary and published matrix must define the same IDs");
 
         var evidenceByLane = ReadCertificationEvidence(root);
-        foreach (var lane in source.RootElement.GetProperty("lanes").EnumerateArray())
+        var declaredLanes = source.RootElement.GetProperty("lanes").EnumerateArray().ToArray();
+        var declaredLaneIds = declaredLanes.Select(lane => lane.GetProperty("id").GetString()!).ToHashSet(StringComparer.Ordinal);
+        evidenceByLane.Keys.Should().BeSubsetOf(declaredLaneIds,
+            "every committed certification evidence lane must declare applicability in the matrix source");
+
+        foreach (var lane in declaredLanes)
         {
             var laneId = lane.GetProperty("id").GetString()!;
             evidenceByLane.Should().ContainKey(laneId);
@@ -122,18 +127,19 @@ public sealed class DocumentationMatrixDriftTests
     {
         var evidenceRoot = ArchitectureTestHelpers.CombinePath(root, "tests", "baselines", "client-compat");
         var result = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (var path in Directory.EnumerateFiles(evidenceRoot, "*.cert.json", SearchOption.AllDirectories))
+        foreach (var document in Directory.EnumerateFiles(evidenceRoot, "*.cert.json", SearchOption.AllDirectories)
+                     .Select(path => JsonDocument.Parse(File.ReadAllText(path))))
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            var lane = document.RootElement.GetProperty("client_lane").GetString()!;
+            using var ownedDocument = document;
+            var lane = ownedDocument.RootElement.GetProperty("client_lane").GetString()!;
             if (!result.TryGetValue(lane, out var ids))
             {
                 ids = new HashSet<string>(StringComparer.Ordinal);
                 result.Add(lane, ids);
             }
 
-            AddEvidenceIds(document.RootElement.GetProperty("results"), ids);
-            AddEvidenceIds(document.RootElement.GetProperty("extensions"), ids);
+            AddEvidenceIds(ownedDocument.RootElement.GetProperty("results"), ids);
+            AddEvidenceIds(ownedDocument.RootElement.GetProperty("extensions"), ids);
         }
 
         return result;
