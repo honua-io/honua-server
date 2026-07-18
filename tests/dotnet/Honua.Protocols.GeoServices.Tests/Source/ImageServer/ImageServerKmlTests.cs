@@ -20,6 +20,7 @@ public sealed class ImageServerKmlTests
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/kml/image.kmz")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/kml/image.kmz")]
     [Operation(Operations.GetServiceInfo)]
     public async Task GetKml_SeededMosaic_ReturnsKmzGroundOverlayOverServiceExtent()
     {
@@ -53,6 +54,17 @@ public sealed class ImageServerKmlTests
             href.Should().Contain("bboxSR=4326");
             href.Should().Contain("imageSR=4326");
             href.Should().Contain("f=image");
+
+            response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/kml/image.kmz");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType
+                .Should().Be("application/vnd.google-earth.kmz");
+
+            document = await ReadKmlFromKmzAsync(response);
+            groundOverlay = document.Descendants(Kml + "GroundOverlay").Should().ContainSingle().Subject;
+            latLonBox = groundOverlay.Element(Kml + "LatLonBox");
+            latLonBox.Should().NotBeNull();
         }
         finally
         {
@@ -62,6 +74,7 @@ public sealed class ImageServerKmlTests
 
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/kml/image.kmz")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/kml/image.kmz")]
     [Operation(Operations.GetServiceInfo)]
     public async Task GetKml_UnknownLayer_ReturnsNotFound()
     {

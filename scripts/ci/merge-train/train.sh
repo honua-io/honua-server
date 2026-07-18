@@ -86,6 +86,173 @@ _emit_metrics() {
     || train_warn "could not write metrics JSON"
 }
 
+# train_regenerate_derived_artifacts <batch>:
+# Regenerate merge-train sensitive derived assets on the batch branch and commit any
+# drift if changes are introduced.
+train_regenerate_derived_artifacts() {
+  local batch="$1"
+  local repo_root="${TRAIN_REPO_ROOT}"
+  local feature_catalog="docs/gis/data/feature-catalog.json"
+  local geoservices_parity="docs/gis/data/geoservices-rest-parity.json"
+  local capability_matrix="docs/gis/data/capability-matrix.v1.json"
+
+  local status
+
+  train_log "regenerating derived artifacts on ${batch} (feature-catalog, geoservices-parity, capability-matrix)"
+  "${repo_root}/scripts/generate-feature-catalog.sh"
+  "${repo_root}/scripts/generate-geoservices-parity.sh"
+  python3 "${repo_root}/scripts/ci/generate-capability-matrix.py"
+
+  status="$(git -C "${repo_root}" status --short -- "${feature_catalog}" "${geoservices_parity}" "${capability_matrix}" || echo "")"
+  if [[ -z "${status}" ]]; then
+    train_log "derived artifacts already up to date on ${batch}"
+    return 0
+  fi
+
+  git -C "${repo_root}" add -- "${feature_catalog}" "${geoservices_parity}" "${capability_matrix}"
+  git -C "${repo_root}" commit -m "chore(ci): refresh generated merge-train artifacts" \
+    >/dev/null
+  train_metric_inc derived_artifact_refreshes
+  train_decision "DERIVED ARTIFACTS refreshed on ${batch}"
+}
+
+# train_run_batch_ci <batch>:
+# Before running CI for a batch branch, refresh deterministic derived artifacts and
+# then dispatch + poll smart-CI. If refresh fails, we return FAILURE for a
+# fail-closed path.
+train_run_batch_ci() {
+  local batch="$1"
+  if [[ "${TRAIN_APPLY}" == "1" ]]; then
+    if ! train_regenerate_derived_artifacts "${batch}"; then
+      train_err "derived-artifact regeneration failed for ${batch}"
+      echo "FAILURE"
+      return 0
+    fi
+  fi
+  train_smart_ci_run "${batch}"
+}
+
+# train_attribute_probe_gate <comma-separated-prs> <trunk-sha7> <anchor-batch>:
+# Build just those PRs into a disposable batch branch and run batch CI. Prints the
+# resulting gate (FAILURE / SUCCESS / etc.) and preserves the caller's working
+# branch + TRAIN_* scratch state.
+train_attribute_probe_gate() {
+  local suspects_csv="$1" trunk_sha7="$2" anchor_batch="$3"
+  local probe_text probe_inc probe_skp probe_run probe_branch gate include_count
+  local -a probe_prs
+  local -a suspects
+  probe_text="$(printf '%s' "${suspects_csv}" | tr ',\r' ' ' | tr '\n' ' ')"
+  # shellcheck disable=SC2207
+  suspects=( $(printf '%s' "${probe_text}") )
+  probe_inc="$(mktemp)"
+  probe_skp="$(mktemp)"
+  probe_run="$(mktemp)"
+  probe_branch="train/attribute-probe/${trunk_sha7}/$(date -u +%s%N)"
+
+  local prev_included="${TRAIN_INCLUDED_FILE}" prev_skipped="${TRAIN_SKIPPED_FILE}"
+  local prev_batch="${TRAIN_BATCH_BRANCH:-}"
+  local prev_run_id="${TRAIN_RUN_ID_FILE}"
+  local pr
+  for pr in "${suspects[@]}"; do
+    [[ -z "${pr//[[:space:]]/}" ]] && continue
+    probe_prs+=("${pr}")
+  done
+  if [[ "${#probe_prs[@]}" -eq 0 ]]; then
+    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
+    echo "SUCCESS"
+    return 0
+  fi
+
+  export TRAIN_BATCH_BRANCH="${probe_branch}"
+  export TRAIN_INCLUDED_FILE="${probe_inc}"
+  export TRAIN_SKIPPED_FILE="${probe_skp}"
+  export TRAIN_RUN_ID_FILE="${probe_run}"
+
+  local probe_batch
+  if ! probe_batch="$(train_assemble "${trunk_sha7}" "${probe_prs[@]}" )"; then
+    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
+    git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
+    TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+    echo "NO_RUN"
+    return 0
+  fi
+  include_count="$(cut -f1 "${probe_inc}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  if [[ "${include_count}" -eq 0 ]]; then
+    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
+    git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
+    TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+    echo "NO_RUN"
+    return 0
+  fi
+
+  gate="$(train_run_batch_ci "${probe_batch}")"
+  rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
+  git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
+  TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+  echo "${gate:-FAILURE}"
+}
+
+# train_refine_attribute_candidates <suspect-csv> <trunk-sha7> <anchor-batch>:
+# Run bounded bisection probes on a suspect set to avoid escalating the whole batch
+# when a single PR can be isolated.
+train_refine_attribute_candidates() {
+  local suspects_csv="$1" trunk_sha7="$2" anchor_batch="$3"
+  local suspect_text
+  local -a queue
+  suspect_text="$(printf '%s' "${suspects_csv}" | tr ',\r' ' ' | tr '\n' ' ')"
+  # shellcheck disable=SC2207
+  queue=( $(printf '%s' "${suspect_text}") )
+  if [[ "${#queue[@]}" -le 1 ]]; then
+    printf '%s\n' "${queue[@]}"
+    return 0
+  fi
+
+  local max_depth="${TRAIN_ATTRIBUTE_REFINE_MAX_DEPTH:-2}"
+
+  # A fixed, bounded breadth-limited sweep that halves candidate sets while
+  # probing evidence.
+  local attempt changed left_count gate_left gate_right
+  for (( attempt=1; attempt<=max_depth; attempt+=1 )); do
+    if [[ "${#queue[@]}" -le 1 ]]; then
+      break
+    fi
+
+    local -a next=()
+    local -a left=() right=()
+    local changed=0
+    local left_csv="" right_csv=""
+
+    left_count=$(( ${#queue[@]} / 2 ))
+    [[ "${left_count}" -lt 1 ]] && left_count=1
+    left=( "${queue[@]:0:left_count}" )
+    right=( "${queue[@]:left_count}" )
+
+    for p in "${left[@]}"; do left_csv+="${left_csv:+,}${p}"; done
+    for p in "${right[@]}"; do right_csv+="${right_csv:+,}${p}"; done
+
+    gate_left="$(train_attribute_probe_gate "${left_csv}" "${trunk_sha7}" "${anchor_batch}")"
+    if [[ "${gate_left}" == "FAILURE" ]]; then
+      next+=( "${left[@]}" )
+      changed=1
+    fi
+    if [[ -n "${right_csv}" ]]; then
+      gate_right="$(train_attribute_probe_gate "${right_csv}" "${trunk_sha7}" "${anchor_batch}")"
+      if [[ "${gate_right}" == "FAILURE" ]]; then
+        next+=( "${right[@]}" )
+        changed=1
+      fi
+    fi
+
+    [[ "${changed}" == "0" ]] && break
+    if [[ "${#next[@]}" -eq 0 ]]; then
+      break
+    fi
+
+    queue=( "${next[@]}" )
+  done
+
+  printf '%s\n' "${queue[@]}" | sort -u
+}
 main() {
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
@@ -186,7 +353,7 @@ main() {
     shard_descriptor="$(train_smart_ci_shards "${batch}")"
     train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
     train_decision "smart-CI shard subset: ${shard_descriptor}"
-    gate="$(train_smart_ci_run "${batch}")"
+    gate="$(train_run_batch_ci "${batch}")"
   fi
   train_step_end smart-ci >/dev/null
   train_endgroup
@@ -259,7 +426,7 @@ main() {
         fwdfix=$((fwdfix + 1))
         train_metric_set forward_fixes "${fwdfix}"
         train_decision "forward-fix #${fwdfix} applied (dotnet format); re-running CI"
-        gate="$(train_smart_ci_run "${batch}")"
+        gate="$(train_run_batch_ci "${batch}")"
         continue
       fi
     fi
@@ -350,6 +517,24 @@ main() {
     # --- (2) attribute + escalate (real failure, not autofixed) -------------
     _write_state "${batch}" "${trunk_sha}" "${included}" "attribute" "${run_id}" "${fwdfix}" "${flake_reruns}"
     local culprits; culprits="$(train_attribute "${failing}" "${TRAIN_INCLUDED_FILE}")"
+    if [[ "${culprits}" != "ESCALATE_BATCH" && "${TRAIN_APPLY}" == "1" ]]; then
+      local culprit_count
+      culprit_count="$(printf '%s\n' "${culprits}" | sed '/^$/d' | wc -l | tr -d ' ')"
+      if [[ "${culprit_count}" -gt 1 ]]; then
+        local narrowed
+        narrowed="$(train_refine_attribute_candidates "${culprits}" "${trunk_sha7}" "${batch}")"
+        if [[ -n "${narrowed}" ]]; then
+          local narrowed_count
+          narrowed_count="$(printf '%s\n' "${narrowed}" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [[ "${narrowed_count}" -lt "${culprit_count}" ]]; then
+            train_notice "attribute isolation reduced suspects from ${culprit_count} to ${narrowed_count}; continuing with narrowed set"
+            culprits="$(printf '%s' "${narrowed}" | tr '\n' ' ')"
+          else
+            train_warn "attribute isolation did not reduce suspects"
+          fi
+        fi
+      fi
+    fi
     if [[ "${culprits}" == "ESCALATE_BATCH" ]]; then
       train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
       train_annotate_warn "escalating entire batch; manual triage required"
@@ -389,7 +574,7 @@ main() {
     # shellcheck disable=SC2086
     batch="$(train_assemble "${trunk_sha7}" $(tr ',' ' ' <<<"${included}"))"
     included="$(cut -f1 "${TRAIN_INCLUDED_FILE}" | tr '\n' ',' | sed 's/,$//')"
-    gate="$(train_smart_ci_run "${batch}")"
+    gate="$(train_run_batch_ci "${batch}")"
   done
   train_step_end ci-gate >/dev/null
   train_endgroup
