@@ -8,9 +8,9 @@ pass rate for each protocol on `trunk`?" It exists so re-grading agents and
 auditors can find an authoritative number without spelunking workflow artifacts.
 
 **Source of truth.** This page mirrors the totals in
-[`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md),
-which is the canonical, website-linkable summary. When the two diverge, the
-contributor doc wins and this page must be re-synchronized.
+[`docs/internal/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md),
+which is the website-linkable copy of this page. The suite totals here are
+the canonical source of truth for this repo’s OGC CITE evidence snapshot.
 
 **Local results note.** The per-suite result directories
 (`cite-results/`, `cite-wfs20-results/`, `cite-tiles-results/`,
@@ -140,13 +140,13 @@ accurate `/conformance` declaration:
    table above.
 4. Update "Last reviewed", the run number, the commit SHA, and the run date.
 5. If a suite regresses, both this page and
-   `docs/contributor/ogc-cite-conformance-evidence.md` must be updated in the
+   `docs/internal/contributor/ogc-cite-conformance-evidence.md` must be updated in the
    same commit, and the public claim should be downgraded until the regression
    clears.
 
 ## Related Documents
 
-- [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
+- [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
   — canonical, website-linkable summary (source of truth).
 - [`docs/contributor/cite-runbook.md`](internal/contributor/cite-runbook.md) —
   per-suite scope, scripts, workflow files, and open issues.

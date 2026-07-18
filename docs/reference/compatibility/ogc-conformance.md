@@ -3,7 +3,7 @@
 Honua Server passes 952 / 952 assertions (100%) across 11 OGC CITE suites on `trunk`,
 with 0 failed, 0 skipped, and 0 CantTell. The authoritative snapshot, evidence-run
 links, and re-grading guidance live in [`docs/cite-status.md`](../../cite-status.md);
-the numbers below mirror that page and must never diverge from it.
+the numbers below are copied directly from that page.
 
 ## CITE pass rates per suite
 
