@@ -87,6 +87,8 @@ The evidence envelope's `measured_delta` field records the observed deviation in
 
 ## Client Lane Coverage
 
+Automated lane applicability is machine-readable in `docs/gis/data/client-certification-matrix.v1.json` and is gated in both directions against committed `tests/baselines/client-compat/**/*.cert.json` evidence by `DocumentationMatrixDriftTests`.
+
 Each lane maps its coverage to the common core and declares lane-specific extensions.
 
 | Lane | Automation | Core Coverage | Extensions |
@@ -96,7 +98,7 @@ Each lane maps its coverage to the common core and declares lane-specific extens
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
 | **Desktop — ArcGIS Pro** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*); licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows ArcGIS Pro runner is available | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
-| **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | All CERT-\* (OGC Features + WFS via PyQGIS; visual RNDR headless) | DSK-EXT-01, DSK-EXT-02 |
+| **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
 | **BI — Excel** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
