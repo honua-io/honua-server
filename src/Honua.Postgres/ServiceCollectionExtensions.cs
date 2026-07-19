@@ -621,6 +621,7 @@ internal static class ServiceCollectionExtensions
 
         // Register migration catalog writer used by apply-mode imports.
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
+        services.AddScoped<IMigrationStyleApplicator, PostgresMigrationStyleApplicator>();
 
         // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
         // in-memory default so admin endpoints can serve persisted manifest + parity
