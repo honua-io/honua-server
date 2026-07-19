@@ -99,11 +99,11 @@ train_regenerate_derived_artifacts() {
   local status
 
   train_log "regenerating derived artifacts on ${batch} (feature-catalog, geoservices-parity, capability-matrix)"
-  if ! "${repo_root}/scripts/generate-feature-catalog.sh" 1>&2; then
+  if ! bash "${repo_root}/scripts/generate-feature-catalog.sh" 1>&2; then
     train_err "feature-catalog generation failed for ${batch}"
     return 1
   fi
-  if ! "${repo_root}/scripts/generate-geoservices-parity.sh" 1>&2; then
+  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" 1>&2; then
     train_err "GeoServices parity generation failed for ${batch}"
     return 1
   fi
