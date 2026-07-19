@@ -890,6 +890,10 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core" \
   --assert-owner \
+    "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Misc" \

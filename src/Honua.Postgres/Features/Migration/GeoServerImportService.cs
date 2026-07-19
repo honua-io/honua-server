@@ -34,6 +34,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private readonly ISldStyleConverter? _sldConverter;
     private readonly ILayerPublishingService? _layerPublishingService;
     private readonly IMigrationCatalogWriter? _catalogWriter;
+    private readonly IMigrationStyleApplicator? _styleApplicator;
     private readonly ILogger<GeoServerImportService> _logger;
 
     public GeoServerImportService(
@@ -43,7 +44,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         ILogger<GeoServerImportService> logger,
         ISldStyleConverter? sldConverter = null,
         ILayerPublishingService? layerPublishingService = null,
-        IMigrationCatalogWriter? catalogWriter = null)
+        IMigrationCatalogWriter? catalogWriter = null,
+        IMigrationStyleApplicator? styleApplicator = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
@@ -52,6 +54,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         _sldConverter = sldConverter;
         _layerPublishingService = layerPublishingService;
         _catalogWriter = catalogWriter;
+        _styleApplicator = styleApplicator;
     }
 
     /// <inheritdoc />
