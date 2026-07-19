@@ -12,6 +12,7 @@ namespace Honua.Protocols.Ogc.Classic.Wps20;
 internal sealed class Wps20ConformanceEcho
 {
     internal const string ReferenceClientName = "Wps20ConformanceReference";
+    internal const string Ets11ProcessAlias = "org.n52.javaps.test.EchoProcess";
     internal const int MaxPayloadCharacters = 65_536;
 
     private readonly ConcurrentDictionary<string, StoredEchoResult> _results = new(StringComparer.Ordinal);
@@ -30,7 +31,8 @@ internal sealed class Wps20ConformanceEcho
     internal string ProcessId => _options.CurrentValue.ConformanceEchoProcessId;
 
     internal bool IsEchoProcess(string? processId) =>
-        Enabled && string.Equals(processId, ProcessId, StringComparison.Ordinal);
+        Enabled && (string.Equals(processId, ProcessId, StringComparison.Ordinal)
+            || string.Equals(processId, Ets11ProcessAlias, StringComparison.Ordinal));
 
     internal async Task<EchoValue> ResolveInputAsync(EchoInput input, CancellationToken cancellationToken)
     {

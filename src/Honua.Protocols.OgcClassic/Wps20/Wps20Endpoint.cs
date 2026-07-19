@@ -163,7 +163,7 @@ internal static partial class Wps20Endpoint
         }
         else if (echo.IsEchoProcess(identifier))
         {
-            descriptions.Append(DescribeEchoProcess(echo.ProcessId));
+            descriptions.Append(DescribeEchoProcess(identifier));
         }
         else if (catalog.GetProcess(identifier) is { } process)
         {
@@ -185,12 +185,12 @@ internal static partial class Wps20Endpoint
         var inputs = string.Join(string.Empty, process.Parameters.Select(parameter =>
             $"<wps:Input minOccurs=\"{(parameter.Required ? "1" : "0")}\" maxOccurs=\"1\"><ows:Title>{X(parameter.DisplayName)}</ows:Title><ows:Abstract>{X(parameter.Description)}</ows:Abstract><ows:Identifier>{X(parameter.Name)}</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/></wps:LiteralData></wps:Input>"));
         const string outputs = "<wps:Output><ows:Title>Result summary</ows:Title><ows:Identifier>result</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/></wps:LiteralData></wps:Output>";
-        return $"<wps:ProcessOffering jobControlOptions=\"async-execute\" outputTransmission=\"value\"><wps:Process processVersion=\"1.0.0\"><ows:Title>{X(process.Title)}</ows:Title><ows:Abstract>{X(process.Description)}</ows:Abstract><ows:Identifier>{X(process.ProcessId)}</ows:Identifier>{inputs}{outputs}</wps:Process></wps:ProcessOffering>";
+        return $"<wps:ProcessOffering processVersion=\"1.0.0\" jobControlOptions=\"async-execute\" outputTransmission=\"value\"><wps:Process><ows:Title>{X(process.Title)}</ows:Title><ows:Abstract>{X(process.Description)}</ows:Abstract><ows:Identifier>{X(process.ProcessId)}</ows:Identifier>{inputs}{outputs}</wps:Process></wps:ProcessOffering>";
     }
 
     private static string DescribeEchoProcess(string processId) => $"""
-        <wps:ProcessOffering jobControlOptions="sync-execute async-execute" outputTransmission="value reference">
-          <wps:Process processVersion="1.0.0">
+        <wps:ProcessOffering processVersion="1.0.0" jobControlOptions="sync-execute async-execute" outputTransmission="value reference">
+          <wps:Process>
             <ows:Title>Honua CITE echo</ows:Title><ows:Abstract>Returns one bounded input without geospatial processing.</ows:Abstract><ows:Identifier>{X(processId)}</ows:Identifier>
             <wps:Input minOccurs="0" maxOccurs="1"><ows:Title>Literal input</ows:Title><ows:Identifier>literalInput</ows:Identifier><wps:LiteralData><wps:Format mimeType="text/plain" default="true"/><wps:LiteralDataDomain default="true"><ows:AnyValue/><ows:DataType ows:reference="http://www.w3.org/2001/XMLSchema#string">string</ows:DataType></wps:LiteralDataDomain></wps:LiteralData></wps:Input>
             <wps:Input minOccurs="0" maxOccurs="1"><ows:Title>Complex input</ows:Title><ows:Identifier>complexInput</ows:Identifier><wps:ComplexData><wps:Format mimeType="text/xml" default="true"/></wps:ComplexData></wps:Input>
@@ -391,9 +391,14 @@ internal static partial class Wps20Endpoint
         {
             throw new WpsRequestException("InvalidParameterValue", "The request root must use the WPS 2.0 namespace.", "request");
         }
-        ValidateBindingValue(root.Attribute("service")?.Value, "WPS", "service");
-        ValidateBindingValue(root.Attribute("version")?.Value, Version, "version");
         var operation = root.Name.LocalName;
+        ValidateBindingValue(root.Attribute("service")?.Value, "WPS", "service");
+        var requestedVersion = root.Attribute("version")?.Value;
+        if (!string.Equals(operation, "GetCapabilities", StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(requestedVersion))
+        {
+            ValidateBindingValue(requestedVersion, Version, "version");
+        }
         var identifier = root.Descendants(XName.Get("Identifier", OwsNamespace)).FirstOrDefault()?.Value.Trim();
         var jobId = root.Descendants(XName.Get("JobID", WpsNamespace)).FirstOrDefault()?.Value.Trim();
         var inputs = new Dictionary<string, EchoInput>(StringComparer.OrdinalIgnoreCase);

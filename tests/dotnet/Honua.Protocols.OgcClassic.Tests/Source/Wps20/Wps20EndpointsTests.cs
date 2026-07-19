@@ -55,7 +55,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain($"xmlns:wps=\"http://www.opengis.net/wps/2.0\"");
         xml.Should().Contain("<ows:Identifier>geometry.buffer</ows:Identifier>");
         xml.Should().Contain("<ows:Identifier>result</ows:Identifier>");
-        xml.Should().Contain("<wps:Process processVersion=\"1.0.0\"");
+        xml.Should().Contain("<wps:ProcessOffering processVersion=\"1.0.0\"");
+        xml.Should().Contain("<wps:Process>").And.NotContain("<wps:Process processVersion=");
     }
 
     [IntegrationTest]
@@ -132,6 +133,21 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("POST /wps")]
+    public async Task GetCapabilities_XmlWithoutVersion_NegotiatesWps200()
+    {
+        const string body = "<wps:GetCapabilities service='WPS' xmlns:wps='http://www.opengis.net/wps/2.0'/>";
+        using var content = new StringContent(body, Encoding.UTF8, "application/xml");
+
+        var response = await _fixture.Client.PostAsync("/wps", content);
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        xml.Should().Contain("<wps:Capabilities").And.Contain("version=\"2.0.0\"");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /wps")]
     [InterfaceOperation(TestProtocols.Wps202, "GetResult")]
@@ -197,6 +213,29 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         var xml = await response.Content.ReadAsStringAsync();
 
         xml.Should().NotContain("honua.cite.echo");
+
+        var alias = await _fixture.Client.GetAsync("/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=org.n52.javaps.test.EchoProcess");
+        alias.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_DefaultOffAlias_UsesCanonicalAuthorization()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        await using var fixture = new WebAppFixture().ReplaceService(jobs);
+        await fixture.InitializeAsync();
+        const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='raw' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>blocked</wps:LiteralValue></wps:Data></wps:Input></wps:Execute>";
+
+        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await jobs.Received(1).EnsureCallerAuthorizedAsync(
+            Arg.Any<System.Security.Claims.ClaimsPrincipal>(),
+            Honua.Core.Features.Authorization.Domain.OperatorResourceType.Process,
+            Honua.Core.Features.Authorization.Domain.OperatorOperation.Execute,
+            Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]
@@ -213,6 +252,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
         xml.Should().Contain("jobControlOptions=\"sync-execute async-execute\"");
+        xml.Should().Contain("<wps:ProcessOffering processVersion=\"1.0.0\"");
+        xml.Should().Contain("<wps:Process>").And.NotContain("<wps:Process processVersion=");
         xml.Should().Contain("<ows:DataType ows:reference=\"http://www.w3.org/2001/XMLSchema#string\">string</ows:DataType>");
         xml.Should().Contain("<wps:ComplexData>").And.Contain("<wps:BoundingBoxData>");
         all.Should().Contain("honua.cite.echo").And.Contain("geometry.buffer");
@@ -254,6 +295,24 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<testElement>hello_complex</testElement>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_Ets11Alias_UsesSameInertEchoBehavior()
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        var description = await fixture.Client.GetStringAsync("/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=org.n52.javaps.test.EchoProcess");
+        const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='raw' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>ets-alias</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
+
+        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        var content = await response.Content.ReadAsStringAsync();
+
+        description.Should().Contain("<ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier>");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Be("ets-alias");
     }
 
     [IntegrationTest]
