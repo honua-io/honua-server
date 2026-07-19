@@ -39,6 +39,16 @@ tools (the map/app composition and publish families, the `mutation` profile's
 geoprocessing verbs) are tracked as **known-gaps**: their absence does not
 fail the suite; only NON-CONFORMANCE of an implemented tool fails.
 
+## Skills live-surface contract provenance
+
+- `geospatial-mcp/skills/` vendors `skills/catalog.json`,
+  `skills/catalog.schema.json`, and `skills/contracts/live-surface.json` from
+  geospatial-mcp commit **`bed89302a8b9ea0a168aa89554d867681ee732dd`**.
+- The MCP conformance suite resolves the contract's canonical tool names to
+  Honua's production descriptors and checks their advertised input schemas.
+- Skill prose and evaluation artifacts remain owned by geospatial-mcp and are
+  not vendored into honua-server.
+
 ## Honua extensions (`x-honua-extension`)
 
 A few schemas under `geospatial-mcp/tools/` are **documented Honua extensions**
