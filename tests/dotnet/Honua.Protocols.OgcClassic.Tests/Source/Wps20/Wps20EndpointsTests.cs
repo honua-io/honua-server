@@ -391,6 +391,48 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("invalidOutput", "value", "sync", "document", "output")]
+    [InlineData("literalOutput", "invalid", "sync", "document", "output")]
+    [InlineData("literalOutput", "value", "auto", "document", "mode")]
+    [InlineData("literalOutput", "value", "sync", "invalid", "response")]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_InvalidContract_DoesNotResolveReference(
+        string outputId,
+        string transmission,
+        string mode,
+        string responseForm,
+        string locator)
+    {
+        await using var fixture = CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]);
+        await fixture.InitializeAsync();
+        var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://does-not-resolve.invalid/value'/></wps:Input><wps:Output id='{outputId}' transmission='{transmission}'/></wps:Execute>";
+
+        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain($"locator=\"{locator}\"");
+        content.Should().NotContain("could not be resolved");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_UnresolvableReference_ReturnsOwsException()
+    {
+        await using var fixture = CreateConformanceFixture(allowedHosts: ["does-not-resolve.invalid"]);
+        await fixture.InitializeAsync();
+        const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://does-not-resolve.invalid/value'/></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
+
+        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ExceptionReport").And.Contain("could not be resolved");
+    }
+
+    [Theory]
     [InlineData("sync", "document", "value")]
     [InlineData("auto", "document", "value")]
     [InlineData("async", "raw", "value")]
@@ -442,6 +484,24 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         resultXml.Should().Contain("https://cite.example.test/root/wps/conformance/results/");
         capabilities.Should().NotContain("http://localhost/wps");
         Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEcho.MaxConcurrentReferenceFetches.Should().Be(4);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /wps")]
+    public async Task ConformanceEcho_NoPublicBaseUrl_EmitsRelativeLinksAndIgnoresHost()
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/wps?service=WPS&request=GetCapabilities&version=2.0.0");
+        request.Headers.Host = "hostile.example.test";
+
+        var response = await fixture.Client.SendAsync(request);
+        var capabilities = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, capabilities);
+        capabilities.Should().Contain("xlink:href=\"/wps\"");
+        capabilities.Should().NotContain("hostile.example.test").And.NotContain("http://localhost/wps");
     }
 
     private static WebAppFixture CreateConformanceFixture(

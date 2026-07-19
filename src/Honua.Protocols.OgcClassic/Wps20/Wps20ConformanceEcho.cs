@@ -72,63 +72,88 @@ internal sealed class Wps20ConformanceEcho : IDisposable
             throw new Wps20EchoException("Reference input resolves to a private or reserved network address.");
         }
 
+        var pinnedAddresses = addresses
+            .OrderBy(address => address.AddressFamily)
+            .ThenBy(address => Convert.ToHexString(address.GetAddressBytes()), StringComparer.Ordinal)
+            .ToArray();
+
         await _referenceFetchSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var pinnedAddress = addresses[0];
             using var handler = new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
                 ConnectCallback = async (context, token) =>
                 {
-                    var socket = new Socket(pinnedAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                    try
+                    Exception? lastFailure = null;
+                    foreach (var pinnedAddress in pinnedAddresses)
                     {
-                        await socket.ConnectAsync(new IPEndPoint(pinnedAddress, context.DnsEndPoint.Port), token).ConfigureAwait(false);
-                        return new NetworkStream(socket, ownsSocket: true);
+                        var socket = new Socket(pinnedAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                        try
+                        {
+                            await socket.ConnectAsync(new IPEndPoint(pinnedAddress, context.DnsEndPoint.Port), token).ConfigureAwait(false);
+                            return new NetworkStream(socket, ownsSocket: true);
+                        }
+                        catch (Exception ex) when (ex is SocketException or IOException)
+                        {
+                            lastFailure = ex;
+                            socket.Dispose();
+                        }
                     }
-                    catch
-                    {
-                        socket.Dispose();
-                        throw;
-                    }
+                    throw new HttpRequestException("No validated reference address accepted the connection.", lastFailure);
                 }
             };
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
             using var request = new HttpRequestMessage(HttpMethod.Get, referenceUri);
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            if (response.StatusCode is >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest)
+            HttpResponseMessage response;
+            try
             {
-                throw new Wps20EchoException("Reference input redirects are not allowed.");
+                response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             }
-            if (!response.IsSuccessStatusCode)
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new Wps20EchoException("Reference input could not be retrieved.");
+                throw new Wps20EchoException("Reference input retrieval timed out.");
             }
-            if (response.Content.Headers.ContentLength is > MaxPayloadCharacters)
+            catch (Exception ex) when (ex is HttpRequestException or IOException or SocketException)
             {
-                throw new Wps20EchoException("Reference input exceeds the bounded payload limit.");
+                throw new Wps20EchoException("Reference input could not be retrieved securely.");
             }
-
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using var buffer = new MemoryStream(MaxPayloadCharacters + 1);
-            var block = new byte[8192];
-            while (true)
+            using (response)
             {
-                var read = await stream.ReadAsync(block, cancellationToken).ConfigureAwait(false);
-                if (read == 0)
+                if (response.StatusCode is >= HttpStatusCode.MultipleChoices and < HttpStatusCode.BadRequest)
                 {
-                    break;
+                    throw new Wps20EchoException("Reference input redirects are not allowed.");
                 }
-                if (buffer.Length + read > MaxPayloadCharacters)
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new Wps20EchoException("Reference input could not be retrieved.");
+                }
+                if (response.Content.Headers.ContentLength is > MaxPayloadCharacters)
                 {
                     throw new Wps20EchoException("Reference input exceeds the bounded payload limit.");
                 }
-                buffer.Write(block, 0, read);
-            }
 
-            var mimeType = response.Content.Headers.ContentType?.MediaType ?? input.MimeType ?? "text/plain";
-            return new EchoValue(EchoValueKind.Literal, Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length), mimeType);
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var buffer = new MemoryStream(MaxPayloadCharacters + 1);
+                var block = new byte[8192];
+                while (true)
+                {
+                    var read = await stream.ReadAsync(block, cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+                    if (buffer.Length + read > MaxPayloadCharacters)
+                    {
+                        throw new Wps20EchoException("Reference input exceeds the bounded payload limit.");
+                    }
+                    buffer.Write(block, 0, read);
+                }
+
+                var mimeType = response.Content.Headers.ContentType?.MediaType ?? input.MimeType ?? "text/plain";
+                return new EchoValue(EchoValueKind.Literal, Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length), mimeType);
+            }
         }
         finally
         {
@@ -147,7 +172,7 @@ internal sealed class Wps20ConformanceEcho : IDisposable
         {
             return publicBase.ToString().TrimEnd('/') + relativePath;
         }
-        return $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}{relativePath}";
+        return $"{context.Request.PathBase}{relativePath}";
     }
 
     public void Dispose() => _referenceFetchSlots.Dispose();

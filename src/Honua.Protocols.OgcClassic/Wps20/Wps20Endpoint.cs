@@ -264,7 +264,6 @@ internal static partial class Wps20Endpoint
             return Exception("InvalidParameterValue", "The conformance echo requires exactly one input.", "input");
         }
         var input = request.Inputs.Values.Single();
-        var value = await echo.ResolveInputAsync(input, context.RequestAborted).ConfigureAwait(false);
         var output = request.Outputs.SingleOrDefault();
         var outputId = output?.Id ?? input.Kind switch
         {
@@ -286,14 +285,20 @@ internal static partial class Wps20Endpoint
         }
         var mode = request.Mode ?? "sync";
         var responseForm = request.ResponseForm ?? "document";
+        if (mode is not ("sync" or "async"))
+        {
+            return Exception("InvalidParameterValue", "Echo Execute mode must be 'sync' or 'async'.", "mode");
+        }
+        if (responseForm is not ("document" or "raw"))
+        {
+            return Exception("InvalidParameterValue", "Echo Execute response must be 'document' or 'raw'.", "response");
+        }
+
+        var value = await echo.ResolveInputAsync(input, context.RequestAborted).ConfigureAwait(false);
         if (string.Equals(mode, "async", StringComparison.OrdinalIgnoreCase))
         {
             var jobId = echo.Store(value, outputId, transmission, responseForm);
             return EchoStatusInfo(jobId);
-        }
-        if (!string.Equals(mode, "sync", StringComparison.OrdinalIgnoreCase))
-        {
-            return Exception("InvalidParameterValue", "Execute mode must be 'sync' or 'async'.", "mode");
         }
         if (string.Equals(responseForm, "raw", StringComparison.OrdinalIgnoreCase))
         {
