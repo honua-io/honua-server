@@ -74,6 +74,7 @@ using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
 using Honua.Protocols.Ogc.Classic.Wfs20;
+using Honua.Protocols.Ogc.Classic.Wps20;
 using Honua.Core.Features.Studio;
 
 namespace Honua.Infrastructure.Hosting;
@@ -117,6 +118,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcStyles();
         services.AddOgcProcesses(configuration);
         services.AddWfs20(configuration);
+        services.AddWps20(configuration);
         services.AddWcs20();
         services.AddOData(configuration);
         services.AddGeometryService();
