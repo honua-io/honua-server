@@ -110,6 +110,30 @@ public class ImageServerSensorModelTests
     }
 
     [UnitTest]
+    public void TryReadRpc_WithAbbreviatedScaleAliases_BuildsModel()
+    {
+        var metadata = new RasterSensorMetadata
+        {
+            RasterDataId = 1,
+            RpcJson = """
+            {
+                "sampleOffset": 1000, "lineOffset": 800,
+                "longOffset": -120.0, "latOffset": 35.0,
+                "sampScale": 1000, "lineScl": 800,
+                "longScl": 0.05, "latScl": 0.04
+            }
+            """,
+        };
+
+        var rpc = ImageServerSensorModel.TryReadRpc(metadata);
+
+        rpc.Should().NotBeNull();
+        rpc.Value.LineScale.Should().Be(800);
+        rpc.Value.LongitudeScale.Should().Be(0.05);
+        rpc.Value.LatitudeScale.Should().Be(0.04);
+    }
+
+    [UnitTest]
     public void TryReadRpc_WithNoMetadata_ReturnsNull()
     {
         ImageServerSensorModel.TryReadRpc(null).Should().BeNull();
