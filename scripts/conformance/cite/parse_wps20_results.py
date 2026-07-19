@@ -165,31 +165,13 @@ def evaluate(classes: dict[str, Counts], profile: str) -> Counts:
 
 
 def evaluate_exit_code(
-    classes: dict[str, Counts],
-    raw: Counts,
-    profile: str,
     ets_exit_code: int,
     accounting_errors: list[str],
 ) -> None:
-    if ets_exit_code == 0:
-        return
-
-    selected_keys = set(PROFILE_CLASSES[profile])
-    unselected = Counts()
-    for key, counts in classes.items():
-        if key not in selected_keys:
-            unselected.merge(counts)
-
-    explained = (
-        raw.failed + raw.skipped > 0
-        and unselected.failed == raw.failed
-        and unselected.skipped == raw.skipped
-        and raw.canttell == 0
-    )
-    if not explained:
+    if ets_exit_code != 0:
         accounting_errors.append(
-            f"ETS exit code {ets_exit_code} is not explained solely by failures or skips "
-            "in known unselected classes"
+            f"ETS process exited with nonzero code {ets_exit_code}; XML result "
+            "classification is retained for reporting only"
         )
 
 
@@ -291,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             accounting_errors,
         ) = parse_result(args.input)
         selected = evaluate(classes, args.profile)
-        evaluate_exit_code(classes, raw, args.profile, args.ets_exit_code, accounting_errors)
+        evaluate_exit_code(args.ets_exit_code, accounting_errors)
         write_outputs(
             result_file,
             classes,

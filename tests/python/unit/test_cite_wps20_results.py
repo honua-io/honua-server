@@ -41,11 +41,11 @@ def run_parser(
     return exit_code, json.loads(output_json.read_text(encoding="utf-8"))
 
 
-def test_basic_async_ignores_unselected_sync_failure_but_preserves_raw_totals(tmp_path: Path) -> None:
+def test_nonzero_exit_fails_even_for_known_unselected_failure(tmp_path: Path) -> None:
     exit_code, result = run_parser(tmp_path, "all-classes.xml", "basic-async")
 
-    assert exit_code == 0
-    assert result["status"] == "passed"
+    assert exit_code == 1
+    assert result["status"] == "failed"
     assert result["selectedTotals"] == {
         "total": 4,
         "passed": 4,
@@ -55,6 +55,7 @@ def test_basic_async_ignores_unselected_sync_failure_but_preserves_raw_totals(tm
     }
     assert result["rawTotals"]["failed"] == 1
     assert result["etsExitCode"] == 1
+    assert "nonzero code 1" in " ".join(result["accountingErrors"])
 
 
 def test_all_profile_fails_when_any_class_fails(tmp_path: Path) -> None:
@@ -91,7 +92,7 @@ def test_unexplained_nonzero_ets_exit_fails_closed(tmp_path: Path) -> None:
     exit_code, result = run_parser(tmp_path, "clean-selected.xml", "basic-async")
 
     assert exit_code == 1
-    assert "not explained solely" in " ".join(result["accountingErrors"])
+    assert "nonzero code 1" in " ".join(result["accountingErrors"])
 
 
 def test_raw_total_mismatch_fails_closed(tmp_path: Path) -> None:
