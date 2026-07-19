@@ -4,6 +4,8 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -14,8 +16,13 @@ public sealed partial class McpTaxonomyAlignmentTests
     [UnitTest]
     public void SkillLiveSurfaceContract_MatchesProductionToolDescriptors()
     {
-        using var catalogDocument = JsonDocument.Parse(
-            File.ReadAllText(Path.Join(SkillContractRoot, "catalog.json")));
+        var catalogPath = Path.Join(SkillContractRoot, "catalog.json");
+        var catalogJson = File.ReadAllText(catalogPath);
+        var catalogSchema = LoadSchema(Path.Join(SkillContractRoot, "catalog.schema.json"));
+        JToken.Parse(catalogJson).IsValid(catalogSchema, out IList<string> catalogErrors);
+        catalogErrors.Should().BeEmpty("the vendored skill catalog must satisfy its upstream schema");
+
+        using var catalogDocument = JsonDocument.Parse(catalogJson);
         using var contractDocument = JsonDocument.Parse(
             File.ReadAllText(Path.Join(SkillContractRoot, "contracts", "live-surface.json")));
 
@@ -63,6 +70,18 @@ public sealed partial class McpTaxonomyAlignmentTests
                     var fallbackName = fallbackTool.GetString()!;
                     liveNamesByStandardName.Should().ContainKey(fallbackName,
                         $"fallback '{fallbackName}' for '{standardName}' must resolve to a live production tool");
+                    var fallbackLiveNames = liveNamesByStandardName[fallbackName];
+                    fallbackLiveNames.Should().ContainSingle(
+                        $"fallback '{fallbackName}' must resolve unambiguously to one production descriptor");
+                    liveTools.Should().ContainKey(fallbackLiveNames[0],
+                        $"fallback '{fallbackName}' must be present in BuildTools()");
+
+                    var fallbackDescriptor = liveTools[fallbackLiveNames[0]].Describe();
+                    fallbackDescriptor.Name.Should().Be(fallbackLiveNames[0]);
+                    using var fallbackSchemaDocument = JsonDocument.Parse(
+                        JsonSerializer.Serialize(fallbackDescriptor.InputSchema));
+                    fallbackSchemaDocument.RootElement.ValueKind.Should().Be(JsonValueKind.Object,
+                        $"fallback '{fallbackName}' must advertise a describable input schema");
                 }
 
                 continue;

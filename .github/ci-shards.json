@@ -1086,6 +1086,7 @@
         "src/Honua.Core/Features/Publishing/",
         "src/Honua.Postgres/Features/Publishing/",
         "tests/dotnet/Honua.Ai.Tests/Source/",
+        "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/",
         "src/Honua.Core/Features/Validation/"
       ]
     },
