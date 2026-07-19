@@ -890,6 +890,10 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core" \
   --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
+    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
+    "WFS" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Misc" \

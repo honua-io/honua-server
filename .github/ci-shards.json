@@ -621,14 +621,16 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding CATCH-ALL: the Wfs20 + Wcs20 namespaces EXCEPT Wfs20EndpointsTests (a single 74-test class isolated into WFS Endpoints). NOTE: this also FIXES a pre-existing coverage gap — Wcs20EndpointsTests (28 [IntegrationTest]s) previously matched no shard filter and never ran in CI; it now runs here. Complementary with WFS Endpoints (which selects only Wfs20EndpointsTests).",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20)&FullyQualifiedName!~Wfs20EndpointsTests",
+      "_comment": "ADR-0037 finer-sharding CATCH-ALL: the Wfs20 + Wcs20 + Wps20 namespaces EXCEPT Wfs20EndpointsTests (a single 74-test class isolated into WFS Endpoints). NOTE: this also FIXES pre-existing coverage gaps — Wcs20EndpointsTests (28 [IntegrationTest]s) and Wps20EndpointsTests previously matched no shard filter and never ran in CI; they now run here. Complementary with WFS Endpoints (which selects only Wfs20EndpointsTests).",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20)&FullyQualifiedName!~Wfs20EndpointsTests",
       "paths": [
         "src/Honua.Protocols.OgcClassic/Wfs20/",
         "src/Honua.Protocols.OgcClassic/Wcs20/",
+        "src/Honua.Protocols.OgcClassic/Wps20/",
         "src/Honua.Core/Features/Raster/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Hosting/Features/Services/"
       ]
