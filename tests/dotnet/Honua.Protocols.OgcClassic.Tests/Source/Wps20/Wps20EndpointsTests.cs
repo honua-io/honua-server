@@ -254,6 +254,9 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain("jobControlOptions=\"sync-execute async-execute\"");
         xml.Should().Contain("<wps:ProcessOffering processVersion=\"1.0.0\"");
         xml.Should().Contain("<wps:Process>").And.NotContain("<wps:Process processVersion=");
+        xml.Should().Contain("<wps:LiteralData>").And.Contain("<LiteralDataDomain default=\"true\">");
+        xml.Should().Contain("<ows:AnyValue/>").And.Contain("<ows:DataType ows:reference=");
+        xml.Should().NotContain("<wps:LiteralDataDomain");
         xml.Should().Contain("<ows:DataType ows:reference=\"http://www.w3.org/2001/XMLSchema#string\">string</ows:DataType>");
         xml.Should().Contain("<wps:ComplexData>").And.Contain("<wps:BoundingBoxData>");
         all.Should().Contain("honua.cite.echo").And.Contain("geometry.buffer");
