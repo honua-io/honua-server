@@ -22,13 +22,15 @@ internal static class Wps20ServiceCollectionExtensions
             {
                 options.ConformanceEchoProcessId = processId.Trim();
             }
-        });
-        services.AddHttpClient(Wps20ConformanceEcho.ReferenceClientName, client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        }).ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler
-        {
-            AllowAutoRedirect = false
+            var publicBaseUrl = configuration["Public:BaseUrl"];
+            if (string.IsNullOrWhiteSpace(publicBaseUrl))
+            {
+                publicBaseUrl = configuration["PUBLIC_BASE_URL"];
+            }
+            if (!string.IsNullOrWhiteSpace(publicBaseUrl))
+            {
+                options.PublicBaseUrl = publicBaseUrl.Trim();
+            }
         });
         services.AddSingleton<Wps20ConformanceEcho>();
         return services;

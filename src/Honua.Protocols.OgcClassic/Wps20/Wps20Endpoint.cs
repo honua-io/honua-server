@@ -25,6 +25,7 @@ internal static partial class Wps20Endpoint
     internal const string OwsNamespace = "http://www.opengis.net/ows/2.0";
     private const string Version = "2.0.0";
     private const int MaxInputs = 64;
+    private const int MaxOutputs = 1;
     private const int MaxInputCharacters = 65_536;
     private static readonly string[] Methods = ["GET", "POST"];
 
@@ -123,7 +124,7 @@ internal static partial class Wps20Endpoint
 
     private static IResult GetCapabilities(HttpContext context, IProcessCatalog catalog, Wps20ConformanceEcho echo)
     {
-        var endpoint = OgcClassicRequestHelpers.EscapeXml($"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}/wps");
+        var endpoint = OgcClassicRequestHelpers.EscapeXml(echo.BuildPublicUrl(context, "/wps"));
         var offerings = string.Join(string.Empty, catalog.ListProcesses().OrderBy(p => p.ProcessId, StringComparer.Ordinal).Select(p =>
             $"<wps:ProcessSummary processVersion=\"1.0.0\" jobControlOptions=\"async-execute\" outputTransmission=\"value\"><ows:Title>{X(p.Title)}</ows:Title><ows:Identifier>{X(p.ProcessId)}</ows:Identifier></wps:ProcessSummary>"));
         if (echo.Enabled)
@@ -220,6 +221,12 @@ internal static partial class Wps20Endpoint
             return Exception("NoSuchProcess", $"Process '{request.Identifier}' does not exist.", "identifier", StatusCodes.Status404NotFound);
         }
 
+        var canonicalContractError = ValidateCanonicalExecuteContract(request);
+        if (canonicalContractError is not null)
+        {
+            return canonicalContractError;
+        }
+
         var known = process.Parameters.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var unknown = request.Inputs.Keys.FirstOrDefault(key => !known.Contains(key));
         if (unknown is not null)
@@ -245,7 +252,7 @@ internal static partial class Wps20Endpoint
         var job = await jobs.SubmitJobAsync(plan, null, context.User,
             new Dictionary<string, string>(StringComparer.Ordinal) { ["submittedVia"] = "WPS-2.0.2", ["protocolProcessId"] = process.ProcessId },
             context.RequestAborted).ConfigureAwait(false);
-        var location = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}/wps?service=WPS&request=GetStatus&version={Version}&jobId={Uri.EscapeDataString(job.OperationId)}";
+        var location = echo.BuildPublicUrl(context, $"/wps?service=WPS&request=GetStatus&version={Version}&jobId={Uri.EscapeDataString(job.OperationId)}");
         context.Response.Headers.Location = location;
         return StatusInfo(job, StatusCodes.Status201Created);
     }
@@ -266,6 +273,17 @@ internal static partial class Wps20Endpoint
             _ => "literalOutput"
         };
         var transmission = output?.Transmission ?? "value";
+        var allowedOutputId = input.Kind switch
+        {
+            EchoValueKind.Complex => "complexOutput",
+            EchoValueKind.BoundingBox => "boundingBoxOutput",
+            _ => "literalOutput"
+        };
+        if (!string.Equals(outputId, allowedOutputId, StringComparison.Ordinal)
+            || transmission is not ("value" or "reference"))
+        {
+            return Exception("InvalidParameterValue", "The requested echo output identifier or transmission is not supported.", "output");
+        }
         var mode = request.Mode ?? "sync";
         var responseForm = request.ResponseForm ?? "document";
         if (string.Equals(mode, "async", StringComparison.OrdinalIgnoreCase))
@@ -282,6 +300,28 @@ internal static partial class Wps20Endpoint
             return Results.Content(value.Value, value.MimeType ?? "text/plain", Encoding.UTF8);
         }
         return EchoResult(context, echo, value, outputId, transmission, null);
+    }
+
+    private static IResult? ValidateCanonicalExecuteContract(WpsRequest request)
+    {
+        var mode = request.Mode ?? "async";
+        var responseForm = request.ResponseForm ?? "document";
+        if (!string.Equals(mode, "async", StringComparison.OrdinalIgnoreCase))
+        {
+            return Exception("InvalidParameterValue", "Canonical WPS processes support only mode='async'.", "mode");
+        }
+        if (!string.Equals(responseForm, "document", StringComparison.OrdinalIgnoreCase))
+        {
+            return Exception("InvalidParameterValue", "Canonical WPS processes support only response='document'.", "response");
+        }
+        var output = request.Outputs.SingleOrDefault();
+        if (output is not null
+            && (!string.Equals(output.Id, "result", StringComparison.Ordinal)
+                || !string.Equals(output.Transmission, "value", StringComparison.Ordinal)))
+        {
+            return Exception("InvalidParameterValue", "Canonical WPS processes support only output 'result' transmitted by value.", "output");
+        }
+        return null;
     }
 
     private static async Task<IResult> GetStatusAsync(HttpContext context, IGeoprocessingJobService jobs, Wps20ConformanceEcho echo, string? jobId)
@@ -321,7 +361,7 @@ internal static partial class Wps20Endpoint
         if (string.Equals(transmission, "reference", StringComparison.OrdinalIgnoreCase))
         {
             var token = echo.Store(value, outputId, "value", "raw");
-            var href = X($"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}/wps/conformance/results/{token}");
+            var href = X(echo.BuildPublicUrl(context, $"/wps/conformance/results/{token}"));
             body = $"<wps:Reference xmlns:xlink=\"http://www.w3.org/1999/xlink\" mimeType=\"{X(value.MimeType ?? "text/plain")}\" xlink:href=\"{href}\"/>";
         }
         else if (value.Kind is EchoValueKind.Complex or EchoValueKind.BoundingBox)
@@ -414,6 +454,15 @@ internal static partial class Wps20Endpoint
         var outputs = root.Elements(XName.Get("Output", WpsNamespace))
             .Select(output => new WpsOutput(output.Attribute("id")?.Value.Trim() ?? string.Empty, output.Attribute("transmission")?.Value.Trim() ?? "value"))
             .ToArray();
+        if (outputs.Length > MaxOutputs)
+        {
+            throw new WpsRequestException("InvalidParameterValue", $"At most {MaxOutputs} output may be requested.", "output");
+        }
+        if (outputs.Any(output => string.IsNullOrWhiteSpace(output.Id)
+            || output.Transmission is not ("value" or "reference")))
+        {
+            throw new WpsRequestException("InvalidParameterValue", "Each output requires an identifier and a supported transmission.", "output");
+        }
         return new WpsRequest(operation, identifier, jobId, inputs, outputs, root.Attribute("mode")?.Value.Trim(), root.Attribute("response")?.Value.Trim());
     }
 

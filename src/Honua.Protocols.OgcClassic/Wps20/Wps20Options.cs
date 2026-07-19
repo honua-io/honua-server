@@ -13,6 +13,8 @@ internal sealed class Wps20Options
 
     public string[] ConformanceReferenceAllowedHosts { get; set; } = ["raw.githubusercontent.com"];
 
+    public string? PublicBaseUrl { get; set; }
+
     public int ConformanceJobCapacity { get; set; } = 128;
 
     public int ConformanceJobTtlSeconds { get; set; } = 600;

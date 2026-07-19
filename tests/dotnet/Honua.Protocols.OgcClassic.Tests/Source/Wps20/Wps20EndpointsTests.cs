@@ -238,6 +238,19 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    [Operation(Operations.SecurityTesting)]
+    public void ConformanceEcho_FlagOutsideTestEnvironment_RemainsDisabled()
+    {
+        var options = Substitute.For<Microsoft.Extensions.Options.IOptionsMonitor<Honua.Protocols.Ogc.Classic.Wps20.Wps20Options>>();
+        options.CurrentValue.Returns(new Honua.Protocols.Ogc.Classic.Wps20.Wps20Options { EnableConformanceEcho = true });
+        var environment = Substitute.For<Microsoft.Extensions.Hosting.IHostEnvironment>();
+        environment.EnvironmentName.Returns("Production");
+        using var echo = new Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEcho(options, environment);
+
+        echo.Enabled.Should().BeFalse();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /wps")]
@@ -347,7 +360,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Endpoint("POST /wps")]
     public async Task ConformanceEcho_ReferenceToPrivateNetwork_IsRejected()
     {
-        await using var fixture = CreateConformanceFixture("localhost");
+        await using var fixture = CreateConformanceFixture(allowedHosts: ["localhost"]);
         await fixture.InitializeAsync();
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://localhost/private'/></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
@@ -355,15 +368,100 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("private, loopback");
+        content.Should().Contain("public HTTPS URL");
     }
 
-    private static WebAppFixture CreateConformanceFixture(params string[] allowedHosts) =>
-        new WebAppFixture().ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+    [Theory]
+    [InlineData("<wps:Output id='literalOutput' transmission='value'/><wps:Output id='literalOutput' transmission='value'/>")]
+    [InlineData("<wps:Output id='literalOutput' transmission='invalid'/>")]
+    [InlineData("<wps:Output id='complexOutput' transmission='value'/>")]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("POST /wps")]
+    public async Task ConformanceEcho_InvalidOutputContract_ReturnsOwsException(string outputs)
+    {
+        await using var fixture = CreateConformanceFixture();
+        await fixture.InitializeAsync();
+        var body = $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>aloha</wps:LiteralValue></wps:Data></wps:Input>{outputs}</wps:Execute>";
+
+        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("ExceptionReport").And.Contain("locator=\"output\"");
+    }
+
+    [Theory]
+    [InlineData("sync", "document", "value")]
+    [InlineData("auto", "document", "value")]
+    [InlineData("async", "raw", "value")]
+    [InlineData("async", "document", "reference")]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("POST /wps")]
+    public async Task CanonicalExecute_UnsupportedContract_IsRejectedBeforeSubmission(string mode, string responseForm, string transmission)
+    {
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess("canonical.test").Returns(new ProcessDefinition
+        {
+            ProcessId = "canonical.test",
+            Title = "Canonical",
+            Description = "Test process.",
+            Category = "test",
+            Parameters = [],
+            OutputArtifactKinds = []
+        });
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        await using var fixture = new WebAppFixture().ReplaceService(catalog).ReplaceService(jobs);
+        await fixture.InitializeAsync();
+        var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>canonical.test</ows:Identifier><wps:Output id='result' transmission='{transmission}'/></wps:Execute>";
+
+        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await jobs.DidNotReceive().SubmitJobAsync(
+            Arg.Any<AnalysisPlan>(),
+            Arg.Any<string?>(),
+            Arg.Any<System.Security.Claims.ClaimsPrincipal>(),
+            Arg.Any<IReadOnlyDictionary<string, string>?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ContractTesting)]
+    [Endpoint("GET /wps")]
+    public async Task ConformanceEcho_ConfiguredPublicBaseUrl_IsUsedForLinks()
+    {
+        await using var fixture = CreateConformanceFixture(publicBaseUrl: "https://cite.example.test/root");
+        await fixture.InitializeAsync();
+
+        var capabilities = await fixture.Client.GetStringAsync("/wps?service=WPS&request=GetCapabilities&version=2.0.0");
+        const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>aloha</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='reference'/></wps:Execute>";
+        var result = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        var resultXml = await result.Content.ReadAsStringAsync();
+
+        capabilities.Should().Contain("https://cite.example.test/root/wps");
+        resultXml.Should().Contain("https://cite.example.test/root/wps/conformance/results/");
+        capabilities.Should().NotContain("http://localhost/wps");
+        Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEcho.MaxConcurrentReferenceFetches.Should().Be(4);
+    }
+
+    private static WebAppFixture CreateConformanceFixture(
+        string? environment = null,
+        string? publicBaseUrl = null,
+        params string[] allowedHosts) =>
+        new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            if (environment is not null)
+            {
+                builder.UseEnvironment(environment);
+            }
+            builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["HONUA_WPS_CITE_ECHO_PROCESS_ENABLED"] = "true",
                 ["HONUA_CITE_WPS20_ECHO_PROCESS_ID"] = "honua.cite.echo",
-                ["Wps20:ConformanceReferenceAllowedHosts:0"] = allowedHosts.FirstOrDefault() ?? "raw.githubusercontent.com"
-            })));
+                ["Wps20:ConformanceReferenceAllowedHosts:0"] = allowedHosts.FirstOrDefault() ?? "raw.githubusercontent.com",
+                ["Wps20:PublicBaseUrl"] = publicBaseUrl,
+                ["PUBLIC_BASE_URL"] = publicBaseUrl
+            }));
+        });
 }
