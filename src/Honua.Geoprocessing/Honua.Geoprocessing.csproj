@@ -50,6 +50,8 @@
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
