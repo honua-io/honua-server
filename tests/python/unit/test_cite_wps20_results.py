@@ -16,7 +16,12 @@ sys.modules[SPEC.name] = PARSER
 SPEC.loader.exec_module(PARSER)
 
 
-def run_parser(tmp_path: Path, fixture: str, profile: str) -> tuple[int, dict[str, object]]:
+def run_parser(
+    tmp_path: Path,
+    fixture: str,
+    profile: str,
+    ets_exit_code: int = 1,
+) -> tuple[int, dict[str, object]]:
     summary = tmp_path / "summary.md"
     output_json = tmp_path / "summary.json"
     exit_code = PARSER.main(
@@ -30,7 +35,7 @@ def run_parser(tmp_path: Path, fixture: str, profile: str) -> tuple[int, dict[st
             "--json",
             str(output_json),
             "--ets-exit-code",
-            "1",
+            str(ets_exit_code),
         ]
     )
     return exit_code, json.loads(output_json.read_text(encoding="utf-8"))
@@ -64,3 +69,33 @@ def test_selected_skip_is_a_failure(tmp_path: Path) -> None:
 
     assert exit_code == 1
     assert result["selectedTotals"]["skipped"] == 1
+
+
+def test_unmatched_failure_fails_closed(tmp_path: Path) -> None:
+    exit_code, result = run_parser(tmp_path, "unmatched-failure.xml", "basic-async")
+
+    assert exit_code == 1
+    assert result["status"] == "failed"
+    assert result["unmatchedTotals"]["failed"] == 1
+    assert "outside known WPS conformance classes" in " ".join(result["accountingErrors"])
+
+
+def test_configuration_failure_fails_closed(tmp_path: Path) -> None:
+    exit_code, result = run_parser(tmp_path, "configuration-failure.xml", "basic-async", 0)
+
+    assert exit_code == 1
+    assert result["configurationIssueTotals"]["failed"] == 1
+
+
+def test_unexplained_nonzero_ets_exit_fails_closed(tmp_path: Path) -> None:
+    exit_code, result = run_parser(tmp_path, "clean-selected.xml", "basic-async")
+
+    assert exit_code == 1
+    assert "not explained solely" in " ".join(result["accountingErrors"])
+
+
+def test_raw_total_mismatch_fails_closed(tmp_path: Path) -> None:
+    exit_code, result = run_parser(tmp_path, "raw-total-mismatch.xml", "basic-async", 0)
+
+    assert exit_code == 1
+    assert "do not match" in " ".join(result["accountingErrors"])
