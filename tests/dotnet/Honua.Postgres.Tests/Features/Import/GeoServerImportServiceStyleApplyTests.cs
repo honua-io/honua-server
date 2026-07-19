@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -75,7 +76,7 @@ public sealed class GeoServerImportServiceStyleApplyTests
         // Diagnostics are persisted as JSON even when empty so operators can
         // query the column without null-handling.
         catalogWriter.StyleRequests
-            .Single(r => r.SourceId == "style:ops:line").DiagnosticsJson
+            .Single(r => r.SourceId == "style:ops:line" && r.ReviewDisposition == "applied").DiagnosticsJson
             .Should().StartWith("[").And.EndWith("]");
     }
 
@@ -97,11 +98,11 @@ public sealed class GeoServerImportServiceStyleApplyTests
             .Single(s => s.Kind == "style" && s.SourceId == "style:ops:line");
         step.Outcome.Should().Be("already-applied");
 
-        // Idempotency contract: the writer is still invoked, but the underlying
-        // upsert reports "already-applied" rather than creating a duplicate row.
+        // Idempotency contract: each run stages evidence as manual-review and
+        // promotes it after the live assignment succeeds without creating a duplicate row.
         catalogWriter.StyleRequests
             .Count(r => r.SourceId == "style:ops:line")
-            .Should().Be(2);
+            .Should().Be(4);
     }
 
     [Fact]
@@ -306,6 +307,12 @@ public sealed class GeoServerImportServiceStyleApplyTests
                     _ => null
                 }));
 
+        var styleApplicator = catalogWriter as IMigrationStyleApplicator;
+        if (styleApplicator != null && layerPublishingService == null)
+        {
+            layerPublishingService = CreateLayerPublishingService();
+        }
+
         return new GeoServerImportService(
             restClient,
             connectionProvider.Object,
@@ -313,7 +320,31 @@ public sealed class GeoServerImportServiceStyleApplyTests
             NullLogger<GeoServerImportService>.Instance,
             sldConverter: sldConverter,
             layerPublishingService: layerPublishingService,
-            catalogWriter: catalogWriter);
+            catalogWriter: catalogWriter,
+            styleApplicator: styleApplicator);
+    }
+
+    private static ILayerPublishingService CreateLayerPublishingService()
+    {
+        var service = new Mock<ILayerPublishingService>();
+        service.Setup(publisher => publisher.PublishLayerAsync(
+                It.IsAny<string>(),
+                It.IsAny<LayerPublishRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, LayerPublishRequest request, CancellationToken _) => new PublishedLayerSummary
+            {
+                LayerId = 42,
+                LayerName = request.LayerName,
+                Schema = request.Schema,
+                Table = request.Table,
+                GeometryType = request.GeometryType ?? "Unknown",
+                Srid = request.Srid ?? 4326,
+                PrimaryKey = request.PrimaryKey,
+                FieldCount = request.Fields.Count,
+                Enabled = request.Enabled,
+                ServiceName = request.ServiceName ?? "geoserver-migration"
+            });
+        return service.Object;
     }
 
     private sealed record FixtureScenario(string ServiceUrl, IReadOnlyDictionary<string, string> Responses);
@@ -372,11 +403,12 @@ public sealed class GeoServerImportServiceStyleApplyTests
                 Errors: _errors);
     }
 
-    private sealed class RecordingMigrationCatalogWriter : IMigrationCatalogWriter
+    private sealed class RecordingMigrationCatalogWriter : IMigrationCatalogWriter, IMigrationStyleApplicator
     {
         private readonly HashSet<string> _existing = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _existingDataSources = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _existingStyles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _appliedStyles = new(StringComparer.OrdinalIgnoreCase);
 
         public List<MigrationCatalogServiceRequest> Requests { get; } = [];
 
@@ -434,6 +466,21 @@ public sealed class GeoServerImportServiceStyleApplyTests
             var outcome = _existingStyles.Add(key)
                 ? MigrationCatalogWriteOutcome.Created
                 : MigrationCatalogWriteOutcome.AlreadyExists;
+            return Task.FromResult(outcome);
+        }
+
+        public Task<MigrationStyleApplyOutcome> ApplyAsync(
+            MigrationLiveStyleApplyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (request.LayerTargets.Count == 0)
+            {
+                return Task.FromResult(MigrationStyleApplyOutcome.SkippedNoPublishedLayers);
+            }
+
+            var outcome = _appliedStyles.Add(request.TargetStyleId)
+                ? MigrationStyleApplyOutcome.Applied
+                : MigrationStyleApplyOutcome.AlreadyApplied;
             return Task.FromResult(outcome);
         }
 
