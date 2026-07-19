@@ -1,0 +1,20 @@
+{
+  "$schema": "catalog.schema.json",
+  "specVersion": "1.0",
+  "license": "Apache-2.0",
+  "skills": [
+    {
+      "name": "choosing-a-visualization",
+      "path": "choosing-a-visualization",
+      "description": "Use when an agent must choose, compose, validate, or prepare to publish a geospatial visualization.",
+      "workflowFamilies": ["Analyze", "Publish Data", "Build App"],
+      "coverage": ["choosing-visualization", "layer-composition", "query-shaping", "publishing", "anti-patterns"],
+      "standardTools": [
+        "list_layers", "query_features", "summarize_statistics", "plan_analysis",
+        "reproject_features", "create_map_package", "refine_map_package",
+        "compose_mixed_protocol_map", "apply_style_preset", "render_map",
+        "preview_map_package", "publish_result"
+      ]
+    }
+  ]
+}
