@@ -69,7 +69,7 @@ train_smart_ci_run() {
   gh workflow run ci.yml --ref "${batch}" 1>&2
 
   # Find the dispatched run id (most recent ci.yml run on this ref).
-  local run_id=""
+  local run_id="" found_new_run=0
   timeout_at=$(( $(train_now) + discovery_timeout ))
   while :; do
     run_id="$(gh run list --workflow ci.yml --branch "${batch}" \
@@ -77,6 +77,7 @@ train_smart_ci_run() {
       --jq '[.[] | select(.headBranch=="'"${batch}"'")][0].databaseId' 2>/dev/null || echo "")"
     if [[ -n "${run_id}" && "${run_id}" != "null" ]]; then
       if ! grep -qx "${run_id}" <<<"${pre_dispatch_runs}" ; then
+        found_new_run=1
         break
       fi
     fi
@@ -85,7 +86,7 @@ train_smart_ci_run() {
     sleep "${discovery_interval}"
   done
 
-  if [[ -z "${run_id}" || "${run_id}" == "null" ]]; then
+  if [[ "${found_new_run}" != "1" ]]; then
     train_err "could not locate a newly dispatched ci.yml run for ${batch} within ${discovery_timeout}s; live mode requires MERGE_TRAIN_TOKEN for batch-branch CI dispatch"
     echo "FAILURE"; return 0
   fi

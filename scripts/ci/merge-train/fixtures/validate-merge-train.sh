@@ -351,12 +351,17 @@ assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
 smart_ci_dispatched=0
+smart_ci_mode=immediate
 gh() {
   if [[ "$1 $2" == "workflow run" ]]; then
     smart_ci_dispatched=1
     return 0
   fi
   if [[ "$1 $2" == "run list" ]]; then
+    if [[ "${smart_ci_mode}" == "stale" ]]; then
+      echo "333"
+      return 0
+    fi
     if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
     return 0
   fi
@@ -374,8 +379,15 @@ immediate_gate="$(TRAIN_APPLY=1 \
   TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
   TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
   train_smart_ci_run smartci-batch)"
-unset -f gh
 assert_eq "smart-ci: immediately visible dispatched run is not in baseline" "${immediate_gate}" "SUCCESS"
+
+smart_ci_mode=stale
+stale_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run smartci-batch)"
+unset -f gh
+assert_eq "smart-ci: stale green run fails closed when no new run appears" "${stale_gate}" "FAILURE"
 
 echo
 echo "== State JSON rendering (crash-resume contract) =="
