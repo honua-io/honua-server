@@ -59,6 +59,7 @@ concurrency:
 
 permissions:
   contents: write        # push the batch branch / fast-forward trunk
+  packages: read         # restore private GitHub Packages during catalog generation
   pull-requests: write   # merge PRs, edit labels, comment
   actions: write         # dispatch and rerun CI runs
   issues: write          # maintain the Merge Train State issue
@@ -130,6 +131,15 @@ jobs:
       - name: Install Claude Code CLI (autofix fix-agent engine, Bedrock)
         if: steps.mode.outputs.train_autofix == '1'
         run: npm install -g @anthropic-ai/claude-code
+
+      - name: Authenticate GitHub Packages
+        env:
+          NUGET_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          dotnet nuget update source github-honua \
+            --username "${{ github.actor }}" \
+            --password "${NUGET_AUTH_TOKEN}" \
+            --store-password-in-clear-text
 
       - name: Run train
         env:

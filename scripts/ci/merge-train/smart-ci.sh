@@ -53,7 +53,7 @@ train_smart_ci_run() {
 
   local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
-  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-1800}"
+  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-3600}"
   local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
   local pre_dispatch_runs now timeout_at
 
