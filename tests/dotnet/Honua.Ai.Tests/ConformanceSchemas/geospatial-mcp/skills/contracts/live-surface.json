@@ -1,0 +1,57 @@
+{
+  "contractVersion": "1",
+  "specVersion": "1.0",
+  "assertions": [
+    {
+      "skill": "choosing-a-visualization", "standardTool": "list_layers", "profile": "base",
+      "requiredFields": [], "requiredProperties": ["filter"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "query_features", "profile": "base",
+      "requiredFields": ["serviceId", "layerId"],
+      "requiredProperties": ["where", "bbox", "bboxSrid", "outFields", "limit", "resultOffset", "returnGeometry", "returnCountOnly", "outSrid", "geometryPrecision"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "summarize_statistics", "profile": "analysis", "fallbackTool": "plan_analysis",
+      "requiredFields": ["source", "statistics"], "requiredProperties": ["groupByFields", "where"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "reproject_features", "profile": "analysis", "fallbackTool": "plan_analysis",
+      "requiredFields": ["source", "targetSrid"], "requiredProperties": ["sourceSrid", "where"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "plan_analysis", "profile": "base",
+      "requiredFields": ["intent"], "requiredProperties": ["context"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "create_map_package", "profile": "base",
+      "requiredFields": [], "requiredProperties": ["templateId", "styleId", "themeId"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "refine_map_package", "profile": "base",
+      "requiredFields": ["mapPackageId"], "requiredProperties": ["styleId", "themeId", "sourceBindings", "initialView"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "compose_mixed_protocol_map", "profile": "base",
+      "requiredFields": ["sourceBindings"], "requiredProperties": ["templateId", "styleId", "themeId", "initialView"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "apply_style_preset", "profile": "base",
+      "requiredFields": ["serviceId", "layerId", "styleId"], "requiredProperties": []
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "render_map", "profile": "base",
+      "requiredFields": ["layers", "bbox"],
+      "requiredProperties": ["bboxSrid", "width", "height", "transparent", "maxInlineBytes"],
+      "forbiddenProperties": ["palette", "classBreaks"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "preview_map_package", "profile": "base",
+      "requiredFields": ["mapPackageId"], "requiredProperties": ["width", "height"]
+    },
+    {
+      "skill": "choosing-a-visualization", "standardTool": "publish_result", "profile": "base",
+      "requiredFields": ["sourceId"], "requiredProperties": ["targetKind", "visibility", "routePrefix"]
+    }
+  ]
+}
