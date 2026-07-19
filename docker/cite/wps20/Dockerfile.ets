@@ -22,4 +22,3 @@ RUN printf 'suite=ets-wps20\nversion=1.1\ncommit=%s\nsource=https://github.com/o
 USER cite
 WORKDIR /home/cite
 ENTRYPOINT ["java", "-jar", "/opt/ets/ets-wps20-aio.jar"]
-

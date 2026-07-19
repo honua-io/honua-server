@@ -37,4 +37,3 @@ jobs:
       job-timeout-minutes: 70
       cite-profile: ${{ inputs.profile || 'basic-async' }}
       extra-artifact-paths: docker/cite/wps20/config/
-

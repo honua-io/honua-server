@@ -6,4 +6,3 @@
   <entry key="SERVICE_URL">http://honua-server:8080/wps</entry>
   <entry key="ECHO_PROCESS_ID">honua.cite.echo</entry>
 </properties>
-
