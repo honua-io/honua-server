@@ -1,0 +1,40 @@
+name: WPS 2.0 CITE Conformance Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'WPS 2.0 certification path to evaluate'
+        required: true
+        default: 'basic-async'
+        type: choice
+        options:
+          - basic-async
+          - basic-sync
+          - all
+  schedule:
+    - cron: '0 7 * * 3'
+
+# Tier: nightly. The external ETS is intentionally not a PR-blocking lane.
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cite-wps20-conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cite:
+    uses: ./.github/workflows/cite-conformance-common.yml
+    with:
+      suite: wps20
+      display-name: WPS 2.0
+      runner-script: ./scripts/conformance/cite/run-cite-wps20-tests.sh
+      results-dir: cite-wps20-results
+      summary-file: cite-wps20-summary.md
+      timeout-seconds: 3600
+      job-timeout-minutes: 70
+      cite-profile: ${{ inputs.profile || 'basic-async' }}
+      extra-artifact-paths: docker/cite/wps20/config/
+

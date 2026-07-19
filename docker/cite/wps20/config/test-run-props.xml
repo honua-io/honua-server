@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties version="1.0">
+  <comment>WPS 2.0 CITE arguments. The runner generates the executable copy.</comment>
+  <entry key="IUT">http://honua-server:8080/wps</entry>
+  <entry key="SERVICE_URL">http://honua-server:8080/wps</entry>
+  <entry key="ECHO_PROCESS_ID">honua.cite.echo</entry>
+</properties>
+

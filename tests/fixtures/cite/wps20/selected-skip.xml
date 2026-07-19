@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testng-results ignored="0" total="3" passed="2" failed="0" skipped="1">
+  <suite name="wps20-1.1">
+    <test name="BasicTests">
+      <class name="org.opengis.cite.wps20.basictests.BasicTests">
+        <test-method status="PASS" name="capabilities"/>
+      </class>
+    </test>
+    <test name="Synchronous">
+      <class name="org.opengis.cite.wps20.synchronous.SyncTests">
+        <test-method status="PASS" name="syncExecute"/>
+      </class>
+    </test>
+    <test name="Asynchronous">
+      <class name="org.opengis.cite.wps20.asynchronous.AsyncTests">
+        <test-method status="SKIP" name="getResult"/>
+      </class>
+    </test>
+  </suite>
+</testng-results>
+

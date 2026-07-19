@@ -19,6 +19,7 @@ For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy O
 | WMS 1.3 | service | `run-cite-wms-tests.sh` | `cite-wms-conformance.yml` |
 | WMTS 1.0 | service | `run-cite-wmts-tests.sh` | `cite-wmts-conformance.yml` |
 | WFS 2.0 | service | `run-cite-wfs20-tests.sh` | `cite-wfs20-conformance.yml` |
+| WPS 2.0.2 | service | `run-cite-wps20-tests.sh` | `cite-wps20-conformance.yml` |
 | WCS 2.0.1 | service | `run-cite-wcs20-tests.sh` | `cite-wcs20-conformance.yml` |
 | KML 2.2 | format | `run-cite-kml22-tests.sh` | `cite-kml22-conformance.yml` |
 | GML 3.2 | format | `run-cite-gml32-tests.sh` | `cite-gml32-conformance.yml` |
@@ -118,6 +119,24 @@ Conformance classes advertised: `core`, `collection-map`, `dataset-map`, `collec
 - **Test params:** `docker/cite/wmts10/config/test-params.xml`.
 - **Sanity check:** `curl 'http://localhost:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0'`
 - **Open issue:** lane is not certification-ready until `WebMercatorQuad`'s `WellKnownScaleSet` CRS URN is corrected. Tracked by [#870](https://github.com/honua-io/honua-server/issues/870).
+
+### WPS 2.0.2
+
+- **Scope:** official `ets-wps20` 1.1 Basic, Synchronous, and Asynchronous conformance classes.
+- **Profiles:** `basic-async` (default certification path), `basic-sync`, and `all`.
+- **Test params:** the runner generates `cite-wps20-results/test-run-props.xml` from the template under `docker/cite/wps20/config/`.
+- **Sanity check:** `curl 'http://localhost:8100/wps?service=WPS&request=GetCapabilities&version=2.0.0'`.
+- **Upstream pin:** tag `1.1`, commit `e2acc691440fad98d32e873a6b7237c9d759b8df`, built as the official all-in-one Java 17 JAR.
+- **Evidence status:** pending the first all-pass run. This lane is not yet part of the public aggregate or an OGC certification claim.
+
+The upstream ETS always executes all three class groups. Honua's parser reports
+the selected certification path in the standard summary while retaining raw
+totals, per-class counts, the TestNG tree, ETS exit status, image inspection,
+and source provenance. A failure or skip in a selected class fails the lane.
+
+```bash
+./scripts/conformance/cite/run-cite-wps20-tests.sh --profile basic-async --verbose
+```
 
 ### WFS 2.0
 

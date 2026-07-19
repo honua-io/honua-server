@@ -1,0 +1,92 @@
+services:
+  honua-server:
+    image: honua-server:latest
+    ports:
+      - "${HONUA_CITE_WPS20_SERVER_PORT:-8100}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Test
+      ASPNETCORE_URLS: http://+:8080
+      PUBLIC_BASE_URL: http://honua-server:8080
+      HONUA_DEV_AUTH: "true"
+      HONUA_REGISTER_TEST_INFRASTRUCTURE: "true"
+      HONUA_WPS_CITE_ECHO_PROCESS_ENABLED: "true"
+      Cache__Enabled: "false"
+      DataSource__Provider: postgres
+      HostValidation__Enabled: "false"
+      HostValidation__AllowedHosts__0: honua-server
+      HostValidation__AllowedHosts__1: localhost
+      HONUA_ADMIN_PASSWORD: CiteAdminPassword123!
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_cite_wps20;User Id=postgres;Password=cite_password;
+      ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_cite_wps20;User Id=postgres;Password=cite_password;
+      ConnectionStrings__Redis: redis:6379
+      Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
+      Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cite-wps20-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: honua_cite_wps20
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: cite_password
+      POSTGRES_INITDB_ARGS: --encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    networks:
+      - cite-wps20-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite_wps20"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly no
+    networks:
+      - cite-wps20-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  cite-runner:
+    image: honua-cite-wps20-ets:1.1
+    build:
+      context: .
+      dockerfile: Dockerfile.ets
+      args:
+        ETS_COMMIT: e2acc691440fad98d32e873a6b7237c9d759b8df
+    user: "${HONUA_CITE_HOST_UID:-1000}:${HONUA_CITE_HOST_GID:-1000}"
+    environment:
+      HOME: /tmp/cite-home
+      JAVA_TOOL_OPTIONS: -Duser.home=/tmp/cite-home -Xms256m -Xmx1536m
+    command:
+      - -o
+      - /results/raw
+      - /results/test-run-props.xml
+    volumes:
+      - ${HONUA_CITE_WPS20_RESULTS_PATH:?set HONUA_CITE_WPS20_RESULTS_PATH}:/results
+    networks:
+      - cite-wps20-network
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    profiles:
+      - test
+
+networks:
+  cite-wps20-network:
+    driver: bridge
+
