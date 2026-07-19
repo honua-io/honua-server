@@ -52,18 +52,21 @@ train_smart_ci_run() {
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
   local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-3600}"
   local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
-  local pre_dispatch_runs now timeout_at
+  local pre_dispatch_runs baseline_rc=0 now timeout_at
 
-  # Prefer the newest run generated after the dispatch. If no NEW run appears on
-  # this branch, CI did not start (or is severely throttled). This is exactly
-  # the failure mode we must fail closed for in live mode (missing PAT or
-  # workflow dispatch auth issues).
+  # Snapshot the baseline before dispatch. If the query fails, an empty baseline
+  # would let any stale run masquerade as newly dispatched, so fail closed.
   pre_dispatch_runs="$(
     gh run list --workflow ci.yml --branch "${batch}" \
       --json databaseId,headBranch \
       --jq '.[] | select(.headBranch=="'"${batch}"'") | .databaseId' \
-      2>/dev/null || true
-  )"
+      2>/dev/null
+  )" || baseline_rc=$?
+  if [[ "${baseline_rc}" != "0" ]]; then
+    train_err "could not snapshot existing ci.yml runs for ${batch}; refusing to dispatch without a trustworthy baseline"
+    echo "FAILURE"
+    return 0
+  fi
 
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
   gh workflow run ci.yml --ref "${batch}" 1>&2
