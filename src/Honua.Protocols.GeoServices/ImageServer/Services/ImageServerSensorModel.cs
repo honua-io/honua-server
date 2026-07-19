@@ -80,9 +80,9 @@ internal static class ImageServerSensorModel
                 !TryReadAny(root, out var longOffset, "longOffset", "longOff", "long_off") ||
                 !TryReadAny(root, out var latOffset, "latOffset", "latOff", "lat_off") ||
                 !TryReadAny(root, out var sampleScale, "sampleScale", "sampScale", "samp_scale") ||
-                !TryReadAny(root, out var lineScale, "lineScale", "lineScale", "line_scale") ||
-                !TryReadAny(root, out var longScale, "longScale", "longScale", "long_scale") ||
-                !TryReadAny(root, out var latScale, "latScale", "latScale", "lat_scale"))
+                !TryReadAny(root, out var lineScale, "lineScale", "lineScl", "line_scale") ||
+                !TryReadAny(root, out var longScale, "longScale", "longScl", "long_scale") ||
+                !TryReadAny(root, out var latScale, "latScale", "latScl", "lat_scale"))
             {
                 return null;
             }
