@@ -48,9 +48,6 @@ train_smart_ci_run() {
   # gh releases print the created run's URL on stdout — route it to stderr or
   # the gate becomes "<url>\nSUCCESS", which matches neither SUCCESS nor
   # FAILURE and fail-closes every live batch.
-  git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  gh workflow run ci.yml --ref "${batch}" 1>&2
-
   local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
   local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-3600}"
@@ -67,6 +64,9 @@ train_smart_ci_run() {
       --jq '.[] | select(.headBranch=="'"${batch}"'") | .databaseId' \
       2>/dev/null || true
   )"
+
+  git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
+  gh workflow run ci.yml --ref "${batch}" 1>&2
 
   # Find the dispatched run id (most recent ci.yml run on this ref).
   local run_id=""

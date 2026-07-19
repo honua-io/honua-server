@@ -348,6 +348,35 @@ assert_contains "smart-ci: descriptor is valid JSON with shards" "$(jq -r 'has("
 assert_contains "smart-ci: FeatureServer-only diff targets FeatureServer shard" "${desc}" "FeatureServer"
 assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all' <<<"${desc}")" "false"
 
+# A dispatched run may become visible on the first post-dispatch query. The
+# baseline must be captured before dispatch or that run is rejected as stale.
+smart_ci_dispatched=0
+gh() {
+  if [[ "$1 $2" == "workflow run" ]]; then
+    smart_ci_dispatched=1
+    return 0
+  fi
+  if [[ "$1 $2" == "run list" ]]; then
+    if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
+    return 0
+  fi
+  if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then
+    echo "completed"
+    return 0
+  fi
+  if [[ "$1 $2" == "run view" && "$*" == *"--json jobs"* ]]; then
+    echo "success"
+    return 0
+  fi
+  return 1
+}
+immediate_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run smartci-batch)"
+unset -f gh
+assert_eq "smart-ci: immediately visible dispatched run is not in baseline" "${immediate_gate}" "SUCCESS"
+
 echo
 echo "== State JSON rendering (crash-resume contract) =="
 body="$(train_state_render train/batch/abc/1 deadbeef "101,102" smart-ci 555 1 0 cafef00d)"
