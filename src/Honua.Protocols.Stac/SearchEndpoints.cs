@@ -8,8 +8,6 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -367,13 +365,6 @@ internal static class SearchEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
-            var providerQueryRouter = context.RequestServices.GetService<FeatureProviderQueryRouter>();
-            var metadataGraphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
-            (FeatureProviderQueryRouter Router, MetadataV2GraphSnapshot Snapshot)? providerRouting =
-                providerQueryRouter is not null && metadataGraphProvider is not null
-                ? (Router: providerQueryRouter,
-                    Snapshot: await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false))
-                : null;
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
             long totalMatched = 0;
             var remainingSkip = offset;
@@ -403,27 +394,23 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
-                var targetReader = featureReader;
-                if (providerRouting is { } routing &&
-                    !string.IsNullOrEmpty(target.Publication.StorageBindingId))
-                {
-                    targetReader = await routing.Router.ResolveReaderAsync(
-                            routing.Snapshot,
-                            target.Service,
-                            target.Resource,
-                            target.Publication,
-                            layerId,
-                            FeatureProviderReadOperation.Query,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                }
+                var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                    context,
+                    featureReader,
+                    target.Service,
+                    target.Resource,
+                    target.Publication,
+                    layerId,
+                    cancellationToken).ConfigureAwait(false);
+                var targetReader = readerResolution.Reader;
+                var storageLayerId = readerResolution.StorageLayerId;
 
                 // A feature-reader/query failure must surface as a 500: it propagates to the outer
                 // catch, which records the exception on the search.work activity and rethrows so the
                 // shared error pipeline maps it to InternalServerError.
                 if (remainingSkip > 0)
                 {
-                    var layerCount = await targetReader.CountAsync(layerId, query, cancellationToken);
+                    var layerCount = await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                     totalMatched += layerCount;
 
                     if (remainingSkip >= layerCount)
@@ -436,7 +423,7 @@ internal static class SearchEndpoints
                     query = query with { Offset = remainingSkip, Limit = remaining };
                     remainingSkip = 0;
 
-                    var result = await targetReader.QueryAsync(layerId, query, cancellationToken);
+                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     allItems.AddRange(result.Features
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -454,7 +441,7 @@ internal static class SearchEndpoints
                     var remaining = effectiveLimit - allItems.Count;
                     query = query with { Limit = remaining };
 
-                    var result = await targetReader.QueryAsync(layerId, query, cancellationToken);
+                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     totalMatched += result.TotalCount;
 
                     allItems.AddRange(result.Features
@@ -471,7 +458,7 @@ internal static class SearchEndpoints
                 }
                 else
                 {
-                    totalMatched += await targetReader.CountAsync(layerId, query, cancellationToken);
+                    totalMatched += await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                 }
             }
 

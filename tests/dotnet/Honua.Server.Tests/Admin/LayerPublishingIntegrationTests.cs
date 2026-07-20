@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -20,6 +21,7 @@ using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -183,7 +185,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         publishApi!.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.LayerId;
         var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var storageLayerId = checked(_layerId.Value + 1_000_000);
 
+        SetPublishedStacStorageLayerId(storageLayerId);
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
 
         var collectionsResponse = await _client.GetAsync("/stac/collections");
@@ -233,6 +237,17 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         using var itemDocument = JsonDocument.Parse(itemPayload);
         itemDocument.RootElement.GetProperty("id").GetInt64().Should().Be(1);
         itemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+
+        RemovePublishedStacStorageBinding();
+
+        var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
+        failedSearchResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        var failedItemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
+        failedItemsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
+        failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
 
     [IntegrationTest]
@@ -1682,6 +1697,50 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var updated = await command.ExecuteNonQueryAsync();
         updated.Should().BeGreaterThan(0, "the isolation regression requires a conflicting default-store feature");
+    }
+
+    private void SetPublishedStacStorageLayerId(int storageLayerId)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == _layerId &&
+            publication.PublicationType == MetadataV2PublicationType.StacCollection);
+        var binding = snapshot.ResolveStorageBinding(publication)
+            ?? throw new InvalidOperationException("Published STAC collection did not resolve a storage binding.");
+        var bindings = snapshot.Graph.StorageBindings
+            .Select(candidate => candidate.Metadata.Id == binding.Metadata.Id
+                ? candidate with { StorageLayerId = storageLayerId }
+                : candidate)
+            .ToArray();
+
+        SetMetadataGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            StorageBindings = bindings
+        });
+    }
+
+    private void RemovePublishedStacStorageBinding()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == _layerId &&
+            publication.PublicationType == MetadataV2PublicationType.StacCollection);
+        var bindings = snapshot.Graph.StorageBindings
+            .Where(binding => binding.Metadata.Id != publication.StorageBindingId)
+            .ToArray();
+
+        SetMetadataGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            StorageBindings = bindings
+        });
+    }
+
+    private void SetMetadataGraph(MetadataV2Graph graph)
+    {
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
     }
 
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)

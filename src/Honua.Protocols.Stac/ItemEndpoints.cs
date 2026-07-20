@@ -5,8 +5,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Helpers;
@@ -16,7 +14,6 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Stac;
 
@@ -96,7 +93,7 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
-            var targetReader = await ResolveFeatureReaderAsync(
+            var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
                 validation.Service,
@@ -155,7 +152,10 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var result = await targetReader.QueryAsync(layerId, query, cancellationToken);
+            var result = await readerResolution.Reader.QueryAsync(
+                readerResolution.StorageLayerId,
+                query,
+                cancellationToken);
 
             var items = result.Features
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
@@ -259,7 +259,7 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC item handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
-            var targetReader = await ResolveFeatureReaderAsync(
+            var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
                 validation.Service,
@@ -269,16 +269,16 @@ internal static class ItemEndpoints
                 cancellationToken).ConfigureAwait(false);
 
             Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(
-                targetReader,
-                layerId,
+                readerResolution.Reader,
+                readerResolution.StorageLayerId,
                 resourceSrid,
                 itemId,
                 cancellationToken);
             if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 feature = await TryGetFeatureByObjectIdAsStacAsync(
-                    targetReader,
-                    layerId,
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
                     resourceSrid,
                     objectId,
                     cancellationToken);
@@ -321,34 +321,6 @@ internal static class ItemEndpoints
         if (!string.IsNullOrWhiteSpace(datetime))
             query += $"&datetime={Uri.EscapeDataString(datetime)}";
         return query;
-    }
-
-    private static async Task<IFeatureReader> ResolveFeatureReaderAsync(
-        HttpContext context,
-        IFeatureReader featureReader,
-        MetadataV2Service? service,
-        MetadataV2Resource resource,
-        MetadataV2Publication publication,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var providerQueryRouter = context.RequestServices.GetService<FeatureProviderQueryRouter>();
-        if (providerQueryRouter is null || service is null || string.IsNullOrEmpty(publication.StorageBindingId))
-        {
-            return featureReader;
-        }
-
-        var metadataGraphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return await providerQueryRouter.ResolveReaderAsync(
-                snapshot,
-                service,
-                resource,
-                publication,
-                layerId,
-                FeatureProviderReadOperation.Query,
-                cancellationToken)
-            .ConfigureAwait(false);
     }
 
     private static async Task<Feature?> TryGetFeatureByCanonicalItemIdAsync(
