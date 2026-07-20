@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "provingTests": [
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_BuiltInRole_ReturnsNotFound",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_CustomRole_ReturnsSuccess",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.ListRoles_WithAdminAuth_ReturnsBuiltInRoles",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.GetRole_BuiltInRole_ReturnsRole",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.GetRole_NonExistentId_ReturnsNotFound",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.GetPermissions_BuiltInRole_ReturnsPermissions",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_ValidRequest_ReturnsCreated",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    },
+    {
+      "test": "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions",
+      "reason": "Role endpoint fixture does not apply the RBAC role-store migration.",
+      "issue": "#1962"
+    }
+  ],
+  "routeFamilies": []
+}
