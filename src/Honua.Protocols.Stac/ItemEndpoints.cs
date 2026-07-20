@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -93,6 +94,14 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
+            var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                context,
+                featureReader,
+                validation.Service,
+                resource,
+                publication,
+                layerId,
+                cancellationToken).ConfigureAwait(false);
 
             // Reject limit < 1 with 400 to match the canonical POST /search surface
             // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
@@ -144,7 +153,10 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+            var result = await readerResolution.Reader.QueryAsync(
+                readerResolution.StorageLayerId,
+                query,
+                cancellationToken);
 
             var items = result.Features
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
@@ -220,6 +232,7 @@ internal static class ItemEndpoints
         string itemId,
         HttpContext context,
         [FromServices] IFeatureReader featureReader,
+        [FromServices] IQueryProcessor queryProcessor,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         using var activity = StacTelemetry.StartActivity(
@@ -248,21 +261,69 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC item handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
-
-            Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(
+            var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                context,
                 featureReader,
+                validation.Service,
+                resource,
+                publication,
                 layerId,
-                resourceSrid,
+                cancellationToken).ConfigureAwait(false);
+
+            var isStorageBound = !string.IsNullOrEmpty(publication.StorageBindingId);
+            var hasNumericItemId = long.TryParse(
                 itemId,
-                cancellationToken);
-            if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var objectId);
+            Feature? feature;
+            if (isStorageBound)
+            {
+                feature = await TryGetBoundFeatureByCanonicalItemIdAsync(
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
+                    resourceSrid,
+                    resource,
+                    itemId,
+                    queryProcessor,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                feature = await TryGetFeatureByCanonicalItemIdAsync(
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
+                    resourceSrid,
+                    itemId,
+                    cancellationToken);
+                if (feature is null && hasNumericItemId)
+                {
+                    feature = await TryGetFeatureByObjectIdAsStacAsync(
+                        readerResolution.Reader,
+                        readerResolution.StorageLayerId,
+                        resourceSrid,
+                        objectId,
+                        cancellationToken);
+                }
+            }
+
+            if (feature is null && isStorageBound && hasNumericItemId)
             {
                 feature = await TryGetFeatureByObjectIdAsStacAsync(
-                    featureReader,
-                    layerId,
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
                     resourceSrid,
                     objectId,
                     cancellationToken);
+            }
+
+            if (feature is { } resolvedFeature &&
+                !string.Equals(
+                    StacMappingService.ResolveItemId(resolvedFeature),
+                    itemId,
+                    StringComparison.Ordinal))
+            {
+                feature = null;
             }
 
             if (feature is null)
@@ -355,6 +416,81 @@ internal static class ItemEndpoints
         return bestMatch;
     }
 
+    private static async Task<Feature?> TryGetBoundFeatureByCanonicalItemIdAsync(
+        IFeatureReader featureReader,
+        int storageLayerId,
+        int layerSrid,
+        MetadataV2Resource resource,
+        string itemId,
+        IQueryProcessor queryProcessor,
+        CancellationToken cancellationToken)
+    {
+        var canonicalKeys = ImmutableArray.Create("stac_id", "item_id", "id");
+        foreach (var canonicalKey in canonicalKeys)
+        {
+            var field = resource.SchemaFields.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
+            if (field is null || !TryCreateItemIdLiteral(field.Type, itemId, out var literal))
+            {
+                continue;
+            }
+
+            var unifiedQuery = new UnifiedQuery
+            {
+                Filter = QueryFilter.FromExpression(new BinaryExpression(
+                    new PropertyReference(field.Name),
+                    BinaryOperator.Equal,
+                    literal)),
+                Limit = 2,
+                OutputCrs = new QueryCrs { Srid = Wgs84Srid }
+            };
+            var query = queryProcessor.ToFeatureQuery(unifiedQuery, resource) with
+            {
+                SpatialReferenceSrid = layerSrid,
+                OutputSrid = Wgs84Srid,
+                Limit = 2
+            };
+            var result = await featureReader.QueryAsync(storageLayerId, query, cancellationToken);
+            foreach (var candidate in result.Features)
+            {
+                if (GetCanonicalItemMatchRank(candidate, itemId) is not null)
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryCreateItemIdLiteral(
+        MetadataV2FieldType fieldType,
+        string itemId,
+        out Literal literal)
+    {
+        switch (fieldType)
+        {
+            case MetadataV2FieldType.Integer
+                when int.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer):
+                literal = new Literal(integer, LiteralType.Number);
+                return true;
+            case MetadataV2FieldType.BigInteger
+                when long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bigInteger):
+                literal = new Literal(bigInteger, LiteralType.Number);
+                return true;
+            case MetadataV2FieldType.Double or MetadataV2FieldType.Float
+                when double.TryParse(itemId, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatingPoint):
+                literal = new Literal(floatingPoint, LiteralType.Number);
+                return true;
+            case MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Unknown:
+                literal = new Literal(itemId, LiteralType.Text);
+                return true;
+            default:
+                literal = null!;
+                return false;
+        }
+    }
+
     private static async Task<Feature?> TryGetFeatureByObjectIdAsStacAsync(
         IFeatureReader featureReader,
         int layerId,
@@ -381,6 +517,15 @@ internal static class ItemEndpoints
 
     private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
     {
+        if (feature is not { } resolvedFeature ||
+            !string.Equals(
+                StacMappingService.ResolveItemId(resolvedFeature),
+                itemId,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var attributes = feature?.Attributes;
         if (attributes is null)
         {

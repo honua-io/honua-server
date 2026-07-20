@@ -394,13 +394,23 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
+                var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                    context,
+                    featureReader,
+                    target.Service,
+                    target.Resource,
+                    target.Publication,
+                    layerId,
+                    cancellationToken).ConfigureAwait(false);
+                var targetReader = readerResolution.Reader;
+                var storageLayerId = readerResolution.StorageLayerId;
 
                 // A feature-reader/query failure must surface as a 500: it propagates to the outer
                 // catch, which records the exception on the search.work activity and rethrows so the
                 // shared error pipeline maps it to InternalServerError.
                 if (remainingSkip > 0)
                 {
-                    var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
+                    var layerCount = await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                     totalMatched += layerCount;
 
                     if (remainingSkip >= layerCount)
@@ -413,7 +423,7 @@ internal static class SearchEndpoints
                     query = query with { Offset = remainingSkip, Limit = remaining };
                     remainingSkip = 0;
 
-                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     allItems.AddRange(result.Features
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -431,7 +441,7 @@ internal static class SearchEndpoints
                     var remaining = effectiveLimit - allItems.Count;
                     query = query with { Limit = remaining };
 
-                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     totalMatched += result.TotalCount;
 
                     allItems.AddRange(result.Features
@@ -448,7 +458,7 @@ internal static class SearchEndpoints
                 }
                 else
                 {
-                    totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
+                    totalMatched += await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                 }
             }
 
