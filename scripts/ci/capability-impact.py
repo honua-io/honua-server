@@ -240,14 +240,19 @@ def is_green(envelope: dict) -> bool:
                 return value
         raise KeyError(names[0])
 
+    def optional_counter(*names: str) -> int:
+        if not any(name in summary for name in names):
+            return 0
+        return required_counter(*names)
+
     try:
         total = required_counter("total")
         passed = required_counter("passed", "pass")
         failed = required_counter("failed", "fail")
         skipped = required_counter("skipped", "skip")
-        cant_tell = required_counter("cantTell", "cant_tell")
+        cant_tell = optional_counter("cantTell", "cant_tell")
         not_applicable = required_counter("not_applicable", "notApplicable")
-        errors = required_counter("errors", "error")
+        errors = optional_counter("errors", "error")
     except (KeyError, TypeError, ValueError):
         return False
     if total <= 0 or passed + not_applicable != total or any(
@@ -352,6 +357,11 @@ def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | N
             "escapedDefectCandidates": sorted(legacy_shards - graph_shards),
         },
         "freshness": freshness,
+        "freshnessSummary": {
+            "greenCount": sum(row["green"] for row in freshness),
+            "staleCount": sum(row["stale"] for row in freshness),
+            "observedCount": sum(row["observedAt"] is not None for row in freshness),
+        },
     }
 
 

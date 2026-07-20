@@ -70,7 +70,7 @@ class CapabilityImpactTests(unittest.TestCase):
 
     def test_freshness_uses_run_date_and_fails_closed_for_stale_future_and_invalid(self):
         now = datetime(2026, 7, 20, tzinfo=timezone.utc)
-        passing = {"summary": {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0, "cant_tell": 0, "errors": 0}, "results": [{"status": "pass"}]}
+        passing = {"summary": {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0}, "results": [{"status": "pass"}]}
         fresh = MODULE.freshness_state({**passing, "run_date": (now - timedelta(days=2)).isoformat()}, now)
         stale = MODULE.freshness_state({**passing, "run_date": (now - timedelta(days=15)).isoformat()}, now)
         future = MODULE.freshness_state({**passing, "run_date": (now + timedelta(days=1)).isoformat()}, now)
@@ -107,8 +107,6 @@ class CapabilityImpactTests(unittest.TestCase):
                 "failed": 0,
                 "skipped": 0,
                 "not_applicable": 20,
-                "cant_tell": 0,
-                "errors": 0,
             },
             "results": [
                 *({"status": "pass"} for _ in range(4)),
@@ -121,18 +119,29 @@ class CapabilityImpactTests(unittest.TestCase):
         self.assertFalse(MODULE.is_green(envelope))
 
     def test_green_rejects_empty_or_missing_results(self):
-        summary = {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0, "cant_tell": 0, "errors": 0}
+        summary = {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0}
         self.assertFalse(MODULE.is_green({"summary": summary}))
         self.assertFalse(MODULE.is_green({"summary": summary, "results": []}))
 
     def test_green_rejects_negative_or_noninteger_counters(self):
-        summary = {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0, "cant_tell": 0, "errors": 0}
+        summary = {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0}
         for counter in summary:
             malformed = {**summary, counter: -1}
             self.assertFalse(MODULE.is_green({"summary": malformed, "results": [{"status": "pass"}]}), counter)
         for value in ("1", 1.0, True):
             malformed = {**summary, "total": value}
             self.assertFalse(MODULE.is_green({"summary": malformed, "results": [{"status": "pass"}]}), repr(value))
+
+    def test_green_accepts_absent_optional_counters_and_rejects_malformed_or_nonzero_values(self):
+        summary = {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0}
+        results = [{"status": "pass"}]
+        self.assertTrue(MODULE.is_green({"summary": summary, "results": results}))
+        for counter in ("cantTell", "cant_tell", "errors", "error"):
+            for value in (-1, "0", 0.0, False):
+                malformed = {**summary, counter: value}
+                self.assertFalse(MODULE.is_green({"summary": malformed, "results": results}), f"{counter}={value!r}")
+            nonzero = {**summary, counter: 1}
+            self.assertFalse(MODULE.is_green({"summary": nonzero, "results": results}), counter)
 
     def test_exception_issue_and_route_family_semantics_are_validated(self):
         catalog = {"entries": [{"method": "GET", "route": "/x", "family": "Explicit family", "capability": None, "proving_tests": []}]}
