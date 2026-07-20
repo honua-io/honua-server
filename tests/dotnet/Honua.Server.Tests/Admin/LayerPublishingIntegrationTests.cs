@@ -159,6 +159,8 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("GET /stac/search")]
     public async Task PublishLayer_CreatesDiscoverableStacCollection()
     {
+        await ConfigureCanonicalIdCollisionSourceAsync();
+
         var publishRequest = new PublishLayerRequest
         {
             Schema = _schema,
@@ -169,7 +171,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             GeometryType = "Point",
             Srid = 4326,
             PrimaryKey = "id",
-            Fields = _idNamePopulationFields,
+            Fields = ["id", "stac_id", "name", "population"],
             ServiceName = _serviceName,
             Enabled = true
         };
@@ -189,6 +191,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         SetPublishedStacStorageLayerId(storageLayerId);
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
+        await InsertCanonicalIdCollisionAsync();
 
         var collectionsResponse = await _client.GetAsync("/stac/collections");
         var collectionsPayload = await collectionsResponse.Content.ReadAsStringAsync();
@@ -217,9 +220,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         searchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {searchPayload}");
         using var searchDocument = JsonDocument.Parse(searchPayload);
         var features = searchDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().ContainSingle();
-        features[0].GetProperty("collection").GetString().Should().Be(collectionId);
-        features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+        var searchFeature = features.Single(feature =>
+            feature.GetProperty("properties").GetProperty("name").GetString() == "Test Feature");
+        searchFeature.GetProperty("collection").GetString().Should().Be(collectionId);
 
         var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
         var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
@@ -227,15 +230,15 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         using (var itemsDocument = JsonDocument.Parse(itemsPayload))
         {
             var items = itemsDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
-            items.Should().ContainSingle();
-            items[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+            items.Should().Contain(item =>
+                item.GetProperty("properties").GetProperty("name").GetString() == "Test Feature");
         }
 
-        var itemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
+        var itemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/123");
         var itemPayload = await itemResponse.Content.ReadAsStringAsync();
         itemResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemPayload}");
         using var itemDocument = JsonDocument.Parse(itemPayload);
-        itemDocument.RootElement.GetProperty("id").ToString().Should().Be("1");
+        itemDocument.RootElement.GetProperty("id").ToString().Should().Be("123");
         itemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
 
         RemovePublishedStacStorageBinding();
@@ -1697,6 +1700,32 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var updated = await command.ExecuteNonQueryAsync();
         updated.Should().BeGreaterThan(0, "the isolation regression requires a conflicting default-store feature");
+    }
+
+    private async Task ConfigureCanonicalIdCollisionSourceAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            ALTER TABLE public.{_tableName} ADD COLUMN stac_id INTEGER;
+            UPDATE public.{_tableName}
+            SET id = 900, stac_id = 123
+            WHERE name = 'Test Feature';
+            """;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertCanonicalIdCollisionAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO public.{_tableName} (id, stac_id, name, population, geom)
+            VALUES (123, 456, 'Wrong Provider ObjectId', 999, ST_SetSRID(ST_Point(2, 2), 4326));
+            """;
+
+        await command.ExecuteNonQueryAsync();
     }
 
     private void SetPublishedStacStorageLayerId(int storageLayerId)
