@@ -44,9 +44,15 @@ internal static class StacFeatureReaderResolver
         }
 
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+        if (!snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var storageBinding))
+        {
+            throw new InvalidOperationException(
+                $"Storage-bound STAC publication '{publication.Metadata.Id}' does not resolve its declared binding '{publication.StorageBindingId}'.");
+        }
+
+        var storageLayerId = storageBinding.StorageLayerId
             ?? throw new InvalidOperationException(
-                $"Storage-bound STAC publication '{publication.Metadata.Id}' does not resolve to a storage layer id.");
+                $"Storage binding '{storageBinding.Metadata.Id}' for STAC publication '{publication.Metadata.Id}' does not define a storage layer id.");
         var reader = await providerQueryRouter.ResolveReaderAsync(
                 snapshot,
                 service,

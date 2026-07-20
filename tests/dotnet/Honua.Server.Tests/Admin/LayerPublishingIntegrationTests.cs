@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -189,7 +190,21 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var storageLayerId = checked(_layerId.Value + 1_000_000);
 
-        SetPublishedStacStorageLayerId(storageLayerId);
+        await RemovePublishedStacStorageBindingAsync();
+
+        var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
+        var failedSearchPayload = await failedSearchResponse.Content.ReadAsStringAsync();
+        failedSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.InternalServerError,
+            $"a missing explicit binding must fail closed; response: {failedSearchPayload}");
+
+        var failedItemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
+        failedItemsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
+        failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        await SetPublishedStacStorageLayerIdAsync(storageLayerId);
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
         await InsertCanonicalIdCollisionAsync();
 
@@ -246,17 +261,6 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var unmatchedObjectIdResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/999");
         unmatchedObjectIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        RemovePublishedStacStorageBinding();
-
-        var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
-        failedSearchResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-
-        var failedItemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
-        failedItemsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-
-        var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
-        failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
 
     [IntegrationTest]
@@ -1734,7 +1738,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
-    private void SetPublishedStacStorageLayerId(int storageLayerId)
+    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
@@ -1747,15 +1751,21 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 ? candidate with { StorageLayerId = storageLayerId }
                 : candidate)
             .ToArray();
+        var publications = snapshot.Graph.Publications
+            .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                ? candidate with { StorageBindingId = binding.Metadata.Id }
+                : candidate)
+            .ToArray();
 
-        SetMetadataGraph(snapshot.Graph with
+        await SaveMetadataGraphAsync(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
+            Publications = publications,
             StorageBindings = bindings
         });
     }
 
-    private void RemovePublishedStacStorageBinding()
+    private async Task RemovePublishedStacStorageBindingAsync()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var publication = snapshot.Graph.Publications.Single(publication =>
@@ -1766,22 +1776,18 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 ? candidate with { StorageBindingId = "missing-stac-binding" }
                 : candidate)
             .ToArray();
-        var bindings = snapshot.Graph.StorageBindings
-            .Where(binding => binding.ResourceId != publication.ResourceId)
-            .ToArray();
-
-        SetMetadataGraph(snapshot.Graph with
+        await SaveMetadataGraphAsync(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
-            Publications = publications,
-            StorageBindings = bindings
+            Publications = publications
         });
     }
 
-    private void SetMetadataGraph(MetadataV2Graph graph)
+    private async Task SaveMetadataGraphAsync(MetadataV2Graph graph)
     {
-        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
-        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        await store.SaveAsync(graph, expectedEtag: null);
     }
 
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)
