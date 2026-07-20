@@ -57,7 +57,7 @@ jobs:
 
       - name: Setup Node.js
         if: inputs.node-version != ''
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
 
@@ -72,7 +72,7 @@ jobs:
 
       - name: Setup .NET
         if: inputs.dotnet-version != ''
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
