@@ -65,6 +65,13 @@ on:
         required: false
         type: string
         default: ''
+      tested-honua-git-sha:
+        description: >-
+          Optional checked-out Honua workflow commit. Suites that retain
+          certification evidence should set this to github.sha.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -150,6 +157,10 @@ jobs:
         env:
           CITE_PROFILE: ${{ inputs.cite-profile }}
           HONUA_CITE_SKIP_BUILD: 'true'
+          HONUA_CITE_TESTED_GIT_SHA: ${{ inputs.tested-honua-git-sha }}
+          HONUA_CITE_REQUIRE_SERVER_PROVENANCE: ${{ inputs.tested-honua-git-sha != '' && 'true' || 'false' }}
+          HONUA_CITE_SERVER_BUILD_MODE: ${{ inputs.honua-image == '' && 'source-build' || 'prebuilt' }}
+          HONUA_CITE_REQUESTED_SERVER_IMAGE: ${{ inputs.honua-image }}
         run: |
           set +e
           timeout ${{ inputs.timeout-seconds }} ${{ inputs.runner-script }} \
