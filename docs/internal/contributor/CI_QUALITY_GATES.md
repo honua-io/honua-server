@@ -137,7 +137,9 @@ These workflows enforce conformance to external geospatial standards. They are n
 | `cite-kml22-conformance.yml` | KML 2.2 CITE conformance |
 | `cite-gml32-conformance.yml` | GML 3.2 CITE conformance |
 | `cite-gpkg12-conformance.yml` | GeoPackage 1.2 CITE conformance |
-| `geoservices-import-fidelity-nightly.yml` | GeoServices import-fidelity checks vs live Esri services (on-demand `workflow_dispatch`) |
+| `geoservices-import-fidelity-external.yml` | GeoServices import-fidelity + Geoportal checks vs live Esri services (on-demand `workflow_dispatch`) |
+| `routing-nightly.yml` | pgRouting provider + NAServer routing integration (`Category=Routing`, weekly) |
+| `warehouse-nightly.yml` | Snowflake/Redshift/Databricks/SqlServer creds-gated provider tests (weekly; self-skips without configured secrets) |
 | `cross-server-consume-nightly.yml` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers (nightly) |
 
 Standards compatibility policy is documented in `docs/gis/STANDARDS_APIS.md`.
