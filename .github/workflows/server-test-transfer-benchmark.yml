@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Authenticate exact package inputs
@@ -148,7 +148,7 @@ jobs:
         shell: bash
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Authenticate exact package inputs
@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - id: transfer_start
@@ -247,7 +247,7 @@ jobs:
         shell: bash
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - id: toolchain
