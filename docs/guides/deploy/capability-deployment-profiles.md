@@ -41,6 +41,13 @@ helm upgrade --install honua oci://ghcr.io/honua-io/charts/honua \
 The Helm output uses the chart's existing `config.env` contract. Generated configuration is
 non-secret and contains only the schema version and selected key list.
 
+When both generated variables are present, the server treats the selected keys as a fail-closed
+HTTP route allowlist backed by the committed feature catalog. Unselected routed surfaces return
+404. The capability manifest remains reachable at `/api/v1/capabilities/manifest` and reports the
+exact effective keys in `deploymentProfile.enabledCapabilities`. Include `ops.health` when an
+orchestrator needs the standard health probes. With neither variable present, the middleware is
+inert and the historical full-surface behavior is preserved.
+
 ## Security boundary
 
 A deployment profile is a configuration restriction, not a license. It never emits a license
