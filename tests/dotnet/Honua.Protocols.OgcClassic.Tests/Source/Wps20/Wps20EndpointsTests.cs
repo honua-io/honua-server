@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -30,14 +31,21 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wps")]
     [InterfaceOperation(TestProtocols.Wps202, "GetCapabilities")]
-    public async Task GetCapabilities_AdvertisesOnlyImplementedAsyncOperations()
+    public async Task GetCapabilities_AdvertisesAsyncExecutionForCanonicalProcesses()
     {
         var response = await _fixture.Client.GetAsync("/wps?service=WPS&request=GetCapabilities&version=2.0.0");
         var xml = await response.Content.ReadAsStringAsync();
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        var canonicalProcess = document
+            .Descendants(wps + "ProcessSummary")
+            .Single(summary => summary.Element(ows + "Identifier")?.Value == "geometry.buffer");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-        xml.Should().Contain("<wps:Capabilities").And.Contain("jobControlOptions=\"async-execute\"");
+        xml.Should().Contain("<wps:Capabilities");
+        canonicalProcess.Attribute("jobControlOptions")?.Value.Should().Be("async-execute");
         xml.Should().Contain("processVersion=\"1.0.0\"");
         xml.Should().NotContain("Operation name=\"Dismiss\"").And.NotContain("jobControlOptions=\"sync-execute\"");
     }
@@ -196,7 +204,13 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wps202, "GetStatus")]
     public async Task GetStatus_UnknownJob_ReturnsOwsExceptionReport()
     {
-        var response = await _fixture.Client.GetAsync("/wps?service=WPS&request=GetStatus&version=2.0.0&jobId=missing-job");
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.GetJobAsync("missing-job", Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ExecutionJobRecord>(new GeoprocessingNotFoundException("Job 'missing-job' not found.")));
+        await using var fixture = new WebAppFixture().ReplaceService(jobs);
+        await fixture.InitializeAsync();
+
+        var response = await fixture.Client.GetAsync("/wps?service=WPS&request=GetStatus&version=2.0.0&jobId=missing-job");
         var xml = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, xml);

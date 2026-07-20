@@ -874,6 +874,10 @@ if [[ -n "${PYTHON_BIN}" ]]; then
 echo "Checking server-test shard coverage (no orphaned test classes)..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
+    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
+    "WFS" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices ImageServer" \
@@ -890,9 +894,9 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
-    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
-    "WFS" \
+    "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \

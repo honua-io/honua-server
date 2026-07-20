@@ -99,19 +99,37 @@ train_regenerate_derived_artifacts() {
   local status
 
   train_log "regenerating derived artifacts on ${batch} (feature-catalog, geoservices-parity, capability-matrix)"
-  "${repo_root}/scripts/generate-feature-catalog.sh"
-  "${repo_root}/scripts/generate-geoservices-parity.sh"
-  python3 "${repo_root}/scripts/ci/generate-capability-matrix.py"
+  if ! bash "${repo_root}/scripts/generate-feature-catalog.sh" 1>&2; then
+    train_err "feature-catalog generation failed for ${batch}"
+    return 1
+  fi
+  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" 1>&2; then
+    train_err "GeoServices parity generation failed for ${batch}"
+    return 1
+  fi
+  if ! python3 "${repo_root}/scripts/ci/generate-capability-matrix.py" 1>&2; then
+    train_err "capability-matrix generation failed for ${batch}"
+    return 1
+  fi
 
-  status="$(git -C "${repo_root}" status --short -- "${feature_catalog}" "${geoservices_parity}" "${capability_matrix}" || echo "")"
+  if ! status="$(git -C "${repo_root}" status --short -- "${feature_catalog}" "${geoservices_parity}" "${capability_matrix}")"; then
+    train_err "could not inspect regenerated artifacts for ${batch}"
+    return 1
+  fi
   if [[ -z "${status}" ]]; then
     train_log "derived artifacts already up to date on ${batch}"
     return 0
   fi
 
-  git -C "${repo_root}" add -- "${feature_catalog}" "${geoservices_parity}" "${capability_matrix}"
-  git -C "${repo_root}" commit -m "chore(ci): refresh generated merge-train artifacts" \
-    >/dev/null
+  if ! git -C "${repo_root}" add -- "${feature_catalog}" "${geoservices_parity}" "${capability_matrix}"; then
+    train_err "could not stage regenerated artifacts for ${batch}"
+    return 1
+  fi
+  if ! git -C "${repo_root}" commit -m "chore(ci): refresh generated merge-train artifacts" \
+    >/dev/null; then
+    train_err "could not commit regenerated artifacts for ${batch}"
+    return 1
+  fi
   train_metric_inc derived_artifact_refreshes
   train_decision "DERIVED ARTIFACTS refreshed on ${batch}"
 }
@@ -123,7 +141,9 @@ train_regenerate_derived_artifacts() {
 train_run_batch_ci() {
   local batch="$1"
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
-    if ! train_regenerate_derived_artifacts "${batch}"; then
+    local regeneration_rc=0
+    train_regenerate_derived_artifacts "${batch}" || regeneration_rc=$?
+    if [[ "${regeneration_rc}" != "0" ]]; then
       train_err "derived-artifact regeneration failed for ${batch}"
       echo "FAILURE"
       return 0
