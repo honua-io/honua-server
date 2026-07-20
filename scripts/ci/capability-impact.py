@@ -230,32 +230,45 @@ def parse_timestamp(envelope: dict) -> tuple[dt.datetime | None, str | None]:
 
 def is_green(envelope: dict) -> bool:
     summary = envelope.get("summary") or {}
+
+    def required_counter(*names: str) -> int:
+        for name in names:
+            if name in summary:
+                value = summary[name]
+                if type(value) is not int or value < 0:
+                    raise ValueError(f"{name} must be a nonnegative integer")
+                return value
+        raise KeyError(names[0])
+
     try:
-        total = int(summary["total"])
-        passed = int(summary["passed"] if "passed" in summary else summary["pass"])
-        failed = int(summary["failed"] if "failed" in summary else summary["fail"])
-        skipped = int(summary["skipped"] if "skipped" in summary else summary["skip"])
-        cant_tell = int(summary.get("cantTell", summary.get("cant_tell", 0)) or 0)
-        not_applicable = int(
-            summary["not_applicable"] if "not_applicable" in summary else summary["notApplicable"]
-        )
-        errors = int(summary.get("errors", summary.get("error", 0)) or 0)
+        total = required_counter("total")
+        passed = required_counter("passed", "pass")
+        failed = required_counter("failed", "fail")
+        skipped = required_counter("skipped", "skip")
+        cant_tell = required_counter("cantTell", "cant_tell")
+        not_applicable = required_counter("not_applicable", "notApplicable")
+        errors = required_counter("errors", "error")
     except (KeyError, TypeError, ValueError):
         return False
     if total <= 0 or passed + not_applicable != total or any(
         value != 0 for value in (failed, skipped, cant_tell, errors)
     ):
         return False
-    statuses = [str(item.get("status", "")).lower() for item in envelope.get("results", [])]
-    extension_statuses = [
-        str(item.get("status", "")).lower()
-        for item in envelope.get("extensions", [])
-        if "status" in item
-    ]
+    results = envelope.get("results")
+    extensions = envelope.get("extensions", [])
+    if (
+        not isinstance(results, list)
+        or not results
+        or not isinstance(extensions, list)
+        or any(not isinstance(item, dict) or "status" not in item for item in [*results, *extensions])
+    ):
+        return False
+    statuses = [str(item["status"]).lower() for item in results]
+    extension_statuses = [str(item["status"]).lower() for item in extensions]
     passing_statuses = {"pass", "passed"}
     not_applicable_statuses = {"not-applicable", "not_applicable"}
     terminal_green_statuses = passing_statuses | not_applicable_statuses
-    results_green = not statuses or (
+    results_green = (
         len(statuses) == total
         and sum(status in passing_statuses for status in statuses) == passed
         and sum(status in not_applicable_statuses for status in statuses) == not_applicable
