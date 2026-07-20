@@ -239,6 +239,35 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             feature.GetProperty("properties").GetProperty("name").GetString() == "Test Feature");
         searchFeature.GetProperty("collection").GetString().Should().Be(collectionId);
 
+        var idSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=123&limit=10");
+        var idSearchPayload = await idSearchResponse.Content.ReadAsStringAsync();
+        idSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {idSearchPayload}");
+        using (var idSearchDocument = JsonDocument.Parse(idSearchPayload))
+        {
+            var matchingIds = idSearchDocument.RootElement
+                .GetProperty("features")
+                .EnumerateArray()
+                .Select(feature => feature.GetProperty("id").ToString())
+                .ToArray();
+            matchingIds.Should().Equal("123");
+        }
+
+        var lowerPrecedenceIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=900&limit=10");
+        var lowerPrecedenceIdSearchPayload = await lowerPrecedenceIdSearchResponse.Content.ReadAsStringAsync();
+        lowerPrecedenceIdSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"response: {lowerPrecedenceIdSearchPayload}");
+        using (var lowerPrecedenceIdSearchDocument = JsonDocument.Parse(lowerPrecedenceIdSearchPayload))
+        {
+            lowerPrecedenceIdSearchDocument.RootElement
+                .GetProperty("features")
+                .GetArrayLength()
+                .Should()
+                .Be(0);
+        }
+
         var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
         var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
         itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");

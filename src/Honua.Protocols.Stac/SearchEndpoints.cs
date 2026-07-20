@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Helpers;
@@ -363,6 +364,7 @@ internal static class SearchEndpoints
             targets.Length);
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var queryProcessor = context.RequestServices.GetRequiredService<IQueryProcessor>();
         try
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
@@ -384,6 +386,8 @@ internal static class SearchEndpoints
                     filterProcessor,
                     defaultFilterLangIsText,
                     target.LayerIndex.ToString(CultureInfo.InvariantCulture),
+                    queryProcessor,
+                    isStorageBound: !string.IsNullOrEmpty(target.Publication.StorageBindingId),
                     cancellationToken);
                 if (!layerQueryResult.IsSuccess)
                 {
@@ -527,6 +531,8 @@ internal static class SearchEndpoints
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         string collectionId,
+        IQueryProcessor queryProcessor,
+        bool isStorageBound,
         CancellationToken cancellationToken)
     {
         var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
@@ -615,7 +621,15 @@ internal static class SearchEndpoints
 
         if (requestedItemIds is { Length: > 0 } itemIds)
         {
-            query = query with { SqlFilter = SqlFragmentHelpers.CombineSqlFilters(query.SqlFilter, BuildItemIdsSqlFilter(itemIds)) };
+            var itemIdsFilter = isStorageBound
+                ? BuildBoundItemIdsSqlFilter(resource, itemIds, queryProcessor)
+                : BuildItemIdsSqlFilter(itemIds, includeObjectIdFallback: true);
+            query = query with
+            {
+                SqlFilter = SqlFragmentHelpers.CombineSqlFilters(
+                    query.SqlFilter,
+                    itemIdsFilter)
+            };
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
@@ -1402,7 +1416,9 @@ internal static class SearchEndpoints
         return true;
     }
 
-    private static SqlFragment BuildItemIdsSqlFilter(ImmutableArray<string> itemIds)
+    private static SqlFragment BuildItemIdsSqlFilter(
+        ImmutableArray<string> itemIds,
+        bool includeObjectIdFallback)
     {
         var distinctIds = itemIds
             .Where(static itemId => !string.IsNullOrWhiteSpace(itemId))
@@ -1431,13 +1447,98 @@ internal static class SearchEndpoints
         };
         var parameters = new List<object?> { distinctIds };
 
-        if (numericObjectIds.Length > 0)
+        if (includeObjectIdFallback && numericObjectIds.Length > 0)
         {
             clauses.Add("objectid = ANY(@p1)");
             parameters.Add(numericObjectIds);
         }
 
         return new SqlFragment($"({string.Join(" OR ", clauses)})", parameters);
+    }
+
+    private static SqlFragment BuildBoundItemIdsSqlFilter(
+        MetadataV2Resource resource,
+        ImmutableArray<string> itemIds,
+        IQueryProcessor queryProcessor)
+    {
+        FilterExpression? combined = null;
+        FilterExpression? higherPrecedenceFieldsAreNull = null;
+        foreach (var canonicalKey in ImmutableArray.Create("stac_id", "item_id", "id"))
+        {
+            var field = resource.SchemaFields.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
+            if (field is null)
+            {
+                continue;
+            }
+
+            var property = new PropertyReference(field.Name);
+            var literals = itemIds
+                .Select(itemId => TryCreateItemIdLiteral(field.Type, itemId, out var literal) ? literal : null)
+                .Where(static literal => literal is not null)
+                .Cast<FilterExpression>()
+                .ToArray();
+            if (literals.Length > 0)
+            {
+                FilterExpression matches = literals.Length == 1
+                    ? new BinaryExpression(property, BinaryOperator.Equal, literals[0])
+                    : new BinaryExpression(property, BinaryOperator.In, new ValueList(literals));
+                if (higherPrecedenceFieldsAreNull is not null)
+                {
+                    matches = new BinaryExpression(
+                        higherPrecedenceFieldsAreNull,
+                        BinaryOperator.And,
+                        matches);
+                }
+
+                combined = combined is null
+                    ? matches
+                    : new BinaryExpression(combined, BinaryOperator.Or, matches);
+            }
+
+            var fieldIsNull = new UnaryExpression(UnaryOperator.IsNull, property);
+            higherPrecedenceFieldsAreNull = higherPrecedenceFieldsAreNull is null
+                ? fieldIsNull
+                : new BinaryExpression(higherPrecedenceFieldsAreNull, BinaryOperator.And, fieldIsNull);
+        }
+
+        if (combined is null)
+        {
+            return new SqlFragment("1 = 0", []);
+        }
+
+        var translated = queryProcessor.ToFeatureQuery(
+            new UnifiedQuery { Filter = QueryFilter.FromExpression(combined) },
+            resource);
+        return translated.SqlFilter ?? new SqlFragment("1 = 0", []);
+    }
+
+    private static bool TryCreateItemIdLiteral(
+        MetadataV2FieldType fieldType,
+        string itemId,
+        out Literal literal)
+    {
+        switch (fieldType)
+        {
+            case MetadataV2FieldType.Integer
+                when int.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer):
+                literal = new Literal(integer, LiteralType.Number);
+                return true;
+            case MetadataV2FieldType.BigInteger
+                when long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bigInteger):
+                literal = new Literal(bigInteger, LiteralType.Number);
+                return true;
+            case MetadataV2FieldType.Double or MetadataV2FieldType.Float
+                when double.TryParse(itemId, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatingPoint):
+                literal = new Literal(floatingPoint, LiteralType.Number);
+                return true;
+            case MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Unknown:
+                literal = new Literal(itemId, LiteralType.Text);
+                return true;
+            default:
+                literal = null!;
+                return false;
+        }
     }
 
     private static bool TryNormalizePropertyName(string name, out string normalized)
