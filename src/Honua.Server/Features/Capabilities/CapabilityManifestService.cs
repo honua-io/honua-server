@@ -55,7 +55,6 @@ internal sealed class CapabilityManifestService(
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IWebHostEnvironment hostEnvironment,
     ICapabilityRegistry capabilityRegistry,
-    DeploymentCapabilityProfile deploymentProfile,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     private const string AuthorizationNotice =
@@ -132,12 +131,7 @@ internal sealed class CapabilityManifestService(
             Transports = BuildTransports(),
             Limits = BuildLimits(batchCapabilities),
             Policies = BuildPolicies(snapshot, callerCapabilities),
-            DeploymentProfile = new CapabilityManifestDeploymentProfile
-            {
-                Configured = deploymentProfile.IsConfigured,
-                SchemaVersion = deploymentProfile.SchemaVersion,
-                EnabledCapabilities = deploymentProfile.EnabledCapabilities.ToArray()
-            },
+            DeploymentProfile = options.DeploymentProfile,
             Links = BuildLinks()
         };
 

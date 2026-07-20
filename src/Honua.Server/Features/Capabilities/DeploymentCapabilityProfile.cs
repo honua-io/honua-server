@@ -148,15 +148,11 @@ internal sealed class DeploymentCapabilityRouteCatalog
             return RouteResolution.Unmapped;
         }
 
-        foreach (var candidate in candidates)
-        {
-            if (candidate.Matcher.TryMatch(context.Request.Path, new RouteValueDictionary()))
-            {
-                return new RouteResolution(true, candidate.Capability);
-            }
-        }
-
-        return RouteResolution.Unmapped;
+        var match = candidates.FirstOrDefault(candidate =>
+            candidate.Matcher.TryMatch(context.Request.Path, new RouteValueDictionary()));
+        return match is null
+            ? RouteResolution.Unmapped
+            : new RouteResolution(true, match.Capability);
     }
 
     private static int Specificity(string route)
