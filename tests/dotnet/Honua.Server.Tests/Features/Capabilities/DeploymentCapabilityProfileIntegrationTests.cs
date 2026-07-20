@@ -38,21 +38,21 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
         {
             using var client = fixture.CreateClient();
 
-        using var manifestResponse = await client.GetAsync("/api/v1/capabilities/manifest");
-        manifestResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var manifest = JsonDocument.Parse(await manifestResponse.Content.ReadAsStringAsync());
-        var profile = manifest.RootElement.GetProperty("deploymentProfile");
-        profile.GetProperty("configured").GetBoolean().Should().BeTrue();
-        profile.GetProperty("schemaVersion").GetString().Should().Be("1.0.0");
-        profile.GetProperty("enabledCapabilities").EnumerateArray()
-            .Select(static item => item.GetString())
-            .Should().Equal(EnabledCapabilities);
+            using var manifestResponse = await client.GetAsync("/api/v1/capabilities/manifest");
+            manifestResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var manifest = JsonDocument.Parse(await manifestResponse.Content.ReadAsStringAsync());
+            var profile = manifest.RootElement.GetProperty("deploymentProfile");
+            profile.GetProperty("configured").GetBoolean().Should().BeTrue();
+            profile.GetProperty("schemaVersion").GetString().Should().Be("1.0.0");
+            profile.GetProperty("enabledCapabilities").EnumerateArray()
+                .Select(static item => item.GetString())
+                .Should().Equal(EnabledCapabilities);
 
-        using var healthResponse = await client.GetAsync("/healthz/live");
-        healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var healthResponse = await client.GetAsync("/healthz/live");
+            healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var selectedResponse = await client.GetAsync("/stac");
-        selectedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var selectedResponse = await client.GetAsync("/stac");
+            selectedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var unselectedResponse = await client.GetAsync("/wfs?service=WFS&request=GetCapabilities");
             unselectedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
