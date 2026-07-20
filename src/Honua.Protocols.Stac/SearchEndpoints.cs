@@ -369,8 +369,10 @@ internal static class SearchEndpoints
         {
             var providerQueryRouter = context.RequestServices.GetService<FeatureProviderQueryRouter>();
             var metadataGraphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
-            var snapshot = providerQueryRouter is not null && metadataGraphProvider is not null
-                ? await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false)
+            (FeatureProviderQueryRouter Router, MetadataV2GraphSnapshot Snapshot)? providerRouting =
+                providerQueryRouter is not null && metadataGraphProvider is not null
+                ? (Router: providerQueryRouter,
+                    Snapshot: await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false))
                 : null;
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
             long totalMatched = 0;
@@ -402,12 +404,11 @@ internal static class SearchEndpoints
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
                 var targetReader = featureReader;
-                if (snapshot is not null &&
-                    providerQueryRouter is not null &&
+                if (providerRouting is { } routing &&
                     !string.IsNullOrEmpty(target.Publication.StorageBindingId))
                 {
-                    targetReader = await providerQueryRouter.ResolveReaderAsync(
-                            snapshot,
+                    targetReader = await routing.Router.ResolveReaderAsync(
+                            routing.Snapshot,
                             target.Service,
                             target.Resource,
                             target.Publication,

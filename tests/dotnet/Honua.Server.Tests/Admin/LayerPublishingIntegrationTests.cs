@@ -152,6 +152,8 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /stac/collections")]
     [Endpoint("GET /stac/collections/{collectionId}")]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     [Endpoint("GET /stac/search")]
     public async Task PublishLayer_CreatesDiscoverableStacCollection()
     {
@@ -181,6 +183,8 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         publishApi!.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.LayerId;
         var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
 
         var collectionsResponse = await _client.GetAsync("/stac/collections");
         var collectionsPayload = await collectionsResponse.Content.ReadAsStringAsync();
@@ -212,6 +216,23 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         features.Should().ContainSingle();
         features[0].GetProperty("collection").GetString().Should().Be(collectionId);
         features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+
+        var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
+        var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");
+        using (var itemsDocument = JsonDocument.Parse(itemsPayload))
+        {
+            var items = itemsDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
+            items.Should().ContainSingle();
+            items[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+        }
+
+        var itemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
+        var itemPayload = await itemResponse.Content.ReadAsStringAsync();
+        itemResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemPayload}");
+        using var itemDocument = JsonDocument.Parse(itemPayload);
+        itemDocument.RootElement.GetProperty("id").GetInt64().Should().Be(1);
+        itemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
     }
 
     [IntegrationTest]
@@ -1646,6 +1667,21 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         command.Parameters.AddWithValue("y", y);
 
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task PoisonCanonicalFeatureStoreAsync(int layerId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE features
+            SET attributes = jsonb_set(attributes, '{name}', '"Wrong Default Store"'::jsonb)
+            WHERE layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+
+        var updated = await command.ExecuteNonQueryAsync();
+        updated.Should().BeGreaterThan(0, "the isolation regression requires a conflicting default-store feature");
     }
 
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)
