@@ -177,12 +177,9 @@ internal sealed class DeploymentCapabilityProfileMiddleware(
     DeploymentCapabilityProfile profile,
     DeploymentCapabilityRouteCatalog routeCatalog)
 {
-    private const string ManifestPath = "/api/v1/capabilities/manifest";
-
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!profile.IsConfigured ||
-            string.Equals(context.Request.Path.Value, ManifestPath, StringComparison.OrdinalIgnoreCase))
+        if (!profile.IsConfigured)
         {
             await next(context).ConfigureAwait(false);
             return;

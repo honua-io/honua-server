@@ -64,6 +64,25 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task ConfiguredProfile_OmittingManifestCapability_ReturnsNotFound()
+    {
+        var fixture = CreateFixture(["serve.stac"]);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /stac")]
     public async Task MissingProfile_PreservesFullSurfaceBehavior()
     {
