@@ -147,6 +147,74 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /stac/collections")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    [Endpoint("GET /stac/search")]
+    public async Task PublishLayer_CreatesDiscoverableStacCollection()
+    {
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish STAC discovery integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Data.Should().NotBeNull();
+        _layerId = publishApi.Data!.LayerId;
+        var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var collectionsResponse = await _client.GetAsync("/stac/collections");
+        var collectionsPayload = await collectionsResponse.Content.ReadAsStringAsync();
+        collectionsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {collectionsPayload}");
+        using (var collectionsDocument = JsonDocument.Parse(collectionsPayload))
+        {
+            collectionsDocument.RootElement
+                .GetProperty("collections")
+                .EnumerateArray()
+                .Select(collection => collection.GetProperty("id").GetString())
+                .Should()
+                .Contain(collectionId);
+        }
+
+        var collectionResponse = await _client.GetAsync($"/stac/collections/{collectionId}");
+        var collectionPayload = await collectionResponse.Content.ReadAsStringAsync();
+        collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {collectionPayload}");
+        using (var collectionDocument = JsonDocument.Parse(collectionPayload))
+        {
+            collectionDocument.RootElement.GetProperty("id").GetString().Should().Be(collectionId);
+            collectionDocument.RootElement.GetProperty("type").GetString().Should().Be("Collection");
+        }
+
+        var searchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
+        var searchPayload = await searchResponse.Content.ReadAsStringAsync();
+        searchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {searchPayload}");
+        using var searchDocument = JsonDocument.Parse(searchPayload);
+        var features = searchDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().ContainSingle();
+        features[0].GetProperty("collection").GetString().Should().Be(collectionId);
+        features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
