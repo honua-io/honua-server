@@ -653,7 +653,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 11,
+      "provingTestCount": 12,
       "maturity": {
         "implemented": 2
       },
@@ -1127,7 +1127,7 @@
       "category": "Ops",
       "edition": "Community",
       "entryCount": 15,
-      "provingTestCount": 54,
+      "provingTestCount": 55,
       "maturity": {
         "implemented": 15
       },
@@ -1899,7 +1899,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 12,
-      "provingTestCount": 79,
+      "provingTestCount": 81,
       "maturity": {
         "implemented": 12
       },
@@ -1965,7 +1965,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 109,
+      "provingTestCount": 110,
       "maturity": {
         "implemented": 2
       },
