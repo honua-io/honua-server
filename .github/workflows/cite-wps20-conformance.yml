@@ -36,4 +36,5 @@ jobs:
       timeout-seconds: 3600
       job-timeout-minutes: 70
       cite-profile: ${{ inputs.profile || 'basic-async' }}
+      tested-honua-git-sha: ${{ github.sha }}
       extra-artifact-paths: docker/cite/wps20/config/

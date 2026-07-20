@@ -138,6 +138,14 @@ and source provenance. A failure or skip in a selected class fails the lane.
 ./scripts/conformance/cite/run-cite-wps20-tests.sh --profile basic-async --verbose
 ```
 
+WPS result bundles include the checked-out Honua commit, build mode, requested
+prebuilt reference when applicable, registry digests, the immutable image ID
+from the running Compose container, and a full Docker image inspection. CI
+supplies and requires a checkout SHA that exactly matches `git rev-parse HEAD`.
+Local runs derive it from Git; outside a Git checkout they continue with an
+explicit `unknown` warning. Local `--skip-build` runs are marked
+`local-existing` rather than claiming a source-to-image build relationship.
+
 ### WFS 2.0
 
 - **Scope:** Basic WFS, XML/KVP encoding, FES filter encoding; transactional WFS optional.

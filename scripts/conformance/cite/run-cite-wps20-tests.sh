@@ -13,6 +13,9 @@ CLEANUP=true
 INTERACTIVE=false
 VERBOSE=false
 SKIP_BUILD="${HONUA_CITE_SKIP_BUILD:-false}"
+REQUIRE_SERVER_PROVENANCE="${HONUA_CITE_REQUIRE_SERVER_PROVENANCE:-false}"
+SERVER_BUILD_MODE="${HONUA_CITE_SERVER_BUILD_MODE:-}"
+REQUESTED_SERVER_IMAGE="${HONUA_CITE_REQUESTED_SERVER_IMAGE:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -33,6 +36,34 @@ case "$PROFILE" in
     basic-async|basic-sync|all) ;;
     *) echo "Unknown WPS CITE profile: $PROFILE" >&2; exit 2 ;;
 esac
+
+case "$REQUIRE_SERVER_PROVENANCE" in
+    true|false) ;;
+    *) echo "HONUA_CITE_REQUIRE_SERVER_PROVENANCE must be true or false" >&2; exit 2 ;;
+esac
+
+if [[ -z "$SERVER_BUILD_MODE" ]]; then
+    if [[ "$SKIP_BUILD" == "true" ]]; then
+        SERVER_BUILD_MODE="local-existing"
+    else
+        SERVER_BUILD_MODE="source-build"
+    fi
+fi
+
+if [[ "${GITHUB_ACTIONS:-false}" == "true" ]]; then
+    REQUIRE_SERVER_PROVENANCE=true
+    if [[ -z "${HONUA_CITE_TESTED_GIT_SHA:-}" ]]; then
+        echo "HONUA_CITE_TESTED_GIT_SHA is required in GitHub Actions" >&2
+        exit 2
+    fi
+fi
+
+TESTED_HONUA_GIT_SHA="${HONUA_CITE_TESTED_GIT_SHA:-}"
+CHECKED_OUT_HONUA_GIT_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+if [[ -z "$TESTED_HONUA_GIT_SHA" ]]; then
+    TESTED_HONUA_GIT_SHA="${CHECKED_OUT_HONUA_GIT_SHA:-unknown}"
+    echo "Warning: HONUA_CITE_TESTED_GIT_SHA is unset; using local checkout SHA '$TESTED_HONUA_GIT_SHA'" >&2
+fi
 
 if [[ ! "$ECHO_PROCESS_ID" =~ ^[A-Za-z0-9._:-]+$ ]]; then
     echo "Invalid WPS echo process identifier" >&2
@@ -87,6 +118,42 @@ trap cleanup EXIT
 
 "${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" --profile test down --remove-orphans --volumes >/dev/null 2>&1 || true
 "${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" up -d postgres redis honua-server
+
+mapfile -t honua_server_container_ids < <(
+    "${COMPOSE_CMD[@]}" -f "$CITE_COMPOSE_FILE" ps --all -q honua-server | sed '/^$/d'
+)
+if [[ "${#honua_server_container_ids[@]}" -ne 1 ]]; then
+    echo "Expected exactly one WPS CITE Honua Server container; found ${#honua_server_container_ids[@]}" >&2
+    exit 2
+fi
+HONUA_SERVER_CONTAINER_ID="${honua_server_container_ids[0]}"
+HONUA_SERVER_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$HONUA_SERVER_CONTAINER_ID")"
+if [[ -z "$HONUA_SERVER_IMAGE_ID" ]]; then
+    echo "Unable to identify the WPS CITE Honua Server image" >&2
+    exit 2
+fi
+
+printf '%s\n' "$TESTED_HONUA_GIT_SHA" > "$CITE_RESULTS_DIR/tested-honua-git-sha.txt.tmp"
+mv "$CITE_RESULTS_DIR/tested-honua-git-sha.txt.tmp" "$CITE_RESULTS_DIR/tested-honua-git-sha.txt"
+printf '%s\n' "$HONUA_SERVER_IMAGE_ID" > "$CITE_RESULTS_DIR/honua-server-image-id.txt.tmp"
+mv "$CITE_RESULTS_DIR/honua-server-image-id.txt.tmp" "$CITE_RESULTS_DIR/honua-server-image-id.txt"
+docker image inspect "$HONUA_SERVER_IMAGE_ID" > "$CITE_RESULTS_DIR/honua-server-image-inspect.json.tmp"
+test -s "$CITE_RESULTS_DIR/honua-server-image-inspect.json.tmp"
+mv "$CITE_RESULTS_DIR/honua-server-image-inspect.json.tmp" "$CITE_RESULTS_DIR/honua-server-image-inspect.json"
+provenance_args=(
+    --tested-git-sha "$TESTED_HONUA_GIT_SHA"
+    --checkout-git-sha "${CHECKED_OUT_HONUA_GIT_SHA:-unknown}"
+    --server-container-id "$HONUA_SERVER_CONTAINER_ID"
+    --server-image-id "$HONUA_SERVER_IMAGE_ID"
+    --server-build-mode "$SERVER_BUILD_MODE"
+    --requested-server-image "$REQUESTED_SERVER_IMAGE"
+    --image-inspect "$CITE_RESULTS_DIR/honua-server-image-inspect.json"
+    --output "$CITE_RESULTS_DIR/honua-server-provenance.json"
+)
+if [[ "$REQUIRE_SERVER_PROVENANCE" == "true" ]]; then
+    provenance_args+=(--require-tested-git-sha)
+fi
+python3 scripts/conformance/cite/write_wps20_provenance.py "${provenance_args[@]}"
 
 HONUA_BASE_URL="http://localhost:${HONUA_CITE_WPS20_SERVER_PORT}"
 deadline=$((SECONDS + HONUA_HEALTHCHECK_TIMEOUT))
