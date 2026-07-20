@@ -89,6 +89,5 @@ public sealed class RecoveryObjectivesTests
         var now = DateTimeOffset.UtcNow;
         new BackupRecord("b", BackupKind.PostgresBase, now, true).IsDataProtecting.Should().BeTrue();
         new BackupRecord("w", BackupKind.PostgresWal, now, true).IsDataProtecting.Should().BeTrue();
-        new BackupRecord("r", BackupKind.RedisSnapshot, now, true).IsDataProtecting.Should().BeFalse();
     }
 }

@@ -8,7 +8,8 @@
     "cross-cutting-gate": "A policy/validation layer applied across several existing routes.",
     "cross-cutting-default": "Applies automatically as a default behavior, not a distinct route.",
     "ops-background-job": "An operational background job or scheduled task, not an HTTP route.",
-    "sdk-only": "Exposed to SDKs/MCP tooling without a distinct catalogued HTTP route in this slice."
+    "sdk-only": "Exposed to SDKs/MCP tooling without a distinct catalogued HTTP route in this slice.",
+    "infra-owned": "Owned by the deployment's infrastructure/managed-database layer by design (stateless server); no server-side route or background job performs this function."
   },
   "noSurfaceCapabilities": [
     {
@@ -24,20 +25,6 @@
       "reason": "Human-in-the-loop approval policy layered over ai.agent-operations routes; no distinct route of its own.",
       "category": "Ai",
       "edition": "Enterprise"
-    },
-    {
-      "capability": "ai.spec-apply",
-      "reasonCode": "sdk-only",
-      "reason": "Spec-apply execution is invoked via MCP tool call and internal job submission, not a distinct catalogued HTTP route in this slice.",
-      "category": "Ai",
-      "edition": "Pro"
-    },
-    {
-      "capability": "ai.workflow-generation",
-      "reasonCode": "sdk-only",
-      "reason": "Workflow/content generation is invoked via MCP tool call, not a distinct catalogued HTTP route in this slice.",
-      "category": "Ai",
-      "edition": "Pro"
     },
     {
       "capability": "alerts.dwell",
@@ -125,29 +112,29 @@
     },
     {
       "capability": "dr.backup-automation",
-      "reasonCode": "ops-background-job",
-      "reason": "Scheduled backup automation is an operational background job, not an HTTP route.",
+      "reasonCode": "infra-owned",
+      "reason": "Honua Server is stateless and runs no backup automation of its own; base backups/WAL archiving are owned by the deployment's infrastructure layer. honua-terraform parameterizes managed-database backups (for example RDS automated backups/snapshots and multi-AZ) and documents the backup/restore drill procedure. A bring-your-own-database deployment delegates backup automation entirely to the customer's managed database. No server-side background job or HTTP route performs backups; see docs/guides/deploy/backup-and-restore.md in this repo for the server-side operator guidance that exists today.",
       "category": "DisasterRecovery",
       "edition": "Enterprise"
     },
     {
       "capability": "dr.cache-backup",
-      "reasonCode": "ops-background-job",
-      "reason": "Cache-state backup/restore is an operational background job, not an HTTP route.",
+      "reasonCode": "infra-owned",
+      "reason": "There is no cache-state backup/restore feature in this server today (verified: no producer ever records a Redis-snapshot backup; the legacy BackupKind.RedisSnapshot enum value was removed as dead code in #2946). Redis persistence (RDB/AOF) and any cache backup/restore is an infrastructure-layer concern the deployment owns, not a server capability.",
       "category": "DisasterRecovery",
       "edition": "Enterprise"
     },
     {
       "capability": "dr.failover",
-      "reasonCode": "ops-background-job",
-      "reason": "Failover playbooks are operational health-check-driven automation, not an HTTP route.",
+      "reasonCode": "infra-owned",
+      "reason": "Honua Server does not evaluate or trigger failover; promoting a standby and cutting over connections is owned by the deployment's infrastructure/managed-database layer (for example RDS Multi-AZ automated failover), with the drill procedure documented in honua-terraform. A bring-your-own-database deployment delegates failover entirely to the customer's managed database. The Honua.Core FailoverDecisionEvaluator was a pure, unit-tested but uncalled evaluator with no consumer anywhere in the codebase; it was removed as dead code in #2946 rather than being (falsely) counted as the surface behind this key.",
       "category": "DisasterRecovery",
       "edition": "Enterprise"
     },
     {
       "capability": "dr.rto-rpo-reporting",
-      "reasonCode": "ops-background-job",
-      "reason": "RTO/RPO objective tracking is a reporting computation surfaced through the operational status surface (ops.observability), not a distinct route.",
+      "reasonCode": "infra-owned",
+      "reason": "Honua Server computes no RTO/RPO posture; recovery-point/recovery-time evidence comes from the infrastructure layer's backup/restore and failover drills, captured against honua-terraform's dr-evidence-template.json schema. A bring-your-own-database deployment's RTO/RPO is defined by the customer's managed database, not by this server. The Honua.Core RecoveryReadinessEvaluator was a pure, unit-tested but uncalled evaluator with no consumer anywhere in the codebase; it was removed as dead code in #2946 rather than being (falsely) counted as the surface behind this key.",
       "category": "DisasterRecovery",
       "edition": "Enterprise"
     },
@@ -189,7 +176,7 @@
     {
       "capability": "raster.cloud-storage-config",
       "reasonCode": "config-flag",
-      "reason": "Cloud storage connection configuration is an admin setting under raster.cloud-cog-serving, not a distinct route.",
+      "reason": "Cloud storage provider selection (AWS S3 / Azure Blob) is process-startup dependency-injection wiring driven by configuration/environment variables (for example HONUA_STORAGE_PROVIDER; see FileStorageServiceCollectionExtensions.AddCloudFileStorage), not a request-time HTTP route. Verified: no LicenseGate call checks this entitlement key anywhere in the codebase. Paid-tier enforcement for cloud-served COG/raster delivery happens at request time through the distinct raster.cloud-cog-serving entitlement gate (CogTileResolver); raster.cloud-storage-config exists only as a descriptive FeatureCatalog entry today, not an enforced gate.",
       "category": "Raster",
       "edition": "Pro"
     },
