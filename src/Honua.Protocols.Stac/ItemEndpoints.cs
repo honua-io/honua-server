@@ -268,13 +268,14 @@ internal static class ItemEndpoints
                 layerId,
                 cancellationToken).ConfigureAwait(false);
 
-            Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(
-                readerResolution.Reader,
-                readerResolution.StorageLayerId,
-                resourceSrid,
+            var isStorageBound = !string.IsNullOrEmpty(publication.StorageBindingId);
+            var hasNumericItemId = long.TryParse(
                 itemId,
-                cancellationToken);
-            if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var objectId);
+            Feature? feature;
+            if (isStorageBound && hasNumericItemId)
             {
                 feature = await TryGetFeatureByObjectIdAsStacAsync(
                     readerResolution.Reader,
@@ -282,6 +283,24 @@ internal static class ItemEndpoints
                     resourceSrid,
                     objectId,
                     cancellationToken);
+            }
+            else
+            {
+                feature = await TryGetFeatureByCanonicalItemIdAsync(
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
+                    resourceSrid,
+                    itemId,
+                    cancellationToken);
+                if (feature is null && hasNumericItemId)
+                {
+                    feature = await TryGetFeatureByObjectIdAsStacAsync(
+                        readerResolution.Reader,
+                        readerResolution.StorageLayerId,
+                        resourceSrid,
+                        objectId,
+                        cancellationToken);
+                }
             }
 
             if (feature is null)

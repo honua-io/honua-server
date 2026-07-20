@@ -235,7 +235,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var itemPayload = await itemResponse.Content.ReadAsStringAsync();
         itemResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemPayload}");
         using var itemDocument = JsonDocument.Parse(itemPayload);
-        itemDocument.RootElement.GetProperty("id").GetInt64().Should().Be(1);
+        itemDocument.RootElement.GetProperty("id").ToString().Should().Be("1");
         itemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
 
         RemovePublishedStacStorageBinding();
