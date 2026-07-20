@@ -129,6 +129,14 @@ accurate `/conformance` declaration:
   working but emit advisory `Deprecation`/`Sunset` headers pending removal.
   See [`docs/gis/style-engine-protocol-consumption.md`](guides/style/style-maps.md).
 
+## Pending WPS 2.0.2 lane
+
+Issue #2933 adds an official `ets-wps20` 1.1 harness for the Basic plus
+Asynchronous or Synchronous certification paths. WPS is not included in the
+table or the public pass total above until a complete selected-profile run has
+nonzero tests with zero failures, skips, and indeterminate results. Harness
+availability must not be presented as OGC certification or passing evidence.
+
 ## How To Refresh This Page
 
 1. Trigger the

@@ -7,6 +7,7 @@ This directory contains reproducible Docker inputs for OGC CITE and related conf
 - `ogc-api-features/` - OGC API Features CITE compose, config, and seed data.
 - `ogc-api-tiles/` - OGC API Tiles CITE compose, config, and seed data.
 - `wfs20/` - WFS 2.0 CITE compose and WFS-specific metadata config. Runs both the `basic` and `transactional` profiles (the transactional leg exercises the Transaction + LockFeature conformance classes).
+- `wps20/` - WPS 2.0.2 ETS 1.1 runner pinned to its upstream source commit. The lane records Basic plus the selected synchronous or asynchronous certification path.
 - `wms11/` - WMS 1.1.1 CITE compose and config (`ogccite/ets-wms11`).
 - `wms13/` - WMS 1.3 CITE compose and config.
 - `wcs20/` - WCS 2.0 CITE compose, config, and deterministic local raster seed data.
@@ -17,6 +18,13 @@ This directory contains reproducible Docker inputs for OGC CITE and related conf
 - `shared/` - Seed data, test data, and runner scripts reused by multiple suites.
 
 Runner scripts in `scripts/conformance/cite/` are the supported entry points. They reference the suite compose files under this directory and keep result artifacts outside `docker/cite/`.
+
+The WPS lane is pending its first all-pass evidence run and is not included in
+the public aggregate. Run its current asynchronous certification path with:
+
+```bash
+./scripts/conformance/cite/run-cite-wps20-tests.sh --profile basic-async
+```
 
 ## Classic WMS/WFS CI Entry Point
 

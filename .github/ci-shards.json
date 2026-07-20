@@ -623,7 +623,7 @@
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "_comment": "ADR-0037 finer-sharding CATCH-ALL: the Wfs20 + Wcs20 + Wps20 namespaces EXCEPT Wfs20EndpointsTests (a single 74-test class isolated into WFS Endpoints). NOTE: this also FIXES pre-existing coverage gaps — Wcs20EndpointsTests (28 [IntegrationTest]s) and Wps20EndpointsTests previously matched no shard filter and never ran in CI; they now run here. Complementary with WFS Endpoints (which selects only Wfs20EndpointsTests).",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20)&FullyQualifiedName!~Wfs20EndpointsTests",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20)&FullyQualifiedName!~Wfs20EndpointsTests)|FullyQualifiedName~Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests",
       "paths": [
         "src/Honua.Protocols.OgcClassic/Wfs20/",
         "src/Honua.Protocols.OgcClassic/Wcs20/",

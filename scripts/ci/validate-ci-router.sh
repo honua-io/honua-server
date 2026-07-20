@@ -878,6 +878,10 @@ echo "Checking server-test shard coverage (no orphaned test classes)..."
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS" \
   --assert-owner \
+    "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
+    "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
+    "WFS" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices ImageServer" \
