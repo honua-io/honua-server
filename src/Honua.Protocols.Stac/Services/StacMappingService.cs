@@ -351,7 +351,7 @@ internal sealed class StacMappingService
             ?? DateTimeOffset.UnixEpoch;
     }
 
-    private static string ResolveItemId(Feature feature)
+    internal static string ResolveItemId(Feature feature)
     {
         foreach (var key in new[] { "stac_id", "item_id", "id" })
         {

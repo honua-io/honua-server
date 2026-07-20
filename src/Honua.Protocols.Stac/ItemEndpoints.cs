@@ -317,6 +317,15 @@ internal static class ItemEndpoints
                     cancellationToken);
             }
 
+            if (feature is { } resolvedFeature &&
+                !string.Equals(
+                    StacMappingService.ResolveItemId(resolvedFeature),
+                    itemId,
+                    StringComparison.Ordinal))
+            {
+                feature = null;
+            }
+
             if (feature is null)
             {
                 StacTelemetry.SetFailed(activity, "item_not_found");
@@ -508,6 +517,15 @@ internal static class ItemEndpoints
 
     private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
     {
+        if (feature is not { } resolvedFeature ||
+            !string.Equals(
+                StacMappingService.ResolveItemId(resolvedFeature),
+                itemId,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var attributes = feature?.Attributes;
         if (attributes is null)
         {

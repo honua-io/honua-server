@@ -241,6 +241,12 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         itemDocument.RootElement.GetProperty("id").ToString().Should().Be("123");
         itemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
 
+        var lowerPrecedenceIdResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/900");
+        lowerPrecedenceIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var unmatchedObjectIdResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/999");
+        unmatchedObjectIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
         RemovePublishedStacStorageBinding();
 
         var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
@@ -1755,13 +1761,19 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var publication = snapshot.Graph.Publications.Single(publication =>
             publication.LayerIndex == _layerId &&
             publication.PublicationType == MetadataV2PublicationType.StacCollection);
+        var publications = snapshot.Graph.Publications
+            .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                ? candidate with { StorageBindingId = "missing-stac-binding" }
+                : candidate)
+            .ToArray();
         var bindings = snapshot.Graph.StorageBindings
-            .Where(binding => binding.Metadata.Id != publication.StorageBindingId)
+            .Where(binding => binding.ResourceId != publication.ResourceId)
             .ToArray();
 
         SetMetadataGraph(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
+            Publications = publications,
             StorageBindings = bindings
         });
     }
