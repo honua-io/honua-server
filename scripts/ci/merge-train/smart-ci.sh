@@ -48,28 +48,31 @@ train_smart_ci_run() {
   # gh releases print the created run's URL on stdout — route it to stderr or
   # the gate becomes "<url>\nSUCCESS", which matches neither SUCCESS nor
   # FAILURE and fail-closes every live batch.
-  git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  gh workflow run ci.yml --ref "${batch}" 1>&2
-
   local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
-  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-1800}"
+  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-3600}"
   local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
-  local pre_dispatch_runs now timeout_at
+  local pre_dispatch_runs baseline_rc=0 now timeout_at
 
-  # Prefer the newest run generated after the dispatch. If no NEW run appears on
-  # this branch, CI did not start (or is severely throttled). This is exactly
-  # the failure mode we must fail closed for in live mode (missing PAT or
-  # workflow dispatch auth issues).
+  # Snapshot the baseline before dispatch. If the query fails, an empty baseline
+  # would let any stale run masquerade as newly dispatched, so fail closed.
   pre_dispatch_runs="$(
     gh run list --workflow ci.yml --branch "${batch}" \
       --json databaseId,headBranch \
       --jq '.[] | select(.headBranch=="'"${batch}"'") | .databaseId' \
-      2>/dev/null || true
-  )"
+      2>/dev/null
+  )" || baseline_rc=$?
+  if [[ "${baseline_rc}" != "0" ]]; then
+    train_err "could not snapshot existing ci.yml runs for ${batch}; refusing to dispatch without a trustworthy baseline"
+    echo "FAILURE"
+    return 0
+  fi
+
+  git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
+  gh workflow run ci.yml --ref "${batch}" 1>&2
 
   # Find the dispatched run id (most recent ci.yml run on this ref).
-  local run_id=""
+  local run_id="" found_new_run=0
   timeout_at=$(( $(train_now) + discovery_timeout ))
   while :; do
     run_id="$(gh run list --workflow ci.yml --branch "${batch}" \
@@ -77,6 +80,7 @@ train_smart_ci_run() {
       --jq '[.[] | select(.headBranch=="'"${batch}"'")][0].databaseId' 2>/dev/null || echo "")"
     if [[ -n "${run_id}" && "${run_id}" != "null" ]]; then
       if ! grep -qx "${run_id}" <<<"${pre_dispatch_runs}" ; then
+        found_new_run=1
         break
       fi
     fi
@@ -85,7 +89,7 @@ train_smart_ci_run() {
     sleep "${discovery_interval}"
   done
 
-  if [[ -z "${run_id}" || "${run_id}" == "null" ]]; then
+  if [[ "${found_new_run}" != "1" ]]; then
     train_err "could not locate a newly dispatched ci.yml run for ${batch} within ${discovery_timeout}s; live mode requires MERGE_TRAIN_TOKEN for batch-branch CI dispatch"
     echo "FAILURE"; return 0
   fi

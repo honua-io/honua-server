@@ -347,6 +347,71 @@ desc="$(train_smart_ci_shards smartci-batch)"
 assert_contains "smart-ci: descriptor is valid JSON with shards" "$(jq -r 'has("shards")' <<<"${desc}")" "true"
 assert_contains "smart-ci: FeatureServer-only diff targets FeatureServer shard" "${desc}" "FeatureServer"
 assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all' <<<"${desc}")" "false"
+assert_contains "derived artifacts: shell generators do not require executable bits" \
+  "$(cat "${TRAIN_DIR}/train.sh")" \
+  'bash "${repo_root}/scripts/generate-geoservices-parity.sh"'
+
+# A dispatched run may become visible on the first post-dispatch query. The
+# baseline must be captured before dispatch or that run is rejected as stale.
+smart_ci_dispatched=0
+smart_ci_mode=immediate
+smart_ci_dispatch_marker="${SCRATCH}/smart-ci-dispatched"
+smart_ci_baseline_calls="${SCRATCH}/smart-ci-baseline-calls"
+gh() {
+  if [[ "$1 $2" == "workflow run" ]]; then
+    smart_ci_dispatched=1
+    : >"${smart_ci_dispatch_marker}"
+    return 0
+  fi
+  if [[ "$1 $2" == "run list" ]]; then
+    if [[ "${smart_ci_mode}" == "baseline-failure" ]]; then
+      local baseline_calls=0
+      [[ -f "${smart_ci_baseline_calls}" ]] && baseline_calls="$(cat "${smart_ci_baseline_calls}")"
+      baseline_calls=$((baseline_calls + 1))
+      printf '%s\n' "${baseline_calls}" >"${smart_ci_baseline_calls}"
+      if [[ "${baseline_calls}" == "1" ]]; then return 1; fi
+      echo "444"
+      return 0
+    fi
+    if [[ "${smart_ci_mode}" == "stale" ]]; then
+      echo "333"
+      return 0
+    fi
+    if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
+    return 0
+  fi
+  if [[ "$1 $2" == "run view" && "$*" == *"--json status"* ]]; then
+    echo "completed"
+    return 0
+  fi
+  if [[ "$1 $2" == "run view" && "$*" == *"--json jobs"* ]]; then
+    echo "success"
+    return 0
+  fi
+  return 1
+}
+immediate_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run smartci-batch)"
+assert_eq "smart-ci: immediately visible dispatched run is not in baseline" "${immediate_gate}" "SUCCESS"
+
+smart_ci_mode=stale
+stale_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run smartci-batch)"
+assert_eq "smart-ci: stale green run fails closed when no new run appears" "${stale_gate}" "FAILURE"
+
+rm -f "${smart_ci_dispatch_marker}" "${smart_ci_baseline_calls}"
+smart_ci_mode=baseline-failure
+baseline_failure_gate="$(TRAIN_APPLY=1 \
+  TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
+  TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
+  train_smart_ci_run smartci-batch)"
+unset -f gh
+assert_eq "smart-ci: baseline query failure fails closed" "${baseline_failure_gate}" "FAILURE"
+assert_eq "smart-ci: baseline query failure prevents dispatch" "$([[ -e "${smart_ci_dispatch_marker}" ]] && echo yes || echo no)" "no"
 
 echo
 echo "== State JSON rendering (crash-resume contract) =="
