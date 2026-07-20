@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,6 +49,16 @@ class CapabilityImpactTests(unittest.TestCase):
             self.assertTrue(report["capabilitySelection"]["runAll"])
             self.assertEqual(report["capabilitySelection"]["shards"], ["A", "B"])
 
+    def test_mixed_mapped_and_unmapped_source_escalates_to_run_all(self):
+        catalog = {"entries": [{"method": "GET", "route": "/x", "family": "X", "code_location": "src/X.cs", "capability": "serve.x", "proving_tests": ["Tests.X"]}]}
+        keys = {"capabilities": [{"key": "serve.x"}], "crosswalks": {"interop": []}}
+        shards = {"unmapped_source_run_all_prefixes": ["src/"], "shards": [{"name": "A", "filter": "FullyQualifiedName~Tests.X"}, {"name": "B", "filter": "FullyQualifiedName~Tests.B"}]}
+        with self._fixture(catalog, keys, shards):
+            report = MODULE.build_report(["src/X.cs", "src/Unmapped.cs"], {"shards": ["A"]}, None, [])
+            self.assertTrue(report["capabilitySelection"]["runAll"])
+            self.assertEqual(report["capabilitySelection"]["unmatchedSourceFiles"], ["src/Unmapped.cs"])
+            self.assertEqual(report["capabilitySelection"]["shards"], ["A", "B"])
+
     def test_zero_envelopes_outside_selected_protocol_pairs_are_not_regressions(self):
         catalog = {"entries": [{"method": "GET", "route": "/x", "family": "X", "code_location": "src/X.cs", "capability": "serve.x", "proving_tests": ["Tests.X"]}]}
         keys = {"capabilities": [{"key": "serve.x"}, {"key": "serve.y"}], "crosswalks": {"interop": [{"clientLane": "js", "protocol": "x", "capability": "serve.x"}, {"clientLane": "js", "protocol": "y", "capability": "serve.y"}]}}
@@ -56,6 +67,58 @@ class CapabilityImpactTests(unittest.TestCase):
             report = MODULE.build_report(["src/X.cs"], {"shards": ["X"]}, fixture / "empty", [])
             self.assertEqual(report["capabilitySelection"]["interopLanes"], [{"clientLane": "js", "protocol": "x"}])
             self.assertEqual({row["protocol"] for row in report["freshness"] if row["stale"]}, {"x", "y"})
+
+    def test_freshness_uses_run_date_and_fails_closed_for_stale_future_and_invalid(self):
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        passing = {"summary": {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0}, "results": [{"status": "pass"}]}
+        fresh = MODULE.freshness_state({**passing, "run_date": (now - timedelta(days=2)).isoformat()}, now)
+        stale = MODULE.freshness_state({**passing, "run_date": (now - timedelta(days=15)).isoformat()}, now)
+        future = MODULE.freshness_state({**passing, "run_date": (now + timedelta(days=1)).isoformat()}, now)
+        invalid = MODULE.freshness_state({**passing, "run_date": "not-a-date"}, now)
+        missing = MODULE.freshness_state(passing, now)
+        self.assertFalse(fresh["stale"])
+        self.assertEqual(fresh["observationProvenance"], "envelope.run_date")
+        self.assertTrue(stale["stale"])
+        self.assertTrue(future["stale"])
+        self.assertTrue(invalid["stale"])
+        self.assertTrue(missing["stale"])
+        self.assertIsNone(invalid["ageDays"])
+
+    def test_green_requires_authoritative_all_pass_terminal_summary(self):
+        def envelope(status, **summary):
+            return {"summary": {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "not_applicable": 0, **summary}, "results": [{"status": status}]}
+        self.assertTrue(MODULE.is_green(envelope("pass")))
+        for status in ("pending", "skip", "skipped", "unknown", "CantTell", "not-applicable", "fail"):
+            self.assertFalse(MODULE.is_green(envelope(status)), status)
+        self.assertFalse(MODULE.is_green(envelope("pass", skipped=1)))
+        self.assertFalse(MODULE.is_green({"results": [{"status": "pass"}]}))
+        missing_counter = envelope("pass")
+        del missing_counter["summary"]["not_applicable"]
+        self.assertFalse(MODULE.is_green(missing_counter))
+        with_pending_extension = envelope("pass")
+        with_pending_extension["extensions"] = [{"status": "pending"}]
+        self.assertFalse(MODULE.is_green(with_pending_extension))
+
+    def test_exception_issue_and_route_family_semantics_are_validated(self):
+        catalog = {"entries": [{"method": "GET", "route": "/x", "family": "Explicit family", "capability": None, "proving_tests": []}]}
+        keys = {"capabilities": [], "crosswalks": {"interop": []}}
+        config = {"shards": []}
+        valid = {"provingTests": [], "routeFamilies": [{"family": "Explicit family", "reason": "No route capability", "issue": "https://github.com/honua-io/honua-server/issues/123"}]}
+        invalid = {"provingTests": [], "routeFamilies": [{"family": "GET /x", "reason": "wrong semantics", "issue": "ticket-123"}]}
+        self.assertEqual(MODULE.validate_graph(catalog, keys, config, valid), [])
+        errors = MODULE.validate_graph(catalog, keys, config, invalid)
+        self.assertTrue(any("invalid family exception" in error for error in errors))
+        self.assertTrue(any("missing or unknown capability" in error for error in errors))
+
+    def test_filter_parser_rejects_unconsumed_or_unsupported_syntax(self):
+        for expression in ("Name~Foo", "FullyQualifiedName>Foo", "FullyQualifiedName~Foo trailing"):
+            with self.assertRaises(ValueError, msg=expression):
+                MODULE.FilterParser(expression, "Foo").evaluate()
+
+    def test_every_current_shard_filter_is_fully_consumed(self):
+        config = json.loads(MODULE.SHARDS.read_text(encoding="utf-8"))
+        for shard in config["shards"]:
+            MODULE.FilterParser(shard["filter"], "Honua.Server.Tests.Probe").evaluate()
 
     def _fixture(self, catalog, keys, shards):
         temporary_directory = tempfile.TemporaryDirectory()

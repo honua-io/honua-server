@@ -24,10 +24,21 @@ ALLOWLIST = ROOT / ".github/capability-impact-allowlist.json"
 class FilterParser:
     """Evaluate the FullyQualifiedName subset used by ci-shards.json."""
 
-    _tokens = re.compile(r"\s*(\(|\)|\&|\||FullyQualifiedName(?:!~|~|!=|=)[^&|()]+)")
+    _token = re.compile(r"\s*(\(|\)|\&|\||FullyQualifiedName(?:!~|~|!=|=)[^&|()\s]+)")
 
     def __init__(self, expression: str, test_name: str):
-        self.tokens = [item.strip() for item in self._tokens.findall(expression)]
+        self.tokens = []
+        position = 0
+        while position < len(expression):
+            match = self._token.match(expression, position)
+            if not match:
+                if expression[position:].strip():
+                    raise ValueError(f"unsupported shard filter syntax at offset {position}: {expression[position:]!r}")
+                break
+            self.tokens.append(match.group(1))
+            position = match.end()
+        if not self.tokens:
+            raise ValueError("shard filter must not be empty")
         self.index = 0
         self.test_name = test_name
 
@@ -106,16 +117,33 @@ def validate_graph(catalog: dict, keys: dict, config: dict, allowlist: dict) -> 
     for row in test_exceptions:
         if not isinstance(row, dict) or not row.get("test") or not row.get("reason") or not row.get("issue"):
             errors.append(f"invalid proving-test exception (test, reason, and issue are required): {row!r}")
-    allowed_families = set(allowlist.get("routeFamilies", []))
+    family_exceptions = allowlist.get("routeFamilies", [])
+    allowed_families = {
+        row.get("family") if isinstance(row, dict) else row
+        for row in family_exceptions
+    }
+    issue_pattern = re.compile(r"(?:#\d+|https://github\.com/[^/]+/[^/]+/issues/\d+)")
     seen_tests: set[str] = set()
+
+    for row in [*test_exceptions, *family_exceptions]:
+        key = "test" if row in test_exceptions else "family"
+        if (
+            not isinstance(row, dict)
+            or not row.get(key)
+            or not row.get("reason")
+            or not issue_pattern.fullmatch(str(row.get("issue", "")))
+        ):
+            errors.append(
+                f"invalid {key} exception ({key}, reason, and a #N or GitHub issue URL are required): {row!r}"
+            )
 
     for entry in catalog["entries"]:
         identity = f"{entry.get('method', '?')} {entry.get('route', '?')}"
         capability = entry.get("capability")
-        if capability not in capabilities:
-            errors.append(f"{identity}: missing or unknown capability {capability!r}")
         family = entry.get("family")
-        if not family and identity not in allowed_families:
+        if capability not in capabilities and family not in allowed_families:
+            errors.append(f"{identity}: missing or unknown capability {capability!r}")
+        if not family:
             errors.append(f"{identity}: route has no family mapping")
         for test_name in entry.get("proving_tests", []):
             seen_tests.add(test_name)
@@ -144,18 +172,21 @@ def is_source_path(path: str, config: dict) -> bool:
     return any(path.startswith(prefix) for prefix in prefixes)
 
 
+def entry_matches_path(path: str, entry: dict) -> bool:
+    normalized = path.replace("\\", "/")
+    if entry.get("code_location", "").replace("\\", "/") == normalized:
+        return True
+    if not normalized.startswith("tests/") or not normalized.endswith(".cs"):
+        return False
+    class_name = Path(normalized).stem
+    return any(f".{class_name}." in test for test in entry.get("proving_tests", []))
+
+
 def affected_entries(changed_files: list[str], entries: list[dict]) -> list[dict]:
-    changed = {item.replace("\\", "/") for item in changed_files if item.strip()}
-    test_classes = {
-        Path(path).stem
-        for path in changed
-        if path.startswith("tests/") and path.endswith(".cs")
-    }
     return [
         entry
         for entry in entries
-        if entry.get("code_location", "").replace("\\", "/") in changed
-        or any(f".{class_name}." in test for class_name in test_classes for test in entry.get("proving_tests", []))
+        if any(entry_matches_path(path, entry) for path in changed_files)
     ]
 
 
@@ -175,24 +206,67 @@ def load_envelopes(root: Path | None) -> dict[tuple[str, str], dict]:
     return envelopes
 
 
-def parse_timestamp(envelope: dict) -> dt.datetime | None:
-    for field in ("generated_at", "generatedAt", "timestamp", "run_at", "runAt"):
+def parse_timestamp(envelope: dict) -> tuple[dt.datetime | None, str | None]:
+    """Return authoritative observation time and provenance from the envelope.
+
+    Committed client-compat baselines record the evidence observation in
+    ``run_date``. Other accepted fields support live envelopes produced by
+    older harnesses; filesystem and Git commit times are intentionally not
+    evidence timestamps.
+    """
+    for field in ("run_date", "generated_at", "generatedAt", "timestamp", "run_at", "runAt"):
         value = envelope.get(field)
         if not value:
             continue
         try:
-            return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt.timezone.utc)
+            return parsed.astimezone(dt.timezone.utc), f"envelope.{field}"
         except ValueError:
-            pass
-    return None
+            return None, f"invalid envelope.{field}"
+    return None, None
 
 
 def is_green(envelope: dict) -> bool:
     summary = envelope.get("summary") or {}
-    if int(summary.get("failed", summary.get("fail", 0)) or 0) > 0:
+    try:
+        total = int(summary["total"])
+        passed = int(summary["passed"] if "passed" in summary else summary["pass"])
+        failed = int(summary["failed"] if "failed" in summary else summary["fail"])
+        skipped = int(summary["skipped"] if "skipped" in summary else summary["skip"])
+        cant_tell = int(summary.get("cantTell", summary.get("cant_tell", 0)) or 0)
+        not_applicable = int(
+            summary["not_applicable"] if "not_applicable" in summary else summary["notApplicable"]
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    if total <= 0 or passed != total or any(value != 0 for value in (failed, skipped, cant_tell, not_applicable)):
         return False
     statuses = [str(item.get("status", "")).lower() for item in envelope.get("results", [])]
-    return bool(statuses) and not any(status in {"fail", "failed", "error"} for status in statuses)
+    extension_statuses = [
+        str(item.get("status", "")).lower()
+        for item in envelope.get("extensions", [])
+        if "status" in item
+    ]
+    results_green = not statuses or (
+        len(statuses) == total and all(status in {"pass", "passed"} for status in statuses)
+    )
+    return results_green and all(status in {"pass", "passed"} for status in extension_statuses)
+
+
+def freshness_state(envelope: dict | None, now: dt.datetime, max_age_days: int = 14) -> dict:
+    timestamp, provenance = parse_timestamp(envelope or {})
+    green = bool(envelope and is_green(envelope))
+    age_days = (now - timestamp).days if timestamp else None
+    valid_age = age_days is not None and age_days >= 0
+    return {
+        "green": green,
+        "observedAt": timestamp.isoformat().replace("+00:00", "Z") if timestamp else None,
+        "observationProvenance": provenance,
+        "ageDays": age_days,
+        "stale": not green or not valid_age or age_days > max_age_days,
+    }
 
 
 def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | None, labels: list[str]) -> dict:
@@ -203,7 +277,11 @@ def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | N
     capabilities = sorted({entry["capability"] for entry in entries})
     tests = sorted({test for entry in entries for test in entry.get("proving_tests", [])})
     shards = sorted({name for test in tests for name in shard_names_for_test(test, config)})
-    unmatched_source = sorted(path for path in changed_files if is_source_path(path, config) and not entries)
+    unmatched_source = sorted(
+        path
+        for path in changed_files
+        if is_source_path(path, config) and not any(entry_matches_path(path, entry) for entry in catalog["entries"])
+    )
     run_all = bool(unmatched_source)
     if run_all:
         shards = sorted(item["name"] for item in config["shards"])
@@ -220,18 +298,12 @@ def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | N
     for row in keys.get("crosswalks", {}).get("interop", []):
         key = (row["clientLane"], row["protocol"])
         envelope = envelopes.get(key)
-        timestamp = parse_timestamp(envelope or {})
-        age_days = (now - timestamp.astimezone(dt.timezone.utc)).days if timestamp else None
-        freshness.append(
-            {
-                "capability": row["capability"],
-                "clientLane": key[0],
-                "protocol": key[1],
-                "green": bool(envelope and is_green(envelope)),
-                "ageDays": age_days,
-                "stale": not envelope or not is_green(envelope) or age_days is None or age_days > 14,
-            }
-        )
+        freshness.append({
+            "capability": row["capability"],
+            "clientLane": key[0],
+            "protocol": key[1],
+            **freshness_state(envelope, now),
+        })
 
     legacy_shards = set(legacy.get("shards", []))
     graph_shards = set(shards)
@@ -288,6 +360,8 @@ def markdown(report: dict) -> str:
         "### Interop selection semantics",
         "",
         "Only the listed `(clientLane, protocol)` pairs are asserted. A selected lane may emit zero envelopes for protocols not mapped to the touched capabilities; those absences are not regressions.",
+        "",
+        "Freshness uses the evidence envelope's `run_date` (or an explicit legacy timestamp field) as authoritative observation provenance. Missing, invalid, or future timestamps fail closed as stale; Git and filesystem timestamps are never substituted.",
     ]
     return "\n".join(lines) + "\n"
 
