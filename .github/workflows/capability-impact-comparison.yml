@@ -1,0 +1,76 @@
+name: Capability Impact Comparison
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: capability-impact-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  completeness:
+    name: Capability graph completeness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate capability, proving-test, shard, and lane crosswalks
+        run: python3 scripts/ci/capability-impact.py validate
+      - name: Run focused selector tests
+        run: python3 -m unittest discover -s tests/python/unit -p 'test_capability_impact.py' -v
+
+  comparison:
+    name: ADR-0037 vs capability selector (report only)
+    needs: completeness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Resolve comparison inputs
+        id: inputs
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base="${PR_BASE_SHA:-origin/trunk}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            git fetch origin trunk
+            base="origin/trunk"
+          fi
+          git diff --name-only "$base"...HEAD > changed-files.txt
+          scripts/ci/honua-server-targeted-tests.sh --base "$base" > legacy-selection.json
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+      - name: Generate report-only comparison
+        env:
+          CAPABILITY_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          python3 scripts/ci/capability-impact.py select \
+            --changed-files changed-files.txt \
+            --legacy legacy-selection.json \
+            --envelopes tests/baselines/client-compat \
+            --labels-json "${CAPABILITY_LABELS:-[]}" \
+            --markdown capability-impact-summary.md \
+            > capability-impact-report.json
+          cat capability-impact-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload observation-period report
+        uses: actions/upload-artifact@v7
+        with:
+          name: capability-impact-${{ github.run_id }}
+          path: |
+            capability-impact-report.json
+            capability-impact-summary.md
+            changed-files.txt
+            legacy-selection.json
+          retention-days: 90
