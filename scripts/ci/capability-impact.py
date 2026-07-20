@@ -239,9 +239,12 @@ def is_green(envelope: dict) -> bool:
         not_applicable = int(
             summary["not_applicable"] if "not_applicable" in summary else summary["notApplicable"]
         )
+        errors = int(summary.get("errors", summary.get("error", 0)) or 0)
     except (KeyError, TypeError, ValueError):
         return False
-    if total <= 0 or passed != total or any(value != 0 for value in (failed, skipped, cant_tell, not_applicable)):
+    if total <= 0 or passed + not_applicable != total or any(
+        value != 0 for value in (failed, skipped, cant_tell, errors)
+    ):
         return False
     statuses = [str(item.get("status", "")).lower() for item in envelope.get("results", [])]
     extension_statuses = [
@@ -249,10 +252,16 @@ def is_green(envelope: dict) -> bool:
         for item in envelope.get("extensions", [])
         if "status" in item
     ]
+    passing_statuses = {"pass", "passed"}
+    not_applicable_statuses = {"not-applicable", "not_applicable"}
+    terminal_green_statuses = passing_statuses | not_applicable_statuses
     results_green = not statuses or (
-        len(statuses) == total and all(status in {"pass", "passed"} for status in statuses)
+        len(statuses) == total
+        and sum(status in passing_statuses for status in statuses) == passed
+        and sum(status in not_applicable_statuses for status in statuses) == not_applicable
+        and all(status in terminal_green_statuses for status in statuses)
     )
-    return results_green and all(status in {"pass", "passed"} for status in extension_statuses)
+    return results_green and all(status in terminal_green_statuses for status in extension_statuses)
 
 
 def freshness_state(envelope: dict | None, now: dt.datetime, max_age_days: int = 14) -> dict:

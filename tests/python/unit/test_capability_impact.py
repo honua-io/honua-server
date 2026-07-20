@@ -99,6 +99,25 @@ class CapabilityImpactTests(unittest.TestCase):
         with_pending_extension["extensions"] = [{"status": "pending"}]
         self.assertFalse(MODULE.is_green(with_pending_extension))
 
+    def test_green_accepts_fully_accounted_gdal_na_heavy_envelope(self):
+        envelope = {
+            "summary": {
+                "total": 24,
+                "passed": 4,
+                "failed": 0,
+                "skipped": 0,
+                "not_applicable": 20,
+            },
+            "results": [
+                *({"status": "pass"} for _ in range(4)),
+                *({"status": "not-applicable"} for _ in range(20)),
+            ],
+            "extensions": [{"status": "not_applicable"}],
+        }
+        self.assertTrue(MODULE.is_green(envelope))
+        envelope["results"][-1] = {"status": "pending"}
+        self.assertFalse(MODULE.is_green(envelope))
+
     def test_exception_issue_and_route_family_semantics_are_validated(self):
         catalog = {"entries": [{"method": "GET", "route": "/x", "family": "Explicit family", "capability": None, "proving_tests": []}]}
         keys = {"capabilities": [], "crosswalks": {"interop": []}}
