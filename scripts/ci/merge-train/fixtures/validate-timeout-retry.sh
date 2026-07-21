@@ -321,3 +321,40 @@ main || fail "resumed failure did not complete attribution path"
 grep -Fqx 'attribute-called' "${record}" || fail "resumed persistent timeout did not reach attribution"
 ! grep -Eq 'gh (workflow run|run rerun)' "${record}" || fail "resumed failure dispatched or reran work"
 pass "end-to-end resumed FAILURE preserves run/base context through attribution"
+
+# Controller A expires while the accepted attempt is still queued. It must
+# leave the retry intent untouched. Controller B then consumes that same run
+# and newer attempt before selection, without dispatching or rerunning.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_RESUME_STARTUP_TEST_ONLY=1
+: >"${record}"
+restart_attempt=queued
+train_select() { fail "deadline restart entered selection"; }
+gh() {
+  if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
+  elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json attempt,status'* ]]; then
+    if [[ "${restart_attempt}" == "queued" ]]; then
+      printf '2\tqueued\n'
+    else
+      printf 'attempt-consumed\n' >>"${record}"
+      printf '2\tcompleted\n'
+    fi
+  elif [[ "$*" == *'--json jobs'* ]]; then printf 'success\n'
+  else fail "deadline restart attempted unexpected gh operation: $*"
+  fi
+}
+export TRAIN_CONTROLLER_DEADLINE_EPOCH=1
+rc=0
+main || rc=$?
+[[ "${rc}" == "1" ]] || fail "queued rerun deadline did not fail closed"
+[[ "${TRAIN_STATE_BODY_OVERRIDE}" == *'"phase":"timeout-retry-intent"'* ]] || fail "queued rerun intent was overwritten"
+[[ ! -s "${record}" ]] || fail "expired controller dispatched, reran, or rewrote retry state"
+
+restart_attempt=completed
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "next controller did not consume the accepted rerun attempt"
+grep -Fqx 'attempt-consumed' "${record}" || fail "next controller did not consume the same newer attempt"
+! grep -Eq 'gh (workflow run|run rerun)' "${record}" || fail "restart dispatched a batch or duplicate rerun"
+unset TRAIN_RESUME_STARTUP_TEST_ONLY
+pass "deadline expiry preserves retry intent for restart consumption"

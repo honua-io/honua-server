@@ -69,7 +69,8 @@ train_restore_retry_members() {
 
 # train_restore_retry_intent: emit state JSON augmented with gate/descriptor
 # and the exact reconstructed member snapshot.
-# Returns 1 when no retry intent exists and 2 for malformed/mismatched intent.
+# Returns 1 when no retry intent exists, 2 for malformed/mismatched intent, and
+# 3 when the accepted newer attempt is still pending at the shared deadline.
 train_restore_retry_intent() {
   local state phase batch trunk run_id kind base row run_branch run_head current_attempt batch_sha selected
   state="$(train_state_read 2>/dev/null || echo "")"
@@ -111,7 +112,7 @@ train_restore_retry_intent() {
   TRAIN_RERUN_KIND="${kind}"
   TRAIN_RERUN_BASE_ATTEMPT="${base}"
   export TRAIN_RERUN_KIND TRAIN_RERUN_BASE_ATTEMPT
-  train_wait_for_new_run_attempt "${run_id}" "${base}" || return 2
+  train_wait_for_new_run_attempt "${run_id}" "${base}" || return 3
 
   local gate descriptor
   gate="$(gh run view "${run_id}" --json jobs \

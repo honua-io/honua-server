@@ -292,6 +292,9 @@ main() {
     elif [[ "${resume_rc}" == "2" ]]; then
       train_err "persisted retry intent does not match its Actions run/batch; failing closed"
       return 1
+    elif [[ "${resume_rc}" == "3" ]]; then
+      train_warn "accepted failed-job rerun is still pending at the controller deadline; preserving retry intent for the next controller"
+      return 1
     fi
   fi
 
@@ -545,7 +548,16 @@ main() {
         gate="$(gh run view "${run_id}" --json jobs \
           --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
       else
-        gate="TIMEOUT"
+        # The rerun command was accepted and its intent is already durable.
+        # Never replace that resumable state with ci-incomplete merely because
+        # this controller's shared deadline expired while the attempt remained
+        # queued/running; the next controller must consume the same attempt.
+        train_annotate_warn "accepted failed-job rerun remains pending at the controller deadline; preserving retry intent for restart"
+        train_step_end ci-gate >/dev/null; train_endgroup
+        _emit_metrics "ci-rerun-pending" "${trunk_sha}" "" "${shard_descriptor}"
+        _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
+          "STOPPED: accepted failed-job rerun still pending; retry intent preserved for next controller"
+        return 1
       fi
       continue
     elif [[ "${rc_retry}" == "2" ]]; then
