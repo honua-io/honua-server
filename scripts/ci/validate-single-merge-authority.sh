@@ -11,6 +11,14 @@ is_allowlisted() {
   esac
 }
 
+is_dispatch_allowlisted() {
+  case "$1" in
+    .github/workflows/merge-train.yml|scripts/ci/merge-train/recovery.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/validate-single-merge-authority.sh)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 is_safe_exclusion() {
   case "$1" in
     node_modules/*|vendor/*|third_party/*|artifacts/*|dist/*|coverage/*|*/bin/*|*/obj/*|*.min.js|*.generated.*)
@@ -43,6 +51,7 @@ scan_authorities() {
     }
 
   local forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|mergePullRequest|updatePullRequestBranch|gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|git[[:space:]]+push[^#;|&]*[[:alnum:]_./-]+:(refs/heads/)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
+  local live_dispatch='gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([^[:space:];]*/)?merge-train\.yml[^#;|&]*train_apply[^[:alnum:]]+(true|1)|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches[^#;|&]*train_apply[^[:alnum:]]+(true|1)|createWorkflowDispatch[^;]*merge-train\.yml[^;]*train_apply[^[:alnum:]]+(true|1)'
   local file rel source found=0 candidates
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -53,10 +62,12 @@ scan_authorities() {
     file="${root}/${file}"
     rel="${file#${root}/}"
     is_safe_exclusion "${rel}" && continue
-    is_allowlisted "${rel}" && continue
     source="$(normalized_source "${file}")"
-    if grep -Eiq "${forbidden}" <<<"${source}"; then
+    if ! is_allowlisted "${rel}" && grep -Eiq "${forbidden}" <<<"${source}"; then
       echo "forbidden merge-capable primitive in ${rel}" >&2; found=1
+    fi
+    if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${live_dispatch}" <<<"${source}"; then
+      echo "forbidden live merge-train dispatch in ${rel}" >&2; found=1
     fi
   done <<<"${candidates}"
   [[ "${found}" == 0 ]] || {
@@ -67,7 +78,7 @@ scan_authorities() {
 self_test() {
   local scratch; scratch="$(mktemp -d)"; trap 'rm -rf "${scratch}"' RETURN
   mkdir -p "${scratch}/.github/workflows" "${scratch}/scripts/ci"
-  printf 'jobs:\n  train:\n    steps:\n      - run: scripts/ci/merge-train/train.sh\n' >"${scratch}/.github/workflows/merge-train.yml"
+  printf 'jobs:\n  train:\n    steps:\n      - run: scripts/ci/merge-train/train.sh\n      - run: gh workflow run merge-train.yml -f train_apply=true\n' >"${scratch}/.github/workflows/merge-train.yml"
   cat >"${scratch}/.github/workflows/read-only.yml" <<'YAML'
 jobs:
   inspect:
@@ -75,6 +86,8 @@ jobs:
       - run: gh api repos/o/r/pulls/1
       # `git push origin HEAD:trunk` is documentation, not executable.
       - run: git push origin HEAD:refs/heads/automation/report-${GITHUB_RUN_ID}
+      - run: gh workflow run merge-train.yml -f train_apply=false
+      - run: gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=false
 YAML
   scan_authorities "${scratch}" || { echo "safe fixture rejected" >&2; return 1; }
 
@@ -96,6 +109,10 @@ YAML
     $'target=refs/heads/trunk\n      git push origin HEAD:${target}'
     'git push origin batch:${target}'
     'git push origin HEAD:refs/heads/${target}'
+    'gh workflow run merge-train.yml -f train_apply=true'
+    $'gh workflow run merge-train.yml \\\n+      -f train_apply=true'
+    'gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=true'
+    'github.rest.actions.createWorkflowDispatch({workflow_id: "merge-train.yml", inputs: {train_apply: true}})'
   )
   for fixture in "${fixtures[@]}"; do
     n=$((n + 1))
