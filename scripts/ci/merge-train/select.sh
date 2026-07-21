@@ -206,6 +206,7 @@ train_snapshot_gate_success() {
 # expected_head binds both gate results to the exact admitted SHA.
 train_pr_admission() {
   local pr="$1" expected_head="$2" snapshot labels
+  TRAIN_LAST_ADMISSION_SNAPSHOT=""
   snapshot="$(train_pr_admission_snapshot "${pr}" 2>/dev/null)" || {
     train_warn "reject #${pr}: admission snapshot unavailable"; return 1;
   }
@@ -223,6 +224,7 @@ train_pr_admission() {
   ' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: unresolved Codex review thread"; return 1; }
   train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
   train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
+  TRAIN_LAST_ADMISSION_SNAPSHOT="${snapshot}"
 }
 
 # Fetch the complete open-PR queue. `gh pr list --limit 100` silently truncated
@@ -285,7 +287,9 @@ train_select() {
     if ! train_pr_admission "${number}" "${expected_head}"; then
       train_log "skip #${number}: exact-head admission failed"; continue
     fi
-    gate="SUCCESS"
+    # Admission evidence is not CI evidence. Preserve the actual exact-head CI
+    # Gate state for observability; it may legitimately be MISSING.
+    gate="$(train_select_ci_gate_state "$(jq -c '.statusCheckRollup' <<<"${TRAIN_LAST_ADMISSION_SNAPSHOT}")")"
 
     jq -nc --argjson n "${number}" \
            --arg oid "${expected_head}" \

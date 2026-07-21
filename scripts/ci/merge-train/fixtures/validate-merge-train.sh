@@ -486,6 +486,10 @@ export TRAIN_PR_LIST_JSON='[
 ]'
 MAX_BATCH=3 sel="$(MAX_BATCH=3 train_select | jq -s -c '[.[].number]')"
 assert_eq "select: oldest-first; draft/hold/conflict excluded" "${sel}" "[11,10]"
+selected_evidence="$(MAX_BATCH=1 train_select | jq -s -r '.[0].gate')"
+assert_eq "select: PR+Review admission does not synthesize CI Gate" "${selected_evidence}" "MISSING"
+assert_not_contains "batch: direct all-green bypass removed" "$(cat "${TRAIN_DIR}/train.sh")" "direct-merge-all-green"
+assert_contains "batch: admitted PRs dispatch batch CI" "$(cat "${TRAIN_DIR}/train.sh")" 'gate="$(train_run_batch_ci "${batch}")"'
 
 for admission_case in gate-fail review-fail unresolved held escalated draft closed advanced; do
   export ADMISSION_CASE="${admission_case}"
@@ -953,6 +957,9 @@ git checkout -q origin/trunk 2>/dev/null || true
 
 echo
 echo "== Single merge authority static guard =="
+node --test "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
+  && ok "review gate: active/dismissed/unresolved evidence fixtures" \
+  || bad "review gate: evidence fixtures failed"
 bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" --self-test \
   && ok "authority: positive/negative fixtures" \
   || bad "authority: fixture coverage failed"

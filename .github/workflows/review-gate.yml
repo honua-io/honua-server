@@ -20,6 +20,7 @@ on:
 
 permissions:
   checks: read
+  contents: read
   pull-requests: read
   statuses: write
 
@@ -32,12 +33,16 @@ jobs:
     name: Publish SHA-bound Codex review attestation
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
       - name: Attest current PR head
         uses: actions/github-script@v9
         with:
           script: |
-            const isCodex = login => login === 'chatgpt-codex-connector' ||
-              login === 'chatgpt-codex-connector[bot]';
+            const { evaluateCodexEvidence, isCodex } = require('./scripts/ci/review-gate-evidence');
             const prNumber = Number(
               context.payload.pull_request?.number ||
               context.payload.workflow_run?.pull_requests?.[0]?.number ||
@@ -55,7 +60,7 @@ jobs:
                     state isDraft headRefOid
                     labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
                     reviews(first: 100) {
-                      nodes { author { login } body submittedAt commit { oid } }
+                      nodes { author { login } body submittedAt state commit { oid } }
                       pageInfo { hasNextPage }
                     }
                     reviewThreads(first: 100) {
@@ -96,12 +101,6 @@ jobs:
                 isCodex(comment.author?.login) && comment.commit?.oid === head));
             if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
 
-            const codexReviews = pr.reviews.nodes
-              .filter(review => isCodex(review.author?.login) &&
-                (/Codex Review/i.test(review.body || '') || /Reviewed commit/i.test(review.body || '')))
-              .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-            const exactReview = unresolved.length === 0 && codexReviews[0]?.commit?.oid === head;
-
             const suites = await github.paginate(github.rest.checks.listSuitesForRef, {
               ...context.repo, ref: head, per_page: 100,
             });
@@ -112,11 +111,9 @@ jobs:
             const reactions = await github.paginate(github.rest.reactions.listForIssue, {
               ...context.repo, issue_number: prNumber, per_page: 100,
             });
-            // An unresolved exact-head finding always overrides an earlier clean
-            // reaction on the same SHA; resolution must be re-attested.
-            const freshCleanReaction = unresolved.length === 0 && observedAt !== null && reactions.some(reaction =>
-              isCodex(reaction.user?.login) && reaction.content === '+1' &&
-              new Date(reaction.created_at).getTime() >= observedAt);
+            const { exactReview, freshCleanReaction } = evaluateCodexEvidence({
+              reviews: pr.reviews.nodes, reactions, unresolvedCount: unresolved.length, head, observedAt,
+            });
 
             if (!exactReview && !freshCleanReaction) {
               reasons.push('no exact-head Codex review or fresh clean reaction');

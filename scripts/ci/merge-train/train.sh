@@ -15,7 +15,7 @@
 # Roll-forward auto-fix loop (autonomous): the ci-gate eval no longer dead-ends a
 # non-format failure straight to a human. It (1) subtracts trunk's pre-existing
 # failures (land if zero batch-introduced), (3) surgically re-verifies only the
-# failed tests, and (4) — when TRAIN_AUTOFIX=1 — patches the batch FORWARD via an
+# failed tests, and (4) â€” when TRAIN_AUTOFIX=1 â€” patches the batch FORWARD via an
 # AI fix-agent (Claude/Bedrock), landing if green and escalating only when truly
 # stuck (and THEN labeling culprits + clearing active_batch so it never loops).
 #
@@ -63,7 +63,7 @@ trap 'rm -rf "${TRAIN_WORK}"' EXIT
 export TRAIN_INCLUDED_FILE="${TRAIN_WORK}/included.tsv"
 export TRAIN_SKIPPED_FILE="${TRAIN_WORK}/skipped.tsv"
 export TRAIN_RUN_ID_FILE="${TRAIN_WORK}/run_id"
-# Instrumentation sinks (additive observability — no decision logic reads these).
+# Instrumentation sinks (additive observability â€” no decision logic reads these).
 export TRAIN_TIMINGS_FILE="${TRAIN_WORK}/timings.kv"
 export TRAIN_METRICS_KV="${TRAIN_WORK}/metrics.kv"
 : >"${TRAIN_TIMINGS_FILE}"; : >"${TRAIN_METRICS_KV}"
@@ -296,7 +296,7 @@ main() {
     train_decision "no ready PRs; nothing to do"
     train_endgroup
     _emit_metrics "nothing-ready" "" "" ""
-    _dashboard "" "${selected}" "" "" "no ready PRs — nothing to select"
+    _dashboard "" "${selected}" "" "" "no ready PRs â€” nothing to select"
     return 0
   fi
   train_decision "candidate batch (oldest-first, capped): $(tr '\n' ' ' <<<"${prs}")"
@@ -336,7 +336,7 @@ main() {
   if [[ -z "${included}" ]]; then
     train_annotate_warn "no PRs assembled cleanly; nothing to land"
     _emit_metrics "nothing-ready" "${trunk_sha}" "" ""
-    _dashboard "${batch}" "${selected}" "${trunk_sha}" "" "all candidates skipped on conflict — nothing to land"
+    _dashboard "${batch}" "${selected}" "${trunk_sha}" "" "all candidates skipped on conflict â€” nothing to land"
     return 0
   fi
 
@@ -347,34 +347,18 @@ main() {
     train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_LANDING}"
   done
 
-  # --- direct-merge fast-path vs batch CI ------------------------------------
-  # Every PR select returned is already GREEN on its own (CI Gate SUCCESS) or
-  # FLAKE. If EVERY included PR is SUCCESS, a batch CI can prove nothing the PRs'
-  # own green CI didn't already — re-running the full suite on the combination is
-  # pure waste. Merge them directly (optimistic model: accept the rare
-  # combination-break + forward-fix on trunk). Batch CI runs ONLY when an
-  # included PR is FLAKE (its own CI is red-but-flaky) and needs verification.
-  local all_green=1 _pr_g _g_state
-  for _pr_g in $(tr ',' ' ' <<<"${included}"); do
-    _g_state="$(jq -r --argjson n "${_pr_g}" 'map(select(.number==$n))[0].gate // "UNKNOWN"' <<<"${selected}")"
-    [[ "${_g_state}" != "SUCCESS" ]] && all_green=0
-  done
-
-  # --- smart-ci (skipped on the all-green fast-path) -------------------------
+  # --- smart-ci ---------------------------------------------------------------
+  # PR Gate and Review Gate admit a PR, but are not integration evidence.
+  # Every assembled combination runs batch CI; only its CI Gate can authorize
+  # landing the exact batch bytes.
   train_group smart-ci "compute shard subset for the batch's cumulative diff"
   train_step_begin smart-ci
   local shard_descriptor gate fwdfix=0 flake_reruns=0
-  if [[ "${all_green}" == "1" ]]; then
-    shard_descriptor='{"reason":"direct-merge-all-green","run_all":false,"shards":[]}'
-    train_metric_set direct_merge 1
-    train_decision "all included PRs green on their own (CI Gate SUCCESS) — skipping batch CI; direct optimistic merge"
-    gate="SUCCESS"
-  else
-    shard_descriptor="$(train_smart_ci_shards "${batch}")"
-    train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
-    train_decision "smart-CI shard subset: ${shard_descriptor}"
-    gate="$(train_run_batch_ci "${batch}")"
-  fi
+  train_metric_set direct_merge 0
+  shard_descriptor="$(train_smart_ci_shards "${batch}")"
+  train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
+  train_decision "smart-CI shard subset: ${shard_descriptor}"
+  gate="$(train_run_batch_ci "${batch}")"
   train_step_end smart-ci >/dev/null
   train_endgroup
 
@@ -419,7 +403,7 @@ main() {
     # (Docker/JS/Python/Esri integration) and the CI Gate / Test Suite Summary
     # aggregators. The train lands on its SHARD results; real regressions in the
     # aux jobs are caught by post-merge trunk CI. If nothing real-fails after
-    # stripping, the batch is green-enough → land.
+    # stripping, the batch is green-enough â†’ land.
     local nonblocking_only=0
     train_nonblocking_failures_are_safe "${run_id}" "${shard_descriptor}" && nonblocking_only=1
     failing="$(train_subtract_lines "${TRAIN_NONBLOCKING_JOBS}" "${failing}")"
@@ -454,7 +438,7 @@ main() {
     # --- (1) PRE-EXISTING-FAILURE FILTER (deterministic, no AI) --------------
     # Subtract trunk's latest-CI failing jobs from the batch's failing jobs. If
     # ZERO batch-introduced failures remain, the batch is red ONLY because trunk
-    # is already red (e.g. a STAC api-validator conformance test) — treat the
+    # is already red (e.g. a STAC api-validator conformance test) â€” treat the
     # batch as PASS and land. Otherwise narrow the working set to the
     # batch-introduced failures for flake/autofix/attribute.
     _write_state "${batch}" "${trunk_sha}" "${included}" "preexisting-filter" "${run_id}" "${fwdfix}" "${flake_reruns}"
@@ -489,7 +473,7 @@ main() {
       # Recognized flake persisted across the rerun => consistent environmental
       # failure (e.g. the schema-setup race). Merge through: land the batch.
       train_metric_set flake_mergethrough 1
-      train_notice "recognized environmental flake persisted across rerun; MERGING THROUGH — landing the batch (optimistic model)"
+      train_notice "recognized environmental flake persisted across rerun; MERGING THROUGH â€” landing the batch (optimistic model)"
       gate="SUCCESS"; continue
     fi
     # rc_cf == 1 => a real, non-flake failure: fall through to autofix/attribute.
@@ -504,7 +488,7 @@ main() {
       local fqns errout
       fqns="$(train_failed_test_names "${run_id}")"
       # Per-FAILING-JOB logs, not `--log-failed` (which is EMPTY on a run_all batch
-      # CI — the #2060 bug). Without this the autofix had no error context and fixed
+      # CI â€” the #2060 bug). Without this the autofix had no error context and fixed
       # blind, so its commits never resolved the failure (esp. non-shard jobs like
       # Build & Format / CI Router Validation that have no test FQNs at all).
       errout="$(train_failing_job_logs "${run_id}")"
@@ -512,7 +496,7 @@ main() {
         autofix_attempts=$((autofix_attempts + 1))
         train_metric_set autofix_attempts "${autofix_attempts}"
         # Surgically re-verify ONLY the failed tests (never a full shard rerun).
-        # On PASS: LAND the batch immediately — the failed tests now pass and the
+        # On PASS: LAND the batch immediately â€” the failed tests now pass and the
         # rest of the batch was already green in the first run, so re-running the
         # full smart-CI is exactly the waste we're avoiding. If the fix
         # incidentally broke a previously-passing test, the optimistic model
@@ -524,7 +508,7 @@ main() {
           continue
         else
           # Fix didn't hold: loop back to retry autofix against the SAME failed
-          # tests (gate is still non-SUCCESS) up to the cap, then escalate — still
+          # tests (gate is still non-SUCCESS) up to the cap, then escalate â€” still
           # NO wasteful full re-run. The surgical rerun is the only re-check.
           train_warn "autofix commit did not pass surgical re-verify; retrying autofix (no full re-run) up to the cap"
           continue
@@ -586,7 +570,7 @@ main() {
       train_step_end ci-gate >/dev/null; train_endgroup
       _emit_metrics "all-dropped" "${trunk_sha}" "" "${shard_descriptor}"
       _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
-        "all batch members dropped on attribution — batch empty"
+        "all batch members dropped on attribution â€” batch empty"
       return 0
     fi
     included="${remaining}"
@@ -610,7 +594,7 @@ main() {
     train_step_end land >/dev/null; train_endgroup
     _emit_metrics "trunk-moved-reassemble" "${trunk_sha}" "" "${shard_descriptor}"
     _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
-      "land deferred: trunk moved (FF-CAS) — next run re-assembles"
+      "land deferred: trunk moved (FF-CAS) â€” next run re-assembles"
     return 0
   fi
   if [[ "${rc}" != "0" ]]; then
@@ -648,23 +632,23 @@ _write_state() {
 _pr_decision() {
   local pr="$1"
   if grep -qE "^${pr}	" "${TRAIN_INCLUDED_FILE}" 2>/dev/null; then
-    echo "✅ included"
+    echo "âœ… included"
   elif grep -qE "^${pr}	" "${TRAIN_SKIPPED_FILE}" 2>/dev/null; then
-    echo "⏭️ skipped — assemble conflict (aborted clean)"
+    echo "â­ï¸ skipped â€” assemble conflict (aborted clean)"
   else
-    echo "⏹️ not in batch"
+    echo "â¹ï¸ not in batch"
   fi
 }
 
 # _dashboard <batch> <selected-json> <trunk_sha> <shard_descriptor> <outcome-note>
 # The headline deliverable: a Markdown report appended to $GITHUB_STEP_SUMMARY
 # (and mirrored to stdout for local dry-runs). Reads only the scratch files /
-# metrics the decision logic already produced — it makes NO decisions.
+# metrics the decision logic already produced â€” it makes NO decisions.
 _dashboard() {
   local batch="$1" selected="$2" trunk_sha="$3" shard_descriptor="$4" note="$5"
   local mode; mode="$(_train_mode_label)"
 
-  train_summary "## 🚂 Merge Train — ${mode} run"
+  train_summary "## ðŸš‚ Merge Train â€” ${mode} run"
   train_summary ""
   train_summary "| | |"
   train_summary "|---|---|"
@@ -673,7 +657,7 @@ _dashboard() {
   train_summary "| **Trunk base** | \`${trunk_sha:-<none>}\` ${trunk_sha:+(${trunk_sha:0:7})} |"
   train_summary "| **Batch branch** | \`${batch:-<none>}\` |"
   train_summary "| **MAX_BATCH** | ${MAX_BATCH} |"
-  train_summary "| **Outcome** | ${note:-—} |"
+  train_summary "| **Outcome** | ${note:-â€”} |"
   train_summary ""
 
   # --- candidates table ------------------------------------------------------
@@ -716,14 +700,14 @@ _dashboard() {
     reason="$(jq -r '.reason // ""' <<<"${shard_descriptor}")"
     shards="$(jq -r '(.shards // []) | join(", ")' <<<"${shard_descriptor}")"
     if [[ "${run_all}" == "true" ]]; then
-      train_summary "- **run_all:** \`true\` — ${reason:-full matrix}"
+      train_summary "- **run_all:** \`true\` â€” ${reason:-full matrix}"
     else
       local shard_n; shard_n="$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}")"
       train_summary "- **Targeted (run_all=false), ${shard_n} shards:** ${shards:-_(none)_}"
       [[ -n "${reason}" ]] && train_summary "- **Reason:** ${reason}"
     fi
   else
-    train_summary "_(not computed — no batch reached smart-CI)_"
+    train_summary "_(not computed â€” no batch reached smart-CI)_"
   fi
   train_summary ""
 
