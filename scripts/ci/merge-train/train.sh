@@ -574,6 +574,15 @@ main() {
       _emit_metrics "ci-rerun-requesting" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
+    if [[ "${rc_retry}" == "5" ]]; then
+      train_annotate_warn "Actions definitively rejected the failed-job rerun; escalating this batch and clearing it so the queue can progress"
+      train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+      train_escalate_batch "${included}" "Actions definitively rejected the failed-job rerun request; manual CI correction required"
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-rejected" "${trunk_sha}" "" "${shard_descriptor}"
+      return 0
+    fi
     if [[ "${rc_retry}" == "0" ]]; then
       if [[ "${TRAIN_RETRY_KIND}" == "timeout" ]]; then
         train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
@@ -757,7 +766,9 @@ _write_state() {
   train_state_write "${body}"
 }
 
-# Persist two-phase rerun state around the Actions side effect.
+# Persist two-phase rerun state around the Actions side effect. `rejected` is a
+# terminal, proven API response; unlike ambiguous `requesting`, startup does not
+# resume it as an in-flight side effect.
 _persist_retry_intent() {
   local kind="$1" next_count="$2" base_attempt="$3" run_id="$4" request_phase="${5:-requesting}"
   TRAIN_RERUN_KIND="${kind}"

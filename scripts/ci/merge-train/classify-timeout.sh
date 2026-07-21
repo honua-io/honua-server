@@ -23,7 +23,8 @@ train_wait_for_rerun_visibility() {
 }
 
 # train_send_failed_job_rerun <run-id>: 0=accepted, 4=conflict/async acceptance,
-# 1=hard failure. Tests may provide TRAIN_RERUN_REQUESTER.
+# 5=definitive HTTP rejection, 1=ambiguous transport/unknown failure. Tests may
+# provide TRAIN_RERUN_REQUESTER.
 train_send_failed_job_rerun() {
   local run_id="$1" err rc=0
   if [[ -n "${TRAIN_RERUN_REQUESTER:-}" ]]; then
@@ -40,6 +41,10 @@ train_send_failed_job_rerun() {
   if grep -Eiq 'HTTP 409|already.*(queued|in progress|requested)|cannot rerun.*(queued|in progress|not completed)' "${err}"; then
     train_warn "rerun API reported an already queued/in-progress request for run ${run_id}; reconciling asynchronously"
     rm -f "${err}"; return 4
+  fi
+  if grep -Eiq 'HTTP (401|403|404|422)|status code: (401|403|404|422)' "${err}"; then
+    train_err "rerun API definitively rejected run ${run_id}; manual correction is required"
+    cat "${err}" >&2; rm -f "${err}"; return 5
   fi
   cat "${err}" >&2; rm -f "${err}"; return 1
 }
@@ -109,6 +114,12 @@ train_request_failed_job_rerun() {
 
   local send_rc=0
   train_send_failed_job_rerun "${run_id}" || send_rc=$?
+  if [[ "${send_rc}" == "5" ]]; then
+    if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}" rejected; then
+      train_err "definitive rerun rejection could not be persisted"
+    fi
+    return 5
+  fi
   if [[ "${send_rc}" != "0" && "${send_rc}" != "4" ]]; then
     train_err "failed to request failed-job rerun for ${kind} run ${run_id}; requesting state remains recoverable"
     [[ -n "${callback}" ]] && return 4 || return 3
@@ -170,7 +181,8 @@ train_classify_timeout() {
 # strict precedence: a persistent timeout is REAL even when its log also
 # matches a known-flake regex, so the known-flake merge-through path is skipped.
 # Returns 0=rerun accepted, 1=real, 2=known-flake merge-through,
-# 3=pre-request failure, 4=requesting state preserved for restart.
+# 3=pre-request failure, 4=ambiguous requesting state preserved, 5=definitive
+# API rejection persisted for terminal recovery.
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
   local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
@@ -180,7 +192,7 @@ train_classify_retry_candidate() {
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
-    3|4) return "${rc}" ;;
+    3|4|5) return "${rc}" ;;
   esac
 
   rc=0

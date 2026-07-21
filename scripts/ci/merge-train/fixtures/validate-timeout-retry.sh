@@ -128,7 +128,7 @@ pass "cancellation/resume idempotency"
 request_mode=success
 requester() {
   printf 'request %s\n' "$1" >>"${record}"
-  case "${request_mode}" in success) return 0 ;; conflict) return 4 ;; hard) return 1 ;; esac
+  case "${request_mode}" in success) return 0 ;; conflict) return 4 ;; rejected) return 5 ;; hard) return 1 ;; esac
 }
 state_callback() { printf '%s\n' "$5" >>"${phase_log}"; }
 export TRAIN_RERUN_REQUESTER=requester TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=0
@@ -492,6 +492,35 @@ train_request_failed_job_rerun 222 timeout 1 state_callback || fail "same-run B 
 [[ ! -s "${record}" ]] || fail "same-run B restart duplicated the accepted rerun"
 unset TRAIN_RERUN_RESUME_STATE_JSON TRAIN_RERUN_REQUESTER
 pass "timeout retry budget and request identity are scoped per Actions run"
+
+# A definitive API rejection uses the production persistence callback to write
+# terminal rejected state. The next controller must not treat it as an in-flight
+# request and must proceed into selection rather than deadlocking forever.
+: >"${record}"; : >"${phase_log}"
+export TRAIN_RERUN_REQUESTER=requester
+request_mode=rejected
+TRAIN_RUN_LOG_TEXT='Process completed with exit code 124.'
+timeout_reruns=0
+TRAIN_RERUN_KIND=""
+TRAIN_RERUN_BASE_ATTEMPT=""
+batch=train/batch/abc/2
+trunk_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+included=101
+fwdfix=0
+flake_reruns=0
+gh() { [[ "$*" == *'--json attempt'* ]] && printf '1\n' || fail "rejected rerun attempted unexpected gh operation: $*"; }
+rc=0
+train_classify_retry_candidate 333 0 0 'Server Tests (OData Core)' _persist_retry_intent || rc=$?
+[[ "${rc}" == "5" ]] || fail "definitive requester rejection was not classified separately"
+grep -Fq '"phase": "timeout-retry-rejected"' "${TRAIN_WORK}/state.md" || fail "definitive rejection did not persist terminal state"
+rejected_state_body="$(cat "${TRAIN_WORK}/state.md")"
+export TRAIN_STATE_BODY_OVERRIDE="${rejected_state_body}" TRAIN_RESUME_STARTUP_TEST_ONLY=1
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "later controller failed after terminal rerun rejection"
+grep -Fqx 'selection-entered' "${record}" || fail "later controller remained trapped behind terminal rerun rejection"
+unset TRAIN_RERUN_REQUESTER TRAIN_RESUME_STARTUP_TEST_ONLY
+pass "definitive rerun rejection is terminal and later controller progresses"
 
 # Controller A expires while the accepted attempt is still queued. It must
 # leave the retry intent untouched. Controller B then consumes that same run
