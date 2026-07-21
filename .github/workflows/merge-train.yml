@@ -250,9 +250,8 @@ jobs:
             echo "::warning::MERGE_TRAIN_TOKEN not set; a GITHUB_TOKEN dispatch won't trigger the next run. Self-chain skipped (schedule remains)."
             exit 0
           fi
-          # Selectable = open, not draft, not CONFLICTING, and not held/escalated.
-          # This is a rough "is there work?" gate; train.sh's own select step remains
-          # the authority on what actually batches.
+          # This is only a wake-up hint. train.sh remains authoritative and
+          # re-attests exact-head PR Gate + Review Gate before select and land.
           ready="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open \
             --json number,isDraft,mergeable,labels \
             --jq '[.[] | select(.isDraft == false)

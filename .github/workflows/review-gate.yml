@@ -1,0 +1,130 @@
+name: Review Gate Attestation
+
+on:
+  pull_request_target:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled, closed]
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: ["PR Gate"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to re-attest
+        required: true
+        type: string
+
+permissions:
+  checks: read
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  attest:
+    name: Publish SHA-bound Codex review attestation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Attest current PR head
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const BOT = 'chatgpt-codex-connector[bot]';
+            const prNumber = Number(
+              context.payload.pull_request?.number ||
+              context.payload.workflow_run?.pull_requests?.[0]?.number ||
+              '${{ github.event.inputs.pr }}'
+            );
+            if (!prNumber) {
+              core.setFailed('Event does not identify a pull request.');
+              return;
+            }
+
+            const result = await github.graphql(`
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    state isDraft headRefOid
+                    labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
+                    reviews(first: 100) {
+                      nodes { author { login } body submittedAt commit { oid } }
+                      pageInfo { hasNextPage }
+                    }
+                    reviewThreads(first: 100) {
+                      nodes {
+                        isResolved
+                        comments(first: 100) {
+                          nodes { author { login } commit { oid } }
+                          pageInfo { hasNextPage }
+                        }
+                      }
+                      pageInfo { hasNextPage }
+                    }
+                  }
+                }
+              }`, { ...context.repo, number: prNumber });
+
+            const pr = result.repository.pullRequest;
+            if (!pr) {
+              core.setFailed(`PR #${prNumber} not found.`);
+              return;
+            }
+            const head = pr.headRefOid;
+            const labels = new Set(pr.labels.nodes.map(label => label.name));
+            const reasons = [];
+            if (pr.state !== 'OPEN') reasons.push('pull request is not open');
+            if (pr.isDraft) reasons.push('pull request is draft');
+            for (const label of ['hold', 'train:hold', 'train:escalated']) {
+              if (labels.has(label)) reasons.push(`blocked by ${label}`);
+            }
+            if (pr.labels.pageInfo.hasNextPage || pr.reviews.pageInfo.hasNextPage ||
+                pr.reviewThreads.pageInfo.hasNextPage ||
+                pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage)) {
+              reasons.push('bounded review query truncated');
+            }
+
+            const unresolved = pr.reviewThreads.nodes.filter(thread =>
+              !thread.isResolved && thread.comments.nodes.some(comment =>
+                comment.author?.login === BOT && comment.commit?.oid === head));
+            if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
+
+            const codexReviews = pr.reviews.nodes
+              .filter(review => review.author?.login === BOT &&
+                (/Codex Review/i.test(review.body || '') || /Reviewed commit/i.test(review.body || '')))
+              .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+            const exactReview = codexReviews[0]?.commit?.oid === head;
+
+            const suites = await github.paginate(github.rest.checks.listSuitesForRef, {
+              ...context.repo, ref: head, per_page: 100,
+            });
+            const suiteTimes = suites
+              .filter(suite => suite.head_sha === head && suite.created_at)
+              .map(suite => new Date(suite.created_at).getTime());
+            const observedAt = suiteTimes.length ? Math.min(...suiteTimes) : null;
+            const reactions = await github.paginate(github.rest.reactions.listForIssue, {
+              ...context.repo, issue_number: prNumber, per_page: 100,
+            });
+            const freshCleanReaction = observedAt !== null && reactions.some(reaction =>
+              reaction.user?.login === BOT && reaction.content === '+1' &&
+              new Date(reaction.created_at).getTime() >= observedAt);
+
+            if (!exactReview && !freshCleanReaction) {
+              reasons.push('no exact-head Codex review or fresh clean reaction');
+            }
+            const state = reasons.length === 0 ? 'success' : 'failure';
+            const description = reasons.length === 0
+              ? (exactReview ? 'Codex reviewed this exact head' : 'Codex clean reaction observed on this head')
+              : reasons.join('; ').slice(0, 140);
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha: head, state, context: 'Review Gate', description,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
+            });
+            if (state !== 'success') core.setFailed(description);
+

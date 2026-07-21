@@ -13,7 +13,7 @@ name: PR Gate
 # merged work, and a stale docs/gis/data/feature-catalog.json reached trunk red.
 # This workflow supplies a context that actually materializes on a PR, so
 # protection can name a check that is reachable and `clean` becomes attainable
-# (which also un-blocks pr-merge-train.yml, whose only precondition is `clean`).
+# The merge train consumes this exact-head result alongside `Review Gate`.
 #
 # THE NAME IS `PR Gate`, NOT `CI Gate`
 # ------------------------------------

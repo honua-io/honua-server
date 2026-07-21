@@ -17,6 +17,17 @@
 train_land() {
   local batch="$1" trunk_at_assembly="$2" included_file="$3"
 
+  # Selection may be hours old after batch CI. Re-attest every member directly
+  # before touching trunk; any mutable-state change invalidates this batch.
+  local admission_pr admission_sha
+  while IFS=$'\t' read -r admission_pr admission_sha; do
+    [[ -z "${admission_pr}" ]] && continue
+    if ! train_pr_admission "${admission_pr}" "${admission_sha}"; then
+      train_warn "pre-land admission failed for #${admission_pr}; re-select"
+      return 10
+    fi
+  done <"${included_file}"
+
   git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
   local current
   current="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
