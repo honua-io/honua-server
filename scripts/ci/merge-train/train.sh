@@ -279,10 +279,10 @@ main() {
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     local post_land_rc=1
     if train_restore_post_land; then post_land_rc=0; else post_land_rc=$?; fi
-    if [[ "${post_land_rc}" == "0" || "${post_land_rc}" == "3" ]]; then
+    if [[ "${post_land_rc}" == "0" || "${post_land_rc}" == "3" || "${post_land_rc}" == "4" ]]; then
       local recovered_phase=done
       if [[ "${post_land_rc}" == "3" ]]; then
-        recovered_phase=post-land-finalize
+        recovered_phase="${TRAIN_POST_LAND_RECOVERY_PHASE:-post-land-finalize}"
         _write_state "${TRAIN_POST_LAND_BATCH}" "${TRAIN_POST_LAND_TRUNK_BASE}" "${TRAIN_POST_LAND_INCLUDED}" "${recovered_phase}" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
       else
         _write_state "" "${TRAIN_POST_LAND_BATCH_SHA}" "" "done" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
@@ -609,6 +609,11 @@ main() {
   local rc=0
   train_land "${batch}" "${trunk_sha}" "${TRAIN_INCLUDED_FILE}" || rc=$?
   if [[ "${rc}" == "10" ]]; then
+    if [[ -s "${TRAIN_LAND_PENDING_FILE:-}" ]]; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "pre-land-cleanup" "" "${fwdfix}" "${flake_reruns}"
+    else
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
+    fi
     train_annotate_warn "land deferred: trunk moved; the next scheduled run re-assembles"
     train_step_end land >/dev/null; train_endgroup
     _emit_metrics "trunk-moved-reassemble" "${trunk_sha}" "" "${shard_descriptor}"

@@ -343,6 +343,15 @@ train_classify_flake 999 1 && bad "flake: reproduced should be real" || ok "flak
 unset TRAIN_RUN_LOG_TEXT
 
 echo "== Case 7: ff-cas-race (concurrent trunk advance => FF push rejected + re-assemble) =="
+LABEL_CLEAR_RECORD="${SCRATCH}/cleared-landing-labels"; : >"${LABEL_CLEAR_RECORD}"
+LABEL_CLEAR_FAIL=0
+__land_clear_label() {
+  [[ "${LABEL_CLEAR_FAIL}" == "1" ]] && return 42
+  printf '%s\n' "$1" >>"${LABEL_CLEAR_RECORD}"
+}
+export LABEL_CLEAR_RECORD LABEL_CLEAR_FAIL
+export -f __land_clear_label
+export TRAIN_LAND_CLEAR_LABEL_CMD=__land_clear_label
 git fetch -q origin trunk
 RACE_BASE="$(git rev-parse origin/trunk)"
 git checkout -q -B race-batch origin/trunk
@@ -359,6 +368,13 @@ set +e
 TRAIN_APPLY=1 train_land race-batch "${RACE_BASE}" "${INC}"; rc=$?
 set -e
 assert_eq "ff-cas: stale-base land => rc10 (re-assemble, no land)" "${rc}" "10"
+race_batch_sha="$(git rev-parse race-batch)"
+git push -q origin race-batch:refs/heads/train/batch/race/1
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/race/1\",\"trunk_base\":\"${RACE_BASE}\",\"included\":[701],\"included_heads\":[{\"number\":701,\"head\":\"${race_batch_sha}\"}],\"batch_sha\":\"${race_batch_sha}\",\"phase\":\"pre-land-cleanup\"}}"$'\n```'
+set +e; train_restore_post_land; rc_restart_moved=$?; set -e
+assert_eq "pre-CAS restart: trunk-moved cleanup completes" "${rc_restart_moved}" "4"
+assert_contains "pre-CAS restart: trunk-moved member label cleared" "$(cat "${LABEL_CLEAR_RECORD}")" "701"
 # And a genuine FF push (base current) with TRAIN_APPLY=1 against a non-FF branch
 # is server-rejected => rc10 too. Simulate by making race-batch NOT a descendant.
 git fetch -q origin trunk
@@ -371,6 +387,21 @@ TRAIN_APPLY=1 train_land nonff-batch "${CUR_TRUNK}" "${INC}"; rc2=$?
 set -e
 assert_eq "ff-cas: non-FF push server-rejected => rc10" "${rc2}" "10"
 
+# Admission failure before push uses the same durable cleanup phase and restart.
+git checkout -q -B train/batch/admission/1 origin/trunk
+echo "admission defer" >> admission-defer.txt; git add -A; git commit -qm "admission defer"
+admission_batch_sha="$(git rev-parse HEAD)"
+git push -q origin HEAD:refs/heads/train/batch/admission/1
+: >"${INC}"; printf '706\t%s\n' "${admission_batch_sha}" >>"${INC}"
+export ADMISSION_CASE=advanced
+set +e; TRAIN_APPLY=1 train_land train/batch/admission/1 "${CUR_TRUNK}" "${INC}"; rc_admission=$?; set -e
+assert_eq "pre-CAS admission: failure defers without push" "${rc_admission}" "10"
+unset ADMISSION_CASE
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/admission/1\",\"trunk_base\":\"${CUR_TRUNK}\",\"included\":[706],\"included_heads\":[{\"number\":706,\"head\":\"${admission_batch_sha}\"}],\"batch_sha\":\"${admission_batch_sha}\",\"phase\":\"pre-land-cleanup\"}}"$'\n```'
+set +e; train_restore_post_land; rc_restart_admission=$?; set -e
+assert_eq "pre-CAS restart: admission-failure cleanup completes" "${rc_restart_admission}" "4"
+assert_contains "pre-CAS restart: admission-failure label cleared" "$(cat "${LABEL_CLEAR_RECORD}")" "706"
+
 # A PR can advance after admission while the immutable batch is being pushed.
 # The exact batch SHA still lands, but the advanced PR must remain unfinalized.
 git fetch -q origin trunk
@@ -382,20 +413,27 @@ close_sha="$(git rev-parse HEAD)"
 MERGE_ARGS="${SCRATCH}/merge-args"
 __land_info_advanced_before_finalize() { printf 'new-head-703\tOPEN\n'; }
 __merge_must_not_run() { printf 'called\n' >"${MERGE_ARGS}"; return 1; }
-__land_clear_label() { printf '%s\n' "$1" >>"${SCRATCH}/cleared-landing-labels"; }
-export -f __land_info_advanced_before_finalize __merge_must_not_run __land_clear_label
+export -f __land_info_advanced_before_finalize __merge_must_not_run
 export TRAIN_LAND_PR_INFO_FOR=__land_info_advanced_before_finalize
 export TRAIN_LAND_PR_MERGE_CMD=__merge_must_not_run
 export TRAIN_LAND_CLEAR_LABEL_CMD=__land_clear_label
 : >"${MERGE_ARGS}"
+export LABEL_CLEAR_FAIL=1
 TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/finalized-before" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/advanced-before" TRAIN_LAND_PENDING_FILE="${SCRATCH}/pending-before" \
   TRAIN_APPLY=1 train_land close-race "${CLOSE_BASE}" "${INC}"; rc3=$?
+export LABEL_CLEAR_FAIL=0
 assert_eq "snapshot race: immutable batch lands successfully" "${rc3}" "0"
 git fetch -q origin trunk
 assert_eq "snapshot race: trunk is exact tested batch SHA" "$(git rev-parse origin/trunk)" "${close_sha}"
 assert_eq "snapshot race: advanced member is not finalized" "$([[ -s "${SCRATCH}/finalized-before" ]] && echo yes || echo no)" "no"
 assert_contains "snapshot race: advanced member remains recorded for delta" "$(cat "${SCRATCH}/advanced-before")" $'703\t'"${close_sha}"$'\tnew-head-703'
 assert_eq "snapshot race: merge command never runs for advanced member" "$([[ -s "${MERGE_ARGS}" ]] && echo yes || echo no)" "no"
+assert_contains "snapshot race: failed advanced-label cleanup is durable" "$(cat "${SCRATCH}/pending-before")" "advanced-label-cleanup"
+git push -q origin close-race:refs/heads/train/batch/close/1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/close/1\",\"trunk_base\":\"${CLOSE_BASE}\",\"included\":[703],\"included_heads\":[{\"number\":703,\"head\":\"${close_sha}\"}],\"batch_sha\":\"${close_sha}\",\"phase\":\"post-land-finalize\"}}"$'\n```'
+set +e; train_restore_post_land; rc_label_restart=$?; set -e
+assert_eq "snapshot race restart: advanced-label cleanup retries" "${rc_label_restart}" "0"
+assert_contains "snapshot race restart: advanced member label eventually clears" "$(cat "${LABEL_CLEAR_RECORD}")" "703"
 
 # No post-CAS endpoint may be capable of writing trunk.
 assert_not_contains "post-CAS: PR merge endpoint removed" "$(cat "${TRAIN_DIR}/land.sh")" "gh pr merge"
@@ -412,7 +450,7 @@ git push -q origin HEAD:trunk
 admitted_restart=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export TRAIN_STATE_ISSUE_OVERRIDE=1
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/restart/1\",\"trunk_base\":\"${restart_base}\",\"included\":[705],\"included_heads\":[{\"number\":705,\"head\":\"${admitted_restart}\"}],\"batch_sha\":\"${restart_sha}\",\"phase\":\"land\"}}"$'\n```'
-__land_info_recovered_merged() { printf '%s\tMERGED\n' "${admitted_restart}"; }
+__land_info_recovered_merged() { printf '%s\tCLOSED\n' "${admitted_restart}"; }
 export admitted_restart
 export -f __land_info_recovered_merged
 export TRAIN_LAND_PR_INFO_FOR=__land_info_recovered_merged
@@ -422,6 +460,7 @@ export TRAIN_LAND_FINALIZED_FILE TRAIN_LAND_ADVANCED_FILE TRAIN_LAND_PENDING_FIL
 train_restore_post_land; restart_rc=$?
 assert_eq "post-land restart: durable land intent recovers" "${restart_rc}" "0"
 assert_contains "post-land restart: exact member finalized from durable SHA" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" $'705\t'"${admitted_restart}"
+assert_contains "post-land restart: exact CLOSED member is terminal" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" "CLOSED"
 git fetch -q origin trunk
 assert_eq "post-land restart: no post-CAS trunk movement" "$(git rev-parse origin/trunk)" "${restart_sha}"
 
@@ -436,7 +475,7 @@ train_restore_post_land; pending_rc=$?
 set -e
 assert_eq "post-land restart: unresolved native finalization stays pending" "${pending_rc}" "3"
 assert_contains "post-land restart: pending journal retains admitted SHA" "$(cat "${TRAIN_LAND_PENDING_FILE}")" "${admitted_restart}"
-unset TRAIN_LAND_PR_INFO_FOR TRAIN_LAND_CLEAR_LABEL_CMD TRAIN_STATE_BODY_OVERRIDE TRAIN_STATE_ISSUE_OVERRIDE
+unset TRAIN_LAND_PR_INFO_FOR TRAIN_LAND_CLEAR_LABEL_CMD TRAIN_STATE_BODY_OVERRIDE TRAIN_STATE_ISSUE_OVERRIDE LABEL_CLEAR_FAIL
 
 echo
 echo "== Case 8: smart-CI shard computation on a real batch diff =="

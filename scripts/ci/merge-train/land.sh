@@ -20,12 +20,10 @@ train_land_pr_info() {
 train_land_clear_landing_label() {
   local pr="$1"
   if [[ -n "${TRAIN_LAND_CLEAR_LABEL_CMD:-}" ]]; then
-    "${TRAIN_LAND_CLEAR_LABEL_CMD}" "${pr}" || train_warn "could not clear landing label for #${pr}"
+    "${TRAIN_LAND_CLEAR_LABEL_CMD}" "${pr}"
   else
-    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" \
-      || train_warn "could not clear landing label for #${pr}"
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
   fi
-  return 0
 }
 
 train_prepare_land_journals() {
@@ -39,6 +37,17 @@ train_prepare_land_journals() {
   : >"${TRAIN_LAND_PENDING_FILE}"
 }
 
+train_cleanup_deferred_members() {
+  local included_file="$1" pr admitted_sha
+  while IFS=$'\t' read -r pr admitted_sha; do
+    [[ -z "${pr}" ]] && continue
+    if ! train_land_clear_landing_label "${pr}"; then
+      printf '%s\t%s\tpre-land-label-cleanup\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_PENDING_FILE}"
+      train_warn "pre-land deferral could not clear landing label for #${pr}; cleanup remains durable"
+    fi
+  done <"${included_file}"
+}
+
 # Post-CAS bookkeeping is observation-only with respect to trunk. GitHub will
 # normally mark reachable PR heads merged itself. Exact OPEN heads remain pending
 # for restart reconciliation; no endpoint here can create another trunk commit.
@@ -50,11 +59,15 @@ train_finalize_landed_members() {
     IFS=$'\t' read -r current_head current_state <<<"${info}"
     if [[ "${current_head}" != "${admitted_sha}" && -n "${current_head}" ]]; then
       printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head}" >>"${TRAIN_LAND_ADVANCED_FILE}"
-      train_land_clear_landing_label "${pr}"
+      if ! train_land_clear_landing_label "${pr}"; then
+        printf '%s\t%s\tadvanced-label-cleanup\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_PENDING_FILE}"
+      fi
       train_warn "snapshot for #${pr} landed, but head advanced; leaving PR open for its delta"
-    elif [[ "${current_head}" == "${admitted_sha}" && "${current_state}" == "MERGED" ]]; then
-      printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
-      train_land_clear_landing_label "${pr}"
+    elif [[ "${current_head}" == "${admitted_sha}" && ( "${current_state}" == "MERGED" || "${current_state}" == "CLOSED" ) ]]; then
+      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state}" >>"${TRAIN_LAND_FINALIZED_FILE}"
+      if ! train_land_clear_landing_label "${pr}"; then
+        printf '%s\t%s\tterminal-label-cleanup\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_PENDING_FILE}"
+      fi
     else
       printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state:-unknown}" >>"${TRAIN_LAND_PENDING_FILE}"
       train_warn "landed snapshot for #${pr} awaits GitHub merged-state reconciliation"
@@ -69,7 +82,7 @@ train_restore_post_land() {
   state="$(train_state_read 2>/dev/null || echo '')"
   [[ -n "${state}" ]] || return 1
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
-  [[ "${phase}" == "land" || "${phase}" == "post-land-finalize" ]] || return 1
+  [[ "${phase}" == "land" || "${phase}" == "pre-land-cleanup" || "${phase}" == "post-land-finalize" ]] || return 1
   batch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
   batch_sha="$(jq -r '.active_batch.batch_sha // empty' <<<"${state}")"
   trunk="$(jq -r '.active_batch.trunk_base // empty' <<<"${state}")"
@@ -81,19 +94,27 @@ train_restore_post_land() {
   current="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" || return 2
   remote_batch="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${batch}")" || return 2
   [[ "${remote_batch}" == "${batch_sha}" ]] || return 2
-  [[ "${current}" == "${trunk}" ]] && return 1
-  [[ "${current}" == "${batch_sha}" ]] || return 2
   jq -r '.active_batch.included_heads[] | [.number,.head] | @tsv' <<<"${state}" >"${TRAIN_INCLUDED_FILE}"
   train_prepare_land_journals "${TRAIN_INCLUDED_FILE}"
-  TRAIN_LANDED_BATCH_SHA="${batch_sha}"
-  train_finalize_landed_members "${TRAIN_INCLUDED_FILE}"
-  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" || return 2
-  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${batch_sha}" ]] || return 2
   TRAIN_POST_LAND_BATCH="${batch}"
   TRAIN_POST_LAND_BATCH_SHA="${batch_sha}"
   TRAIN_POST_LAND_TRUNK_BASE="${trunk}"
   TRAIN_POST_LAND_INCLUDED="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${state}")"
   export TRAIN_POST_LAND_BATCH TRAIN_POST_LAND_BATCH_SHA TRAIN_POST_LAND_TRUNK_BASE TRAIN_POST_LAND_INCLUDED
+  if [[ "${phase}" == "pre-land-cleanup" || ( "${phase}" == "land" && "${current}" != "${batch_sha}" ) ]]; then
+    TRAIN_POST_LAND_RECOVERY_PHASE=pre-land-cleanup
+    export TRAIN_POST_LAND_RECOVERY_PHASE
+    train_cleanup_deferred_members "${TRAIN_INCLUDED_FILE}"
+    [[ -s "${TRAIN_LAND_PENDING_FILE}" ]] && return 3
+    return 4
+  fi
+  [[ "${current}" == "${batch_sha}" ]] || return 2
+  TRAIN_POST_LAND_RECOVERY_PHASE=post-land-finalize
+  export TRAIN_POST_LAND_RECOVERY_PHASE
+  TRAIN_LANDED_BATCH_SHA="${batch_sha}"
+  train_finalize_landed_members "${TRAIN_INCLUDED_FILE}"
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" || return 2
+  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${batch_sha}" ]] || return 2
   [[ -s "${TRAIN_LAND_PENDING_FILE}" ]] && return 3
   return 0
 }
@@ -112,6 +133,9 @@ train_land() {
     [[ -z "${admission_pr}" ]] && continue
     if ! train_pr_admission "${admission_pr}" "${admission_sha}"; then
       train_warn "pre-land admission failed for #${admission_pr}; re-select"
+      TRAIN_LAND_PRE_CAS_DEFERRED=1
+      export TRAIN_LAND_PRE_CAS_DEFERRED
+      train_cleanup_deferred_members "${included_file}"
       return 10
     fi
   done <"${included_file}"
@@ -121,6 +145,9 @@ train_land() {
   current="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
   if [[ "${current}" != "${trunk_at_assembly}" ]]; then
     train_warn "trunk advanced (${trunk_at_assembly:0:7} -> ${current:0:7}); re-assemble"
+    TRAIN_LAND_PRE_CAS_DEFERRED=1
+    export TRAIN_LAND_PRE_CAS_DEFERRED
+    train_cleanup_deferred_members "${included_file}"
     return 10
   fi
 
@@ -129,6 +156,9 @@ train_land() {
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"
   elif ! git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"; then
     train_warn "FF push rejected (trunk moved in race window); re-assemble"
+    TRAIN_LAND_PRE_CAS_DEFERRED=1
+    export TRAIN_LAND_PRE_CAS_DEFERRED
+    train_cleanup_deferred_members "${included_file}"
     return 10
   fi
   TRAIN_LANDED_BATCH_SHA="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${batch}")"
