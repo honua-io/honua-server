@@ -166,7 +166,13 @@ train_reset_rerun_state_for_fresh_run() {
   TRAIN_RERUN_KIND=""
   TRAIN_RERUN_BASE_ATTEMPT=""
   export TRAIN_RERUN_KIND TRAIN_RERUN_BASE_ATTEMPT
-  train_metric_set timeout_reruns 0
+  : >"${TRAIN_RUN_ID_FILE}"
+}
+
+# A failed fresh dispatch is classifiable only when that dispatch wrote its own
+# Actions run id. An empty/non-numeric id can never fall back to a previous run.
+train_failure_has_current_run_id() {
+  [[ "$1" != "FAILURE" || "$2" =~ ^[0-9]+$ ]]
 }
 
 # train_attribute_probe_gate <comma-separated-prs> <trunk-sha7> <anchor-batch>:
@@ -416,6 +422,7 @@ main() {
     train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
     train_decision "smart-CI shard subset: ${shard_descriptor}"
     train_reset_rerun_state_for_fresh_run
+    _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
     gate="$(train_run_batch_ci "${batch}")"
   fi
   train_step_end smart-ci >/dev/null
@@ -464,6 +471,13 @@ main() {
   local autofix_attempts=0
   while [[ "${gate}" != "SUCCESS" ]]; do
     local run_id; run_id="$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null || echo "")"
+    if ! train_failure_has_current_run_id "${gate}" "${run_id}"; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "" "${fwdfix}" "${flake_reruns}"
+      train_annotate_warn "fresh batch CI failed before publishing a new run id; refusing stale-run classification"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-incomplete" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
 
     # Only an ordinary FAILURE has actionable failed jobs. A cancelled,
     # missing, timed-out, stale, neutral, or otherwise incomplete gate must
@@ -516,6 +530,7 @@ main() {
         train_metric_set forward_fixes "${fwdfix}"
         train_decision "forward-fix #${fwdfix} applied (dotnet format); re-running CI"
         train_reset_rerun_state_for_fresh_run
+        _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
         gate="$(train_run_batch_ci "${batch}")"
         continue
       fi
@@ -687,11 +702,12 @@ main() {
       return 0
     fi
     included="${remaining}"
+    train_reset_rerun_state_for_fresh_run
     _write_state "" "${trunk_sha}" "${included}" "assemble" "" "${fwdfix}" "${flake_reruns}"
     # shellcheck disable=SC2086
     batch="$(train_assemble "${trunk_sha7}" $(tr ',' ' ' <<<"${included}"))"
     included="$(cut -f1 "${TRAIN_INCLUDED_FILE}" | tr '\n' ',' | sed 's/,$//')"
-    train_reset_rerun_state_for_fresh_run
+    _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
     gate="$(train_run_batch_ci "${batch}")"
   done
   train_step_end ci-gate >/dev/null
@@ -747,7 +763,7 @@ _persist_retry_intent() {
   TRAIN_RERUN_BASE_ATTEMPT="${base_attempt}"
   if [[ "${kind}" == "timeout" ]]; then
     timeout_reruns="${next_count}"
-    train_metric_set timeout_reruns "${timeout_reruns}"
+    [[ "${request_phase}" == "accepted" ]] && train_metric_inc timeout_reruns
     _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry-${request_phase}" "${run_id}" "${fwdfix}" "${flake_reruns}"
   else
     flake_reruns="${next_count}"

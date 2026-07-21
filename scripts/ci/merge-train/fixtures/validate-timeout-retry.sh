@@ -389,18 +389,40 @@ pass "end-to-end resumed FAILURE preserves run/base context through attribution"
 timeout_reruns=1
 TRAIN_RERUN_KIND=timeout
 TRAIN_RERUN_BASE_ATTEMPT=7
+train_metric_set timeout_reruns 1
+printf '111\n' >"${TRAIN_RUN_ID_FILE}"
 train_reset_rerun_state_for_fresh_run
 [[ "${timeout_reruns}" == "0" && -z "${TRAIN_RERUN_KIND}" && -z "${TRAIN_RERUN_BASE_ATTEMPT}" ]] \
   || fail "fresh attribution run inherited run A retry state"
+[[ ! -s "${TRAIN_RUN_ID_FILE}" ]] || fail "fresh run transition retained run A id"
+[[ "$(train_metric_get timeout_reruns 0)" == "1" ]] || fail "fresh run reset decremented cumulative retry telemetry"
+fresh_state="$(train_state_render train/batch/abc/2 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 101 smart-ci '' 0 0 null "${timeout_reruns}" "${TRAIN_RERUN_KIND}" null)"
+fresh_state="$(awk '/^```json/{on=1;next}/^```/{if(on)exit}on' <<<"${fresh_state}")"
+jq -e '.active_batch.run_id == null and .active_batch.timeout_reruns == 0
+  and .active_batch.rerun_kind == null and .active_batch.rerun_base_attempt == null' \
+  >/dev/null <<<"${fresh_state}" || fail "fresh run state persisted stale run A policy identity"
+
+# Regeneration/dispatch can fail before discovery writes run B. The empty file
+# must force ci-incomplete and make stale run A classification unreachable.
+classified_old_run=0
+run_id="$(cat "${TRAIN_RUN_ID_FILE}")"
+if train_failure_has_current_run_id FAILURE "${run_id}"; then classified_old_run=1; fi
+[[ "${classified_old_run}" == "0" ]] || fail "run B early failure classified stale run A"
 : >"${record}"; : >"${phase_log}"
 export TRAIN_RERUN_REQUESTER=requester
 request_mode=success
 TRAIN_RUN_LOG_TEXT='Process completed with exit code 124.'
 gh() { [[ "$*" == *'--json attempt'* ]] && printf '1\n' || fail "run B attempted unexpected gh operation: $*"; }
-train_classify_retry_candidate 222 "${timeout_reruns}" 0 'Server Tests (OData Core)' state_callback \
+batch=train/batch/abc/2
+trunk_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+included=101
+fwdfix=0
+flake_reruns=0
+train_classify_retry_candidate 222 "${timeout_reruns}" 0 'Server Tests (OData Core)' _persist_retry_intent \
   || fail "first timeout on fresh run B did not receive its retry"
 [[ "$(grep -c '^request 222$' "${record}")" == "1" ]] || fail "fresh run B did not request exactly one retry"
-[[ "$(paste -sd, "${phase_log}")" == "requesting,accepted" ]] || fail "fresh run B did not persist its two-phase request"
+grep -Fq '"phase": "timeout-retry-accepted"' "${TRAIN_WORK}/state.md" || fail "fresh run B did not persist accepted state"
+[[ "$(train_metric_get timeout_reruns 0)" == "2" ]] || fail "run B acceptance did not increment cumulative retry telemetry"
 
 : >"${record}"
 export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":222,"phase":"timeout-retry-accepted","rerun_kind":"timeout","rerun_base_attempt":1}}'
