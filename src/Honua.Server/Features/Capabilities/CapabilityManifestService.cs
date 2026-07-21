@@ -131,6 +131,7 @@ internal sealed class CapabilityManifestService(
             Transports = BuildTransports(),
             Limits = BuildLimits(batchCapabilities),
             Policies = BuildPolicies(snapshot, callerCapabilities),
+            DeploymentProfile = options.DeploymentProfile,
             Links = BuildLinks()
         };
 
