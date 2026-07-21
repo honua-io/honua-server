@@ -161,6 +161,36 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /hubs/admin")]
+    public async Task AdminHub_WithSqlLikeOpaqueConnectionId_ReachesSignalR()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/hubs/admin?id=opaque--connection-token");
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("SQL injection attempt detected");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /hubs/admin")]
+    public async Task AdminHub_WithSqlInjectionInNonTransportParameter_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/hubs/admin?where=1%3D1--");
+        request.Headers.Add("X-API-Key", AdminPassword);
+
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("SQL injection attempt detected");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithSqlKeywordInsideOpaqueCredentialHeader_IsNotRejectedByInputValidation()
     {
