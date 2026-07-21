@@ -402,7 +402,13 @@ RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n' \
 # ---------------------------------------------------------------------------
 declare -A NARROWED_SHARD_FILTER=()
 declare -A NARROWED_SHARD_REASON=()
-CAPABILITY_RUN_ALL="$(jq -r '.runAll // true' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo true)"
+# NOT `.runAll // true` — jq's `//` substitutes its right-hand side whenever
+# the left side is `false` (not only `null`/missing), so that would silently
+# turn a genuine `"runAll": false` into the string "true" and disable
+# narrowing for every diff the crosswalk actually mapped cleanly. `has(...)`
+# only falls back to `true` (fail-safe) when the field is truly absent (the
+# "{}" sentinel used for FULL mode / a failed selection).
+CAPABILITY_RUN_ALL="$(jq -r 'if has("runAll") then .runAll else true end' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo true)"
 CAPABILITY_UNMATCHED_COUNT="$(jq -r '.unmatchedSourceFiles | length' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo 1)"
 CAPABILITY_PROVING_TEST_COUNT="$(jq -r '.provingTestCount // 0' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo 0)"
 if [[ "${FULL}" != "1" && "${CAPABILITY_RUN_ALL}" == "false" && "${CAPABILITY_UNMATCHED_COUNT}" == "0" && -n "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
