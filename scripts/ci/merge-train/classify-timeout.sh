@@ -7,6 +7,61 @@ train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
 }
 
+# train_request_failed_job_rerun <run-id> <kind> <next-count> [intent-callback]
+# Records the current Actions attempt through the callback before requesting the
+# rerun. If a persisted intent already exists for this run/kind, never issue a
+# duplicate command: the caller reconciles by waiting for attempt > baseline.
+train_request_failed_job_rerun() {
+  local run_id="$1" kind="$2" next_count="$3" callback="${4:-}"
+  local state="${TRAIN_RERUN_RESUME_STATE_JSON:-}" base="" state_kind="" state_run="" state_phase=""
+  TRAIN_RERUN_RECONCILED=0
+
+  if [[ -z "${state}" ]] && declare -F train_state_read >/dev/null 2>&1; then
+    state="$(train_state_read 2>/dev/null || echo "")"
+  fi
+  if [[ -n "${state}" ]] && jq -e . >/dev/null 2>&1 <<<"${state}"; then
+    state_run="$(jq -r '.active_batch.run_id // empty' <<<"${state}")"
+    state_kind="$(jq -r '.active_batch.rerun_kind // empty' <<<"${state}")"
+    state_phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+    base="$(jq -r '.active_batch.rerun_base_attempt // empty' <<<"${state}")"
+  fi
+
+  if [[ "${state_run}" == "${run_id}" && "${state_kind}" == "${kind}" \
+    && "${state_phase}" == "${kind}-retry-intent" && "${base}" =~ ^[0-9]+$ ]]; then
+    TRAIN_RERUN_BASE_ATTEMPT="${base}"
+    TRAIN_RERUN_KIND="${kind}"
+    TRAIN_RERUN_RECONCILED=1
+    train_warn "reconciling persisted ${kind} rerun intent for run ${run_id} from attempt ${base}; refusing duplicate rerun"
+    if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}"; then
+      train_err "could not persist resumed ${kind} rerun intent for run ${run_id}"
+      return 3
+    fi
+    return 0
+  fi
+
+  base="$(gh run view "${run_id}" --json attempt --jq '.attempt' 2>/dev/null || echo "")"
+  if [[ ! "${base}" =~ ^[0-9]+$ ]]; then
+    if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
+      base=1
+    else
+      train_err "could not record Actions attempt before rerunning ${kind} run ${run_id}"
+      return 3
+    fi
+  fi
+  TRAIN_RERUN_BASE_ATTEMPT="${base}"
+  TRAIN_RERUN_KIND="${kind}"
+  if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}"; then
+    train_err "could not persist ${kind} rerun intent before side effect for run ${run_id}"
+    return 3
+  fi
+
+  if ! train_side_effect gh run rerun "${run_id}" --failed; then
+    train_err "failed to request failed-job rerun for ${kind} run ${run_id}"
+    return 3
+  fi
+  return 0
+}
+
 # train_run_logs_match_timeout <run-id> [failing-job-names]
 # Test override: TRAIN_RUN_LOG_TEXT supplies the log text directly.
 train_run_logs_match_timeout() {
@@ -42,18 +97,14 @@ train_run_logs_match_timeout() {
 # Returns 0 after issuing a retry, 1 when this is not a timeout, and 2 when a
 # timeout persisted past the cap and must be handled as a real failure.
 train_classify_timeout() {
-  local run_id="$1" retry_count="${2:-0}" failing_names="${3:-}"
+  local run_id="$1" retry_count="${2:-0}" failing_names="${3:-}" callback="${4:-}"
   train_run_logs_match_timeout "${run_id}" "${failing_names}" || return 1
   if [[ "${retry_count}" -ge "${TRAIN_TIMEOUT_RERUN_CAP}" ]]; then
     train_warn "timeout/exit-124 failure persisted after ${TRAIN_TIMEOUT_RERUN_CAP} failed-job retry; treating as real"
     return 2
   fi
   train_log "timeout/exit-124 signature matched; rerunning failed jobs once"
-  if ! train_side_effect gh run rerun "${run_id}" --failed; then
-    train_err "failed to request failed-job rerun for timeout/exit-124 run ${run_id}"
-    return 3
-  fi
-  return 0
+  train_request_failed_job_rerun "${run_id}" timeout "$((retry_count + 1))" "${callback}"
 }
 
 # train_classify_retry_candidate <run-id> <timeout-count> <flake-count> [jobs]
@@ -63,10 +114,10 @@ train_classify_timeout() {
 # Returns 0=rerun issued, 1=real, 2=known-flake merge-through, 3=rerun failed.
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
-  local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}"
+  local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
   local rc=0
   TRAIN_RETRY_KIND=""
-  train_classify_timeout "${run_id}" "${timeout_count}" "${jobs}" || rc=$?
+  train_classify_timeout "${run_id}" "${timeout_count}" "${jobs}" "${callback}" || rc=$?
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
@@ -74,7 +125,7 @@ train_classify_retry_candidate() {
   esac
 
   rc=0
-  train_classify_flake "${run_id}" "${flake_count}" || rc=$?
+  train_classify_flake "${run_id}" "${flake_count}" "${callback}" || rc=$?
   [[ "${rc}" == "0" ]] && TRAIN_RETRY_KIND=flake
   return "${rc}"
 }

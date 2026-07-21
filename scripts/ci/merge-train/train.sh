@@ -478,9 +478,9 @@ main() {
     # is real and deliberately bypasses known-flake merge-through.
     _write_state "${batch}" "${trunk_sha}" "${included}" "classify-timeout" "${run_id}" "${fwdfix}" "${flake_reruns}"
     local rc_retry=0
-    train_classify_retry_candidate "${run_id}" "${timeout_reruns}" "${flake_reruns}" "${failing}" || rc_retry=$?
+    train_classify_retry_candidate "${run_id}" "${timeout_reruns}" "${flake_reruns}" "${failing}" _persist_retry_intent || rc_retry=$?
     if [[ "${rc_retry}" == "3" ]]; then
-      _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-rerun-failed" "${run_id}" "${fwdfix}" "${flake_reruns}"
+      _write_state "${batch}" "${trunk_sha}" "${included}" "rerun-command-failed" "${run_id}" "${fwdfix}" "${flake_reruns}"
       train_annotate_warn "failed-job rerun command failed; stopping without landing or attribution"
       train_step_end ci-gate >/dev/null; train_endgroup
       _emit_metrics "ci-rerun-failed" "${trunk_sha}" "" "${shard_descriptor}"
@@ -488,18 +488,13 @@ main() {
     fi
     if [[ "${rc_retry}" == "0" ]]; then
       if [[ "${TRAIN_RETRY_KIND}" == "timeout" ]]; then
-        timeout_reruns=$((timeout_reruns + 1))
-        train_metric_set timeout_reruns "${timeout_reruns}"
         train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
-        _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry" "${run_id}" "${fwdfix}" "${flake_reruns}"
       else
-        flake_reruns=$((flake_reruns + 1))
-        train_metric_set flake_reruns "${flake_reruns}"
         train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
-        _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
       fi
-      # Re-poll the same run after rerun.
-      if train_wait_for_run_completion "${run_id}"; then
+      # The same run id still exposes the old completed attempt briefly. Accept
+      # retry evidence only after its attempt strictly increases and completes.
+      if train_wait_for_new_run_attempt "${run_id}" "${TRAIN_RERUN_BASE_ATTEMPT}"; then
         gate="$(gh run view "${run_id}" --json jobs \
           --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
       else
@@ -659,8 +654,26 @@ main() {
 # _write_state branch trunk_base included-csv phase run_id fwdfix flake [last_landed]
 _write_state() {
   local body="${TRAIN_WORK}/state.md"
-  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${timeout_reruns:-0}" >"${body}"
+  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" "${TRAIN_RERUN_BASE_ATTEMPT:-null}" >"${body}"
   train_state_write "${body}"
+}
+
+# Persist retry intent/count before the Actions side effect. If the controller
+# is cancelled after GitHub accepts the rerun, a resumed classifier reads this
+# intent, refuses a duplicate command, and waits for attempt > baseline.
+_persist_retry_intent() {
+  local kind="$1" next_count="$2" base_attempt="$3" run_id="$4"
+  TRAIN_RERUN_KIND="${kind}"
+  TRAIN_RERUN_BASE_ATTEMPT="${base_attempt}"
+  if [[ "${kind}" == "timeout" ]]; then
+    timeout_reruns="${next_count}"
+    train_metric_set timeout_reruns "${timeout_reruns}"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry-intent" "${run_id}" "${fwdfix}" "${flake_reruns}"
+  else
+    flake_reruns="${next_count}"
+    train_metric_set flake_reruns "${flake_reruns}"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "flake-retry-intent" "${run_id}" "${fwdfix}" "${flake_reruns}"
+  fi
 }
 
 # _pr_decision <pr>: classify a candidate PR's outcome for the dashboard table.

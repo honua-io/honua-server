@@ -11,7 +11,7 @@ export TRAIN_APPLY=0
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 pass() { printf 'PASS: %s\n' "$1"; }
 record="$(mktemp)"
-trap 'rm -f "${record}"' EXIT
+trap 'rm -f "${record}" "${sequence_calls:-}"' EXIT
 side_effect_fails=0
 train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
@@ -30,7 +30,23 @@ train_init_controller_deadline
 pass "one absolute controller deadline"
 
 # Exhaustion fails immediately and cannot grant a fresh retry budget.
-gh() { printf 'in_progress\n'; }
+gh_mode=in_progress
+sequence_calls="$(mktemp)"
+printf '0' >"${sequence_calls}"
+gh() {
+  case "${gh_mode}" in
+    in_progress) printf 'in_progress\n' ;;
+    attempt) printf '1\n' ;;
+    sequence)
+      local n; n=$(( $(cat "${sequence_calls}") + 1 )); printf '%s' "${n}" >"${sequence_calls}"
+      case "${n}" in
+        1|2) printf '1\tcompleted\n' ;;
+        3) printf '2\tqueued\n' ;;
+        *) printf '2\tcompleted\n' ;;
+      esac
+      ;;
+  esac
+}
 now_value=6610
 rc=0
 train_wait_for_run_completion 123 || rc=$?
@@ -40,6 +56,7 @@ pass "deadline exhaustion"
 # First timeout retries failed jobs only.
 TRAIN_RUN_LOG_TEXT='Error: Process completed with exit code 124.'
 : >"${record}"
+gh_mode=attempt
 train_classify_timeout 123 0 || fail "first exit-124 failure was not retried"
 grep -Fqx 'gh run rerun 123 --failed' "${record}" || fail "retry did not target failed jobs only"
 pass "failed-job-only timeout retry"
@@ -51,6 +68,28 @@ train_classify_timeout 123 0 || rc=$?
 [[ "${rc}" == "3" ]] || fail "rerun command failure was swallowed"
 side_effect_fails=0
 pass "rerun command failure propagation"
+
+# GitHub can expose completed(old) repeatedly, then queued(new), then
+# completed(new). Only the strictly newer completed attempt is accepted.
+sleep() { :; }
+gh_mode=sequence
+printf '0' >"${sequence_calls}"
+now_value=100
+train_wait_for_new_run_attempt 123 1 || fail "new attempt was not observed through delayed visibility"
+[[ "$(cat "${sequence_calls}")" == "4" ]] || fail "old completed attempt was accepted as retry evidence"
+pass "completed(old) to queued(new) to completed(new)"
+
+# Cancellation after persisted intent is idempotent: resume does not issue a
+# second rerun and reconciles by observing the newer attempt.
+: >"${record}"
+export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":123,"phase":"timeout-retry-intent","rerun_kind":"timeout","rerun_base_attempt":1}}'
+gh_mode=sequence
+printf '0' >"${sequence_calls}"
+train_request_failed_job_rerun 123 timeout 1 || fail "persisted rerun intent did not reconcile"
+[[ ! -s "${record}" ]] || fail "resume issued a duplicate rerun"
+train_wait_for_new_run_attempt 123 "${TRAIN_RERUN_BASE_ATTEMPT}" || fail "resume did not observe accepted rerun"
+unset TRAIN_RERUN_RESUME_STATE_JSON
+pass "cancellation/resume idempotency"
 
 # Persistent timeout wins over an overlapping known-flake signature.
 flake_called=0
@@ -64,6 +103,7 @@ pass "persistent timeout precedence"
 
 # Main-loop classifier selects timeout first and known flake only otherwise.
 : >"${record}"
+gh_mode=attempt
 TRAIN_RUN_LOG_TEXT='timeout after 20 minutes'
 rc=0
 train_classify_retry_candidate 123 0 0 'Server Tests (OData Core)' || rc=$?

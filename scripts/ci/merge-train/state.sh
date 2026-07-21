@@ -9,8 +9,9 @@
 #   {
 #     "active_batch": {
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
-#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry|timeout-rerun-failed|classify-flake|autofix|attribute|land|done",
-#       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>, "timeout_reruns": <n>
+#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry-intent|flake-retry-intent|rerun-command-failed|classify-flake|autofix|attribute|land|done",
+#       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>, "timeout_reruns": <n>,
+#       "rerun_kind": "timeout|flake|null", "rerun_base_attempt": <n|null>
 #     },
 #     "config": { "max_batch": <n>, "flake_signatures": "<regex>" },
 #     "last_landed_trunk": "<sha|null>"
@@ -24,7 +25,8 @@ TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
 #   <fwdfix> <flake_reruns> <last_landed> [timeout_reruns]: emit the state body.
 train_state_render() {
   local branch="$1" trunk_base="$2" included_csv="$3" phase="$4" \
-        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8" timeout_reruns="${9:-0}"
+        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8" timeout_reruns="${9:-0}" \
+        rerun_kind="${10:-}" rerun_base_attempt="${11:-null}"
 
   local included_json
   if [[ -z "${included_csv}" ]]; then
@@ -46,13 +48,17 @@ train_state_render() {
     --argjson fwd "${fwdfix:-0}" \
     --argjson fr "${flake_reruns:-0}" \
     --argjson tr "${timeout_reruns:-0}" \
+    --arg rk "${rerun_kind}" \
+    --argjson rba "${rerun_base_attempt:-null}" \
     --argjson mb "${MAX_BATCH}" \
     --arg flake "${TRAIN_FLAKE_REGEX}" \
     --argjson last "${last_json}" \
     '{
       active_batch: {
         branch: $branch, trunk_base: $tb, included: $inc, phase: $phase,
-        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr, timeout_reruns: $tr
+        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr, timeout_reruns: $tr,
+        rerun_kind: (if ($rk|length) > 0 then $rk else null end),
+        rerun_base_attempt: $rba
       },
       config: { max_batch: $mb, flake_signatures: $flake },
       last_landed_trunk: $last

@@ -131,6 +131,31 @@ train_wait_for_run_completion() {
   done
 }
 
+# train_run_attempt_status <run-id>: emit "<attempt>\t<status>".
+train_run_attempt_status() {
+  gh run view "$1" --json attempt,status --jq '[.attempt, .status] | @tsv' 2>/dev/null
+}
+
+# train_wait_for_new_run_attempt <run-id> <previous-attempt>
+# A rerun keeps the same run id. GitHub may continue returning the old attempt
+# as completed for several polls after accepting `rerun --failed`; that is not
+# retry evidence. Ignore it until attempt strictly increases, then require the
+# newer attempt itself to become completed, all under the shared deadline.
+train_wait_for_new_run_attempt() {
+  local run_id="$1" previous_attempt="$2" row attempt status now
+  train_init_controller_deadline || return 1
+  while :; do
+    row="$(train_run_attempt_status "${run_id}" || echo $'0\t')"
+    IFS=$'\t' read -r attempt status <<<"${row}"
+    if [[ "${attempt}" =~ ^[0-9]+$ ]] && [[ "${attempt}" -gt "${previous_attempt}" ]]; then
+      [[ "${status}" == "completed" ]] && return 0
+    fi
+    now="$(train_now)"
+    [[ "${now}" -ge "${TRAIN_CONTROLLER_DEADLINE_EPOCH}" ]] && return 1
+    sleep "${TRAIN_SMART_CI_POLL_SECONDS:-30}"
+  done
+}
+
 # train_failing_jobs <run-id>: emit the names of the failing jobs (live).
 train_failing_jobs() {
   local run_id="$1"
