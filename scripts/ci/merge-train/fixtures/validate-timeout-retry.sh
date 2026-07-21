@@ -439,6 +439,38 @@ main || rc=$?
 [[ "${rc}" == "1" && ! -s "${record}" ]] || fail "state-list failure did not stop controller before selection"
 pass "startup state-list failure stops before selection"
 export TRAIN_STATE_ISSUE_OVERRIDE=1
+
+# Known terminal phases from the production controller must release every member
+# and clear state before selection. This shape mirrors live #2044, including the
+# older schema without timeout/rerun fields.
+for terminal_phase in ci-incomplete rerun-command-failed; do
+  printf -v TRAIN_STATE_BODY_OVERRIDE '```json\n{"active_batch":{"branch":"train/batch/32e1094/1784629905","trunk_base":"32e109480c146422748037fe6854e6ec2d8c391c","included":[2960,2961],"phase":"%s","run_id":29823085973,"fwdfix_attempts":0,"flake_reruns":0},"config":{"max_batch":10},"last_landed_trunk":null}\n```\n' "${terminal_phase}"
+  export TRAIN_STATE_BODY_OVERRIDE
+  : >"${record}"
+  train_select() { printf 'selection-entered\n' >>"${record}"; }
+  unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+  main || fail "${terminal_phase} startup recovery failed"
+  for terminal_pr in 2960 2961; do
+    grep -Fqx "gh pr edit ${terminal_pr} --add-label ${TRAIN_LABEL_ESCALATED}" "${record}" || fail "${terminal_phase} did not escalate #${terminal_pr}"
+    grep -Fqx "gh pr edit ${terminal_pr} --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || fail "${terminal_phase} did not release #${terminal_pr}"
+  done
+  grep -Fq 'gh issue edit 1 --body-file' "${record}" || fail "${terminal_phase} did not clear singleton state"
+  grep -Fqx 'selection-entered' "${record}" || fail "${terminal_phase} did not continue after cleanup"
+  ! grep -Eq 'gh (workflow run|pr merge)|git push' "${record}" || fail "${terminal_phase} requeued or landed stale batch"
+done
+pass "known terminal active phases recover before selection"
+
+# Unknown nonempty active phases have no proven recovery contract and must stop
+# without overwriting state, touching labels, or entering selection.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"forward-fix","run_id":123}}\n```'
+: >"${record}"
+train_select() { fail "unknown active phase reached selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+rc=0
+main || rc=$?
+[[ "${rc}" == "1" && ! -s "${record}" ]] || fail "unknown active phase did not fail closed without mutation"
+pass "unknown active phase stops before overwrite or selection"
+
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"timeout_reruns_total":2,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_FETCHER=resume_fetcher
 train_select() { fail "restarted main incorrectly entered selection"; }

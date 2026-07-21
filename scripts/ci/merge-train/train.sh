@@ -297,22 +297,42 @@ train_refine_attribute_candidates() {
   printf '%s\n' "${queue[@]}" | sort -u
 }
 
-# train_recover_rejected_retry: finish the terminal cleanup transaction after a
-# controller crashed between persisting `*-retry-rejected` and releasing the
-# batch. Required label mutations precede the active-state clear, so any crash
-# remains safely retryable and selection cannot observe unreleased members.
-# Returns 0=recovered, 1=no rejected recovery, 2=malformed or cleanup failure.
-train_recover_rejected_retry() {
-  local state phase trunk included total last body pr state_rc=0
+# train_recover_terminal_batch: finish known terminal cleanup transactions after
+# a controller crashed before releasing the batch. Required label mutations
+# precede active-state clear, so any crash remains safely retryable. Every other
+# nonempty active phase fails closed rather than being overwritten by selection.
+# Returns 0=recovered, 1=no terminal recovery, 2=unknown/malformed/cleanup failure.
+train_recover_terminal_batch() {
+  local state phase branch trunk included included_count total last body pr reason state_rc=0
   state="$(train_state_read 2>/dev/null)" || state_rc=$?
   [[ "${state_rc}" == "0" ]] || return 2
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
-  case "${phase}" in timeout-retry-rejected|flake-retry-rejected) ;; *) return 1 ;; esac
+  branch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
+  included_count="$(jq -r '(.active_batch.included // []) | length' <<<"${state}" 2>/dev/null)" || return 2
+  if [[ -z "${branch}" && "${included_count}" == "0" ]]; then
+    case "${phase}" in select|done|"") return 1 ;; *) return 2 ;; esac
+  fi
+  case "${phase}" in
+    timeout-retry-rejected|flake-retry-rejected)
+      reason="Actions definitively rejected the failed-job rerun request; manual CI correction required"
+      ;;
+    ci-incomplete)
+      reason="Batch CI evidence was incomplete or unusable; fresh explicit validation is required"
+      ;;
+    rerun-command-failed)
+      reason="Failed-job rerun command failed before safe completion; manual CI correction required"
+      ;;
+    timeout-retry-requesting|timeout-retry-accepted|timeout-retry-intent|\
+    flake-retry-requesting|flake-retry-accepted|flake-retry-intent)
+      return 1
+      ;;
+    *) return 2 ;;
+  esac
   jq -e '.active_batch.branch | type == "string" and startswith("train/batch/")' >/dev/null <<<"${state}" || return 2
   jq -e '.active_batch.trunk_base | type == "string" and test("^[0-9a-fA-F]{40}$")' >/dev/null <<<"${state}" || return 2
-  jq -e '.active_batch.run_id | type == "number"' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.run_id == null or (.active_batch.run_id | type == "number")' >/dev/null <<<"${state}" || return 2
   jq -e '.active_batch.included | type == "array" and length > 0
     and all(.[]; type == "number" and floor == .) and (unique | length) == length' >/dev/null <<<"${state}" || return 2
 
@@ -323,13 +343,14 @@ train_recover_rejected_retry() {
   for pr in $(tr ',' ' ' <<<"${included}"); do
     train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}" || return 2
     train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" || return 2
+    train_decision "TERMINAL RECOVERY #${pr}: ${reason}"
   done
 
   body="$(mktemp)"
   train_state_render "" "${trunk}" "" select "" 0 0 "${last}" 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
   train_state_write "${body}" || { rm -f "${body}"; return 2; }
   rm -f "${body}"
-  train_notice "completed terminal rerun-rejection cleanup for batch members ${included}"
+  train_notice "completed terminal ${phase} cleanup for batch members ${included}"
 }
 main() {
   train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
@@ -337,9 +358,9 @@ main() {
 
   local resume_state="" resume_rc=1 resumed=0 rejected_rc=1
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
-    train_recover_rejected_retry || rejected_rc=$?
+    train_recover_terminal_batch || rejected_rc=$?
     if [[ "${rejected_rc}" == "2" ]]; then
-      train_err "persisted rerun rejection cleanup is malformed or incomplete; failing closed before selection"
+      train_err "active merge-train state is unknown, malformed, or incompletely recovered; failing closed before selection"
       return 1
     fi
     if resume_state="$(train_restore_retry_intent)"; then resume_rc=0; else resume_rc=$?; fi
