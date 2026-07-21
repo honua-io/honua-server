@@ -5,9 +5,12 @@ using System.Net;
 using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Npgsql;
 using SkiaSharp;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
@@ -830,5 +833,79 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         content.Length.Should().BeGreaterThan(0);
+    }
+
+    // honua-server#2945: GetMap proving tests above only assert content-type/length; none
+    // exercised actual rendered pixel content. This binds a deterministic style to the
+    // seeded point layer and asserts a matching pixel appears at the feature's real-world
+    // location, plus that the response has the exact requested pixel dimensions.
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_StyledSeededPoint_RendersPixelAtFeatureLocationWithCorrectDimensions()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var catalog = fixture.GetService<ILayerStyleCatalog>();
+            await catalog.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyleJson("#ff0000"));
+
+            // Tight bbox around the seeded point at (lon=-122.5, lat=37.5) (tests/seed/server.yaml).
+            // WMS 1.3.0 + EPSG:4326 uses (lat,lon) axis order.
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=37.4,-122.6,37.6,-122.4&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
+
+            var content = await response.Content.ReadAsByteArrayAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            using var bitmap = SKBitmap.Decode(content);
+            bitmap.Should().NotBeNull();
+            bitmap!.Width.Should().Be(256);
+            bitmap.Height.Should().Be(256);
+
+            HasRedPixel(bitmap).Should().BeTrue(
+                "the styled point feature must be rendered at its seeded real-world location, not just produce a non-empty image");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static string CircleStyleJson(string hexColor) =>
+        $$"""
+        {
+          "version": 8,
+          "sources": {},
+          "layers": [
+            {
+              "id": "points",
+              "type": "circle",
+              "source": "features",
+              "paint": { "circle-color": "{{hexColor}}", "circle-radius": 12 }
+            }
+          ]
+        }
+        """;
+
+    private static bool HasRedPixel(SKBitmap bitmap)
+    {
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.Red > 150 && pixel.Green < 80 && pixel.Blue < 80)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
