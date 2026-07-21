@@ -51,7 +51,10 @@ scan_authorities() {
     }
 
   local forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|mergePullRequest|updatePullRequestBranch|gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|git[[:space:]]+push[^#;|&]*[[:alnum:]_./-]+:(refs/heads/)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
-  local live_dispatch='gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([^[:space:];]*/)?merge-train\.yml[^#;|&]*train_apply[^[:alnum:]]+(true|1)|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches[^#;|&]*train_apply[^[:alnum:]]+(true|1)|createWorkflowDispatch[^;]*merge-train\.yml[^;]*train_apply[^[:alnum:]]+(true|1)'
+  # Dispatching the live-capable train is itself a merge authority regardless
+  # of how train_apply is spelled or valued. Canonical locations are separately
+  # allowlisted; every other executable source must be unable to wake this flow.
+  local live_dispatch='gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([^[:space:];]*/)?merge-train\.yml|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml'
   local file rel source found=0 candidates
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -77,8 +80,9 @@ scan_authorities() {
 
 self_test() {
   local scratch; scratch="$(mktemp -d)"; trap 'rm -rf "${scratch}"' RETURN
-  mkdir -p "${scratch}/.github/workflows" "${scratch}/scripts/ci"
+  mkdir -p "${scratch}/.github/workflows" "${scratch}/scripts/ci/merge-train"
   printf 'jobs:\n  train:\n    steps:\n      - run: scripts/ci/merge-train/train.sh\n      - run: gh workflow run merge-train.yml -f train_apply=true\n' >"${scratch}/.github/workflows/merge-train.yml"
+  printf 'gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=${mode}\n' >"${scratch}/scripts/ci/merge-train/recovery.sh"
   cat >"${scratch}/.github/workflows/read-only.yml" <<'YAML'
 jobs:
   inspect:
@@ -86,8 +90,6 @@ jobs:
       - run: gh api repos/o/r/pulls/1
       # `git push origin HEAD:trunk` is documentation, not executable.
       - run: git push origin HEAD:refs/heads/automation/report-${GITHUB_RUN_ID}
-      - run: gh workflow run merge-train.yml -f train_apply=false
-      - run: gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=false
 YAML
   scan_authorities "${scratch}" || { echo "safe fixture rejected" >&2; return 1; }
 
@@ -113,6 +115,8 @@ YAML
     $'gh workflow run merge-train.yml \\\n+      -f train_apply=true'
     'gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=true'
     'github.rest.actions.createWorkflowDispatch({workflow_id: "merge-train.yml", inputs: {train_apply: true}})'
+    'gh workflow run merge-train.yml -f train_apply=${mode}'
+    $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
   )
   for fixture in "${fixtures[@]}"; do
     n=$((n + 1))
