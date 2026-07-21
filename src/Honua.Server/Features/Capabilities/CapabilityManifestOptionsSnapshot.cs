@@ -10,6 +10,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
+using Honua.Server.Features.Capabilities.Models;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.Options;
@@ -36,7 +37,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<AlertOptions> alertOptions,
         IOptions<RbacOptions> rbacOptions,
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
-        IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions)
+        IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
+        DeploymentCapabilityProfile deploymentProfile)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -50,6 +52,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(rbacOptions);
         ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
         ArgumentNullException.ThrowIfNull(manifestFeatureOptions);
+        ArgumentNullException.ThrowIfNull(deploymentProfile);
 
         Limits = limitsOptions.Value;
         Streaming = streamOptions.Value;
@@ -63,6 +66,12 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
+        DeploymentProfile = new CapabilityManifestDeploymentProfile
+        {
+            Configured = deploymentProfile.IsConfigured,
+            SchemaVersion = deploymentProfile.SchemaVersion,
+            EnabledCapabilities = deploymentProfile.EnabledCapabilities.ToArray()
+        };
     }
 
     public LimitsOptions Limits { get; }
@@ -99,4 +108,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// <c>Capabilities:ManifestFromRegistry</c> switch is turned on.
     /// </summary>
     public bool ManifestFromRegistry { get; }
+
+    /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
+    public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 }
