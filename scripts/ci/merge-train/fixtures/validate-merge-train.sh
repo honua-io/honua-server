@@ -397,32 +397,46 @@ assert_eq "snapshot race: advanced member is not finalized" "$([[ -s "${SCRATCH}
 assert_contains "snapshot race: advanced member remains recorded for delta" "$(cat "${SCRATCH}/advanced-before")" $'703\t'"${close_sha}"$'\tnew-head-703'
 assert_eq "snapshot race: merge command never runs for advanced member" "$([[ -s "${MERGE_ARGS}" ]] && echo yes || echo no)" "no"
 
-# A head can also advance atomically during --match-head-commit. The command
-# refuses, post-land state observes the new head, and no false finalization occurs.
-git checkout -q -B during-finalize origin/trunk
-echo "during finalize" >> during-finalize.txt; git add -A; git commit -qm "during finalize batch"
-during_sha="$(git rev-parse HEAD)"
-: >"${INC}"; printf '704\t%s\n' "${during_sha}" >>"${INC}"
-INFO_CALLS_FILE="${SCRATCH}/land-info-calls"; printf '0' >"${INFO_CALLS_FILE}"
-__land_info_advances_during_merge() {
-  local n; n=$(( $(cat "${INFO_CALLS_FILE}") + 1 )); printf '%s' "${n}" >"${INFO_CALLS_FILE}"
-  if [[ "${n}" == "1" ]]; then printf '%s\tOPEN\n' "${during_sha}"; else printf 'new-head-704\tOPEN\n'; fi
-}
-__merge_head_advanced() { printf '%s\t%s\n' "$1" "$2" >"${MERGE_ARGS}"; return 1; }
-export INFO_CALLS_FILE during_sha
-export -f __land_info_advances_during_merge __merge_head_advanced
-export TRAIN_LAND_PR_INFO_FOR=__land_info_advances_during_merge
-export TRAIN_LAND_PR_MERGE_CMD=__merge_head_advanced
-: >"${MERGE_ARGS}"
-TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/finalized-during" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/advanced-during" TRAIN_LAND_PENDING_FILE="${SCRATCH}/pending-during" \
-  TRAIN_APPLY=1 train_land during-finalize "${close_sha}" "${INC}"; rc4=$?
-assert_eq "finalize race: already-landed batch is not retried" "${rc4}" "0"
+# No post-CAS endpoint may be capable of writing trunk.
+assert_not_contains "post-CAS: PR merge endpoint removed" "$(cat "${TRAIN_DIR}/land.sh")" "gh pr merge"
+
+# Kill/restart: the durable land record exists, trunk was pushed, and the first
+# controller dies before finalization. A fresh controller rebuilds journals from
+# the state issue and performs observation-only reconciliation.
+git checkout -q -B train/batch/restart/1 origin/trunk
+echo "restart batch" >> restart-batch.txt; git add -A; git commit -qm "restart batch"
+restart_sha="$(git rev-parse HEAD)"
+restart_base="${close_sha}"
+git push -q origin HEAD:refs/heads/train/batch/restart/1
+git push -q origin HEAD:trunk
+admitted_restart=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/restart/1\",\"trunk_base\":\"${restart_base}\",\"included\":[705],\"included_heads\":[{\"number\":705,\"head\":\"${admitted_restart}\"}],\"batch_sha\":\"${restart_sha}\",\"phase\":\"land\"}}"$'\n```'
+__land_info_recovered_merged() { printf '%s\tMERGED\n' "${admitted_restart}"; }
+export admitted_restart
+export -f __land_info_recovered_merged
+export TRAIN_LAND_PR_INFO_FOR=__land_info_recovered_merged
+export TRAIN_LAND_CLEAR_LABEL_CMD=__land_clear_label
+TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/restart-finalized" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/restart-advanced" TRAIN_LAND_PENDING_FILE="${SCRATCH}/restart-pending"
+export TRAIN_LAND_FINALIZED_FILE TRAIN_LAND_ADVANCED_FILE TRAIN_LAND_PENDING_FILE
+train_restore_post_land; restart_rc=$?
+assert_eq "post-land restart: durable land intent recovers" "${restart_rc}" "0"
+assert_contains "post-land restart: exact member finalized from durable SHA" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" $'705\t'"${admitted_restart}"
 git fetch -q origin trunk
-assert_eq "finalize race: trunk remains exact tested batch SHA" "$(git rev-parse origin/trunk)" "${during_sha}"
-assert_eq "finalize race: command receives admitted SHA" "$(cat "${MERGE_ARGS}")" $'704\t'"${during_sha}"
-assert_eq "finalize race: advanced member is not falsely finalized" "$([[ -s "${SCRATCH}/finalized-during" ]] && echo yes || echo no)" "no"
-assert_contains "finalize race: post-command advance is recorded" "$(cat "${SCRATCH}/advanced-during")" "new-head-704"
-unset TRAIN_LAND_PR_INFO_FOR TRAIN_LAND_PR_MERGE_CMD TRAIN_LAND_CLEAR_LABEL_CMD
+assert_eq "post-land restart: no post-CAS trunk movement" "$(git rev-parse origin/trunk)" "${restart_sha}"
+
+# If GitHub has not exposed merged state yet, recovery remains durable/pending
+# and must not start a new selection or truncate the record.
+__land_info_recovered_pending() { printf '%s\tOPEN\n' "${admitted_restart}"; }
+export -f __land_info_recovered_pending
+export TRAIN_LAND_PR_INFO_FOR=__land_info_recovered_pending
+export TRAIN_STATE_BODY_OVERRIDE="${TRAIN_STATE_BODY_OVERRIDE/\"phase\":\"land\"/\"phase\":\"post-land-finalize\"}"
+set +e
+train_restore_post_land; pending_rc=$?
+set -e
+assert_eq "post-land restart: unresolved native finalization stays pending" "${pending_rc}" "3"
+assert_contains "post-land restart: pending journal retains admitted SHA" "$(cat "${TRAIN_LAND_PENDING_FILE}")" "${admitted_restart}"
+unset TRAIN_LAND_PR_INFO_FOR TRAIN_LAND_CLEAR_LABEL_CMD TRAIN_STATE_BODY_OVERRIDE TRAIN_STATE_ISSUE_OVERRIDE
 
 echo
 echo "== Case 8: smart-CI shard computation on a real batch diff =="

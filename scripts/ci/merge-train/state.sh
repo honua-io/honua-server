@@ -24,7 +24,8 @@ TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
 #   <fwdfix> <flake_reruns> <last_landed>: emit the fenced-JSON issue body.
 train_state_render() {
   local branch="$1" trunk_base="$2" included_csv="$3" phase="$4" \
-        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8"
+        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8" \
+        included_heads="${9:-[]}" batch_sha="${10:-}"
 
   local included_json
   if [[ -z "${included_csv}" ]]; then
@@ -45,13 +46,17 @@ train_state_render() {
     --argjson rid "${run_id_json}" \
     --argjson fwd "${fwdfix:-0}" \
     --argjson fr "${flake_reruns:-0}" \
+    --argjson heads "${included_heads}" \
+    --arg batch_sha "${batch_sha}" \
     --argjson mb "${MAX_BATCH}" \
     --arg flake "${TRAIN_FLAKE_REGEX}" \
     --argjson last "${last_json}" \
     '{
       active_batch: {
         branch: $branch, trunk_base: $tb, included: $inc, phase: $phase,
-        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr
+        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr,
+        included_heads: $heads,
+        batch_sha: (if ($batch_sha|length) > 0 then $batch_sha else null end)
       },
       config: { max_batch: $mb, flake_signatures: $flake },
       last_landed_trunk: $last
