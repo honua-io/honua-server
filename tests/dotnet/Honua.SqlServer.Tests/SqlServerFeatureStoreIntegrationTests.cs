@@ -8,6 +8,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.SqlServer;
 using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -133,6 +135,30 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 
         Assert.Single(result.Items);
         Assert.Equal(1, result.Items[0].Id);
+    }
+
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    public async Task QueryAsync_GeoServicesEwkbBbox_ReturnsSubset()
+    {
+        var bboxWkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            new GeoServicesGeometry
+            {
+                Xmin = -1,
+                Ymin = -1,
+                Xmax = 1,
+                Ymax = 1,
+                SpatialReference = new GeoServicesSpatialReference { Wkid = 4326 }
+            },
+            srid: 4326);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(bboxWkb, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var result = await _store.QueryAsync(LayerId, query);
+
+        var feature = Assert.Single(result.Items);
+        Assert.Equal(1, feature.Id);
     }
 
     [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]

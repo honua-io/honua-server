@@ -333,10 +333,10 @@ internal static partial class SqlServerFeatureQueryBuilder
         // and rejects with error 24205 when that complement spans more than a hemisphere. Normalize
         // polygon/multipolygon winding to CCW-exterior before serialization so every geography
         // predicate sees the intended region. The geometry (planar) type is orientation-insensitive,
-        // so its WKB is passed through untouched.
+        // so only its embedded EWKB SRID metadata is removed.
         var wkb = isGeography
             ? SqlServerGeographyWinding.NormalizeToCcwExterior(filter.Geometry)
-            : filter.Geometry;
+            : SqlServerGeographyWinding.NormalizeToPlainWkb(filter.Geometry);
 
         var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
         parameters.Add(wkb);
