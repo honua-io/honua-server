@@ -110,7 +110,7 @@ internal static class AuthenticationOptionsRegistration
         services.AddScoped<OperatorApprovalGate>();
 
         // Authentication and authorization handlers
-        services.AddApiKeyAuthentication();
+        services.AddApiKeyAuthentication(configuration);
         services.AddHonuaClientCertificateAuthentication(configuration);
         services.AddOidcAuthentication(configuration);
         services.AddOidcAuthorization(configuration);
