@@ -143,7 +143,9 @@ train_recovery_finalize() {
     info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
     IFS=${HONUA_TAB} read -r sha state labels <<<"${info}"
     if [[ "${state}" == OPEN && "${sha}" == "${validated}" ]]; then
-      train_side_effect gh pr merge "${pr}" --merge
+      if ! train_land_close_pr "${pr}" "${validated}"; then
+        train_warn "recovery did not close #${pr}: exact-head final close was refused"
+      fi
     elif [[ "${state}" == OPEN && "${sha}" != "${validated}" ]]; then
       train_warn "recovery did not close #${pr}: head changed after batch push"
     fi
