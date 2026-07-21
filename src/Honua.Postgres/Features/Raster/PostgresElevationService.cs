@@ -6,6 +6,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Honua.Postgres.Features.Raster;
 
@@ -341,8 +342,9 @@ internal sealed class PostgresElevationService : IElevationService
         command.AddParameter("@layerId", layerId);
         command.AddParameter("@rasterIds", rasterIds);
 
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var dist = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
@@ -364,6 +366,12 @@ internal sealed class PostgresElevationService : IElevationService
                     NoData = !elev.HasValue
                 });
             }
+        }
+        catch (PostgresException exception) when (IsRasterAlignmentFailure(exception))
+        {
+            throw new ElevationQueryException(
+                ElevationFailureKind.MisalignedMosaic,
+                "Elevation analysis cannot combine the selected rasters because their pixel grids are not aligned. Reproject or resample the dataset to a common pixel size, origin, and skew before retrying.");
         }
 
         if (samples.Count == 0)
@@ -412,6 +420,11 @@ internal sealed class PostgresElevationService : IElevationService
         command.AddParameter("@defaultSampleCount", options.DefaultSampleCount);
         command.AddParameter("@maxSampleCount", options.MaxSampleCount);
     }
+
+    private static bool IsRasterAlignmentFailure(PostgresException exception)
+        => exception.SqlState == PostgresErrorCodes.InternalError &&
+           (string.Equals(exception.Routine, "rt_raster_from_two_rasters", StringComparison.Ordinal) ||
+            exception.MessageText.Contains("do not have the same alignment", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// SQL fragment that resolves the effective sample count from explicit

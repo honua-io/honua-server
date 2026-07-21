@@ -16257,7 +16257,8 @@
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_EndpointOutsideCoverage_ReturnsNotFoundAndNotVisible",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_MissingCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_ObserverEqualsTarget_ReturnsUnprocessableEntity",
-        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_WithCoveredFlatTerrain_ReportsVisible"
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_WithCoveredFlatTerrain_ReportsVisible",
+        "Honua.Server.Tests.Features.Protocols.Elevation.VisibilityAnalysisEndpointTests.PostLineOfSight_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity"
       ],
       "proof_ledger_surface": "elevation-query-profile",
       "maturity": "implemented",

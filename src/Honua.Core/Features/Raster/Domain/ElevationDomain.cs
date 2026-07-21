@@ -223,7 +223,13 @@ public enum ElevationFailureKind
     /// <summary>
     /// The supplied geometry is invalid or not the expected type.
     /// </summary>
-    InvalidGeometry = 2
+    InvalidGeometry = 2,
+
+    /// <summary>
+    /// The selected source rasters do not share a pixel-grid alignment and
+    /// therefore cannot be combined safely for profile-based analysis.
+    /// </summary>
+    MisalignedMosaic = 3
 }
 
 /// <summary>

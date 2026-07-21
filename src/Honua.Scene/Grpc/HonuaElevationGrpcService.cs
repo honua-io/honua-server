@@ -298,6 +298,7 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             ElevationFailureKind.SourceUnavailable => StatusCode.NotFound,
             ElevationFailureKind.UnsupportedCrs => StatusCode.InvalidArgument,
             ElevationFailureKind.InvalidGeometry => StatusCode.InvalidArgument,
+            ElevationFailureKind.MisalignedMosaic => StatusCode.InvalidArgument,
             _ => StatusCode.InvalidArgument
         };
 
