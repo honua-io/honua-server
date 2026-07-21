@@ -17,7 +17,7 @@ namespace Honua.Architecture.Tests;
 /// <remarks>
 /// <para>
 /// <b>Not to be confused with the import-fidelity scorecard.</b>
-/// <c>import-fidelity-scorecard-governance.yml</c>, <c>geoservices-import-fidelity-nightly.yml</c>,
+/// <c>import-fidelity-scorecard-governance.yml</c>, <c>geoservices-import-fidelity-external.yml</c>,
 /// <c>GeoservicesImportFidelityIntegrationTests</c>, and <c>import-fidelity-scorecard-baseline.json</c>
 /// measure whether <i>imported data</i> matches Esri's across ten dataset cases. They
 /// never read this matrix and answer a different question. This file is the only gate
