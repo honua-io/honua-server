@@ -416,12 +416,13 @@ main() {
     timeout_reruns="$(jq -r '.active_batch.timeout_reruns // 0' <<<"${resume_state}")"
     gate="$(jq -r '.resume_gate' <<<"${resume_state}")"
     shard_descriptor="$(jq -c '.resume_shard_descriptor' <<<"${resume_state}")"
-    selected="$(train_select | jq -s -c --arg csv "${included}" \
-      '($csv | split(",") | map(tonumber)) as $ids | map(select(.number as $n | $ids | index($n)))')"
-    [[ "$(jq 'length' <<<"${selected}")" == "$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | wc -l | tr -d ' ')" ]] || {
-      train_err "resumed batch members no longer match selectable PR state; failing closed"
+    selected="$(jq -c '.resume_selected' <<<"${resume_state}")"
+    [[ -s "${TRAIN_INCLUDED_FILE}" \
+      && "$(jq 'length' <<<"${selected}")" == "$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | wc -l | tr -d ' ')" ]] || {
+      train_err "resumed batch member snapshot is incomplete; failing closed"
       return 1
     }
+    train_metric_set included "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
     train_metric_set flake_reruns "${flake_reruns}"
     train_metric_set timeout_reruns "${timeout_reruns}"
   fi

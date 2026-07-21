@@ -3,12 +3,54 @@
 # retry intent resumes the existing batch/run; any state/run/branch mismatch is
 # a hard fail-closed error. This path never dispatches CI or requests a rerun.
 
-# train_restore_retry_intent: emit state JSON augmented with gate/descriptor.
+# _train_resume_is_ancestor <ancestor> <descendant>: test seam for fixtures.
+_train_resume_is_ancestor() {
+  if [[ -n "${TRAIN_RESUME_ANCESTRY_CHECKER:-}" ]]; then
+    "${TRAIN_RESUME_ANCESTRY_CHECKER}" "$1" "$2"
+  else
+    git -C "${TRAIN_REPO_ROOT}" merge-base --is-ancestor "$1" "$2"
+  fi
+}
+
+# train_restore_retry_members <state-json> <batch-sha>: reconstruct the included
+# file from persisted member ids and their current GitHub head SHAs. Every head
+# must still be the exact open PR head incorporated into the validated batch.
+train_restore_retry_members() {
+  local state="$1" batch_sha="$2" tmp selected='[]' pr row
+  tmp="$(mktemp)"
+  while IFS= read -r pr; do
+    row="$(gh pr view "${pr}" --json number,state,headRefOid,createdAt,author 2>/dev/null)" || {
+      rm -f "${tmp}"; return 1;
+    }
+    jq -e --argjson pr "${pr}" '
+      .number == $pr and .state == "OPEN"
+      and (.headRefOid | type == "string" and test("^[0-9a-fA-F]{40}$"))
+    ' >/dev/null <<<"${row}" || { rm -f "${tmp}"; return 1; }
+    local head
+    head="$(jq -r '.headRefOid' <<<"${row}")"
+    _train_resume_is_ancestor "${head}" "${batch_sha}" || { rm -f "${tmp}"; return 1; }
+    printf '%s\t%s\n' "${pr}" "${head}" >>"${tmp}"
+    selected="$(jq -c --argjson row "${row}" '. + [{
+      number: $row.number,
+      headRefOid: $row.headRefOid,
+      createdAt: ($row.createdAt // ""),
+      gate: "SUCCESS",
+      author: ($row.author.login // $row.author.name // "?")
+    }]' <<<"${selected}")"
+  done < <(jq -r '.active_batch.included[]' <<<"${state}")
+  [[ -s "${tmp}" ]] || { rm -f "${tmp}"; return 1; }
+  mv "${tmp}" "${TRAIN_INCLUDED_FILE}"
+  printf '%s\n' "${selected}"
+}
+
+# train_restore_retry_intent: emit state JSON augmented with gate/descriptor
+# and the exact reconstructed member snapshot.
 # Returns 1 when no retry intent exists and 2 for malformed/mismatched intent.
 train_restore_retry_intent() {
-  local state phase batch trunk run_id kind base row run_branch current_attempt
+  local state phase batch trunk run_id kind base row run_branch run_head current_attempt batch_sha selected
   state="$(train_state_read 2>/dev/null || echo "")"
-  [[ -n "${state}" ]] && jq -e . >/dev/null 2>&1 <<<"${state}" || return 1
+  [[ -n "${state}" ]] || return 1
+  jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
   case "${phase}" in timeout-retry-intent|flake-retry-intent) ;; *) return 1 ;; esac
 
@@ -20,21 +62,27 @@ train_restore_retry_intent() {
   [[ "${batch}" == train/batch/* && "${trunk}" =~ ^[0-9a-fA-F]{40}$ \
     && "${run_id}" =~ ^[0-9]+$ && "${base}" =~ ^[0-9]+$ ]] || return 2
   [[ "${phase}" == "${kind}-retry-intent" ]] || return 2
-  jq -e '.active_batch.included | type == "array" and length > 0' >/dev/null <<<"${state}" || return 2
-
-  row="$(gh run view "${run_id}" --json headBranch,attempt \
-    --jq '[.headBranch, .attempt] | @tsv' 2>/dev/null || echo "")"
-  IFS=$'\t' read -r run_branch current_attempt <<<"${row}"
-  [[ "${run_branch}" == "${batch}" && "${current_attempt}" =~ ^[0-9]+$ \
-    && "${current_attempt}" -ge "${base}" ]] || return 2
+  jq -e '.active_batch.included | type == "array" and length > 0
+    and all(.[]; type == "number" and floor == .)
+    and (unique | length) == length' >/dev/null <<<"${state}" || return 2
 
   if [[ -n "${TRAIN_RESUME_FETCHER:-}" ]]; then
-    "${TRAIN_RESUME_FETCHER}" "${batch}" "${trunk}" || return 2
+    batch_sha="$("${TRAIN_RESUME_FETCHER}" "${batch}" "${trunk}")" || return 2
   else
     git -C "${TRAIN_REPO_ROOT}" fetch "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" "${batch}" >/dev/null 2>&1 || return 2
-    [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}" 2>/dev/null)" == "${trunk}" ]] || return 2
+    batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${batch}" 2>/dev/null)" || return 2
     git -C "${TRAIN_REPO_ROOT}" branch -f "${batch}" "${TRAIN_REMOTE}/${batch}" >/dev/null 2>&1 || return 2
   fi
+  [[ "${batch_sha}" =~ ^[0-9a-fA-F]{40}$ ]] || return 2
+  _train_resume_is_ancestor "${trunk}" "${batch_sha}" || return 2
+
+  row="$(gh run view "${run_id}" --json headBranch,headSha,attempt \
+    --jq '[.headBranch, .headSha, .attempt] | @tsv' 2>/dev/null || echo "")"
+  IFS=$'\t' read -r run_branch run_head current_attempt <<<"${row}"
+  [[ "${run_branch}" == "${batch}" && "${run_head}" == "${batch_sha}" \
+    && "${current_attempt}" =~ ^[0-9]+$ && "${current_attempt}" -ge "${base}" ]] || return 2
+
+  selected="$(train_restore_retry_members "${state}" "${batch_sha}")" || return 2
 
   TRAIN_RERUN_KIND="${kind}"
   TRAIN_RERUN_BASE_ATTEMPT="${base}"
@@ -48,6 +96,6 @@ train_restore_retry_intent() {
   [[ "${gate}" == "SUCCESS" || "${gate}" == "FAILURE" ]] || return 2
   descriptor="$(train_smart_ci_shards "${batch}")" || return 2
 
-  jq -c --arg gate "${gate}" --argjson descriptor "${descriptor}" \
-    '. + {resume_gate: $gate, resume_shard_descriptor: $descriptor}' <<<"${state}"
+  jq -c --arg gate "${gate}" --argjson descriptor "${descriptor}" --argjson selected "${selected}" \
+    '. + {resume_gate: $gate, resume_shard_descriptor: $descriptor, resume_selected: $selected}' <<<"${state}"
 }

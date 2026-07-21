@@ -13,7 +13,9 @@ export TRAIN_APPLY=0
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 pass() { printf 'PASS: %s\n' "$1"; }
 record="$(mktemp)"
-trap 'rm -f "${record}" "${sequence_calls:-}"' EXIT
+fixture_included="$(mktemp)"
+fixture_metrics="$(mktemp)"
+trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}"' EXIT
 side_effect_fails=0
 train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
@@ -98,14 +100,28 @@ pass "cancellation/resume idempotency"
 : >"${record}"
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_STATE_ISSUE_OVERRIDE=1
-resume_fetcher() { return 0; }
+fixture_batch_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+fixture_member_sha=cccccccccccccccccccccccccccccccccccccccc
+resume_fetcher() {
+  [[ "$1" == "train/batch/abc/1" && "$2" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]] \
+    || fail "resume fetcher received the wrong batch/base"
+  printf '%s\n' "${fixture_batch_sha}"
+}
+resume_ancestry() {
+  [[ "$1:$2" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${fixture_batch_sha}" \
+    || "$1:$2" == "${fixture_member_sha}:${fixture_batch_sha}" ]]
+}
 export TRAIN_RESUME_FETCHER=resume_fetcher
+export TRAIN_RESUME_ANCESTRY_CHECKER=resume_ancestry
+export TRAIN_INCLUDED_FILE="${fixture_included}"
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
 gh_mode=resume
 printf '0' >"${sequence_calls}"
 gh() {
-  if [[ "$*" == *'--json headBranch,attempt'* ]]; then
-    printf 'train/batch/abc/1\t1\n'
+  if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then
+    printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
+  elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
+    printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json attempt,status'* ]]; then
     local n; n=$(( $(cat "${sequence_calls}") + 1 )); printf '%s' "${n}" >"${sequence_calls}"
     case "${n}" in 1) printf '1\tcompleted\n' ;; 2) printf '2\tqueued\n' ;; *) printf '2\tcompleted\n' ;; esac
@@ -117,9 +133,34 @@ gh() {
 }
 resumed_json="$(train_restore_retry_intent)" || fail "production startup did not restore retry intent"
 [[ "$(jq -r '.resume_gate' <<<"${resumed_json}")" == "SUCCESS" ]] || fail "resumed main path did not recover new-attempt gate"
+[[ "$(cat "${fixture_included}")" == $'101\t'"${fixture_member_sha}" ]] || fail "resume did not reconstruct the exact included member head"
 [[ ! -s "${record}" ]] || fail "resumed main path dispatched a batch or duplicate rerun"
-unset TRAIN_STATE_BODY_OVERRIDE TRAIN_STATE_ISSUE_OVERRIDE TRAIN_RESUME_FETCHER
 pass "restarted-main production resume path"
+
+# The Actions run must belong to the exact fetched batch SHA, and the fetched
+# batch must descend from the stored trunk base.
+gh() {
+  if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then
+    printf 'train/batch/abc/1\tdddddddddddddddddddddddddddddddddddddddd\t1\n'
+  else
+    fail "exact-head mismatch attempted unexpected gh operation: $*"
+  fi
+}
+rc=0
+train_restore_retry_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "Actions head SHA mismatch did not fail closed"
+reject_base() { [[ "$1" != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]]; }
+export TRAIN_RESUME_ANCESTRY_CHECKER=reject_base
+rc=0
+train_restore_retry_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "non-descendant batch did not fail closed"
+export TRAIN_RESUME_ANCESTRY_CHECKER=resume_ancestry
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":\n```'
+rc=0
+train_restore_retry_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "malformed nonempty retry state was treated as no retry"
+unset TRAIN_STATE_BODY_OVERRIDE
+pass "resume exact-head, descendant-base, and malformed-state guards"
 
 # Restore the simple attempt reader for the remaining classifier cases.
 gh() { printf '1\n'; }
@@ -152,23 +193,41 @@ pass "main-loop classifier behavior"
 # End-to-end restarted main: source the production orchestrator, make selection
 # fatal if reached, and prove startup consumes retry intent first without any
 # workflow dispatch or duplicate rerun.
-export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=1
+export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
+train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
 export TRAIN_STATE_ISSUE_OVERRIDE=1
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_FETCHER=resume_fetcher
 train_select() { fail "restarted main incorrectly entered selection"; }
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
 gh() {
-  if [[ "$*" == *'--json headBranch,attempt'* ]]; then printf 'train/batch/abc/1\t1\n'
+  if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
+  elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
   elif [[ "$*" == *'--json jobs'* ]]; then printf 'success\n'
   else fail "restarted main attempted unexpected gh operation: $*"
   fi
 }
+fixture_pushed=0
+git() {
+  case "$*" in
+    *'fetch --quiet origin trunk') return 0 ;;
+    *'rev-parse origin/trunk')
+      [[ "${fixture_pushed}" == "1" ]] && printf '%s\n' "${fixture_batch_sha}" \
+        || printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      ;;
+    *'push origin train/batch/abc/1:trunk') fixture_pushed=1 ;;
+    *) fail "restarted main attempted unexpected git operation: $*" ;;
+  esac
+}
 : >"${record}"
+export TRAIN_METRICS_OUT="${fixture_metrics}"
 unset TRAIN_CONTROLLER_DEADLINE_EPOCH
 now_value=100
 main || fail "restarted production main failed to consume retry intent"
-[[ ! -s "${record}" ]] || fail "restarted production main dispatched or reran work"
-pass "end-to-end restarted main bypasses selection and duplicate work"
+grep -Fqx 'gh pr merge 101 --merge' "${record}" || fail "resumed SUCCESS did not close the included PR"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || fail "resumed SUCCESS did not remove the landing label"
+[[ "$(jq -r '.outcome' "${fixture_metrics}")" == "landed" ]] || fail "resumed SUCCESS did not emit landed metrics"
+[[ "$(jq -r '.counts.landed' "${fixture_metrics}")" == "1" ]] || fail "resumed SUCCESS metrics lost reconstructed membership"
+pass "end-to-end resumed SUCCESS lands exact members and emits metrics"
