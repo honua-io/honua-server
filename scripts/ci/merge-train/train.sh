@@ -295,6 +295,9 @@ main() {
     elif [[ "${resume_rc}" == "3" ]]; then
       train_warn "accepted failed-job rerun is still pending at the controller deadline; preserving retry intent for the next controller"
       return 1
+    elif [[ "${resume_rc}" == "4" ]]; then
+      train_warn "failed-job rerun remains in recoverable requesting state; preserving it for the next controller"
+      return 1
     fi
   fi
 
@@ -536,6 +539,12 @@ main() {
       _emit_metrics "ci-rerun-failed" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
+    if [[ "${rc_retry}" == "4" ]]; then
+      train_annotate_warn "failed-job rerun request remains in recoverable requesting state; stopping without overwriting it"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-requesting" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
     if [[ "${rc_retry}" == "0" ]]; then
       if [[ "${TRAIN_RETRY_KIND}" == "timeout" ]]; then
         train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
@@ -717,21 +726,19 @@ _write_state() {
   train_state_write "${body}"
 }
 
-# Persist retry intent/count before the Actions side effect. If the controller
-# is cancelled after GitHub accepts the rerun, a resumed classifier reads this
-# intent, refuses a duplicate command, and waits for attempt > baseline.
+# Persist two-phase rerun state around the Actions side effect.
 _persist_retry_intent() {
-  local kind="$1" next_count="$2" base_attempt="$3" run_id="$4"
+  local kind="$1" next_count="$2" base_attempt="$3" run_id="$4" request_phase="${5:-requesting}"
   TRAIN_RERUN_KIND="${kind}"
   TRAIN_RERUN_BASE_ATTEMPT="${base_attempt}"
   if [[ "${kind}" == "timeout" ]]; then
     timeout_reruns="${next_count}"
     train_metric_set timeout_reruns "${timeout_reruns}"
-    _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry-intent" "${run_id}" "${fwdfix}" "${flake_reruns}"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry-${request_phase}" "${run_id}" "${fwdfix}" "${flake_reruns}"
   else
     flake_reruns="${next_count}"
     train_metric_set flake_reruns "${flake_reruns}"
-    _write_state "${batch}" "${trunk_sha}" "${included}" "flake-retry-intent" "${run_id}" "${fwdfix}" "${flake_reruns}"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "flake-retry-${request_phase}" "${run_id}" "${fwdfix}" "${flake_reruns}"
   fi
 }
 

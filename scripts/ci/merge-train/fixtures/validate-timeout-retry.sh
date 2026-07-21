@@ -16,7 +16,8 @@ record="$(mktemp)"
 fixture_included="$(mktemp)"
 fixture_metrics="$(mktemp)"
 history_repo="$(mktemp -d)"
-trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}"; rm -rf "${history_repo}"' EXIT
+phase_log="$(mktemp)"
+trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}" "${phase_log}"; rm -rf "${history_repo}"' EXIT
 side_effect_fails=0
 train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
@@ -87,7 +88,7 @@ pass "completed(old) to queued(new) to completed(new)"
 # Cancellation after persisted intent is idempotent: resume does not issue a
 # second rerun and reconciles by observing the newer attempt.
 : >"${record}"
-export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":123,"phase":"timeout-retry-intent","rerun_kind":"timeout","rerun_base_attempt":1}}'
+export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":123,"phase":"timeout-retry-accepted","rerun_kind":"timeout","rerun_base_attempt":1}}'
 gh_mode=sequence
 printf '0' >"${sequence_calls}"
 train_request_failed_job_rerun 123 timeout 1 || fail "persisted rerun intent did not reconcile"
@@ -96,10 +97,70 @@ train_wait_for_new_run_attempt 123 "${TRAIN_RERUN_BASE_ATTEMPT}" || fail "resume
 unset TRAIN_RERUN_RESUME_STATE_JSON
 pass "cancellation/resume idempotency"
 
+# Two-phase request durability closes both crash windows. Requesting is written
+# before send; accepted is written only after success/conflict or observed
+# attempt advancement.
+request_mode=success
+requester() {
+  printf 'request %s\n' "$1" >>"${record}"
+  case "${request_mode}" in success) return 0 ;; conflict) return 4 ;; hard) return 1 ;; esac
+}
+state_callback() { printf '%s\n' "$5" >>"${phase_log}"; }
+export TRAIN_RERUN_REQUESTER=requester TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=0
+: >"${record}"; : >"${phase_log}"
+gh_mode=attempt
+train_request_failed_job_rerun 123 timeout 1 state_callback || fail "normal two-phase request failed"
+[[ "$(paste -sd, "${phase_log}")" == "requesting,accepted" ]] || fail "normal request did not persist both phases in order"
+[[ "$(grep -c '^request 123$' "${record}")" == "1" ]] || fail "normal request count was not one"
+
+# Crash before send leaves requesting with an unchanged attempt; restart waits
+# bounded grace, safely sends once, and advances to accepted.
+: >"${record}"; : >"${phase_log}"
+export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":123,"phase":"timeout-retry-requesting","rerun_kind":"timeout","rerun_base_attempt":1}}'
+train_run_attempt_status() { printf '1\tcompleted\n'; }
+request_mode=success
+train_request_failed_job_rerun 123 timeout 1 state_callback || fail "pre-send crash did not recover"
+[[ "$(grep -c '^request 123$' "${record}")" == "1" ]] || fail "pre-send crash did not issue exactly one recovery request"
+[[ "$(cat "${phase_log}")" == "accepted" ]] || fail "pre-send recovery did not persist accepted"
+
+# Crash after GitHub accepts but before accepted-state persistence observes the
+# advanced attempt and must not send again.
+: >"${record}"; : >"${phase_log}"
+train_run_attempt_status() { printf '2\tqueued\n'; }
+train_request_failed_job_rerun 123 timeout 1 state_callback || fail "post-accept crash did not reconcile"
+[[ ! -s "${record}" ]] || fail "post-accept crash issued a duplicate request"
+[[ "$(cat "${phase_log}")" == "accepted" ]] || fail "post-accept recovery did not persist accepted"
+
+# Delayed visibility inside the bounded grace also suppresses a duplicate send.
+: >"${record}"; : >"${phase_log}"
+export TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=10
+now_value=100
+printf '0' >"${sequence_calls}"
+train_run_attempt_status() {
+  local n; n=$(( $(cat "${sequence_calls}") + 1 )); printf '%s' "${n}" >"${sequence_calls}"
+  [[ "${n}" -lt 3 ]] && printf '1\tcompleted\n' || printf '2\tqueued\n'
+}
+train_request_failed_job_rerun 123 timeout 1 state_callback || fail "delayed acceptance visibility did not reconcile"
+[[ ! -s "${record}" ]] || fail "delayed visibility issued a duplicate request"
+
+# A GitHub conflict/already-running response is asynchronous acceptance, not a
+# hard failure; accepted state is persisted and normal attempt waiting resumes.
+: >"${record}"; : >"${phase_log}"
+export TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=0
+train_run_attempt_status() { printf '1\tcompleted\n'; }
+request_mode=conflict
+train_request_failed_job_rerun 123 timeout 1 state_callback || fail "rerun conflict was not reconciled as accepted"
+[[ "$(cat "${phase_log}")" == "accepted" ]] || fail "rerun conflict did not persist accepted"
+unset TRAIN_RERUN_RESUME_STATE_JSON TRAIN_RERUN_REQUESTER TRAIN_RERUN_VISIBILITY_GRACE_SECONDS
+train_run_attempt_status() {
+  gh run view "$1" --json attempt,status --jq '[.attempt, .status] | @tsv' 2>/dev/null
+}
+pass "two-phase rerun crash, visibility, and conflict recovery"
+
 # Production startup restoration: matching persisted intent waits on the old
 # run id, accepts only completed(new), and performs no dispatch/rerun side effect.
 : >"${record}"
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_STATE_ISSUE_OVERRIDE=1
 fixture_batch_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 fixture_member_sha=cccccccccccccccccccccccccccccccccccccccc
@@ -247,7 +308,7 @@ export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
 train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
 export TRAIN_STATE_ISSUE_OVERRIDE=1
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_FETCHER=resume_fetcher
 train_select() { fail "restarted main incorrectly entered selection"; }
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
@@ -285,7 +346,7 @@ pass "end-to-end resumed SUCCESS lands exact members and emits metrics"
 # A resumed failed attempt must retain the original run id and trunk-base
 # context through timeout precedence and attribution. It must not dispatch a
 # new batch or request another rerun.
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 : >"${record}"
 fixture_pushed=0
 export TRAIN_RUN_LOG_TEXT='Testcontainers timed out after 20 minutes; Process completed with exit code 124.'
@@ -325,7 +386,7 @@ pass "end-to-end resumed FAILURE preserves run/base context through attribution"
 # Controller A expires while the accepted attempt is still queued. It must
 # leave the retry intent untouched. Controller B then consumes that same run
 # and newer attempt before selection, without dispatching or rerunning.
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_STARTUP_TEST_ONLY=1
 : >"${record}"
 restart_attempt=queued
@@ -348,7 +409,7 @@ export TRAIN_CONTROLLER_DEADLINE_EPOCH=1
 rc=0
 main || rc=$?
 [[ "${rc}" == "1" ]] || fail "queued rerun deadline did not fail closed"
-[[ "${TRAIN_STATE_BODY_OVERRIDE}" == *'"phase":"timeout-retry-intent"'* ]] || fail "queued rerun intent was overwritten"
+[[ "${TRAIN_STATE_BODY_OVERRIDE}" == *'"phase":"timeout-retry-accepted"'* ]] || fail "queued rerun intent was overwritten"
 [[ ! -s "${record}" ]] || fail "expired controller dispatched, reran, or rewrote retry state"
 
 restart_attempt=completed

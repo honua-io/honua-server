@@ -67,17 +67,35 @@ train_restore_retry_members() {
   printf '%s\n' "${selected}"
 }
 
+# _train_resume_persist_request_phase <state> <kind> <requesting|accepted>:
+# advance the durable phase without changing the validated batch identity.
+_train_resume_persist_request_phase() {
+  local state="$1" kind="$2" request_phase="$3" body updated
+  updated="$(jq -c --arg phase "${kind}-retry-${request_phase}" \
+    '.active_batch.phase = $phase' <<<"${state}")" || return 1
+  body="$(mktemp)"
+  printf 'Machine-managed state for the optimistic batch merge train. Do not edit by hand.\n\n```json\n%s\n```\n' \
+    "${updated}" >"${body}"
+  train_state_write "${body}" || { rm -f "${body}"; return 1; }
+  rm -f "${body}"
+}
+
 # train_restore_retry_intent: emit state JSON augmented with gate/descriptor
 # and the exact reconstructed member snapshot.
 # Returns 1 when no retry intent exists, 2 for malformed/mismatched intent, and
-# 3 when the accepted newer attempt is still pending at the shared deadline.
+# 3 when the accepted newer attempt is still pending at the shared deadline,
+# 4 when requesting state remains safely resumable after an API failure.
 train_restore_retry_intent() {
   local state phase batch trunk run_id kind base row run_branch run_head current_attempt batch_sha selected
   state="$(train_state_read 2>/dev/null || echo "")"
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
-  case "${phase}" in timeout-retry-intent|flake-retry-intent) ;; *) return 1 ;; esac
+  case "${phase}" in
+    timeout-retry-requesting|timeout-retry-accepted|timeout-retry-intent|\
+    flake-retry-requesting|flake-retry-accepted|flake-retry-intent) ;;
+    *) return 1 ;;
+  esac
 
   batch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
   trunk="$(jq -r '.active_batch.trunk_base // empty' <<<"${state}")"
@@ -86,7 +104,8 @@ train_restore_retry_intent() {
   base="$(jq -r '.active_batch.rerun_base_attempt // empty' <<<"${state}")"
   [[ "${batch}" == train/batch/* && "${trunk}" =~ ^[0-9a-fA-F]{40}$ \
     && "${run_id}" =~ ^[0-9]+$ && "${base}" =~ ^[0-9]+$ ]] || return 2
-  [[ "${phase}" == "${kind}-retry-intent" ]] || return 2
+  [[ "${phase}" == "${kind}-retry-requesting" || "${phase}" == "${kind}-retry-accepted" \
+    || "${phase}" == "${kind}-retry-intent" ]] || return 2
   jq -e '.active_batch.included | type == "array" and length > 0
     and all(.[]; type == "number" and floor == .)
     and (unique | length) == length' >/dev/null <<<"${state}" || return 2
@@ -108,6 +127,16 @@ train_restore_retry_intent() {
     && "${current_attempt}" =~ ^[0-9]+$ && "${current_attempt}" -ge "${base}" ]] || return 2
 
   selected="$(train_restore_retry_members "${state}" "${trunk}" "${batch_sha}")" || return 2
+
+  if [[ "${phase}" == "${kind}-retry-requesting" || "${phase}" == "${kind}-retry-intent" ]]; then
+    if [[ "${current_attempt}" -le "${base}" ]] && ! train_wait_for_rerun_visibility "${run_id}" "${base}"; then
+      local send_rc=0
+      train_send_failed_job_rerun "${run_id}" || send_rc=$?
+      [[ "${send_rc}" == "0" || "${send_rc}" == "4" ]] || return 4
+    fi
+    _train_resume_persist_request_phase "${state}" "${kind}" accepted || return 4
+    state="$(jq -c --arg phase "${kind}-retry-accepted" '.active_batch.phase = $phase' <<<"${state}")"
+  fi
 
   TRAIN_RERUN_KIND="${kind}"
   TRAIN_RERUN_BASE_ATTEMPT="${base}"

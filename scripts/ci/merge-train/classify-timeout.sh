@@ -7,10 +7,47 @@ train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
 }
 
-# train_request_failed_job_rerun <run-id> <kind> <next-count> [intent-callback]
-# Records the current Actions attempt through the callback before requesting the
-# rerun. If a persisted intent already exists for this run/kind, never issue a
-# duplicate command: the caller reconciles by waiting for attempt > baseline.
+# train_wait_for_rerun_visibility <run-id> <base-attempt>: bounded grace for an
+# asynchronously accepted request to expose attempt > base.
+train_wait_for_rerun_visibility() {
+  local run_id="$1" base="$2" grace="${TRAIN_RERUN_VISIBILITY_GRACE_SECONDS:-30}"
+  local interval="${TRAIN_RERUN_VISIBILITY_POLL_SECONDS:-5}" deadline row attempt status
+  deadline=$(( $(train_now) + grace ))
+  while :; do
+    row="$(train_run_attempt_status "${run_id}" || echo $'0\t')"
+    IFS=$'\t' read -r attempt status <<<"${row}"
+    [[ "${attempt}" =~ ^[0-9]+$ && "${attempt}" -gt "${base}" ]] && return 0
+    [[ "$(train_now)" -ge "${deadline}" ]] && return 1
+    sleep "${interval}"
+  done
+}
+
+# train_send_failed_job_rerun <run-id>: 0=accepted, 4=conflict/async acceptance,
+# 1=hard failure. Tests may provide TRAIN_RERUN_REQUESTER.
+train_send_failed_job_rerun() {
+  local run_id="$1" err rc=0
+  if [[ -n "${TRAIN_RERUN_REQUESTER:-}" ]]; then
+    "${TRAIN_RERUN_REQUESTER}" "${run_id}"
+    return $?
+  fi
+  if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
+    train_side_effect gh run rerun "${run_id}" --failed
+    return $?
+  fi
+  err="$(mktemp)"
+  gh run rerun "${run_id}" --failed 2>"${err}" || rc=$?
+  if [[ "${rc}" == "0" ]]; then rm -f "${err}"; return 0; fi
+  if grep -Eiq 'HTTP 409|already.*(queued|in progress|requested)|cannot rerun.*(queued|in progress|not completed)' "${err}"; then
+    train_warn "rerun API reported an already queued/in-progress request for run ${run_id}; reconciling asynchronously"
+    rm -f "${err}"; return 4
+  fi
+  cat "${err}" >&2; rm -f "${err}"; return 1
+}
+
+# train_request_failed_job_rerun <run-id> <kind> <next-count> [state-callback]
+# Callback args are kind,count,base,run,requesting|accepted. The requesting
+# phase is durable before the API call; accepted is durable after success or a
+# conflict that means GitHub already has the rerun.
 train_request_failed_job_rerun() {
   local run_id="$1" kind="$2" next_count="$3" callback="${4:-}"
   local state="${TRAIN_RERUN_RESUME_STATE_JSON:-}" base="" state_kind="" state_run="" state_phase=""
@@ -27,14 +64,33 @@ train_request_failed_job_rerun() {
   fi
 
   if [[ "${state_run}" == "${run_id}" && "${state_kind}" == "${kind}" \
-    && "${state_phase}" == "${kind}-retry-intent" && "${base}" =~ ^[0-9]+$ ]]; then
+    && "${state_phase}" == "${kind}-retry-accepted" && "${base}" =~ ^[0-9]+$ ]]; then
     TRAIN_RERUN_BASE_ATTEMPT="${base}"
     TRAIN_RERUN_KIND="${kind}"
     TRAIN_RERUN_RECONCILED=1
-    train_warn "reconciling persisted ${kind} rerun intent for run ${run_id} from attempt ${base}; refusing duplicate rerun"
-    if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}"; then
-      train_err "could not persist resumed ${kind} rerun intent for run ${run_id}"
-      return 3
+    train_warn "reconciling accepted ${kind} rerun for run ${run_id} from attempt ${base}; refusing duplicate rerun"
+    return 0
+  fi
+
+  if [[ "${state_run}" == "${run_id}" && "${state_kind}" == "${kind}" \
+    && ( "${state_phase}" == "${kind}-retry-requesting" || "${state_phase}" == "${kind}-retry-intent" ) \
+    && "${base}" =~ ^[0-9]+$ ]]; then
+    TRAIN_RERUN_BASE_ATTEMPT="${base}"
+    TRAIN_RERUN_KIND="${kind}"
+    TRAIN_RERUN_RECONCILED=1
+    if train_wait_for_rerun_visibility "${run_id}" "${base}"; then
+      train_warn "reconciled ${kind} rerun accepted before persisted state advanced"
+    else
+      local send_rc=0
+      train_send_failed_job_rerun "${run_id}" || send_rc=$?
+      if [[ "${send_rc}" != "0" && "${send_rc}" != "4" ]]; then
+        train_err "could not safely reconcile requesting ${kind} rerun for run ${run_id}; preserving requesting state"
+        return 4
+      fi
+    fi
+    if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}" accepted; then
+      train_err "rerun was accepted but accepted state could not be persisted; requesting state remains recoverable"
+      return 4
     fi
     return 0
   fi
@@ -50,14 +106,20 @@ train_request_failed_job_rerun() {
   fi
   TRAIN_RERUN_BASE_ATTEMPT="${base}"
   TRAIN_RERUN_KIND="${kind}"
-  if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}"; then
-    train_err "could not persist ${kind} rerun intent before side effect for run ${run_id}"
+  if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}" requesting; then
+    train_err "could not persist requesting ${kind} rerun before side effect for run ${run_id}"
     return 3
   fi
 
-  if ! train_side_effect gh run rerun "${run_id}" --failed; then
-    train_err "failed to request failed-job rerun for ${kind} run ${run_id}"
-    return 3
+  local send_rc=0
+  train_send_failed_job_rerun "${run_id}" || send_rc=$?
+  if [[ "${send_rc}" != "0" && "${send_rc}" != "4" ]]; then
+    train_err "failed to request failed-job rerun for ${kind} run ${run_id}; requesting state remains recoverable"
+    [[ -n "${callback}" ]] && return 4 || return 3
+  fi
+  if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}" accepted; then
+    train_err "rerun accepted but accepted state could not be persisted; requesting state remains recoverable"
+    return 4
   fi
   return 0
 }
@@ -111,7 +173,8 @@ train_classify_timeout() {
 # Orchestration policy used by the main loop and focused tests. Timeout has
 # strict precedence: a persistent timeout is REAL even when its log also
 # matches a known-flake regex, so the known-flake merge-through path is skipped.
-# Returns 0=rerun issued, 1=real, 2=known-flake merge-through, 3=rerun failed.
+# Returns 0=rerun accepted, 1=real, 2=known-flake merge-through,
+# 3=pre-request failure, 4=requesting state preserved for restart.
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
   local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
@@ -121,7 +184,7 @@ train_classify_retry_candidate() {
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
-    3) return 3 ;;
+    3|4) return "${rc}" ;;
   esac
 
   rc=0
