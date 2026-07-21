@@ -371,8 +371,8 @@ TRAIN_APPLY=1 train_land nonff-batch "${CUR_TRUNK}" "${INC}"; rc2=$?
 set -e
 assert_eq "ff-cas: non-FF push server-rejected => rc10" "${rc2}" "10"
 
-# A PR can advance after the admission snapshot but before GitHub records the
-# already-pushed batch as merged. The final merge must CAS the admitted SHA.
+# A PR can advance after admission while the immutable batch is being pushed.
+# The exact batch SHA still lands, but the advanced PR must remain unfinalized.
 git fetch -q origin trunk
 CLOSE_BASE="$(git rev-parse origin/trunk)"
 git checkout -q -B close-race origin/trunk
@@ -380,15 +380,49 @@ echo "close race" >> close-race.txt; git add -A; git commit -qm "close race batc
 close_sha="$(git rev-parse HEAD)"
 : >"${INC}"; printf '703\t%s\n' "${close_sha}" >>"${INC}"
 MERGE_ARGS="${SCRATCH}/merge-args"
+__land_info_advanced_before_finalize() { printf 'new-head-703\tOPEN\n'; }
+__merge_must_not_run() { printf 'called\n' >"${MERGE_ARGS}"; return 1; }
+__land_clear_label() { printf '%s\n' "$1" >>"${SCRATCH}/cleared-landing-labels"; }
+export -f __land_info_advanced_before_finalize __merge_must_not_run __land_clear_label
+export TRAIN_LAND_PR_INFO_FOR=__land_info_advanced_before_finalize
+export TRAIN_LAND_PR_MERGE_CMD=__merge_must_not_run
+export TRAIN_LAND_CLEAR_LABEL_CMD=__land_clear_label
+: >"${MERGE_ARGS}"
+TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/finalized-before" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/advanced-before" TRAIN_LAND_PENDING_FILE="${SCRATCH}/pending-before" \
+  TRAIN_APPLY=1 train_land close-race "${CLOSE_BASE}" "${INC}"; rc3=$?
+assert_eq "snapshot race: immutable batch lands successfully" "${rc3}" "0"
+git fetch -q origin trunk
+assert_eq "snapshot race: trunk is exact tested batch SHA" "$(git rev-parse origin/trunk)" "${close_sha}"
+assert_eq "snapshot race: advanced member is not finalized" "$([[ -s "${SCRATCH}/finalized-before" ]] && echo yes || echo no)" "no"
+assert_contains "snapshot race: advanced member remains recorded for delta" "$(cat "${SCRATCH}/advanced-before")" $'703\t'"${close_sha}"$'\tnew-head-703'
+assert_eq "snapshot race: merge command never runs for advanced member" "$([[ -s "${MERGE_ARGS}" ]] && echo yes || echo no)" "no"
+
+# A head can also advance atomically during --match-head-commit. The command
+# refuses, post-land state observes the new head, and no false finalization occurs.
+git checkout -q -B during-finalize origin/trunk
+echo "during finalize" >> during-finalize.txt; git add -A; git commit -qm "during finalize batch"
+during_sha="$(git rev-parse HEAD)"
+: >"${INC}"; printf '704\t%s\n' "${during_sha}" >>"${INC}"
+INFO_CALLS_FILE="${SCRATCH}/land-info-calls"; printf '0' >"${INFO_CALLS_FILE}"
+__land_info_advances_during_merge() {
+  local n; n=$(( $(cat "${INFO_CALLS_FILE}") + 1 )); printf '%s' "${n}" >"${INFO_CALLS_FILE}"
+  if [[ "${n}" == "1" ]]; then printf '%s\tOPEN\n' "${during_sha}"; else printf 'new-head-704\tOPEN\n'; fi
+}
 __merge_head_advanced() { printf '%s\t%s\n' "$1" "$2" >"${MERGE_ARGS}"; return 1; }
-export -f __merge_head_advanced
+export INFO_CALLS_FILE during_sha
+export -f __land_info_advances_during_merge __merge_head_advanced
+export TRAIN_LAND_PR_INFO_FOR=__land_info_advances_during_merge
 export TRAIN_LAND_PR_MERGE_CMD=__merge_head_advanced
-set +e
-TRAIN_APPLY=1 train_land close-race "${CLOSE_BASE}" "${INC}"; rc3=$?
-set -e
-assert_eq "final-merge CAS: advanced head signals reselect" "${rc3}" "10"
-assert_eq "final-merge CAS: command receives admitted SHA" "$(cat "${MERGE_ARGS}")" $'703\t'"${close_sha}"
-unset TRAIN_LAND_PR_MERGE_CMD
+: >"${MERGE_ARGS}"
+TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/finalized-during" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/advanced-during" TRAIN_LAND_PENDING_FILE="${SCRATCH}/pending-during" \
+  TRAIN_APPLY=1 train_land during-finalize "${close_sha}" "${INC}"; rc4=$?
+assert_eq "finalize race: already-landed batch is not retried" "${rc4}" "0"
+git fetch -q origin trunk
+assert_eq "finalize race: trunk remains exact tested batch SHA" "$(git rev-parse origin/trunk)" "${during_sha}"
+assert_eq "finalize race: command receives admitted SHA" "$(cat "${MERGE_ARGS}")" $'704\t'"${during_sha}"
+assert_eq "finalize race: advanced member is not falsely finalized" "$([[ -s "${SCRATCH}/finalized-during" ]] && echo yes || echo no)" "no"
+assert_contains "finalize race: post-command advance is recorded" "$(cat "${SCRATCH}/advanced-during")" "new-head-704"
+unset TRAIN_LAND_PR_INFO_FOR TRAIN_LAND_PR_MERGE_CMD TRAIN_LAND_CLEAR_LABEL_CMD
 
 echo
 echo "== Case 8: smart-CI shard computation on a real batch diff =="

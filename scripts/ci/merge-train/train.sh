@@ -607,7 +607,10 @@ main() {
   fi
 
   local new_trunk; new_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
-  train_metric_set landed "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set snapshot_landed "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set landed "$(grep -c . "${TRAIN_LAND_FINALIZED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set advanced_after_snapshot "$(grep -c . "${TRAIN_LAND_ADVANCED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set finalization_pending "$(grep -c . "${TRAIN_LAND_PENDING_FILE}" 2>/dev/null || echo 0)"
   _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
   train_notice "LANDED batch ${batch} ($(tr ',' ' ' <<<"${included}")); trunk now ${new_trunk:0:7}"
   train_step_end land >/dev/null
@@ -726,6 +729,9 @@ _dashboard() {
   train_summary "| Autofix fixes landed | $(train_metric_get autofix_fixes 0) |"
   train_summary "| Attribution drops | $(train_metric_get attribution_drops 0) |"
   train_summary "| Escalated | $(train_metric_get escalated 0) |"
+  train_summary "| Validated member snapshots landed | $(train_metric_get snapshot_landed 0) |"
+  train_summary "| Heads advanced after snapshot | $(train_metric_get advanced_after_snapshot 0) |"
+  train_summary "| Finalization pending | $(train_metric_get finalization_pending 0) |"
   train_summary "| Landed | $(train_metric_get landed 0) |"
   train_summary ""
 
