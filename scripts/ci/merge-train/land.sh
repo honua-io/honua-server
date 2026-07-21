@@ -12,6 +12,19 @@
 # A non-FF rejection (someone else advanced trunk in the race window) means
 # trunk moved => re-assemble. We never retry with force.
 
+# train_land_close_pr <pr> <admitted-sha>: canonical exact-head final close.
+# Both ordinary landing and crash recovery use this single merge authority.
+train_land_close_pr() {
+  local pr="$1" admitted_sha="$2"
+  if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
+    "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}"
+  elif [[ "${TRAIN_APPLY}" != "1" ]]; then
+    train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
+  else
+    gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
+  fi
+}
+
 # train_land <batch-branch> <trunk-sha-at-assembly> <included-file>:
 #   returns 0 on success (landed), 10 on CAS/FF rejection (re-assemble), 1 on error.
 train_land() {
@@ -55,14 +68,7 @@ train_land() {
   local pr admitted_sha
   while IFS=$'\t' read -r pr admitted_sha; do
     [[ -z "${pr}" ]] && continue
-    if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
-      if ! "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}"; then
-        train_warn "final merge refused for #${pr}: head no longer matches admitted SHA; re-select"
-        return 10
-      fi
-    elif [[ "${TRAIN_APPLY}" != "1" ]]; then
-      train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
-    elif ! gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"; then
+    if ! train_land_close_pr "${pr}" "${admitted_sha}"; then
       train_warn "final merge refused for #${pr}: head no longer matches admitted SHA; re-select"
       return 10
     fi
