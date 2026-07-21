@@ -4,8 +4,9 @@
 # Ready = open, non-draft, unheld, mergeable, and exact-current-head PR Gate +
 # Review Gate are both successful. Ordered oldest-createdAt first.
 #
-# READ-ONLY: this step never mutates anything (only gh ... --json reads), so it
-# runs identically in dry-run and live mode.
+# Dry-run selection is read-only. Live selection refreshes the SHA-bound Review
+# Gate from current Codex evidence so resolving a review thread cannot strand a
+# clean PR behind a stale failure status.
 
 # Real-gate job names: a CI Gate failure caused by ANY of these is never a flake
 # (a human must fix it), so the whole PR stays FAIL even under merge-through. The
@@ -188,9 +189,71 @@ train_pr_admission_snapshot() {
     "${TRAIN_ADMISSION_JSON_FOR_PR}" "${pr}"
     return
   fi
-  gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number state isDraft headRefOid labels(first:100){nodes{name} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{author{login} commit{oid}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}} pageInfo{hasNextPage}}}}}}}}}' \
+  gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number state isDraft headRefOid labels(first:100){nodes{name} pageInfo{hasNextPage}} reviews(first:100){nodes{author{login} body submittedAt updatedAt state commit{oid}} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{author{login} commit{oid}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}} pageInfo{hasNextPage}}}}}}}}}' \
     -F owner="${GITHUB_REPOSITORY%%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F number="${pr}" \
-    --jq '.data.repository.pullRequest | {number,state,isDraft,headRefOid,labels:.labels.nodes,labelsTruncated:.labels.pageInfo.hasNextPage,reviewThreads:.reviewThreads.nodes,reviewThreadsTruncated:(.reviewThreads.pageInfo.hasNextPage or any(.reviewThreads.nodes[]?; .comments.pageInfo.hasNextPage)),statusCheckRollup:(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []),checksTruncated:(.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false)}'
+    --jq '.data.repository.pullRequest | {number,state,isDraft,headRefOid,labels:.labels.nodes,labelsTruncated:.labels.pageInfo.hasNextPage,reviews:.reviews.nodes,reviewsTruncated:.reviews.pageInfo.hasNextPage,reviewThreads:.reviewThreads.nodes,reviewThreadsTruncated:(.reviewThreads.pageInfo.hasNextPage or any(.reviewThreads.nodes[]?; .comments.pageInfo.hasNextPage)),statusCheckRollup:(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []),checksTruncated:(.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false)}'
+}
+
+train_pr_reactions_snapshot() {
+  local pr="$1"
+  if [[ -n "${TRAIN_ADMISSION_REACTIONS_FOR_PR:-}" ]]; then
+    "${TRAIN_ADMISSION_REACTIONS_FOR_PR}" "${pr}"
+    return
+  fi
+  gh api --paginate -H 'Accept: application/vnd.github+json' \
+    "repos/${GITHUB_REPOSITORY}/issues/${pr}/reactions?per_page=100" --jq '.[]' | jq -s '.'
+}
+
+train_head_observed_at() {
+  local head="$1" times
+  if [[ -n "${TRAIN_ADMISSION_OBSERVED_AT_FOR_HEAD:-}" ]]; then
+    "${TRAIN_ADMISSION_OBSERVED_AT_FOR_HEAD}" "${head}"
+    return
+  fi
+  times="$(gh api --paginate -H 'Accept: application/vnd.github+json' \
+    "repos/${GITHUB_REPOSITORY}/commits/${head}/check-suites?per_page=100" \
+    --jq '.check_suites[] | select(.head_sha == "'"${head}"'" and .created_at != null) | .created_at')" || return 1
+  if [[ -z "${times}" ]]; then
+    printf 'null\n'
+  else
+    jq -Rsc '[splits("\n") | select(length > 0) | fromdateiso8601 * 1000] | min // null' <<<"${times}"
+  fi
+}
+
+train_publish_review_gate_status() {
+  local pr="$1" head="$2" state="$3" description="$4"
+  if [[ -n "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER:-}" ]]; then
+    "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER}" "${pr}" "${head}" "${state}" "${description}"
+    return
+  fi
+  gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${head}" \
+    -f state="${state}" -f context='Review Gate' -f description="${description}" \
+    -f target_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/pull/${pr}" >/dev/null
+}
+
+# Re-evaluate current exact-head Codex evidence rather than trusting a cached
+# Review Gate status. API/truncation/negative evidence fails closed. In live mode
+# publish the result so branch protection and subsequent controllers see it.
+train_refresh_review_gate() {
+  local pr="$1" head="$2" snapshot="$3" reactions observed_at unresolved payload result state description
+  reactions="$(train_pr_reactions_snapshot "${pr}")" || return 1
+  observed_at="$(train_head_observed_at "${head}")" || return 1
+  unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
+    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
+  payload="$(jq -nc --argjson reviews "$(jq -c '.reviews // []' <<<"${snapshot}")" \
+    --argjson reactions "${reactions}" --argjson unresolvedCount "${unresolved}" \
+    --arg head "${head}" --argjson observedAt "${observed_at}" \
+    '{reviews:$reviews,reactions:$reactions,unresolvedCount:$unresolvedCount,head:$head,observedAt:$observedAt}')" || return 1
+  result="$(printf '%s' "${payload}" | node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}")" || return 1
+  if jq -e '.exactReview or .freshCleanReaction' <<<"${result}" >/dev/null; then
+    state=success; description='Current exact-head Codex evidence is clean'
+  else
+    state=failure; description='No current clean exact-head Codex evidence'
+  fi
+  if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
+    train_publish_review_gate_status "${pr}" "${head}" "${state}" "${description}" || return 1
+  fi
+  [[ "${state}" == "success" ]]
 }
 
 train_snapshot_gate_success() {
@@ -214,16 +277,14 @@ train_pr_admission() {
   [[ "$(jq -r '.state' <<<"${snapshot}")" == "OPEN" ]] || { train_warn "reject #${pr}: closed"; return 1; }
   [[ "$(jq -r '.isDraft' <<<"${snapshot}")" == "false" ]] || { train_warn "reject #${pr}: draft"; return 1; }
   [[ "$(jq -r '.headRefOid' <<<"${snapshot}")" == "${expected_head}" ]] || { train_warn "reject #${pr}: head advanced"; return 1; }
-  jq -e '(.labelsTruncated or .reviewThreadsTruncated or .checksTruncated) | not' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: snapshot truncated"; return 1; }
+  jq -e '(.labelsTruncated or .reviewsTruncated or .reviewThreadsTruncated or .checksTruncated) | not' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: snapshot truncated"; return 1; }
   labels="$(jq -c '.labels // []' <<<"${snapshot}")"
   train_pr_has_hold_label "${labels}" && { train_warn "reject #${pr}: held/escalated"; return 1; }
-  jq -e --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${expected_head}" '
-    all(.reviewThreads[]?;
-      .isResolved == true or
-      ([.comments.nodes[]? | select((.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head)] | length == 0))
-  ' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: unresolved Codex review thread"; return 1; }
+  train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}" || { train_warn "reject #${pr}: current Codex evidence is unavailable or negative"; return 1; }
   train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
-  train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
+  if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
+    train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
+  fi
   TRAIN_LAST_ADMISSION_SNAPSHOT="${snapshot}"
 }
 
@@ -303,6 +364,13 @@ train_select() {
       train_log "reached MAX_BATCH=${MAX_BATCH}"; break
     fi
   done <<<"${ordered}"
+}
+
+# Exact same predicate as selection, bounded to one result for self-chaining.
+train_has_selectable_pr() {
+  local count
+  count="$(MAX_BATCH=1 train_select | jq -s 'length')" || return 1
+  [[ "${count}" -gt 0 ]]
 }
 
 # --- Phase 2 gate: overlap-dependency judgment (gated LLM) --------------------

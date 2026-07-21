@@ -110,15 +110,17 @@ export TRAIN_REPO_ROOT="${WORK}"
 
 # Exact-head admission seam shared by selection and pre-land fixtures.
 __fixture_admission() {
-  local pr="$1" head state=OPEN draft=false labels='[]' gate=SUCCESS review=SUCCESS threads='[]'
+  local pr="$1" head state=OPEN draft=false labels='[]' gate=SUCCESS review=SUCCESS threads='[]' reviews
   head="$(awk -v n="${pr}" '$1==n{print $2}' "${TRAIN_INCLUDED_FILE}" 2>/dev/null || true)"
   if [[ -z "${head}" && -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
     head="$(jq -r --argjson n "${pr}" '.[] | select(.number==$n) | .headRefOid' <<<"${TRAIN_PR_LIST_JSON}")"
   fi
+  reviews="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review\",\"submittedAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"state\":\"COMMENTED\",\"commit\":{\"oid\":\"${head}\"}}]"
   case "${ADMISSION_CASE:-ok}" in
     gate-fail) gate=FAILURE ;;
     review-fail) review=FAILURE ;;
     unresolved) threads="[{\"isResolved\":false,\"comments\":{\"nodes\":[{\"author\":{\"login\":\"chatgpt-codex-connector[bot]\"},\"commit\":{\"oid\":\"${head}\"}}]}}]" ;;
+    negative-review) reviews="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review\",\"submittedAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"state\":\"CHANGES_REQUESTED\",\"commit\":{\"oid\":\"${head}\"}}]" ;;
     held) labels='[{"name":"train:hold"}]' ;;
     escalated) labels='[{"name":"train:escalated"}]' ;;
     draft) draft=true ;;
@@ -127,11 +129,21 @@ __fixture_admission() {
   esac
   jq -nc --argjson n "${pr}" --arg head "${head}" --arg state "${state}" \
     --argjson draft "${draft}" --argjson labels "${labels}" --arg gate "${gate}" \
-    --arg review "${review}" --argjson threads "${threads}" \
-    '{number:$n,state:$state,isDraft:$draft,headRefOid:$head,labels:$labels,labelsTruncated:false,reviewThreads:$threads,reviewThreadsTruncated:false,checksTruncated:false,statusCheckRollup:[{__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:$gate},{__typename:"StatusContext",context:"Review Gate",state:$review}]}'
+    --arg review "${review}" --argjson threads "${threads}" --argjson reviews "${reviews}" \
+    '{number:$n,state:$state,isDraft:$draft,headRefOid:$head,labels:$labels,labelsTruncated:false,reviews:$reviews,reviewsTruncated:false,reviewThreads:$threads,reviewThreadsTruncated:false,checksTruncated:false,statusCheckRollup:[{__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:$gate},{__typename:"StatusContext",context:"Review Gate",state:$review}]}'
 }
 export -f __fixture_admission
 export TRAIN_ADMISSION_JSON_FOR_PR=__fixture_admission
+__fixture_reactions() { printf '[]\n'; }
+__fixture_observed_at() { printf 'null\n'; }
+__fixture_publish_review_gate() {
+  [[ -n "${FIXTURE_REVIEW_STATUS_RECORD:-}" ]] && printf '%s\t%s\t%s\t%s\n' "$@" >>"${FIXTURE_REVIEW_STATUS_RECORD}"
+  return 0
+}
+export -f __fixture_reactions __fixture_observed_at __fixture_publish_review_gate
+export TRAIN_ADMISSION_REACTIONS_FOR_PR=__fixture_reactions
+export TRAIN_ADMISSION_OBSERVED_AT_FOR_HEAD=__fixture_observed_at
+export TRAIN_REVIEW_GATE_STATUS_PUBLISHER=__fixture_publish_review_gate
 
 # Point shard config + targeted script at the REAL repo files so attribution and
 # smart-CI exercise production routing.
@@ -491,12 +503,28 @@ assert_eq "select: PR+Review admission does not synthesize CI Gate" "${selected_
 assert_not_contains "batch: direct all-green bypass removed" "$(cat "${TRAIN_DIR}/train.sh")" "direct-merge-all-green"
 assert_contains "batch: admitted PRs dispatch batch CI" "$(cat "${TRAIN_DIR}/train.sh")" 'gate="$(train_run_batch_ci "${batch}")"'
 
-for admission_case in gate-fail review-fail unresolved held escalated draft closed advanced; do
+for admission_case in gate-fail review-fail unresolved negative-review held escalated draft closed advanced; do
   export ADMISSION_CASE="${admission_case}"
   train_pr_admission 10 aaa \
     && bad "admission: ${admission_case} must fail closed" \
     || ok "admission: ${admission_case} fails closed"
 done
+status_record="${SCRATCH}/review-gate-status"; : >"${status_record}"
+export FIXTURE_REVIEW_STATUS_RECORD="${status_record}"
+export ADMISSION_CASE=review-fail TRAIN_APPLY=1
+train_pr_admission 10 aaa \
+  && ok "admission: resolved thread recovers stale failed Review Gate in live mode" \
+  || bad "admission: resolved thread did not recover stale failed Review Gate"
+assert_contains "admission: recovery refreshes exact-head Review Gate success" "$(cat "${status_record}")" $'10\taaa\tsuccess'
+export TRAIN_APPLY=0
+unset ADMISSION_CASE FIXTURE_REVIEW_STATUS_RECORD
+
+( train_select() { :; }; train_has_selectable_pr ) \
+  && bad "self-chain: all-inadmissible queue must not redispatch" \
+  || ok "self-chain: all-inadmissible queue does not redispatch"
+( train_select() { printf '{\"number\":10}\n'; }; train_has_selectable_pr ) \
+  && ok "self-chain: demonstrated selectable progress redispatches" \
+  || bad "self-chain: selectable progress did not redispatch"
 unset ADMISSION_CASE TRAIN_PR_LIST_JSON
 # CI Gate state mapping.
 assert_eq "select: COMPLETED+SUCCESS => SUCCESS" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"SUCCESS"}]')" "SUCCESS"
