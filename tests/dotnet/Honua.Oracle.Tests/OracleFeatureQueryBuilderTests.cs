@@ -108,6 +108,17 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_StacCandidateInWhere_UsesOracleParameters()
+    {
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(), new FeatureQuery { Where = "stac_id IN ('first', 'second')" }, ["stac_id"]);
+
+        Assert.Contains("\"stac_id\" IN (:p0, :p1)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("->>", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(new object?[] { "first", "second" }, result.WhereParameters);
+    }
+
+    [Fact]
     public void BuildSelectQuery_ObjectIdsFilter_GeneratesInClause()
     {
         var mapping = BuildMapping();

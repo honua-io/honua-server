@@ -69,12 +69,14 @@ internal static class LayerValidationHelpers
     /// <param name="Resource">The canonical resource backing the publication.</param>
     /// <param name="Service">The service through which the resource is published.</param>
     /// <param name="ErrorResult">IResult to return when validation failed.</param>
+    /// <param name="Snapshot">The immutable graph snapshot used for resolution and authorization.</param>
     internal readonly record struct MetadataV2ValidationResult(
         bool IsValid,
         MetadataV2Publication? Publication,
         MetadataV2Resource? Resource,
         MetadataV2Service? Service,
-        IResult? ErrorResult);
+        IResult? ErrorResult,
+        MetadataV2GraphSnapshot? Snapshot = null);
 
     /// <summary>
     /// Creates OData-formatted error response with correct status code mapping.
@@ -189,7 +191,7 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
-        return new MetadataV2ValidationResult(true, publication, resource, service, null);
+        return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
     /// <summary>
@@ -228,7 +230,7 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
-        return new MetadataV2ValidationResult(true, publication, resource, service, null);
+        return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
     /// <summary>
@@ -358,7 +360,7 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
-        return new MetadataV2ValidationResult(true, publication, resource, service, null);
+        return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
     /// <summary>

@@ -34,6 +34,18 @@ public class ArcGisRestQueryParametersTests
     }
 
     [Fact]
+    public void BuildFeatureQueryUrl_StacCandidateInWhere_ForwardsPredicate()
+    {
+        const string where = "stac_id IN ('first', 'second')";
+
+        var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(
+            ServiceUrl, 0, new FeatureQuery { Where = where }, token: null);
+
+        Assert.Contains("where=" + Uri.EscapeDataString(where), url, StringComparison.Ordinal);
+        Assert.DoesNotContain("SqlFilter", url, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildFeatureQueryUrl_EmptyWhereDefaultsToOneEqualsOne()
     {
         var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(ServiceUrl, 1, new FeatureQuery(), token: null);

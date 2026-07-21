@@ -37,4 +37,19 @@ public sealed class FeatureQueryBuilderWhereClauseTests
         parameters[0].Should().Be("1000");
         paramIndex.Should().Be(2);
     }
+
+    [Fact]
+    public void ParseAndParameterizeWhereClause_StacCandidateInWhere_UsesPostgresParameters()
+    {
+        var parameters = new List<object>();
+        var paramIndex = 1;
+
+        var sql = FeatureQueryBuilder.ParseAndParameterizeWhereClause(
+            "stac_id IN ('first', 'second')", ref paramIndex, parameters);
+
+        sql.Should().Contain("attributes->>'stac_id'");
+        sql.Should().Contain("IN ($1, $2)");
+        parameters.Should().Equal("first", "second");
+        paramIndex.Should().Be(3);
+    }
 }

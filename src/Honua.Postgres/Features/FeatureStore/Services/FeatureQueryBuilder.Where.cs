@@ -26,6 +26,11 @@ internal sealed partial class FeatureQueryBuilder
     private static partial Regex NullCheckRegex();
 
     [GeneratedRegex(
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*(?:->>'[^']+')?)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InRegex();
+
+    [GeneratedRegex(
         @"^(?:1\s*=\s*1|TRUE)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TrueLiteralRegex();
@@ -132,6 +137,35 @@ internal sealed partial class FeatureQueryBuilder
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
                 parameterizedExpressions.Add($"{fieldSql} IS {notClause}NULL");
+                continue;
+            }
+
+            var inMatch = InRegex().Match(trimmedExpression);
+            if (inMatch.Success)
+            {
+                var valueTokens = SplitValueTokens(inMatch.Groups["values"].Value);
+                var fieldSql = MapWhereField(
+                    inMatch.Groups["field"].Value,
+                    ref paramIndex,
+                    parameters,
+                    out var isAttributeField);
+                var allNumeric = valueTokens.All(token =>
+                    !IsQuotedStringLiteral(token) &&
+                    decimal.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+                if (isAttributeField && allNumeric)
+                {
+                    fieldSql = $"NULLIF({fieldSql}, '')::numeric";
+                }
+
+                var placeholders = new List<string>(valueTokens.Count);
+                foreach (var valueToken in valueTokens)
+                {
+                    placeholders.Add($"${paramIndex}");
+                    parameters.Add(ParseValueToken(valueToken, forceText: false));
+                    paramIndex++;
+                }
+
+                parameterizedExpressions.Add($"{fieldSql} IN ({string.Join(", ", placeholders)})");
                 continue;
             }
 
@@ -320,6 +354,40 @@ internal sealed partial class FeatureQueryBuilder
         }
 
         return parts;
+    }
+
+    private static List<string> SplitValueTokens(string values)
+    {
+        var tokens = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        for (var index = 0; index < values.Length; index++)
+        {
+            var value = values[index];
+            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
+            {
+                current.Append("''");
+                index++;
+            }
+            else if (value == '\'')
+            {
+                inQuotes = !inQuotes;
+                current.Append(value);
+            }
+            else if (value == ',' && !inQuotes)
+            {
+                tokens.Add(current.ToString().Trim());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(value);
+            }
+        }
+
+        tokens.Add(current.ToString().Trim());
+        return tokens;
     }
 
     private static bool IsAndTokenAt(string whereClause, int index)

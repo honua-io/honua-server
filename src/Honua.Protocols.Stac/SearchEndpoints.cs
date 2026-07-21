@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -20,7 +21,6 @@ using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Stac;
 
@@ -30,6 +30,7 @@ namespace Honua.Protocols.Stac;
 internal static class SearchEndpoints
 {
     private const int Wgs84Srid = 4326;
+    private const int MaxItemIdCount = 512;
     private delegate bool TryParseDelegate<TValue>(string input, out TValue value);
 
     /// <summary>
@@ -366,6 +367,11 @@ internal static class SearchEndpoints
         try
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
+            var globallyOrderedCandidates = requestedItemIds is { Length: > 0 } &&
+                request.Sortby is { IsDefault: false, Length: > 0 }
+                    ? new List<GlobalSearchCandidate>()
+                    : null;
+            ImmutableArray<OrderByClause>? globalOrderBy = null;
             long totalMatched = 0;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
@@ -376,6 +382,7 @@ internal static class SearchEndpoints
                     break;
                 }
 
+                var isStorageBound = !string.IsNullOrEmpty(target.Publication.StorageBindingId);
                 var layerQueryResult = await TryBuildLayerQuery(
                     request,
                     target.Resource,
@@ -384,6 +391,7 @@ internal static class SearchEndpoints
                     filterProcessor,
                     defaultFilterLangIsText,
                     target.LayerIndex.ToString(CultureInfo.InvariantCulture),
+                    isStorageBound,
                     cancellationToken);
                 if (!layerQueryResult.IsSuccess)
                 {
@@ -394,13 +402,119 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
+                if (globallyOrderedCandidates is not null && query.OrderBy.HasValue)
+                {
+                    globalOrderBy ??= query.OrderBy.Value;
+                }
+                var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                    context,
+                    featureReader,
+                    target.Snapshot,
+                    target.Service,
+                    target.Resource,
+                    target.Publication,
+                    layerId,
+                    cancellationToken).ConfigureAwait(false);
+                var targetReader = readerResolution.Reader;
+                var storageLayerId = readerResolution.StorageLayerId;
+
+                if (isStorageBound && requestedItemIds is { Length: > 0 } boundItemIds)
+                {
+                    var matchedFeatures = await StacBoundItemQueryExecutor.QueryAsync(
+                        targetReader,
+                        storageLayerId,
+                        target.Resource,
+                        query,
+                        boundItemIds,
+                        layerQueryResult.CandidateFilter,
+                        cancellationToken).ConfigureAwait(false);
+
+                    if (globallyOrderedCandidates is not null)
+                    {
+                        if (ExceedsGlobalCandidateBudget(globallyOrderedCandidates.Count, matchedFeatures.Length))
+                        {
+                            StacTelemetry.SetFailed(activity, "aggregate_id_candidate_limit");
+                            return StandardErrorHelpers.CreateBadRequest(
+                                context,
+                                $"ids with sortby supports at most {MaxItemIdCount} matches across selected collections.");
+                        }
+
+                        globallyOrderedCandidates.AddRange(matchedFeatures.Select(feature =>
+                            new GlobalSearchCandidate(feature, target, projection)));
+                        totalMatched += matchedFeatures.Length;
+                        continue;
+                    }
+
+                    totalMatched += matchedFeatures.Length;
+
+                    if (remainingSkip >= matchedFeatures.Length)
+                    {
+                        remainingSkip -= matchedFeatures.Length;
+                        continue;
+                    }
+
+                    var remaining = effectiveLimit - allItems.Count;
+                    if (remaining > 0)
+                    {
+                        allItems.AddRange(matchedFeatures
+                            .Skip(remainingSkip)
+                            .Take(remaining)
+                            .Select(f => ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(
+                                    f,
+                                    target.Resource,
+                                    target.Publication,
+                                    layerId,
+                                    baseUrl,
+                                    projection?.SelectedProperties,
+                                    geometrySrid: Wgs84Srid),
+                                projection)));
+                    }
+
+                    remainingSkip = 0;
+                    continue;
+                }
+
+                if (globallyOrderedCandidates is not null && requestedItemIds is { Length: > 0 } unboundItemIds)
+                {
+                    var candidateLimit = checked(unboundItemIds.Length + 1);
+                    var result = await targetReader.QueryAsync(
+                        storageLayerId,
+                        query with
+                        {
+                            Offset = null,
+                            Limit = candidateLimit,
+                            OrderBy = null,
+                            OutFields = null
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                    if (result.TotalCount > unboundItemIds.Length || result.Features.Length > unboundItemIds.Length)
+                    {
+                        throw new InvalidOperationException(
+                            $"STAC item id candidate query exceeded the {unboundItemIds.Length}-feature safety limit.");
+                    }
+
+                    var incomingCount = checked((int)Math.Max(result.TotalCount, result.Features.Length));
+                    if (ExceedsGlobalCandidateBudget(globallyOrderedCandidates.Count, incomingCount))
+                    {
+                        StacTelemetry.SetFailed(activity, "aggregate_id_candidate_limit");
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            $"ids with sortby supports at most {MaxItemIdCount} matches across selected collections.");
+                    }
+
+                    totalMatched += incomingCount;
+                    globallyOrderedCandidates.AddRange(result.Features.Select(feature =>
+                        new GlobalSearchCandidate(feature, target, projection)));
+                    continue;
+                }
 
                 // A feature-reader/query failure must surface as a 500: it propagates to the outer
                 // catch, which records the exception on the search.work activity and rethrows so the
                 // shared error pipeline maps it to InternalServerError.
                 if (remainingSkip > 0)
                 {
-                    var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
+                    var layerCount = await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                     totalMatched += layerCount;
 
                     if (remainingSkip >= layerCount)
@@ -413,7 +527,7 @@ internal static class SearchEndpoints
                     query = query with { Offset = remainingSkip, Limit = remaining };
                     remainingSkip = 0;
 
-                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     allItems.AddRange(result.Features
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -431,7 +545,7 @@ internal static class SearchEndpoints
                     var remaining = effectiveLimit - allItems.Count;
                     query = query with { Limit = remaining };
 
-                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     totalMatched += result.TotalCount;
 
                     allItems.AddRange(result.Features
@@ -448,8 +562,51 @@ internal static class SearchEndpoints
                 }
                 else
                 {
-                    totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
+                    totalMatched += await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                 }
+            }
+
+            if (globallyOrderedCandidates is not null)
+            {
+                if (globallyOrderedCandidates.Count == 0)
+                {
+                    globalOrderBy = null;
+                }
+                else if (globalOrderBy is not { IsDefaultOrEmpty: false })
+                {
+                    throw new InvalidOperationException("A globally ordered STAC id search requires a valid sort order.");
+                }
+
+                if (globalOrderBy is { IsDefaultOrEmpty: false } orderBy)
+                {
+                    globallyOrderedCandidates.Sort((left, right) =>
+                    {
+                        var comparison = FeatureOrdering.Compare(
+                            left.Feature,
+                            left.Target.Resource,
+                            right.Feature,
+                            right.Target.Resource,
+                            orderBy);
+                        return comparison != 0
+                            ? comparison
+                            : left.Target.LayerIndex.CompareTo(right.Target.LayerIndex);
+                    });
+                }
+
+                allItems.AddRange(globallyOrderedCandidates
+                    .Skip(offset)
+                    .Take(effectiveLimit)
+                    .Select(candidate => ApplyFieldProjection(
+                        StacMappingService.MapFeatureToItem(
+                            candidate.Feature,
+                            candidate.Target.Resource,
+                            candidate.Target.Publication,
+                            candidate.Target.LayerIndex,
+                            baseUrl,
+                            candidate.Projection?.SelectedProperties,
+                            geometrySrid: Wgs84Srid),
+                        candidate.Projection)));
+                remainingSkip = 0;
             }
 
             var stacBase = $"{baseUrl}/stac";
@@ -509,7 +666,15 @@ internal static class SearchEndpoints
         }
     }
 
-    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, string? Error)> TryBuildLayerQuery(
+    private readonly record struct GlobalSearchCandidate(
+        Feature Feature,
+        StacV2Lookups.ResolvedStacPublication Target,
+        StacFieldProjection? Projection);
+
+    private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
+        => incomingCount > MaxItemIdCount - currentCount;
+
+    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
         MetadataV2Resource resource,
         ImmutableArray<string>? requestedItemIds,
@@ -517,6 +682,7 @@ internal static class SearchEndpoints
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         string collectionId,
+        bool isStorageBound,
         CancellationToken cancellationToken)
     {
         var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
@@ -538,13 +704,13 @@ internal static class SearchEndpoints
                     out var north,
                     out error))
             {
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             query = query with
@@ -563,7 +729,7 @@ internal static class SearchEndpoints
                     out var intersectsError))
             {
                 error = intersectsError;
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             if (intersectsSpatialFilter.HasValue)
@@ -595,17 +761,37 @@ internal static class SearchEndpoints
         if (!filterQueryResult.IsSuccess)
         {
             error = filterQueryResult.Error;
-            return (false, query, projection, error);
+            return (false, query, projection, null, error);
         }
 
-        if (filterQueryResult.SqlFilter is not null)
+        FilterExpression? candidateFilter = null;
+        if (isStorageBound && requestedItemIds is { Length: > 0 } && filterQueryResult.Expression is not null)
+        {
+            if (InMemoryFilterEvaluator.ExceedsMaxDepth(filterQueryResult.Expression) ||
+                !InMemoryFilterEvaluator.TryValidateStreamingExpression(filterQueryResult.Expression, out _))
+            {
+                error = "filter expression is not supported when combined with ids for a storage-bound collection.";
+                return (false, query, projection, null, error);
+            }
+
+            candidateFilter = filterQueryResult.Expression;
+        }
+        else if (filterQueryResult.SqlFilter is not null)
         {
             query = query with { SqlFilter = filterQueryResult.SqlFilter };
         }
 
         if (requestedItemIds is { Length: > 0 } itemIds)
         {
-            query = query with { SqlFilter = SqlFragmentHelpers.CombineSqlFilters(query.SqlFilter, BuildItemIdsSqlFilter(itemIds)) };
+            if (!isStorageBound)
+            {
+                query = query with
+                {
+                    SqlFilter = SqlFragmentHelpers.CombineSqlFilters(
+                        query.SqlFilter,
+                        BuildItemIdsSqlFilter(itemIds, includeObjectIdFallback: true))
+                };
+            }
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
@@ -613,7 +799,7 @@ internal static class SearchEndpoints
             if (!TryBuildSortOrder(resource, sortby, out var orderBy, out var sortError))
             {
                 error = sortError;
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             query = query with { OrderBy = orderBy };
@@ -624,16 +810,16 @@ internal static class SearchEndpoints
             if (!TryBuildFieldSelection(resource, request.Fields, out var outFields, out projection, out var fieldError))
             {
                 error = fieldError;
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             query = query with { OutFields = outFields };
         }
 
-        return (true, query, projection, null);
+        return (true, query, projection, candidateFilter, null);
     }
 
-    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, string? Error)> TryResolveFilterQuery(
+    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, FilterExpression? Expression, string? Error)> TryResolveFilterQuery(
         StacSearchRequest request,
         MetadataV2Resource resource,
         Cql2FilterProcessor filterProcessor,
@@ -651,8 +837,8 @@ internal static class SearchEndpoints
             collectionId).ConfigureAwait(false);
 
         return result.IsSuccess
-            ? (true, result.SqlFilter, null)
-            : (false, null, result.ErrorMessage);
+            ? (true, result.SqlFilter, result.Expression, null)
+            : (false, null, null, result.ErrorMessage);
     }
 
     private static bool TryBuildSortOrder(
@@ -1375,6 +1561,7 @@ internal static class SearchEndpoints
         out string? error)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
+        var distinct = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in values)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -1384,7 +1571,20 @@ internal static class SearchEndpoints
                 return false;
             }
 
-            builder.Add(value.Trim());
+            var normalized = value.Trim();
+            if (!distinct.Add(normalized))
+            {
+                continue;
+            }
+
+            if (builder.Count == MaxItemIdCount)
+            {
+                error = $"ids supports at most {MaxItemIdCount} distinct values.";
+                normalizedValues = default;
+                return false;
+            }
+
+            builder.Add(normalized);
         }
 
         normalizedValues = builder.ToImmutable();
@@ -1392,7 +1592,9 @@ internal static class SearchEndpoints
         return true;
     }
 
-    private static SqlFragment BuildItemIdsSqlFilter(ImmutableArray<string> itemIds)
+    private static SqlFragment BuildItemIdsSqlFilter(
+        ImmutableArray<string> itemIds,
+        bool includeObjectIdFallback)
     {
         var distinctIds = itemIds
             .Where(static itemId => !string.IsNullOrWhiteSpace(itemId))
@@ -1421,7 +1623,7 @@ internal static class SearchEndpoints
         };
         var parameters = new List<object?> { distinctIds };
 
-        if (numericObjectIds.Length > 0)
+        if (includeObjectIdFallback && numericObjectIds.Length > 0)
         {
             clauses.Add("objectid = ANY(@p1)");
             parameters.Add(numericObjectIds);
