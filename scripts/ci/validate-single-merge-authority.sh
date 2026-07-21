@@ -11,6 +11,14 @@ is_allowlisted() {
   esac
 }
 
+is_safe_exclusion() {
+  case "$1" in
+    node_modules/*|vendor/*|third_party/*|artifacts/*|dist/*|coverage/*|*/bin/*|*/obj/*|*.min.js|*.generated.*)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 normalized_source() {
   # Remove comment-only/inline-comment text, collapse shell continuations, then
   # delimit real lines. This catches evasive wrapping without joining unrelated
@@ -34,17 +42,23 @@ scan_authorities() {
       echo "merge-train.yml does not invoke the canonical controller" >&2; return 1;
     }
 
-  local forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
-  local file rel source found=0
+  local forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|mergePullRequest|updatePullRequestBranch|gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|git[[:space:]]+push[^#;|&]*[[:alnum:]_./-]+:(refs/heads/)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
+  local file rel source found=0 candidates
+  if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
+    candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
+  else
+    candidates="$(cd "${root}" && find . -type f | sed 's#^\./##' | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
+  fi
   while IFS= read -r file; do
+    file="${root}/${file}"
     rel="${file#${root}/}"
+    is_safe_exclusion "${rel}" && continue
     is_allowlisted "${rel}" && continue
     source="$(normalized_source "${file}")"
     if grep -Eiq "${forbidden}" <<<"${source}"; then
       echo "forbidden merge-capable primitive in ${rel}" >&2; found=1
     fi
-  done < <(find "${root}/.github" "${root}/scripts/ci" -type f \
-    \( -name '*.yml' -o -name '*.yaml' -o -name '*.sh' -o -name '*.js' -o -name '*.mjs' \) -print)
+  done <<<"${candidates}"
   [[ "${found}" == 0 ]] || {
     echo "merge authority exists outside the explicit batch-train allowlist" >&2; return 1;
   }
@@ -70,6 +84,8 @@ YAML
     'github.pulls.merge({owner, repo, pull_number: 1})'
     'github.rest.pulls.updateBranch({owner, repo, pull_number: 1})'
     'pulls.updateBranch({pull_number: 1})'
+    'mergePullRequest(input: {pullRequestId: $id})'
+    'updatePullRequestBranch(input: {pullRequestId: $id})'
     'gh pr merge 1 --merge'
     'gh api --method PUT repos/o/r/pulls/1/merge'
     $'gh api \\\n      --method PUT \\\n      repos/o/r/pulls/${pr}/merge'
@@ -78,6 +94,8 @@ YAML
     'git push origin batch:refs/heads/trunk'
     $'target=trunk\n      git push origin HEAD:${target}'
     $'target=refs/heads/trunk\n      git push origin HEAD:${target}'
+    'git push origin batch:${target}'
+    'git push origin HEAD:refs/heads/${target}'
   )
   for fixture in "${fixtures[@]}"; do
     n=$((n + 1))
