@@ -57,7 +57,17 @@ canonical_cli_source() {
     }
     {
       gsub(/[|&()]/, " ")
-      for (i = 1; i <= NF; i++) token[i] = dequote($i)
+      has_ansi = 0; ansi_command = 0
+      for (i = 1; i <= NF; i++) {
+        raw[i] = $i
+        if (raw[i] ~ /^[A-Za-z0-9_.\/\\-]*\$\047/ && raw[i] !~ /=/) {
+          has_ansi = 1
+          if ((i == 1 && raw[i] !~ /=/) ||
+              (i > 1 && raw[i - 1] ~ /=/ && raw[i] !~ /=/)) ansi_command = 1
+        }
+        token[i] = dequote($i)
+      }
+      recognized_cli = 0
       for (i = 1; i <= NF; i++) {
         cmd = tolower(token[i])
         pathcmd = cmd
@@ -71,6 +81,7 @@ canonical_cli_source() {
         if (pathcmd == "git" || pathcmd == "gh") cmd = pathcmd
         else if (escapedcmd == "git" || escapedcmd == "gh") cmd = escapedcmd
         else continue
+        recognized_cli = 1
         j = i + 1
         while (j <= NF && token[j] ~ /^-/) {
           opt = token[j]
@@ -91,7 +102,8 @@ canonical_cli_source() {
           print ""
         }
       }
-      delete token
+      if (ansi_command || (has_ansi && recognized_cli)) print "forbidden ansi-c command token"
+      delete token; delete raw
     }
   '
 }
@@ -102,6 +114,7 @@ source_has_forbidden_authority() {
   local cli_forbidden='gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|git[[:space:]]+push[^#;|&]*[[:alnum:]_./-]+:(refs/heads/)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
   grep -Eiq "${api_forbidden}" <<<"${source}" && return 0
   canonical="$(canonical_cli_source <<<"${source}")"
+  grep -Fq 'forbidden ansi-c command token' <<<"${canonical}" && return 0
   grep -Eiq "${cli_forbidden}" <<<"${canonical}"
 }
 
@@ -170,7 +183,7 @@ normalized_function_source() {
 # observation-only with respect to trunk. This closes helper-indirection gaps
 # while keeping the one intentional pre-CAS/CAS push authority in land.sh.
 scan_post_cas_call_graph() {
-  local file="$1" root="train_finalize_landed_members" current body candidate
+  local file="$1" root="train_finalize_landed_members" current body candidate heredoc_surface
   local -a functions queue
   mapfile -t functions < <(normalized_function_source "${file}" | awk '
     function declaration(s, is_function, name, rest) {
@@ -193,6 +206,11 @@ scan_post_cas_call_graph() {
     seen["${current}"]=1
     body="$(function_source "${file}" "${current}")"
     [[ -n "${body}" ]] || { echo "missing post-CAS function ${current}" >&2; return 1; }
+    heredoc_surface="${body//<<</ }"
+    if grep -Eq '<<-?([[:space:]]|["'"'"'A-Za-z_])' <<<"${heredoc_surface}"; then
+      echo "post-CAS heredoc reachable through ${current}; refusing ambiguous call-graph proof" >&2
+      return 1
+    fi
     if source_has_forbidden_authority "${body}"; then
       echo "post-CAS merge-capable primitive reachable through ${current}" >&2
       return 1
@@ -278,6 +296,9 @@ YAML
     $'g'"'"'h'"'"' p'"'"'r'"'"' m'"'"'e'"'"'r'"'"'g'"'"'e 1 --merge'
     $'/usr/bin/g'"'"'i'"'"'t push origin HEAD:trunk'
     $'g$'"'"'h'"'"' p$'"'"'r'"'"' m$'"'"'erge'"'"' 1 --merge'
+    $'$'"'"'\\x67\\x68'"'"' $'"'"'\\x70\\x72'"'"' $'"'"'\\x6d\\x65\\x72\\x67\\x65'"'"' 1 --merge'
+    $'$'"'"'\\147\\150'"'"' $'"'"'\\160\\162'"'"' $'"'"'\\155\\145\\162\\147\\145'"'"' 1 --merge'
+    $'$'"'"'\\x67\\x68\\n'"'"' pr merge 1 --merge'
     'g\h p\r m\e\r\g\e 1 --merge'
     $'printf "literal # still data"; gh pr merge 1 --merge'
     'git push origin batch:refs/heads/trunk'
@@ -308,7 +329,23 @@ train_land() { git push origin batch:trunk; }
 SH
   scan_authorities "${scratch}" >/dev/null 2>&1 \
     && { echo "post-CAS helper indirection escaped" >&2; return 1; }
-  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 transitive"
+  local heredoc_fixture
+  for heredoc_fixture in \
+    $'cat <<EOF\n}\nEOF' \
+    $'cat <<'"'"'EOF'"'"'\n}\nEOF' \
+    $'cat <<-EOF\n\t}\n\tEOF'; do
+    cat >"${scratch}/scripts/ci/merge-train/land.sh" <<SH
+train_finalize_landed_members() {
+  ${heredoc_fixture}
+  hidden_writer
+}
+hidden_writer() { gh pr merge 1 --merge; }
+train_land() { git push origin batch:trunk; }
+SH
+    scan_authorities "${scratch}" >/dev/null 2>&1 \
+      && { echo "post-CAS heredoc fixture escaped" >&2; return 1; }
+  done
+  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 transitive, 3 heredoc"
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then self_test; exit; fi

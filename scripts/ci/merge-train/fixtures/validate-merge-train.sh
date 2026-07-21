@@ -738,6 +738,15 @@ inactive_state="$(train_state_render '' cafef00d '' select '' 0 0 null)"
 export TRAIN_STATE_BODY_OVERRIDE="${inactive_state}"
 set +e; train_restore_post_land; inactive_state_rc=$?; set -e
 assert_eq "state: validated inactive document permits selection" "${inactive_state_rc}" "1"
+state_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+land_state="$(train_state_render 'train/batch/duplicate/1' "${state_sha}" '1' land '' 0 0 null \
+  '[{"number":1,"head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]' "${state_sha}")"
+export TRAIN_STATE_BODY_OVERRIDE="${land_state}"$'\n'"${inactive_state}"
+set +e; train_restore_post_land; duplicate_fence_rc=$?; set -e
+assert_eq "state: duplicate valid land/select fences fail startup closed" "${duplicate_fence_rc}" "5"
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"${sj}"$'\n'"${sj}"$'\n```'
+set +e; train_restore_post_land; multi_value_rc=$?; set -e
+assert_eq "state: multiple JSON values in one fence fail startup closed" "${multi_value_rc}" "5"
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 
 echo
