@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Step 6: attribute — for a REAL (non-flake) failure, map the failing shard back
 # to the batched PR(s) responsible, using the REVERSE of the smart-CI routing:
 #
@@ -68,14 +70,14 @@ train_attribute() {
   local s
   while IFS= read -r s; do
     [[ -z "${s}" ]] && continue
-    shard_paths+="$(train_shard_paths "${s}")"$'\n'
+    shard_paths+="$(train_shard_paths "${s}")"${HONUA_NL}
   done <<<"${shards}"
 
   # Build the "<pr>\t<file>" table across all INCLUDED PRs.
   local pr_files="" pr head
-  while IFS=$'\t' read -r pr head; do
+  while IFS=${HONUA_TAB} read -r pr head; do
     [[ -z "${pr}" ]] && continue
-    pr_files+="$(train_pr_changed_files "${pr}" "${head}")"$'\n'
+    pr_files+="$(train_pr_changed_files "${pr}" "${head}")"${HONUA_NL}
   done <"${included_file}"
 
   local culprits

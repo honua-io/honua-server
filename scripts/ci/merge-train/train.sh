@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Orchestrator for the honua-server optimistic batch merge train (Phase 1).
 #
 # Wires the eight sourceable steps together. DRY-RUN BY DEFAULT (TRAIN_APPLY=0):
@@ -433,7 +435,7 @@ main() {
     local nonblocking_only=0
     train_nonblocking_failures_are_safe "${run_id}" "${shard_descriptor}" && nonblocking_only=1
     failing="$(train_subtract_lines "${TRAIN_NONBLOCKING_JOBS}" "${failing}")"
-    if [[ -z "${failing//[$'\n'$'\t' ]/}" ]]; then
+    if [[ -z "${failing//[${HONUA_NL}${HONUA_TAB} ]/}" ]]; then
       if [[ "${nonblocking_only}" == "1" ]]; then
         train_metric_set nonblocking_passes 1
         train_notice "only non-blocking aux/aggregator jobs failed and every selected shard explicitly succeeded; landing on shard results"
@@ -716,7 +718,7 @@ _dashboard() {
     train_summary "|---|---|---|---|"
     local rows; rows="$(jq -r '.[] | "\(.number)\t\(.author // "?")\t\(.gate)"' <<<"${selected}")"
     local num author gate decision
-    while IFS=$'\t' read -r num author gate; do
+    while IFS=${HONUA_TAB} read -r num author gate; do
       [[ -z "${num}" ]] && continue
       decision="$(_pr_decision "${num}")"
       train_summary "| #${num} | ${author} | ${gate} | ${decision} |"
@@ -787,7 +789,7 @@ _dashboard() {
     train_summary "| Phase | Seconds |"
     train_summary "|---|---|"
     awk -F= 'NF>=2 {t[$1]=$2} END {for (k in t) print k"\t"t[k]}' "${TRAIN_TIMINGS_FILE}" \
-      | while IFS=$'\t' read -r ph secs; do train_summary "| ${ph} | ${secs} |"; done
+      | while IFS=${HONUA_TAB} read -r ph secs; do train_summary "| ${ph} | ${secs} |"; done
     train_summary ""
   fi
 

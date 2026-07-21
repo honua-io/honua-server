@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Step 1: select â€” pick the ready PRs for the next batch.
 #
 # Ready = open, non-draft, unheld, mergeable, and exact-current-head PR Gate +
@@ -99,8 +100,8 @@ train_select_failure_is_flake_only() {
   # cancelled/timed-out/startup-failure shard, or a flake-log `failure` shard.
   while IFS= read -r line; do
     [[ -z "${line}" ]] && continue
-    concl="${line%%$'\t'*}"
-    job="${line#*$'\t'}"
+    concl="${line%%${HONUA_TAB}*}"
+    job="${line#*${HONUA_TAB}}"
     if printf '%s' "${job}" | grep -Eq "${TRAIN_AGGREGATOR_JOB_REGEX}"; then
       continue   # aggregator-only failure => underlying shard cancelled/flaked
     fi

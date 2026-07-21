@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Fast structural and synthetic-decision proof for the opt-in hosted benchmark.
 
 set -euo pipefail
@@ -29,7 +30,7 @@ jq -e '
   (([.profiles[].shards[]] - [.shards[].name]) | length == 0)
 ' "${CONFIG}" >/dev/null
 
-while IFS=$'\t' read -r project suffix; do
+while IFS=${HONUA_TAB} read -r project suffix; do
   jq -e --arg project "${project}" --arg suffix "${suffix}" \
     '.projects[] | select(.csproj == $project and .artifact_suffix == $suffix)' "${REGISTRY}" >/dev/null
 done < <(jq -r '.shards[] | [.project, .artifact_suffix] | @tsv' "${CONFIG}")

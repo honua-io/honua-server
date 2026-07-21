@@ -108,8 +108,27 @@ canonical_cli_source() {
   '
 }
 
+source_has_ansi_construct() {
+  awk '
+    BEGIN { RS=";" }
+    {
+      sq=0; dq=0; esc=0
+      for (i=1; i<=length($0); i++) {
+        c=substr($0,i,1); nextc=substr($0,i+1,1)
+        if (esc) { esc=0; continue }
+        if (c=="\\" && !sq) { esc=1; continue }
+        if (c=="$" && nextc=="\047" && !sq && !dq) { found=1; exit }
+        if (c=="\047" && !dq) { sq=!sq; continue }
+        if (c=="\042" && !sq) { dq=!dq; continue }
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' <<<"$1"
+}
+
 source_has_forbidden_authority() {
-  local source="$1" canonical
+  local source="$1" reject_ansi="${2:-0}" canonical
+  [[ "${reject_ansi}" == "1" ]] && source_has_ansi_construct "${source}" && return 0
   local api_forbidden='github(\.rest)?\.pulls\.(merge|updateBranch)|pulls\.(merge|updateBranch)|mergePullRequest|updatePullRequestBranch'
   local cli_forbidden='gh[[:space:]]+pr[[:space:]]+merge|gh[[:space:]]+api[^#;|&]*/pulls/[^/[:space:]]+/(merge|update-branch)|git[[:space:]]+push[^#;|&]*(HEAD:)?(refs/heads/)?trunk|git[[:space:]]+push[[:space:]]+[^[:space:];]+[[:space:]]+"?(HEAD:)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|git[[:space:]]+push[^#;|&]*[[:alnum:]_./-]+:(refs/heads/)?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?'
   grep -Eiq "${api_forbidden}" <<<"${source}" && return 0
@@ -207,11 +226,11 @@ scan_post_cas_call_graph() {
     body="$(function_source "${file}" "${current}")"
     [[ -n "${body}" ]] || { echo "missing post-CAS function ${current}" >&2; return 1; }
     heredoc_surface="${body//<<</ }"
-    if grep -Eq '<<-?([[:space:]]|["'"'"'A-Za-z_])' <<<"${heredoc_surface}"; then
+    if grep -Fq '<<' <<<"${heredoc_surface}"; then
       echo "post-CAS heredoc reachable through ${current}; refusing ambiguous call-graph proof" >&2
       return 1
     fi
-    if source_has_forbidden_authority "${body}"; then
+    if source_has_forbidden_authority "${body}" 1; then
       echo "post-CAS merge-capable primitive reachable through ${current}" >&2
       return 1
     fi
@@ -236,7 +255,7 @@ scan_authorities() {
 
   scan_post_cas_call_graph "${root}/scripts/ci/merge-train/land.sh" || return 1
 
-  local file rel source found=0 candidates
+  local file rel source found=0 candidates reject_ansi
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
   else
@@ -248,7 +267,9 @@ scan_authorities() {
     is_safe_exclusion "${rel}" && continue
     is_allowlisted "${rel}" && continue
     source="$(normalized_source "${file}")"
-    if source_has_forbidden_authority "${source}"; then
+    reject_ansi=0
+    case "${rel}" in *.sh|*.bash|*.zsh|*.yml|*.yaml) reject_ansi=1 ;; esac
+    if source_has_forbidden_authority "${source}" "${reject_ansi}"; then
       echo "forbidden merge-capable primitive in ${rel}" >&2; found=1
     fi
   done <<<"${candidates}"
@@ -299,6 +320,8 @@ YAML
     $'$'"'"'\\x67\\x68'"'"' $'"'"'\\x70\\x72'"'"' $'"'"'\\x6d\\x65\\x72\\x67\\x65'"'"' 1 --merge'
     $'$'"'"'\\147\\150'"'"' $'"'"'\\160\\162'"'"' $'"'"'\\155\\145\\162\\147\\145'"'"' 1 --merge'
     $'$'"'"'\\x67\\x68\\n'"'"' pr merge 1 --merge'
+    $'command $'"'"'\\x67\\x68'"'"' pr merge 1 --merge'
+    $'wrapped=$'"'"'\\x67\\x68'"'"'\ncommand "$wrapped" pr merge 1 --merge'
     'g\h p\r m\e\r\g\e 1 --merge'
     $'printf "literal # still data"; gh pr merge 1 --merge'
     'git push origin batch:refs/heads/trunk'
@@ -345,7 +368,19 @@ SH
     scan_authorities "${scratch}" >/dev/null 2>&1 \
       && { echo "post-CAS heredoc fixture escaped" >&2; return 1; }
   done
-  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 transitive, 3 heredoc"
+  for heredoc_fixture in \
+    $'cat <<\\EOF\n}\nEOF' \
+    $'cat <<$'"'"'EOF'"'"'\n}\nEOF'; do
+    cat >"${scratch}/scripts/ci/merge-train/land.sh" <<SH
+train_finalize_landed_members() {
+  ${heredoc_fixture}
+}
+train_land() { git push origin batch:trunk; }
+SH
+    scan_authorities "${scratch}" >/dev/null 2>&1 \
+      && { echo "post-CAS escaped heredoc fixture escaped" >&2; return 1; }
+  done
+  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 transitive, 5 heredoc"
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then self_test; exit; fi
