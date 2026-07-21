@@ -158,6 +158,17 @@ train_run_batch_ci() {
   train_smart_ci_run "${batch}"
 }
 
+# train_reset_rerun_state_for_fresh_run: every newly dispatched Actions run has
+# its own timeout retry budget and two-phase request identity. Resume paths do
+# not call this helper, so a restart of the same run preserves both.
+train_reset_rerun_state_for_fresh_run() {
+  timeout_reruns=0
+  TRAIN_RERUN_KIND=""
+  TRAIN_RERUN_BASE_ATTEMPT=""
+  export TRAIN_RERUN_KIND TRAIN_RERUN_BASE_ATTEMPT
+  train_metric_set timeout_reruns 0
+}
+
 # train_attribute_probe_gate <comma-separated-prs> <trunk-sha7> <anchor-batch>:
 # Build just those PRs into a disposable batch branch and run batch CI. Prints the
 # resulting gate (FAILURE / SUCCESS / etc.) and preserves the caller's working
@@ -404,6 +415,7 @@ main() {
     shard_descriptor="$(train_smart_ci_shards "${batch}")"
     train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
     train_decision "smart-CI shard subset: ${shard_descriptor}"
+    train_reset_rerun_state_for_fresh_run
     gate="$(train_run_batch_ci "${batch}")"
   fi
   train_step_end smart-ci >/dev/null
@@ -503,6 +515,7 @@ main() {
         fwdfix=$((fwdfix + 1))
         train_metric_set forward_fixes "${fwdfix}"
         train_decision "forward-fix #${fwdfix} applied (dotnet format); re-running CI"
+        train_reset_rerun_state_for_fresh_run
         gate="$(train_run_batch_ci "${batch}")"
         continue
       fi
@@ -678,6 +691,7 @@ main() {
     # shellcheck disable=SC2086
     batch="$(train_assemble "${trunk_sha7}" $(tr ',' ' ' <<<"${included}"))"
     included="$(cut -f1 "${TRAIN_INCLUDED_FILE}" | tr '\n' ',' | sed 's/,$//')"
+    train_reset_rerun_state_for_fresh_run
     gate="$(train_run_batch_ci "${batch}")"
   done
   train_step_end ci-gate >/dev/null

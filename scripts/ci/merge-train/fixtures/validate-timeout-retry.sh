@@ -383,6 +383,32 @@ grep -Fqx 'attribute-called' "${record}" || fail "resumed persistent timeout did
 ! grep -Eq 'gh (workflow run|run rerun)' "${record}" || fail "resumed failure dispatched or reran work"
 pass "end-to-end resumed FAILURE preserves run/base context through attribution"
 
+# Run A has consumed its timeout retry. Attribution rebuild creates fresh run B,
+# which gets a new budget and request identity; restarting B preserves its own
+# accepted request and never sends it twice.
+timeout_reruns=1
+TRAIN_RERUN_KIND=timeout
+TRAIN_RERUN_BASE_ATTEMPT=7
+train_reset_rerun_state_for_fresh_run
+[[ "${timeout_reruns}" == "0" && -z "${TRAIN_RERUN_KIND}" && -z "${TRAIN_RERUN_BASE_ATTEMPT}" ]] \
+  || fail "fresh attribution run inherited run A retry state"
+: >"${record}"; : >"${phase_log}"
+export TRAIN_RERUN_REQUESTER=requester
+request_mode=success
+TRAIN_RUN_LOG_TEXT='Process completed with exit code 124.'
+gh() { [[ "$*" == *'--json attempt'* ]] && printf '1\n' || fail "run B attempted unexpected gh operation: $*"; }
+train_classify_retry_candidate 222 "${timeout_reruns}" 0 'Server Tests (OData Core)' state_callback \
+  || fail "first timeout on fresh run B did not receive its retry"
+[[ "$(grep -c '^request 222$' "${record}")" == "1" ]] || fail "fresh run B did not request exactly one retry"
+[[ "$(paste -sd, "${phase_log}")" == "requesting,accepted" ]] || fail "fresh run B did not persist its two-phase request"
+
+: >"${record}"
+export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":222,"phase":"timeout-retry-accepted","rerun_kind":"timeout","rerun_base_attempt":1}}'
+train_request_failed_job_rerun 222 timeout 1 state_callback || fail "same-run B restart did not reconcile"
+[[ ! -s "${record}" ]] || fail "same-run B restart duplicated the accepted rerun"
+unset TRAIN_RERUN_RESUME_STATE_JSON TRAIN_RERUN_REQUESTER
+pass "timeout retry budget and request identity are scoped per Actions run"
+
 # Controller A expires while the accepted attempt is still queued. It must
 # leave the retry intent untouched. Controller B then consumes that same run
 # and newer attempt before selection, without dispatching or rerunning.
