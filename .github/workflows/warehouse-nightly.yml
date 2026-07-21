@@ -1,0 +1,149 @@
+name: Warehouse Providers Nightly (Creds-Gated)
+
+# #2943: the Snowflake/Redshift/Databricks/SqlServer read/query-only provider
+# test projects require live-cloud credentials this repo does not provision
+# by default, so they were previously referenced by zero workflows — their
+# self-skip behavior (RequiredEnvironmentFact, or an early-return no-op for
+# Databricks) was invisible rather than surfaced. This lane gives them an
+# explicit, documented execution path instead of silently folding them into
+# the PR path, and reports pass/fail/skip counts in the run summary so a
+# missing secret reads as "not configured" rather than "the project vanished".
+# Configure the optional repository secrets below to exercise a provider
+# against a real warehouse; without them every case in that project skips
+# cleanly and the job still succeeds.
+on:
+  schedule:
+    - cron: '0 6 * * 0' # Weekly Sunday 6:00 UTC
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Warehouse project to run (default: all)'
+        type: choice
+        required: false
+        default: all
+        options:
+          - all
+          - Honua.Snowflake.Tests
+          - Honua.Redshift.Tests
+          - Honua.Databricks.Tests
+          - Honua.SqlServer.Tests
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+concurrency:
+  group: warehouse-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warehouse:
+    name: Warehouse Tests (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: Honua.Snowflake.Tests
+            csproj: tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj
+          - project: Honua.Redshift.Tests
+            csproj: tests/dotnet/Honua.Redshift.Tests/Honua.Redshift.Tests.csproj
+          - project: Honua.Databricks.Tests
+            csproj: tests/dotnet/Honua.Databricks.Tests/Honua.Databricks.Tests.csproj
+          - project: Honua.SqlServer.Tests
+            csproj: tests/dotnet/Honua.SqlServer.Tests/Honua.SqlServer.Tests.csproj
+    env:
+      # Optional repository secrets — every one of these is unset by default,
+      # which is exactly the "not configured, self-skip" state each test class
+      # already handles via RequiredEnvironmentFact / an early-return no-op.
+      HONUA_TEST_SNOWFLAKE: '1'
+      HONUA_SNOWFLAKE_TEST_CONNECTION: ${{ secrets.HONUA_SNOWFLAKE_TEST_CONNECTION }}
+      HONUA_TEST_REDSHIFT: '1'
+      HONUA_REDSHIFT_TEST_CONNECTION: ${{ secrets.HONUA_REDSHIFT_TEST_CONNECTION }}
+      HONUA_TEST_DATABRICKS: '1'
+      HONUA_TEST_DATABRICKS_HOST: ${{ secrets.HONUA_DATABRICKS_TEST_HOST }}
+      HONUA_TEST_DATABRICKS_WAREHOUSE: ${{ secrets.HONUA_DATABRICKS_TEST_WAREHOUSE }}
+      HONUA_TEST_DATABRICKS_TOKEN: ${{ secrets.HONUA_DATABRICKS_TEST_TOKEN }}
+      HONUA_TEST_DATABRICKS_TABLE: ${{ secrets.HONUA_DATABRICKS_TEST_TABLE }}
+      HONUA_TEST_DATABRICKS_CATALOG: ${{ secrets.HONUA_DATABRICKS_TEST_CATALOG }}
+      HONUA_TEST_DATABRICKS_SCHEMA: ${{ secrets.HONUA_DATABRICKS_TEST_SCHEMA }}
+      HONUA_SQLSERVER_TEST_CONNECTION: ${{ secrets.HONUA_SQLSERVER_TEST_CONNECTION }}
+    steps:
+      - name: Skip non-selected project (manual dispatch)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             && [ "${{ github.event.inputs.project }}" != "all" ] \
+             && [ "${{ github.event.inputs.project }}" != "${{ matrix.project }}" ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${{ matrix.project }} (selected: ${{ github.event.inputs.project }})"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.skipped != 'true'
+
+      - name: Setup .NET
+        if: steps.gate.outputs.skipped != 'true'
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        if: steps.gate.outputs.skipped != 'true'
+        run: dotnet restore Honua.sln
+
+      - name: Build
+        if: steps.gate.outputs.skipped != 'true'
+        run: dotnet build ${{ matrix.csproj }} --no-restore --configuration Release
+
+      - name: Create Test Results Directory
+        if: steps.gate.outputs.skipped != 'true'
+        run: mkdir -p ./tests/TestResults
+
+      - name: Run warehouse tests
+        if: steps.gate.outputs.skipped != 'true'
+        run: |
+          dotnet test ${{ matrix.csproj }} \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=${{ matrix.project }}.trx" \
+            --logger "console;verbosity=normal" \
+            --results-directory ./tests/TestResults
+
+      - name: Surface pass/fail/skip counts in summary
+        if: always() && steps.gate.outputs.skipped != 'true'
+        run: |
+          trx="./tests/TestResults/${{ matrix.project }}.trx"
+          if [[ -f "$trx" ]]; then
+            passed=$(grep -o 'outcome="Passed"' "$trx" | wc -l)
+            failed=$(grep -o 'outcome="Failed"' "$trx" | wc -l)
+            skipped=$(grep -o 'outcome="NotExecuted"' "$trx" | wc -l)
+            {
+              echo "### ${{ matrix.project }}"
+              echo "- Passed: ${passed}"
+              echo "- Failed: ${failed}"
+              echo "- Skipped: ${skipped}"
+              if [[ "${skipped}" -gt 0 ]]; then
+                echo "- Note: one or more cases skipped — live credentials for this provider are not configured as repository secrets."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ${{ matrix.project }}: no TRX produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload warehouse test results
+        if: always() && steps.gate.outputs.skipped != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: warehouse-nightly-${{ matrix.project }}-${{ github.run_id }}
+          path: tests/TestResults/
+          retention-days: 14

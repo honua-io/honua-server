@@ -1,0 +1,78 @@
+name: Routing Nightly (pgRouting)
+
+# #2943: Category=Routing (PgRoutingProviderIntegrationTests,
+# NAServerPgRoutingEndToEndTests) had no execution path anywhere — not
+# scheduled, not manual, not env-gated. Both classes are opt-in via
+# [RoutingTest(RoutingTestEnv)] (see Honua.TestKit.Attributes.RoutingTestAttribute)
+# and skip cleanly unless HONUA_ROUTING_TEST=1 is set, specifically so the
+# heavy pgrouting/pgrouting image is never pulled on the default Fast/PR tier
+# (issue #1266, ADR-0050). PgRoutingFixture (Honua.TestKit) manages its own
+# Testcontainers pgrouting/pgrouting container — no external database or
+# Postgres service container is required here.
+on:
+  schedule:
+    # Weekly Sunday 5:00 UTC — outside the Mon-Sat per-suite CITE cron window
+    # and the daily nightly-slow-tier/flaky-detection lanes.
+    - cron: '0 5 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_ROUTING_TEST: '1'
+
+concurrency:
+  group: routing-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgrouting:
+    name: pgRouting Provider + NAServer Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Honua.sln
+
+      - name: Build
+        run: dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore --configuration Release
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Run pgRouting integration tests
+        id: routing-tests
+        continue-on-error: true
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=Routing" \
+            --logger "trx;LogFileName=routing-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Upload routing test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: routing-nightly-results-${{ github.run_id }}
+          path: tests/TestResults/
+          retention-days: 14
+
+      - name: Fail on routing test failure
+        if: steps.routing-tests.outcome == 'failure'
+        run: exit 1

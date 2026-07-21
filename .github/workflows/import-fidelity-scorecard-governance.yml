@@ -14,7 +14,7 @@ on:
       - 'scripts/ci/check-import-fidelity-perf-budget.sh'
       - 'scripts/ci/fixtures/import-fidelity-perf-scorecard-pass.json'
       - 'scripts/ci/fixtures/import-fidelity-perf-scorecard-fail.json'
-      - '.github/workflows/geoservices-import-fidelity-nightly.yml'
+      - '.github/workflows/geoservices-import-fidelity-external.yml'
       - '.github/workflows/import-fidelity-scorecard-governance.yml'
   workflow_dispatch:
 
