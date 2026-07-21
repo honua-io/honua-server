@@ -74,6 +74,11 @@ dry-run.
    per-PR labels `train:landing`/`train:escalated`/`train:hold` carry transient
    state.
 
+### Controller deadline and timeout precedence
+
+The controller initializes one absolute 6,600-second CI deadline for the whole run. Initial batch polling and any failed-job retry share it; retry never resets the clock. The 120-minute workflow cap therefore retains 10 minutes for fail-closed state, metrics, and summary persistence.
+
+Generic timeout or exit-124 evidence has strict precedence over known-flake matching. It receives one `gh run rerun --failed`; failure to request that rerun stops the controller, and a repeated timeout is a real failure even when the same log also matches a known environmental-flake regex. Persistent generic timeouts are never merged through.
 ### Dry-run contract (the safety bar)
 
 `TRAIN_APPLY` (default 0) gates every state-mutating action through a single

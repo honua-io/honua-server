@@ -49,6 +49,32 @@ train_classify_timeout() {
     return 2
   fi
   train_log "timeout/exit-124 signature matched; rerunning failed jobs once"
-  train_side_effect gh run rerun "${run_id}" --failed
+  if ! train_side_effect gh run rerun "${run_id}" --failed; then
+    train_err "failed to request failed-job rerun for timeout/exit-124 run ${run_id}"
+    return 3
+  fi
   return 0
+}
+
+# train_classify_retry_candidate <run-id> <timeout-count> <flake-count> [jobs]
+# Orchestration policy used by the main loop and focused tests. Timeout has
+# strict precedence: a persistent timeout is REAL even when its log also
+# matches a known-flake regex, so the known-flake merge-through path is skipped.
+# Returns 0=rerun issued, 1=real, 2=known-flake merge-through, 3=rerun failed.
+# TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
+train_classify_retry_candidate() {
+  local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}"
+  local rc=0
+  TRAIN_RETRY_KIND=""
+  train_classify_timeout "${run_id}" "${timeout_count}" "${jobs}" || rc=$?
+  case "${rc}" in
+    0) TRAIN_RETRY_KIND=timeout; return 0 ;;
+    2) return 1 ;;
+    3) return 3 ;;
+  esac
+
+  rc=0
+  train_classify_flake "${run_id}" "${flake_count}" || rc=$?
+  [[ "${rc}" == "0" ]] && TRAIN_RETRY_KIND=flake
+  return "${rc}"
 }

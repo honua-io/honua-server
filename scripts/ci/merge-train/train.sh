@@ -277,6 +277,7 @@ train_refine_attribute_candidates() {
   printf '%s\n' "${queue[@]}" | sort -u
 }
 main() {
+  train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
   # --- select ----------------------------------------------------------------
@@ -475,35 +476,28 @@ main() {
     # --- timeout retry (on batch-introduced failures) ------------------------
     # Timeout/exit-124 failures get one failed-job-only rerun. A second timeout
     # is real and deliberately bypasses known-flake merge-through.
-    _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
-    local rc_ct=0
-    train_classify_timeout "${run_id}" "${timeout_reruns}" "${failing}" || rc_ct=$?
-    if [[ "${rc_ct}" == "0" ]]; then
-      timeout_reruns=$((timeout_reruns + 1))
-      train_metric_set timeout_reruns "${timeout_reruns}"
-      train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
-      if train_wait_for_run_completion "${run_id}"; then
-        gate="$(gh run view "${run_id}" --json jobs \
-          --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "classify-timeout" "${run_id}" "${fwdfix}" "${flake_reruns}"
+    local rc_retry=0
+    train_classify_retry_candidate "${run_id}" "${timeout_reruns}" "${flake_reruns}" "${failing}" || rc_retry=$?
+    if [[ "${rc_retry}" == "3" ]]; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-rerun-failed" "${run_id}" "${fwdfix}" "${flake_reruns}"
+      train_annotate_warn "failed-job rerun command failed; stopping without landing or attribution"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-failed" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
+    if [[ "${rc_retry}" == "0" ]]; then
+      if [[ "${TRAIN_RETRY_KIND}" == "timeout" ]]; then
+        timeout_reruns=$((timeout_reruns + 1))
+        train_metric_set timeout_reruns "${timeout_reruns}"
+        train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
+        _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry" "${run_id}" "${fwdfix}" "${flake_reruns}"
       else
-        gate="TIMEOUT"
+        flake_reruns=$((flake_reruns + 1))
+        train_metric_set flake_reruns "${flake_reruns}"
+        train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
+        _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
       fi
-      continue
-    fi
-
-    # --- classify-flake (on the batch-introduced failures) -------------------
-    # A persistent generic timeout (rc_ct=2) skips this classifier, preventing
-    # a broader known-flake signature from merging it through.
-    local rc_cf=0
-    if [[ "${rc_ct}" != "2" ]]; then
-      train_classify_flake "${run_id}" "${flake_reruns}" || rc_cf=$?
-    else
-      rc_cf=1
-    fi
-    if [[ "${rc_cf}" == "0" ]]; then
-      flake_reruns=$((flake_reruns + 1))
-      train_metric_set flake_reruns "${flake_reruns}"
-      train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
       # Re-poll the same run after rerun.
       if train_wait_for_run_completion "${run_id}"; then
         gate="$(gh run view "${run_id}" --json jobs \
@@ -512,14 +506,14 @@ main() {
         gate="TIMEOUT"
       fi
       continue
-    elif [[ "${rc_cf}" == "2" ]]; then
+    elif [[ "${rc_retry}" == "2" ]]; then
       # Recognized flake persisted across the rerun => consistent environmental
       # failure (e.g. the schema-setup race). Merge through: land the batch.
       train_metric_set flake_mergethrough 1
       train_notice "recognized environmental flake persisted across rerun; MERGING THROUGH — landing the batch (optimistic model)"
       gate="SUCCESS"; continue
     fi
-    # rc_cf == 1 => a real, non-flake failure: fall through to autofix/attribute.
+    # rc_retry == 1 => a real failure, including any persistent timeout.
 
     # --- (4) ROLL-FORWARD AI FIX-AGENT (capstone; gated TRAIN_AUTOFIX) -------
     # A REAL, batch-introduced, non-flake failure. With autofix enabled, ask the
@@ -665,7 +659,7 @@ main() {
 # _write_state branch trunk_base included-csv phase run_id fwdfix flake [last_landed]
 _write_state() {
   local body="${TRAIN_WORK}/state.md"
-  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" >"${body}"
+  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${timeout_reruns:-0}" >"${body}"
   train_state_write "${body}"
 }
 
@@ -765,6 +759,7 @@ _dashboard() {
   train_summary "| Forward-fixes applied | $(train_metric_get forward_fixes 0) |"
   train_summary "| Pre-existing-only passes | $(train_metric_get preexisting_passes 0) |"
   train_summary "| Flake reruns | $(train_metric_get flake_reruns 0) |"
+  train_summary "| Timeout reruns | $(train_metric_get timeout_reruns 0) |"
   train_summary "| Autofix attempts | $(train_metric_get autofix_attempts 0) |"
   train_summary "| Autofix fixes landed | $(train_metric_get autofix_fixes 0) |"
   train_summary "| Attribution drops | $(train_metric_get attribution_drops 0) |"

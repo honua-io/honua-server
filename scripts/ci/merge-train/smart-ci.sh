@@ -112,20 +112,21 @@ train_smart_ci_run() {
   printf '%s\n' "${conclusion}" | tr '[:lower:]' '[:upper:]'
 }
 
-# train_wait_for_run_completion <run-id> [timeout-seconds] [poll-seconds]
-# Shared by the initial batch and failed-job retries. Returns 1 on timeout so
-# callers fail closed rather than waiting past the controller budget.
+# train_wait_for_run_completion <run-id> [ignored-budget] [poll-seconds]
+# Shared by the initial batch and failed-job retries. Every invocation uses the
+# one controller deadline initialized before selection; the optional second
+# argument remains only for compatibility with offline fixtures and can never
+# extend that deadline. Returns 1 on exhaustion so callers fail closed.
 train_wait_for_run_completion() {
   local run_id="$1"
-  local poll_timeout="${2:-${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS}}"
   local poll_interval="${3:-${TRAIN_SMART_CI_POLL_SECONDS:-30}}"
-  local timeout_at now status
-  timeout_at=$(( $(train_now) + poll_timeout ))
+  local now status
   while :; do
     status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
     [[ "${status}" == "completed" ]] && return 0
+    train_init_controller_deadline || return 1
     now="$(train_now)"
-    [[ "${now}" -ge "${timeout_at}" ]] && return 1
+    [[ "${now}" -ge "${TRAIN_CONTROLLER_DEADLINE_EPOCH}" ]] && return 1
     sleep "${poll_interval}"
   done
 }

@@ -152,8 +152,8 @@ jobs:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
           MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
-          # Long shards currently take 42-55m. Allow queueing plus one
-          # failed-job-only retry without exceeding this job's 120m cap.
+          # One absolute 110m budget shared by initial CI and any failed-job
+          # retry, leaving 10m under this job's 120m cap for state persistence.
           TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS: 6600
           # Instrumentation: the run timestamp is injected here (not generated in
           # the script) so the Step Summary, metrics JSON, and state-issue

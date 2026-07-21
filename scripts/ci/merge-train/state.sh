@@ -9,8 +9,8 @@
 #   {
 #     "active_batch": {
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
-#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-flake|autofix|attribute|land|done",
-#       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>
+#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry|timeout-rerun-failed|classify-flake|autofix|attribute|land|done",
+#       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>, "timeout_reruns": <n>
 #     },
 #     "config": { "max_batch": <n>, "flake_signatures": "<regex>" },
 #     "last_landed_trunk": "<sha|null>"
@@ -21,10 +21,10 @@
 TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
 
 # train_state_render <branch> <trunk_base> <included-csv> <phase> <run_id> \
-#   <fwdfix> <flake_reruns> <last_landed>: emit the fenced-JSON issue body.
+#   <fwdfix> <flake_reruns> <last_landed> [timeout_reruns]: emit the state body.
 train_state_render() {
   local branch="$1" trunk_base="$2" included_csv="$3" phase="$4" \
-        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8"
+        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8" timeout_reruns="${9:-0}"
 
   local included_json
   if [[ -z "${included_csv}" ]]; then
@@ -45,13 +45,14 @@ train_state_render() {
     --argjson rid "${run_id_json}" \
     --argjson fwd "${fwdfix:-0}" \
     --argjson fr "${flake_reruns:-0}" \
+    --argjson tr "${timeout_reruns:-0}" \
     --argjson mb "${MAX_BATCH}" \
     --arg flake "${TRAIN_FLAKE_REGEX}" \
     --argjson last "${last_json}" \
     '{
       active_batch: {
         branch: $branch, trunk_base: $tb, included: $inc, phase: $phase,
-        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr
+        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr, timeout_reruns: $tr
       },
       config: { max_batch: $mb, flake_signatures: $flake },
       last_landed_trunk: $last
@@ -133,9 +134,10 @@ train_aggregate_merge() {
   local prev="${1:-}" ttl_sample="${2:-}"
   [[ -z "${prev}" ]] && prev='{}'
 
-  local landed_now flake_now esc_now batches_inc
+  local landed_now flake_now timeout_now esc_now batches_inc
   landed_now="$(train_metric_get landed 0)"
   flake_now="$(train_metric_get flake_reruns 0)"
+  timeout_now="$(train_metric_get timeout_reruns 0)"
   esc_now="$(train_metric_get escalated 0)"
   # A "batch" counts when at least one PR landed this run.
   batches_inc=0; [[ "${landed_now}" -gt 0 ]] && batches_inc=1
@@ -144,6 +146,7 @@ train_aggregate_merge() {
     --argjson prev "${prev}" \
     --argjson landed_now "${landed_now}" \
     --argjson flake_now "${flake_now}" \
+    --argjson timeout_now "${timeout_now}" \
     --argjson esc_now "${esc_now}" \
     --argjson batches_inc "${batches_inc}" \
     --arg ttl "${ttl_sample}" \
@@ -161,6 +164,7 @@ train_aggregate_merge() {
           batches:         (($t.batches // 0) + $batches_inc),
           prs_landed:      (($t.prs_landed // 0) + $landed_now),
           flake_reruns:    (($t.flake_reruns // 0) + $flake_now),
+          timeout_reruns:  (($t.timeout_reruns // 0) + $timeout_now),
           escalations:     (($t.escalations // 0) + $esc_now),
           runs:            (($t.runs // 0) + 1)
         },
@@ -173,10 +177,11 @@ train_aggregate_merge() {
 # human Markdown dashboard for the state issue (and Step Summary).
 train_aggregate_dashboard_md() {
   local agg="$1" trunk="$2" last="$3"
-  local batches prs flake esc runs median rate
+  local batches prs flake timeout esc runs median rate
   batches="$(jq -r '.totals.batches // 0' <<<"${agg}")"
   prs="$(jq -r '.totals.prs_landed // 0' <<<"${agg}")"
   flake="$(jq -r '.totals.flake_reruns // 0' <<<"${agg}")"
+  timeout="$(jq -r '.totals.timeout_reruns // 0' <<<"${agg}")"
   esc="$(jq -r '.totals.escalations // 0' <<<"${agg}")"
   runs="$(jq -r '.totals.runs // 0' <<<"${agg}")"
   median="$(jq -r '.median_time_to_land_seconds // "—"' <<<"${agg}")"
@@ -194,6 +199,7 @@ train_aggregate_dashboard_md() {
   printf '| Train runs | %s |\n' "${runs}"
   printf '| Median time-to-land | %s |\n' "$([[ "${median}" == "—" || "${median}" == "null" ]] && echo "—" || echo "${median}s")"
   printf '| Flake-rerun rate (reruns/batch) | %s |\n' "${rate}"
+  printf '| Timeout failed-job reruns | %s |\n' "${timeout}"
   printf '| Escalations | %s |\n' "${esc}"
   printf '| Current trunk SHA | `%s` |\n' "${trunk:-—}"
   printf '| Last-landed SHA | `%s` |\n' "${last:-—}"
