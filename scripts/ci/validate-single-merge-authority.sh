@@ -51,6 +51,7 @@ canonical_cli_source() {
   awk '
     BEGIN { RS="[;\n]" }
     function dequote(value) {
+      gsub(/\$\047/, "", value)
       gsub(/["'"'"'`]/, "", value)
       return value
     }
@@ -58,13 +59,18 @@ canonical_cli_source() {
       gsub(/[|&()]/, " ")
       for (i = 1; i <= NF; i++) token[i] = dequote($i)
       for (i = 1; i <= NF; i++) {
-        cmd = token[i]
-        gsub(/^["'"'"'`]+|["'"'"'`]+$/, "", cmd)
-        gsub(/\\/, "/", cmd)
-        sub(/^.*\//, "", cmd)
-        cmd = tolower(cmd)
-        sub(/\.exe$/, "", cmd)
-        if (cmd != "git" && cmd != "gh") continue
+        cmd = tolower(token[i])
+        pathcmd = cmd
+        gsub(/\\/, "/", pathcmd)
+        sub(/^.*\//, "", pathcmd)
+        sub(/\.exe$/, "", pathcmd)
+        escapedcmd = cmd
+        gsub(/\\/, "", escapedcmd)
+        sub(/^.*\//, "", escapedcmd)
+        sub(/\.exe$/, "", escapedcmd)
+        if (pathcmd == "git" || pathcmd == "gh") cmd = pathcmd
+        else if (escapedcmd == "git" || escapedcmd == "gh") cmd = escapedcmd
+        else continue
         j = i + 1
         while (j <= NF && token[j] ~ /^-/) {
           opt = token[j]
@@ -73,14 +79,15 @@ canonical_cli_source() {
           else j++
         }
         verb = tolower(token[j])
+        gsub(/\\/, "", verb)
         gsub(/^["'"'"'`]+|["'"'"'`,]+$/, "", verb)
         if (cmd == "git" && verb == "push") {
           printf "git push"
-          for (k = j + 1; k <= NF; k++) printf " %s", token[k]
+          for (k = j + 1; k <= NF; k++) { part = token[k]; gsub(/\\/, "", part); printf " %s", part }
           print ""
         } else if (cmd == "gh" && (verb == "pr" || verb == "api")) {
           printf "gh %s", verb
-          for (k = j + 1; k <= NF; k++) printf " %s", token[k]
+          for (k = j + 1; k <= NF; k++) { part = token[k]; gsub(/\\/, "", part); printf " %s", part }
           print ""
         }
       }
@@ -111,10 +118,27 @@ function_source() {
       if (is_function && rest ~ /^\{/) return name
       return ""
     }
+    function brace_delta(s, i, c, previous, sq, dq, esc, delta) {
+      sq = 0; dq = 0; esc = 0; delta = 0
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1); previous = (i == 1 ? "" : substr(s, i - 1, 1))
+        if (esc) { esc = 0; continue }
+        if (c == "\\" && !sq) { esc = 1; continue }
+        if (c == "\047" && !dq) { sq = !sq; continue }
+        if (c == "\042" && !sq) { dq = !dq; continue }
+        if (c == "#" && !sq && !dq && (i == 1 || previous ~ /[[:space:]]/)) break
+        if (!sq && !dq && c == "{") delta++
+        if (!sq && !dq && c == "}") delta--
+      }
+      return delta
+    }
     { declared = declaration($0) }
-    declared == wanted { found=1 }
-    found && declared != "" && declared != wanted { exit }
-    found { print }
+    declared == wanted && !found { found=1; depth=0 }
+    found {
+      print
+      depth += brace_delta($0)
+      if (depth == 0) exit
+    }
   '
 }
 
@@ -253,6 +277,8 @@ YAML
     'C:\\tools\\Gh.ExE pr merge 1 --merge'
     $'g'"'"'h'"'"' p'"'"'r'"'"' m'"'"'e'"'"'r'"'"'g'"'"'e 1 --merge'
     $'/usr/bin/g'"'"'i'"'"'t push origin HEAD:trunk'
+    $'g$'"'"'h'"'"' p$'"'"'r'"'"' m$'"'"'erge'"'"' 1 --merge'
+    'g\h p\r m\e\r\g\e 1 --merge'
     $'printf "literal # still data"; gh pr merge 1 --merge'
     'git push origin batch:refs/heads/trunk'
     $'target=trunk\n      git push origin HEAD:${target}'
@@ -270,7 +296,14 @@ YAML
   cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
   function train_post_cas_writer { gh -R o/r pr merge 1 --merge; }
   train_finalize_landed_members ()
-  { train_post_cas_writer; }
+  {
+    nested_same_line() { gh pr merge 1 --merge; }
+    nested_next_line()
+    { git push origin HEAD:trunk; }
+    nested_same_line
+    nested_next_line
+    train_post_cas_writer
+  }
 train_land() { git push origin batch:trunk; }
 SH
   scan_authorities "${scratch}" >/dev/null 2>&1 \

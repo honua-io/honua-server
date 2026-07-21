@@ -194,32 +194,6 @@ train_pr_admission_snapshot() {
     --jq '.data.repository.pullRequest | {number,state,isDraft,headRefOid,labels:.labels.nodes,labelsTruncated:.labels.pageInfo.hasNextPage,reviews:.reviews.nodes,reviewsTruncated:.reviews.pageInfo.hasNextPage,reviewThreads:.reviewThreads.nodes,reviewThreadsTruncated:(.reviewThreads.pageInfo.hasNextPage or any(.reviewThreads.nodes[]?; .comments.pageInfo.hasNextPage)),statusCheckRollup:(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []),checksTruncated:(.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false)}'
 }
 
-train_pr_reactions_snapshot() {
-  local pr="$1"
-  if [[ -n "${TRAIN_ADMISSION_REACTIONS_FOR_PR:-}" ]]; then
-    "${TRAIN_ADMISSION_REACTIONS_FOR_PR}" "${pr}"
-    return
-  fi
-  gh api --paginate -H 'Accept: application/vnd.github+json' \
-    "repos/${GITHUB_REPOSITORY}/issues/${pr}/reactions?per_page=100" --jq '.[]' | jq -s '.'
-}
-
-train_head_observed_at() {
-  local head="$1" times
-  if [[ -n "${TRAIN_ADMISSION_OBSERVED_AT_FOR_HEAD:-}" ]]; then
-    "${TRAIN_ADMISSION_OBSERVED_AT_FOR_HEAD}" "${head}"
-    return
-  fi
-  times="$(gh api --paginate -H 'Accept: application/vnd.github+json' \
-    "repos/${GITHUB_REPOSITORY}/commits/${head}/check-suites?per_page=100" \
-    --jq '.check_suites[] | select(.head_sha == "'"${head}"'" and .created_at != null) | .created_at')" || return 1
-  if [[ -z "${times}" ]]; then
-    printf 'null\n'
-  else
-    jq -Rsc '[splits("\n") | select(length > 0) | fromdateiso8601 * 1000] | min // null' <<<"${times}"
-  fi
-}
-
 train_publish_review_gate_status() {
   local pr="$1" head="$2" state="$3" description="$4"
   if [[ -n "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER:-}" ]]; then
@@ -235,17 +209,14 @@ train_publish_review_gate_status() {
 # Review Gate status. API/truncation/negative evidence fails closed. In live mode
 # publish the result so branch protection and subsequent controllers see it.
 train_refresh_review_gate() {
-  local pr="$1" head="$2" snapshot="$3" reactions observed_at unresolved payload result state description
-  reactions="$(train_pr_reactions_snapshot "${pr}")" || return 1
-  observed_at="$(train_head_observed_at "${head}")" || return 1
+  local pr="$1" head="$2" snapshot="$3" unresolved payload result state description
   unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
     '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
   payload="$(jq -nc --argjson reviews "$(jq -c '.reviews // []' <<<"${snapshot}")" \
-    --argjson reactions "${reactions}" --argjson unresolvedCount "${unresolved}" \
-    --arg head "${head}" --argjson observedAt "${observed_at}" \
-    '{reviews:$reviews,reactions:$reactions,unresolvedCount:$unresolvedCount,head:$head,observedAt:$observedAt}')" || return 1
+    --argjson unresolvedCount "${unresolved}" --arg head "${head}" \
+    '{reviews:$reviews,unresolvedCount:$unresolvedCount,head:$head}')" || return 1
   result="$(printf '%s' "${payload}" | node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}")" || return 1
-  if jq -e '.exactReview or .freshCleanReaction' <<<"${result}" >/dev/null; then
+  if jq -e '.exactReview' <<<"${result}" >/dev/null; then
     state=success; description='Current exact-head Codex evidence is clean'
   else
     state=failure; description='No current clean exact-head Codex evidence'

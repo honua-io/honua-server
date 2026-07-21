@@ -97,7 +97,7 @@ train_state_write() {
 # train_state_read: emit the parsed JSON block of the state issue (or empty).
 # READ-ONLY; used on startup to resume.
 train_state_read() {
-  local num body
+  local num body json
   num="$(train_state_issue_number)" || return 2
   [[ -z "${num}" ]] && return 0
   if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
@@ -109,12 +109,32 @@ train_state_read() {
       body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 2
     fi
   fi
-  # Extract the fenced ```json ... ``` block.
-  printf '%s\n' "${body}" | awk '
-    /^```json/ { inblk=1; next }
+  # An existing issue must contain exactly one parseable machine-state block.
+  # Empty output is reserved for a confirmed absent issue.
+  json="$(printf '%s\n' "${body}" | awk '
+    /^```json[[:space:]]*$/ { inblk=1; next }
     /^```/     { if (inblk) { inblk=0 } ; next }
     inblk      { print }
-  '
+  ')"
+  [[ -n "${json}" ]] || return 3
+  jq -e '
+    type == "object" and
+    (.active_batch | type == "object") and
+    (.active_batch.branch | type == "string") and
+    (.active_batch.trunk_base | type == "string") and
+    (.active_batch.included | type == "array" and all(.[]; type == "number")) and
+    (.active_batch.phase | type == "string" and IN("select","assemble","smart-ci","forward-fix","preexisting-filter","classify-flake","autofix","attribute","ci-incomplete","land","pre-land-cleanup","post-land-finalize","done")) and
+    (.active_batch.run_id == null or (.active_batch.run_id | type == "number" or type == "string")) and
+    (.active_batch.fwdfix_attempts == null or (.active_batch.fwdfix_attempts | type == "number")) and
+    (.active_batch.flake_reruns == null or (.active_batch.flake_reruns | type == "number")) and
+    (.active_batch.included_heads | type == "array") and
+    (.active_batch.batch_sha == null or (.active_batch.batch_sha | type == "string" and test("^[0-9a-fA-F]{40}$"))) and
+    (.config == null or ((.config | type == "object") and
+      (.config.max_batch | type == "number") and
+      (.config.flake_signatures | type == "string"))) and
+    (.last_landed_trunk == null or (.last_landed_trunk | type == "string"))
+  ' <<<"${json}" >/dev/null || return 3
+  printf '%s\n' "${json}"
 }
 
 # --- persistent over-time dashboard (the founder's "dashboard") ---------------
