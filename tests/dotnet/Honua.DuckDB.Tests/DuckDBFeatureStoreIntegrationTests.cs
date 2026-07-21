@@ -4,10 +4,14 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using DuckDB.NET.Data;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.DuckDB.Features.FeatureStore;
 using Honua.DuckDB.Features.FeatureStore.Services;
 using Honua.DuckDB.Features.Infrastructure;
+using Honua.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.DuckDB.Tests;
@@ -23,6 +27,8 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     private DuckDBLayerRegistry _registry = null!;
     private string _connectionString = null!;
     private DuckDBSpatialBootstrap _spatialBootstrap = null!;
+    private DuckDbSqlFilterTranslator _filterTranslator = null!;
+    private MetadataV2Resource _resource = null!;
     private const int LayerId = 0;
 
     public async Task InitializeAsync()
@@ -93,6 +99,32 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         var cacheManager = new DuckDBFeatureCacheManager(_registry);
 
         _store = new DuckDBFeatureStore(queryBuilder, dataAccess, cacheManager);
+        _filterTranslator = new DuckDbSqlFilterTranslator();
+        _resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "duckdb.parcels", Name = "parcels" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geom",
+                SpatialReference = MetadataV2SpatialReference.Wgs84
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "id",
+                    Type = MetadataV2FieldType.BigInteger,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double },
+                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String }
+            ]
+        };
     }
 
     public Task DisposeAsync()
@@ -139,6 +171,147 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
         Assert.Equal(3, result.Items.Length);
         Assert.All(result.Items, f => Assert.Contains(f.Id, new long[] { 1, 3, 5 }));
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithCql2Intersects_ReturnsCorrectFeatureSet()
+    {
+        var polygon = GeometryLiteral(CreatePolygonWkb(-121.972, 37.028, -121.948, 37.052), 4326);
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            polygon);
+        var ids = await QueryIdsThroughInterfaceAsync(_store, QueryWithFilter(filter));
+
+        Assert.Equal([3L, 4L, 5L], ids);
+
+        // Exercise positional rebasing: the spatial WKB is $1 and the later object-id
+        // predicate must become $2 rather than aliasing the geometry parameter.
+        var narrowed = await QueryIdsThroughInterfaceAsync(_store, QueryWithFilter(filter) with
+        {
+            ObjectIds = ImmutableArray.Create(4L, 8L)
+        });
+        Assert.Equal([4L], narrowed);
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithCql2WithinAndContains_PreservesAsymmetricOperandOrder()
+    {
+        var polygon = GeometryLiteral(CreatePolygonWkb(-121.972, 37.028, -121.948, 37.052), 4326);
+        var within = await QueryIdsThroughInterfaceAsync(_store, QueryWithFilter(new SpatialPredicate(
+            SpatialOperator.Within,
+            new PropertyReference("geom"),
+            polygon)));
+        var containsWithReversedOperands = await QueryIdsThroughInterfaceAsync(_store, QueryWithFilter(new SpatialPredicate(
+            SpatialOperator.Contains,
+            polygon,
+            new PropertyReference("geom"))));
+
+        var expected = new long[] { 3, 4, 5 };
+        Assert.Equal(expected, within);
+        Assert.Equal(expected, containsWithReversedOperands);
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithCql2DWithin_UsesMetersAndAlwaysXyAxisOrder()
+    {
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            GeometryLiteral(CreatePointWkb(-121.95, 37.05), 4326),
+            new Literal(1_600d, LiteralType.Number));
+        var ids = await QueryIdsThroughInterfaceAsync(_store, QueryWithFilter(filter));
+
+        Assert.Equal([4L, 5L, 6L], ids);
+    }
+
+    [Fact]
+    public async Task QueryAsync_WithCombinedAttributeAndSpatialFragments_PreservesParameterBindings()
+    {
+        var attribute = _filterTranslator.Translate(
+            new BinaryExpression(
+                new PropertyReference("area"),
+                BinaryOperator.GreaterThan,
+                new Literal(0d, LiteralType.Number)),
+            _resource);
+        var spatial = _filterTranslator.Translate(
+            new SpatialPredicate(
+                SpatialOperator.Intersects,
+                new PropertyReference("geom"),
+                GeometryLiteral(CreatePolygonWkb(-121.972, 37.028, -121.948, 37.052), 4326)),
+            _resource);
+        var combined = SqlFragmentHelpers.CombineSqlFilters(attribute, spatial);
+
+        var ids = await QueryIdsThroughInterfaceAsync(_store, new FeatureQuery { SqlFilter = combined });
+
+        Assert.Equal([3L, 4L, 5L], ids);
+    }
+
+    [Fact]
+    public void Translate_CrossSridGeometryLiteral_RejectsWithAxisGuidance()
+    {
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            GeometryLiteral(CreatePointWkb(-121.95, 37.05), 3857));
+
+        var exception = Assert.Throws<NotSupportedException>(() => _filterTranslator.Translate(filter, _resource));
+
+        Assert.Contains("Cross-SRID", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("always_xy", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_GeographicDistanceOnPolygonResource_RejectsPointOnlyFunction()
+    {
+        var polygonResource = _resource with
+        {
+            Spatial = _resource.Spatial! with { GeometryType = MetadataV2GeometryType.Polygon }
+        };
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            GeometryLiteral(CreatePointWkb(-121.95, 37.05), 4326),
+            new Literal(1_600d, LiteralType.Number));
+
+        var exception = Assert.Throws<NotSupportedException>(
+            () => _filterTranslator.Translate(filter, polygonResource));
+
+        Assert.Contains("point geometries only", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_GeographicDistanceOnMultiPointResource_RejectsPointOnlyFunction()
+    {
+        var multiPointResource = _resource with
+        {
+            Spatial = _resource.Spatial! with { GeometryType = MetadataV2GeometryType.MultiPoint }
+        };
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            GeometryLiteral(CreatePointWkb(-121.95, 37.05), 4326),
+            new Literal(1_600d, LiteralType.Number));
+
+        var exception = Assert.Throws<NotSupportedException>(
+            () => _filterTranslator.Translate(filter, multiPointResource));
+
+        Assert.Contains("point geometries only", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Translate_GeographicDistanceWithPolygonLiteral_RejectsPointOnlyFunction()
+    {
+        var filter = new SpatialDistancePredicate(
+            SpatialOperator.DWithin,
+            new PropertyReference("geom"),
+            GeometryLiteral(CreatePolygonWkb(-121.96, 37.04, -121.94, 37.06), 4326),
+            new Literal(1_600d, LiteralType.Number));
+
+        var exception = Assert.Throws<NotSupportedException>(
+            () => _filterTranslator.Translate(filter, _resource));
+
+        Assert.Contains("point geometries only", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -352,6 +525,58 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private FeatureQuery QueryWithFilter(FilterExpression filter)
+        => new() { SqlFilter = _filterTranslator.Translate(filter, _resource) };
+
+#pragma warning disable CA1859 // Deliberately exercise the provider through its public interface.
+    private static async Task<long[]> QueryIdsThroughInterfaceAsync(
+        IFeatureReader reader,
+        FeatureQuery query)
+    {
+        var result = await reader.QueryAsync(LayerId, query);
+        return result.Items.Select(feature => feature.Id).Order().ToArray();
+    }
+#pragma warning restore CA1859
+
+    private static GeometryLiteral GeometryLiteral(byte[] wkb, int srid)
+        => new(wkb, srid, "test-wkb");
+
+    private static byte[] CreatePointWkb(double x, double y)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((byte)1); // little-endian
+        writer.Write(1u); // Point
+        writer.Write(x);
+        writer.Write(y);
+        return stream.ToArray();
+    }
+
+    private static byte[] CreatePolygonWkb(double minX, double minY, double maxX, double maxY)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((byte)1); // little-endian
+        writer.Write(3u); // Polygon
+        writer.Write(1u); // one ring
+        writer.Write(5u); // closed shell
+        (double X, double Y)[] coordinates =
+        [
+            (minX, minY),
+            (maxX, minY),
+            (maxX, maxY),
+            (minX, maxY),
+            (minX, minY)
+        ];
+        foreach (var coordinate in coordinates)
+        {
+            writer.Write(coordinate.X);
+            writer.Write(coordinate.Y);
+        }
+
+        return stream.ToArray();
     }
 
     /// <summary>

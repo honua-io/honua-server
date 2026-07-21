@@ -219,7 +219,7 @@ the `GEOMETRY` type.
 | Capability | Status |
 |-----------|--------|
 | Feature queries (select, count, object IDs) | Supported |
-| Spatial filters (intersects, within, contains, etc.) | Supported |
+| Spatial filters (including CQL2 intersects, within, contains, and distance predicates) | Supported; cross-SRID CQL2 geometry literals must be pre-transformed to the layer CRS using `always_xy` axis order |
 | Statistics and aggregation (sum, avg, count, group by) | Supported |
 | GeoJSON export | Supported |
 | Object-store Parquet / GeoParquet scans | Supported for read-only analytical layers via DuckDB temporary views |

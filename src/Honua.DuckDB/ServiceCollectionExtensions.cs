@@ -64,6 +64,7 @@ internal static class ServiceCollectionExtensions
             : $"Data Source={options.DatabasePath}";
 
         services.AddSingleton<ISqlDialect>(DuckDbSqlDialect.Instance);
+        services.AddScoped<ISqlFilterTranslator, DuckDbSqlFilterTranslator>();
 
         // Register infrastructure singletons
         services.AddSingleton<DuckDBSpatialBootstrap>(sp =>
