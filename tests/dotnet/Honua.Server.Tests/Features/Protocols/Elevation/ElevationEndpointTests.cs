@@ -619,6 +619,22 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         json.RootElement.GetProperty("sampleCount").GetInt32().Should().Be(12);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /elevation/{datasetId}/profile")]
+    public async Task GetElevationProfile_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity()
+    {
+        await SeedMixedResolutionMosaicAsync();
+
+        var line = "LINESTRING(0 0, 0.1 0)";
+        var response = await _fixture.Client.GetAsync(
+            $"/elevation/0/profile?line={Uri.EscapeDataString(line)}&sampleCount=8");
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("pixel grids are not aligned");
+    }
+
     private Task SeedFullWorldRasterAsync(double elevationMeters)
         => RasterIntegrationTestData.ReplaceLayerRastersAsync(
             _fixture,
@@ -652,6 +668,35 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
                 AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
                 Srid: srid));
+
+    private Task SeedMixedResolutionMosaicAsync()
+        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+            _fixture,
+            WebAppFixture.TestLayerId,
+            new RasterSeed(
+                Name: "coarse-world-dem",
+                Width: 2,
+                Height: 2,
+                UpperLeftX: -WebMercatorExtent,
+                UpperLeftY: WebMercatorExtent,
+                ScaleX: WebMercatorExtent,
+                ScaleY: -WebMercatorExtent,
+                Value: 100,
+                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
+                CreatedAt: RasterIntegrationTestData.WestAcquisition,
+                Srid: 3857),
+            new RasterSeed(
+                Name: "fine-world-dem",
+                Width: 4,
+                Height: 4,
+                UpperLeftX: -WebMercatorExtent,
+                UpperLeftY: WebMercatorExtent,
+                ScaleX: WebMercatorExtent / 2,
+                ScaleY: -WebMercatorExtent / 2,
+                Value: 125,
+                AcquisitionDate: RasterIntegrationTestData.EastAcquisition,
+                CreatedAt: RasterIntegrationTestData.EastAcquisition,
+                Srid: 3857));
 
     private async Task ClearLayerRastersAsync()
     {

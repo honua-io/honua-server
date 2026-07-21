@@ -404,6 +404,7 @@ internal static partial class VisibilityAnalysisEndpoints
             ElevationFailureKind.SourceUnavailable => StandardErrorHelpers.CreateNotFound(context, exception.Message),
             ElevationFailureKind.UnsupportedCrs => StandardErrorHelpers.CreateUnprocessableEntity(context, exception.Message),
             ElevationFailureKind.InvalidGeometry => StandardErrorHelpers.CreateUnprocessableEntity(context, exception.Message),
+            ElevationFailureKind.MisalignedMosaic => StandardErrorHelpers.CreateUnprocessableEntity(context, exception.Message),
             _ => StandardErrorHelpers.CreateBadRequest(context, exception.Message)
         };
 
