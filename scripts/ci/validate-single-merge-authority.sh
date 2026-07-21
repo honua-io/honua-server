@@ -117,6 +117,7 @@ has_forbidden_workflow_run() {
     selector="$(workflow_run_selector "${args}")" || return 0
     base="${selector##*/}"; lower="${selector,,}"
     case "${selector}" in *'$'*|*'`'*) return 0 ;; esac
+    [[ ! "${selector}" =~ ^[0-9]+$ ]] || return 0
     [[ "${base,,}" != merge-train.yml && "${lower}" != "merge train" ]] || return 0
     rest="${rest#*"${match}"}"
   done
@@ -516,6 +517,8 @@ YAML
     'gh workflow run --repo honua-io/honua-server merge-train.yml -f train_apply=true'
     'gh workflow run --hostname github.example --repo honua-io/honua-server merge-train.yml -f train_apply=true'
     'gh workflow run -R honua-io/honua-server $flow -f train_apply=true'
+    'gh workflow run 123456 -f train_apply=true'
+    'gh workflow run --repo honua-io/honua-server 123456 -f train_apply=true'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: flow,\n        ref: "trunk"\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        "workflow_id": flow,\n        ref: "trunk"\n      })'
