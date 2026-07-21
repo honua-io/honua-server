@@ -81,12 +81,8 @@ train_request_failed_job_rerun() {
     if train_wait_for_rerun_visibility "${run_id}" "${base}"; then
       train_warn "reconciled ${kind} rerun accepted before persisted state advanced"
     else
-      local send_rc=0
-      train_send_failed_job_rerun "${run_id}" || send_rc=$?
-      if [[ "${send_rc}" != "0" && "${send_rc}" != "4" ]]; then
-        train_err "could not safely reconcile requesting ${kind} rerun for run ${run_id}; preserving requesting state"
-        return 4
-      fi
+      train_err "requesting ${kind} rerun for run ${run_id} is ambiguous; preserving state without repeating the non-idempotent rerun request"
+      return 4
     fi
     if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}" accepted; then
       train_err "rerun was accepted but accepted state could not be persisted; requesting state remains recoverable"

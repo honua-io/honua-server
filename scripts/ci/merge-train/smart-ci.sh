@@ -23,26 +23,26 @@ train_smart_ci_shards() {
     | "${TRAIN_TARGETED_SCRIPT}" --stdin --config "${TRAIN_SHARDS_CONFIG}"
 }
 
-# train_discover_dispatched_run <batch> <expected-head> <baseline-run-ids>
+# train_discover_dispatched_run <batch> <expected-head> <baseline-run-ids> <expected-title>
 # Poll until Actions exposes a new workflow_dispatch run for the exact batch tip
 # that was pushed. Branch-only discovery is unsafe because an older push or a
 # concurrent actor can create a newer run on the same branch.
 train_discover_dispatched_run() {
-  local batch="$1" expected_head="$2" pre_dispatch_runs="$3"
+  local batch="$1" expected_head="$2" pre_dispatch_runs="$3" expected_title="$4"
   local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
-  local timeout_at now rows run_id run_branch run_event run_head
+  local timeout_at now rows run_id run_branch run_event run_head run_title
   timeout_at=$(( $(train_now) + discovery_timeout ))
 
   while :; do
     rows="$(gh run list --workflow ci.yml --branch "${batch}" \
-      --json databaseId,headBranch,event,headSha \
-      --jq '.[] | [.databaseId, .headBranch, .event, .headSha] | @tsv' \
+      --json databaseId,headBranch,event,headSha,displayTitle \
+      --jq '.[] | [.databaseId, .headBranch, .event, .headSha, .displayTitle] | @tsv' \
       2>/dev/null || echo "")"
-    while IFS=$'\t' read -r run_id run_branch run_event run_head; do
+    while IFS=$'\t' read -r run_id run_branch run_event run_head run_title; do
       [[ -n "${run_id}" ]] || continue
       if [[ "${run_branch}" == "${batch}" && "${run_event}" == "workflow_dispatch" \
-        && "${run_head}" == "${expected_head}" ]] \
+        && "${run_head}" == "${expected_head}" && "${run_title}" == "${expected_title}" ]] \
         && ! grep -qx "${run_id}" <<<"${pre_dispatch_runs}"; then
         printf '%s\n' "${run_id}"
         return 0
@@ -70,7 +70,7 @@ train_smart_ci_run() {
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
-    train_side_effect gh workflow run ci.yml --ref "${batch}"
+    train_side_effect gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce=merge-train:dry-run
     echo "DRYRUN"
     return 0
   fi
@@ -84,7 +84,7 @@ train_smart_ci_run() {
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
   local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS}"
   local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
-  local pre_dispatch_runs baseline_rc=0 expected_head
+  local pre_dispatch_runs baseline_rc=0 expected_head dispatch_nonce dispatch_identity expected_title
 
   # Snapshot the baseline before dispatch. If the query fails, an empty baseline
   # would let any stale run masquerade as newly dispatched, so fail closed.
@@ -105,11 +105,15 @@ train_smart_ci_run() {
     echo "FAILURE"
     return 0
   }
+  dispatch_nonce="$(printf '%s:%s:%s:%s:%s' "${GITHUB_RUN_ID:-local}" "${GITHUB_RUN_ATTEMPT:-0}" \
+    "$(date -u +%s%N)" "${RANDOM}" "$$" | sha256sum | cut -c1-32)"
+  dispatch_identity="merge-train:${dispatch_nonce}"
+  expected_title="CI ${dispatch_identity}"
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  gh workflow run ci.yml --ref "${batch}" 1>&2
+  gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce="${dispatch_identity}" 1>&2
 
   local run_id=""
-  run_id="$(train_discover_dispatched_run "${batch}" "${expected_head}" "${pre_dispatch_runs}" || echo "")"
+  run_id="$(train_discover_dispatched_run "${batch}" "${expected_head}" "${pre_dispatch_runs}" "${expected_title}" || echo "")"
   if [[ -z "${run_id}" ]]; then
     train_err "could not locate a newly dispatched ci.yml run for ${batch} within ${discovery_timeout}s; live mode requires MERGE_TRAIN_TOKEN for batch-branch CI dispatch"
     echo "FAILURE"; return 0

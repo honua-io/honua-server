@@ -83,13 +83,25 @@ _train_resume_persist_request_phase() {
   rm -f "${body}"
 }
 
+# _train_resume_run_identity <run-id>: emit branch, SHA, attempt, event, path.
+# The Actions API exposes workflow path and event, which `gh run view` does not
+# attest strongly enough for restart-safe merge evidence.
+_train_resume_run_identity() {
+  if [[ -n "${TRAIN_RESUME_RUN_IDENTITY_READER:-}" ]]; then
+    "${TRAIN_RESUME_RUN_IDENTITY_READER}" "$1"
+    return
+  fi
+  gh api "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/$1" \
+    --jq '[.head_branch, .head_sha, .run_attempt, .event, .path] | @tsv' 2>/dev/null
+}
+
 # train_restore_retry_intent: emit state JSON augmented with gate/descriptor
 # and the exact reconstructed member snapshot.
 # Returns 1 when no retry intent exists, 2 for malformed/mismatched intent, and
 # 3 when the accepted newer attempt is still pending at the shared deadline,
 # 4 when requesting state remains safely resumable after an API failure.
 train_restore_retry_intent() {
-  local state phase batch trunk run_id kind base row run_branch run_head current_attempt batch_sha selected
+  local state phase batch trunk run_id kind base row run_branch run_head current_attempt run_event run_path batch_sha selected
   state="$(train_state_read 2>/dev/null || echo "")"
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
@@ -123,19 +135,18 @@ train_restore_retry_intent() {
   [[ "${batch_sha}" =~ ^[0-9a-fA-F]{40}$ ]] || return 2
   _train_resume_is_ancestor "${trunk}" "${batch_sha}" || return 2
 
-  row="$(gh run view "${run_id}" --json headBranch,headSha,attempt \
-    --jq '[.headBranch, .headSha, .attempt] | @tsv' 2>/dev/null || echo "")"
-  IFS=$'\t' read -r run_branch run_head current_attempt <<<"${row}"
+  row="$(_train_resume_run_identity "${run_id}" || echo "")"
+  IFS=$'\t' read -r run_branch run_head current_attempt run_event run_path <<<"${row}"
   [[ "${run_branch}" == "${batch}" && "${run_head}" == "${batch_sha}" \
-    && "${current_attempt}" =~ ^[0-9]+$ && "${current_attempt}" -ge "${base}" ]] || return 2
+    && "${current_attempt}" =~ ^[0-9]+$ && "${current_attempt}" -ge "${base}" \
+    && "${run_event}" == "workflow_dispatch" && "${run_path}" == ".github/workflows/ci.yml" ]] || return 2
 
   selected="$(train_restore_retry_members "${state}" "${trunk}" "${batch_sha}")" || return 2
 
   if [[ "${phase}" == "${kind}-retry-requesting" || "${phase}" == "${kind}-retry-intent" ]]; then
     if [[ "${current_attempt}" -le "${base}" ]] && ! train_wait_for_rerun_visibility "${run_id}" "${base}"; then
-      local send_rc=0
-      train_send_failed_job_rerun "${run_id}" || send_rc=$?
-      [[ "${send_rc}" == "0" || "${send_rc}" == "4" ]] || return 4
+      train_warn "requesting rerun state is ambiguous; preserving it without repeating the non-idempotent Actions request"
+      return 4
     fi
     _train_resume_persist_request_phase "${state}" "${kind}" accepted || return 4
     state="$(jq -c --arg phase "${kind}-retry-accepted" --arg kind "${kind}" \

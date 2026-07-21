@@ -96,13 +96,13 @@ gh() {
   discovery_poll=$(( $(cat "${sequence_calls}") + 1 ))
   printf '%s' "${discovery_poll}" >"${sequence_calls}"
   case "${discovery_poll}" in
-    1) printf '201\ttrain/batch/abc/2\tworkflow_dispatch\toldoldold\n' ;;
-    2) printf '202\ttrain/batch/abc/2\tpush\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n' ;;
-    *) printf '203\ttrain/batch/abc/2\tworkflow_dispatch\tcccccccccccccccccccccccccccccccccccccccc\n204\ttrain/batch/abc/2\tworkflow_dispatch\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n' ;;
+    1) printf '201\ttrain/batch/abc/2\tworkflow_dispatch\toldoldold\tCI merge-train:nonce-b\n' ;;
+    2) printf '202\ttrain/batch/abc/2\tpush\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\tCI merge-train:nonce-b\n' ;;
+    *) printf '203\ttrain/batch/abc/2\tworkflow_dispatch\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\tCI merge-train:nonce-a\n204\ttrain/batch/abc/2\tworkflow_dispatch\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\tCI merge-train:nonce-b\n' ;;
   esac
 }
 export TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=10 TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS=1
-discovered="$(train_discover_dispatched_run train/batch/abc/2 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '200')" \
+discovered="$(train_discover_dispatched_run train/batch/abc/2 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '200' 'CI merge-train:nonce-b')" \
   || fail "exact dispatched batch run was not discovered"
 [[ "${discovered}" == "204" ]] || fail "discovery accepted stale head, wrong event, or concurrent run"
 unset TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS
@@ -138,15 +138,18 @@ train_request_failed_job_rerun 123 timeout 1 state_callback || fail "normal two-
 [[ "$(paste -sd, "${phase_log}")" == "requesting,accepted" ]] || fail "normal request did not persist both phases in order"
 [[ "$(grep -c '^request 123$' "${record}")" == "1" ]] || fail "normal request count was not one"
 
-# Crash before send leaves requesting with an unchanged attempt; restart waits
-# bounded grace, safely sends once, and advances to accepted.
+# A requesting record with an unchanged attempt is ambiguous: the POST may have
+# succeeded even when visibility is delayed. Restart must preserve it and never
+# repeat the non-idempotent request.
 : >"${record}"; : >"${phase_log}"
 export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":123,"phase":"timeout-retry-requesting","rerun_kind":"timeout","rerun_base_attempt":1}}'
 train_run_attempt_status() { printf '1\tcompleted\n'; }
 request_mode=success
-train_request_failed_job_rerun 123 timeout 1 state_callback || fail "pre-send crash did not recover"
-[[ "$(grep -c '^request 123$' "${record}")" == "1" ]] || fail "pre-send crash did not issue exactly one recovery request"
-[[ "$(cat "${phase_log}")" == "accepted" ]] || fail "pre-send recovery did not persist accepted"
+rc=0
+train_request_failed_job_rerun 123 timeout 1 state_callback || rc=$?
+[[ "${rc}" == "4" ]] || fail "ambiguous requesting state did not fail closed"
+[[ ! -s "${record}" ]] || fail "ambiguous requesting state repeated the rerun POST"
+[[ ! -s "${phase_log}" ]] || fail "ambiguous requesting state was falsely advanced"
 
 # Crash after GitHub accepts but before accepted-state persistence observes the
 # advanced attempt and must not send again.
@@ -168,14 +171,24 @@ train_run_attempt_status() {
 train_request_failed_job_rerun 123 timeout 1 state_callback || fail "delayed acceptance visibility did not reconcile"
 [[ ! -s "${record}" ]] || fail "delayed visibility issued a duplicate request"
 
+# Visibility delayed beyond the grace remains ambiguous and must still never
+# issue a second POST.
+: >"${record}"; : >"${phase_log}"
+export TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=0
+train_run_attempt_status() { printf '1\tcompleted\n'; }
+rc=0
+train_request_failed_job_rerun 123 timeout 1 state_callback || rc=$?
+[[ "${rc}" == "4" && ! -s "${record}" ]] || fail "beyond-grace ambiguity repeated the rerun POST"
+
 # A GitHub conflict/already-running response is asynchronous acceptance, not a
 # hard failure; accepted state is persisted and normal attempt waiting resumes.
 : >"${record}"; : >"${phase_log}"
+unset TRAIN_RERUN_RESUME_STATE_JSON
 export TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=0
 train_run_attempt_status() { printf '1\tcompleted\n'; }
 request_mode=conflict
 train_request_failed_job_rerun 123 timeout 1 state_callback || fail "rerun conflict was not reconciled as accepted"
-[[ "$(cat "${phase_log}")" == "accepted" ]] || fail "rerun conflict did not persist accepted"
+[[ "$(paste -sd, "${phase_log}")" == "requesting,accepted" ]] || fail "rerun conflict did not persist two-phase acceptance"
 unset TRAIN_RERUN_RESUME_STATE_JSON TRAIN_RERUN_REQUESTER TRAIN_RERUN_VISIBILITY_GRACE_SECONDS
 train_run_attempt_status() {
   gh run view "$1" --json attempt,status --jq '[.attempt, .status] | @tsv' 2>/dev/null
@@ -205,6 +218,13 @@ resume_member_head() {
 export TRAIN_RESUME_FETCHER=resume_fetcher
 export TRAIN_RESUME_ANCESTRY_CHECKER=resume_ancestry
 export TRAIN_RESUME_MEMBER_HEAD_RESOLVER=resume_member_head
+resume_identity_event=workflow_dispatch
+resume_identity_path=.github/workflows/ci.yml
+resume_identity_head="${fixture_batch_sha}"
+resume_run_identity() {
+  printf 'train/batch/abc/1\t%s\t1\t%s\t%s\n' "${resume_identity_head}" "${resume_identity_event}" "${resume_identity_path}"
+}
+export TRAIN_RESUME_RUN_IDENTITY_READER=resume_run_identity
 export TRAIN_INCLUDED_FILE="${fixture_included}"
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
 gh_mode=resume
@@ -282,9 +302,21 @@ gh() {
     fail "exact-head mismatch attempted unexpected gh operation: $*"
   fi
 }
+resume_identity_head=dddddddddddddddddddddddddddddddddddddddd
 rc=0
 train_restore_retry_intent >/dev/null || rc=$?
 [[ "${rc}" == "2" ]] || fail "Actions head SHA mismatch did not fail closed"
+resume_identity_head="${fixture_batch_sha}"
+resume_identity_event=push
+rc=0
+train_restore_retry_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "non-workflow_dispatch retry run did not fail closed"
+resume_identity_event=workflow_dispatch
+resume_identity_path=.github/workflows/other.yml
+rc=0
+train_restore_retry_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "wrong workflow path did not fail closed"
+resume_identity_path=.github/workflows/ci.yml
 reject_base() { [[ "$1" != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]]; }
 export TRAIN_RESUME_ANCESTRY_CHECKER=reject_base
 rc=0
