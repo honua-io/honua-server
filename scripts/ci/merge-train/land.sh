@@ -52,10 +52,20 @@ train_land() {
 
   # Mark each INCLUDED PR merged. With the batch already on trunk, `gh pr merge
   # --merge` records the merge and closes the PR; GitHub recognizes the commits.
-  local pr _sha
-  while IFS=$'\t' read -r pr _sha; do
+  local pr admitted_sha
+  while IFS=$'\t' read -r pr admitted_sha; do
     [[ -z "${pr}" ]] && continue
-    train_side_effect gh pr merge "${pr}" --merge
+    if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
+      if ! "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}"; then
+        train_warn "final merge refused for #${pr}: head no longer matches admitted SHA; re-select"
+        return 10
+      fi
+    elif [[ "${TRAIN_APPLY}" != "1" ]]; then
+      train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
+    elif ! gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"; then
+      train_warn "final merge refused for #${pr}: head no longer matches admitted SHA; re-select"
+      return 10
+    fi
     train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
     train_log "landed #${pr} (#${pr})"
   done <"${included_file}"

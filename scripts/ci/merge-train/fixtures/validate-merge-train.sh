@@ -359,6 +359,25 @@ TRAIN_APPLY=1 train_land nonff-batch "${CUR_TRUNK}" "${INC}"; rc2=$?
 set -e
 assert_eq "ff-cas: non-FF push server-rejected => rc10" "${rc2}" "10"
 
+# A PR can advance after the admission snapshot but before GitHub records the
+# already-pushed batch as merged. The final merge must CAS the admitted SHA.
+git fetch -q origin trunk
+CLOSE_BASE="$(git rev-parse origin/trunk)"
+git checkout -q -B close-race origin/trunk
+echo "close race" >> close-race.txt; git add -A; git commit -qm "close race batch"
+close_sha="$(git rev-parse HEAD)"
+: >"${INC}"; printf '703\t%s\n' "${close_sha}" >>"${INC}"
+MERGE_ARGS="${SCRATCH}/merge-args"
+__merge_head_advanced() { printf '%s\t%s\n' "$1" "$2" >"${MERGE_ARGS}"; return 1; }
+export -f __merge_head_advanced
+export TRAIN_LAND_PR_MERGE_CMD=__merge_head_advanced
+set +e
+TRAIN_APPLY=1 train_land close-race "${CLOSE_BASE}" "${INC}"; rc3=$?
+set -e
+assert_eq "final-merge CAS: advanced head signals reselect" "${rc3}" "10"
+assert_eq "final-merge CAS: command receives admitted SHA" "$(cat "${MERGE_ARGS}")" $'703\t'"${close_sha}"
+unset TRAIN_LAND_PR_MERGE_CMD
+
 echo
 echo "== Case 8: smart-CI shard computation on a real batch diff =="
 # pr101 touched a FeatureServer path => the descriptor must target FeatureServer
