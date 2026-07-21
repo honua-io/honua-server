@@ -8,6 +8,15 @@ name: GeoServices Import Fidelity (External, On-Demand)
 # validate parity against live Esri services. Deterministic parity coverage
 # stays in the per-PR Import Fidelity Scorecard Governance gate + the in-repo parity
 # matrix/JSON; see docs/internal/ci/gate-model.md. (honua-server#1570)
+#
+# File renamed from geoservices-import-fidelity-nightly.yml (#2943): it never
+# ran on a schedule (deliberately, per the note above), so the "nightly" name
+# was misleading — the filename now matches the `workflow_dispatch`-only
+# reality instead of adding a schedule against the documented rationale.
+# Also folds in GeoservicesGeoportalImportIntegrationTests (previously
+# matched by zero workflow filter — issue #2943 acceptance criterion #4),
+# which exercises the same class of live external Esri/Geoportal endpoints
+# (geodata.hawaii.gov, maps.kauai.gov) gated by HONUA_TEST_ESRI_GEOPORTAL=1.
 on:
   workflow_dispatch:
 
@@ -21,7 +30,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: geoservices-import-fidelity-nightly-${{ github.ref }}
+  group: geoservices-import-fidelity-external-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -47,13 +56,14 @@ jobs:
       - name: Run external parity suite
         env:
           HONUA_TEST_ESRI_PARITY: '1'
+          HONUA_TEST_ESRI_GEOPORTAL: '1'
         run: |
           mkdir -p tests/TestResults
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
-            --filter GeoservicesImportFidelityIntegrationTests \
+            --filter "FullyQualifiedName~GeoservicesImportFidelityIntegrationTests|FullyQualifiedName~GeoservicesGeoportalImportIntegrationTests" \
             --logger "trx;LogFileName=geoservices-parity.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults

@@ -140,6 +140,13 @@ public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
         // Bounding-box polygon WKB covering the first ~5 parcels (lon -121.99..-121.95, lat 37.01..37.05).
         // Build via SQL to avoid hand-rolling WKB. EPSG:4326 has lat-lon axis order in MySQL 8.0+
         // ST_GeomFromText, so request lon-lat axis order explicitly to keep the WKT readable.
+        // #2943: the axis-order option must ALSO be requested on the outer ST_AsWKB — without
+        // it MySQL serializes using the SRS-native (lat-long) axis order regardless of how the
+        // WKT was parsed, producing a WKB whose first ordinate is latitude. That silently
+        // disagreed with MySqlSpatialSql.GeomFromWkb's canonical X/Y (lon-lat) WKB contract
+        // (used by MySqlFeatureQueryBuilder for every real filter geometry) and made
+        // ST_GeomFromWKB reject the longitude as an out-of-range latitude — a test-fixture bug,
+        // not a product bug, only surfaced now that this project runs in CI for the first time.
         byte[] bboxWkb;
         await using (var conn = await _dataSource.OpenConnectionAsync())
         await using (var cmd = conn.CreateCommand())
@@ -147,7 +154,7 @@ public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
             cmd.CommandText =
                 "SELECT ST_AsWKB(ST_GeomFromText(" +
                 "'POLYGON((-121.995 37.005, -121.95 37.005, -121.95 37.055, -121.995 37.055, -121.995 37.005))', " +
-                "4326, 'axis-order=long-lat'))";
+                "4326, 'axis-order=long-lat'), 'axis-order=long-lat')";
             var raw = await cmd.ExecuteScalarAsync();
             bboxWkb = (byte[])raw!;
         }
