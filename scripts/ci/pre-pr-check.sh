@@ -149,10 +149,18 @@ done
 # EXIT` per section) so later traps do not silently clobber earlier ones.
 CLEANUP_PATHS=()
 cleanup_scratch() {
+    # Under `set -e`, a failing command as the LAST thing this trap runs
+    # (e.g. the `[[ ]]` test below evaluating false when a path is empty)
+    # overrides the exit status the script was already tearing down with —
+    # `exit 0` from a --dry-run would otherwise surface as exit 1. The
+    # trailing `return 0` guarantees the trap itself never changes $?.
     local path
-    for path in "${CLEANUP_PATHS[@]:-}"; do
-        [[ -n "${path}" ]] && rm -rf "${path}"
-    done
+    if [[ "${#CLEANUP_PATHS[@]}" -gt 0 ]]; then
+        for path in "${CLEANUP_PATHS[@]}"; do
+            [[ -n "${path}" ]] && rm -rf "${path}"
+        done
+    fi
+    return 0
 }
 trap cleanup_scratch EXIT
 
