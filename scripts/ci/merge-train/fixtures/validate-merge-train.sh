@@ -1167,6 +1167,7 @@ echo
 echo "== Roll-forward Cap. 2b: state-aware green rerun recovery =="
 __recover_records() {
   [[ "$1" == train/batch/deadbee/123 ]] || return 0
+  [[ "$2" == base123 ]] || return 0
   printf '1944\tsha1944\n1961\tsha1961\n'
 }
 __recover_info() {
@@ -1177,7 +1178,7 @@ __recover_info() {
   esac
 }
 __recover_run() { printf 'CI\tcompleted\tsuccess\ttrain/batch/deadbee/123\tbatchsha\n'; }
-__recover_remote() { printf 'batchsha\n'; }
+__recover_remote() { printf '%s\n' "${RECOVERY_REMOTE}"; }
 __recover_trunk() { printf '%s\n' "${RECOVERY_TRUNK}"; }
 __recover_land() { printf 'LAND-MOCK %s %s\n' "$1" "$2"; cat "$3"; }
 __recover_dispatch() { printf 'DISPATCH-MOCK\n'; }
@@ -1195,7 +1196,7 @@ export TRAIN_RECOVERY_TRUNK_HEAD_FOR=__recover_trunk
 export TRAIN_RECOVERY_LAND_CMD=__recover_land
 export TRAIN_RECOVERY_DISPATCH_CMD=__recover_dispatch
 export TRAIN_STATE_ISSUE_OVERRIDE=2044
-export RECOVERY_TRUNK=base123
+export RECOVERY_TRUNK=base123 RECOVERY_REMOTE=batchsha
 export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
 RECOVERY_LOG="$(
   GITHUB_REPOSITORY=honua-io/honua-server \
@@ -1207,6 +1208,17 @@ assert_contains "recovery: land receives immutable #1944 head" "${RECOVERY_LOG}"
 assert_contains "recovery: successful resume finalizes once" "${RECOVERY_LOG}" "RECOVERY LANDED"
 assert_contains "recovery: successful resume queues continued drain" "${RECOVERY_LOG}" "DISPATCH-MOCK"
 assert_not_contains "recovery: never stamps CI Gate on mutable heads" "${RECOVERY_LOG}" "statuses/"
+
+# Member reconstruction must use the recorded assembly base, not current trunk.
+# The record seam returns no members unless it receives base123; this remains
+# recoverable even when current trunk already equals the batch SHA.
+export RECOVERY_TRUNK=batchsha
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 land 123)"
+BASE_RECON_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+assert_contains "recovery: post-push reconstruction uses recorded trunk base" "${BASE_RECON_LOG}" "RECOVERY LANDED"
+assert_not_contains "recovery: reconstructed post-push batch does not re-land" "${BASE_RECON_LOG}" "LAND-MOCK"
+export RECOVERY_TRUNK=base123
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
 
 # A PR-head change invalidates the whole batch: do not land or stamp it, clear
 # landing labels, reset state, and dispatch one serialized live reassembly.
@@ -1224,6 +1236,33 @@ assert_not_contains "recovery: changed PR head is never stamped" "${STALE_HEAD_L
 assert_contains "recovery: stale landing label is cleared" "${STALE_HEAD_LOG}" "gh pr edit 1944 --remove-label train:landing"
 assert_contains "recovery: changed head queues one reassembly" "${STALE_HEAD_LOG}" "DISPATCH-MOCK"
 assert_contains "recovery: changed head explains reset" "${STALE_HEAD_LOG}" "no longer matches validated head"
+
+# If state and commit-derived membership differ, cleanup uses their union so a
+# state-only member cannot remain stuck with train:landing.
+__recover_records_partial() {
+  [[ "$1" == train/batch/deadbee/123 && "$2" == base123 ]] || return 0
+  printf '1944\tsha1944\n'
+}
+export -f __recover_records_partial
+export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records_partial
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info RECOVERY_TRUNK=base123
+MEMBER_MISMATCH_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+assert_contains "recovery: mismatch clears commit-derived member" "${MEMBER_MISMATCH_LOG}" "gh pr edit 1944 --remove-label train:landing"
+assert_contains "recovery: mismatch clears state-only member" "${MEMBER_MISMATCH_LOG}" "gh pr edit 1961 --remove-label train:landing"
+assert_eq "recovery: mismatch dispatches exactly once" "$(grep -Fc DISPATCH-MOCK <<<"${MEMBER_MISMATCH_LOG}")" "1"
+assert_not_contains "recovery: mismatch never lands" "${MEMBER_MISMATCH_LOG}" "LAND-MOCK"
+export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
+
+# A deleted or rewritten batch ref is stale active state, not an ignorable old
+# event. Clear landing for all recorded state members and queue one reassembly.
+export RECOVERY_REMOTE=movedbatch
+MOVED_REF_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+assert_contains "recovery: moved batch ref resets active state" "${MOVED_REF_LOG}" "missing or no longer equals successful run head"
+assert_contains "recovery: moved batch clears #1944 landing" "${MOVED_REF_LOG}" "gh pr edit 1944 --remove-label train:landing"
+assert_contains "recovery: moved batch clears #1961 landing" "${MOVED_REF_LOG}" "gh pr edit 1961 --remove-label train:landing"
+assert_eq "recovery: moved batch dispatches exactly once" "$(grep -Fc DISPATCH-MOCK <<<"${MOVED_REF_LOG}")" "1"
+assert_not_contains "recovery: moved batch never lands" "${MOVED_REF_LOG}" "LAND-MOCK"
+export RECOVERY_REMOTE=batchsha
 
 # A trunk move follows the same reset path and never reaches land.
 export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info RECOVERY_TRUNK=advancedtrunk
@@ -1250,7 +1289,7 @@ unset TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH TRAIN_RECOVERY_PR_INFO_FOR \
   TRAIN_RECOVERY_RUN_INFO_FOR TRAIN_RECOVERY_REMOTE_HEAD_FOR \
   TRAIN_RECOVERY_TRUNK_HEAD_FOR TRAIN_RECOVERY_LAND_CMD \
   TRAIN_RECOVERY_DISPATCH_CMD TRAIN_RECOVERY_STATE_JSON TRAIN_STATE_ISSUE_OVERRIDE \
-  RECOVERY_TRUNK
+  RECOVERY_TRUNK RECOVERY_REMOTE
 
 echo
 echo "== Roll-forward Cap. 4: autofix disabled (TRAIN_AUTOFIX=0) => behaves like today =="
