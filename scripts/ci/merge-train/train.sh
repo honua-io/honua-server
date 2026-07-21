@@ -289,7 +289,7 @@ main() {
         recovered_phase="${TRAIN_POST_LAND_RECOVERY_PHASE:-post-land-finalize}"
         _write_state "${TRAIN_POST_LAND_BATCH}" "${TRAIN_POST_LAND_TRUNK_BASE}" "${TRAIN_POST_LAND_INCLUDED}" "${recovered_phase}" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
       else
-        _write_state "" "${TRAIN_POST_LAND_BATCH_SHA}" "" "done" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
+        _write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "done" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
       fi
       train_notice "reconciled durable post-land state before selection (phase=${recovered_phase})"
       return 0
@@ -624,6 +624,12 @@ main() {
     _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
       "land deferred: trunk moved (FF-CAS) â€” next run re-assembles"
     return 0
+  fi
+  if [[ "${rc}" == "11" ]]; then
+    train_annotate_warn "land outcome ambiguous; retaining durable phase=land for restart reconciliation"
+    train_step_end land >/dev/null; train_endgroup
+    _emit_metrics "land-ambiguous" "${trunk_sha}" "" "${shard_descriptor}"
+    return 1
   fi
   if [[ "${rc}" != "0" ]]; then
     train_err "land failed (rc=${rc})"

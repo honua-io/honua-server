@@ -17,6 +17,15 @@ train_land_pr_info() {
   gh pr view "${pr}" --json headRefOid,state --jq '[.headRefOid,.state] | @tsv'
 }
 
+train_land_observe_remote_trunk() {
+  if [[ -n "${TRAIN_LAND_REMOTE_TRUNK_OBSERVER:-}" ]]; then
+    "${TRAIN_LAND_REMOTE_TRUNK_OBSERVER}"
+    return
+  fi
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" || return 1
+  git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}"
+}
+
 train_land_clear_landing_label() {
   local pr="$1"
   if [[ -n "${TRAIN_LAND_CLEAR_LABEL_CMD:-}" ]]; then
@@ -171,11 +180,10 @@ train_land() {
     if [[ "${push_rc}" != "0" ]]; then
       # A transport/client error can occur after the server accepted the update.
       # Never roll back durable land intent until origin proves the batch absent.
-      if ! git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"; then
+      if ! pushed_trunk="$(train_land_observe_remote_trunk)"; then
         train_warn "push result ambiguous and origin unavailable; retaining durable land intent"
         return 11
       fi
-      pushed_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" || return 11
       if [[ "${pushed_trunk}" == "${batch_sha}" ]]; then
         train_warn "push client returned ${push_rc}, but origin confirms exact batch; continuing post-land reconciliation"
       elif git -C "${TRAIN_REPO_ROOT}" merge-base --is-ancestor "${batch_sha}" "${pushed_trunk}"; then
