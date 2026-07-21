@@ -1029,8 +1029,38 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex NamedParameterRegex();
 
+    [GeneratedRegex(@"\$(\d+)", RegexOptions.CultureInvariant)]
+    private static partial Regex PositionalParameterRegex();
+
     private static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
+        // DuckDB's native translator emits 1-based $N placeholders. Rebase them to the
+        // builder's current position so enforced filters, caller filters, object IDs, and
+        // temporal predicates cannot reuse the same parameter slots.
+        var positionalIndices = new SortedSet<int>();
+        foreach (Match match in PositionalParameterRegex().Matches(sql))
+        {
+            positionalIndices.Add(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture));
+        }
+
+        if (positionalIndices.Count > 0)
+        {
+            var positionalStart = paramIndex;
+            var positionalMap = new Dictionary<int, int>(positionalIndices.Count);
+            var positionalRank = 0;
+            foreach (var sourceIndex in positionalIndices)
+            {
+                positionalMap[sourceIndex] = positionalStart + positionalRank++;
+            }
+
+            sql = PositionalParameterRegex().Replace(sql, match =>
+            {
+                var sourceIndex = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+                return $"${positionalMap[sourceIndex]}";
+            });
+            paramIndex = positionalStart + positionalIndices.Count;
+        }
+
         // Collect unique @pN indices in ascending order. SqlFragment.Parameters is always
         // ordered by @pN index, so sorting unique indices gives the correct Parameters[rank]
         // <-> positional-$index alignment. Using a dense mapping also prevents sparse
