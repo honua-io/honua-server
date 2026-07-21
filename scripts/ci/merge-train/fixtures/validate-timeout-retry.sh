@@ -15,7 +15,8 @@ pass() { printf 'PASS: %s\n' "$1"; }
 record="$(mktemp)"
 fixture_included="$(mktemp)"
 fixture_metrics="$(mktemp)"
-trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}"' EXIT
+history_repo="$(mktemp -d)"
+trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}"; rm -rf "${history_repo}"' EXIT
 side_effect_fails=0
 train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
@@ -108,11 +109,16 @@ resume_fetcher() {
   printf '%s\n' "${fixture_batch_sha}"
 }
 resume_ancestry() {
-  [[ "$1:$2" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${fixture_batch_sha}" \
-    || "$1:$2" == "${fixture_member_sha}:${fixture_batch_sha}" ]]
+  [[ "$1:$2" == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${fixture_batch_sha}" ]]
+}
+resume_member_head() {
+  [[ "$1:$2:$3" == "101:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${fixture_batch_sha}" ]] \
+    || fail "member-head resolver received the wrong PR/base/batch"
+  printf '%s\n' "${fixture_member_sha}"
 }
 export TRAIN_RESUME_FETCHER=resume_fetcher
 export TRAIN_RESUME_ANCESTRY_CHECKER=resume_ancestry
+export TRAIN_RESUME_MEMBER_HEAD_RESOLVER=resume_member_head
 export TRAIN_INCLUDED_FILE="${fixture_included}"
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
 gh_mode=resume
@@ -136,6 +142,50 @@ resumed_json="$(train_restore_retry_intent)" || fail "production startup did not
 [[ "$(cat "${fixture_included}")" == $'101\t'"${fixture_member_sha}" ]] || fail "resume did not reconstruct the exact included member head"
 [[ ! -s "${record}" ]] || fail "resumed main path dispatched a batch or duplicate rerun"
 pass "restarted-main production resume path"
+
+# Production resolver follows immutable first-parent history, ignores a later
+# generated-artifact commit, and returns the train merge's exact second parent.
+git -C "${history_repo}" init -q
+git -C "${history_repo}" config user.email fixture@example.invalid
+git -C "${history_repo}" config user.name fixture
+printf 'base\n' >"${history_repo}/data"
+git -C "${history_repo}" add data
+git -C "${history_repo}" commit -q -m base
+history_trunk="$(git -C "${history_repo}" rev-parse HEAD)"
+git -C "${history_repo}" checkout -q -b member
+printf 'member\n' >>"${history_repo}/data"
+git -C "${history_repo}" commit -qam member
+history_member="$(git -C "${history_repo}" rev-parse HEAD)"
+git -C "${history_repo}" checkout -q master
+git -C "${history_repo}" merge -q --no-ff -m 'train: merge #101' member
+printf 'generated\n' >"${history_repo}/generated"
+git -C "${history_repo}" add generated
+git -C "${history_repo}" commit -q -m 'chore(ci): refresh generated merge-train artifacts'
+history_batch="$(git -C "${history_repo}" rev-parse HEAD)"
+saved_repo_root="${TRAIN_REPO_ROOT}"
+TRAIN_REPO_ROOT="${history_repo}"
+unset TRAIN_RESUME_MEMBER_HEAD_RESOLVER
+[[ "$(_train_resume_member_head 101 "${history_trunk}" "${history_batch}")" == "${history_member}" ]] \
+  || fail "production resolver did not derive the train merge's exact second parent"
+TRAIN_REPO_ROOT="${saved_repo_root}"
+export TRAIN_RESUME_MEMBER_HEAD_RESOLVER=resume_member_head
+pass "immutable batch-history member-head derivation"
+
+# A force-push back to an older ancestor must not replace the exact merge
+# parent recorded in the validated batch.
+force_pushed_back_sha=dddddddddddddddddddddddddddddddddddddddd
+gh() {
+  if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then
+    printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
+  elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then
+    printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${force_pushed_back_sha}"
+  else
+    fail "force-push-back attempted unexpected gh operation: $*"
+  fi
+}
+rc=0
+train_restore_retry_intent >/dev/null || rc=$?
+[[ "${rc}" == "2" ]] || fail "force-pushed-back PR head replaced the validated merge parent"
 
 # The Actions run must belong to the exact fetched batch SHA, and the fetched
 # batch must descend from the stored trunk base.

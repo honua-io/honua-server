@@ -12,13 +12,38 @@ _train_resume_is_ancestor() {
   fi
 }
 
+# _train_resume_member_head <pr> <trunk> <batch>: derive the exact PR head
+# incorporated by assembly. Generated-artifact commits may sit above the merge
+# commits, so locate the unique train merge on immutable first-parent history
+# and return its second parent.
+_train_resume_member_head() {
+  local pr="$1" trunk="$2" batch="$3" matches commit row self first second extra
+  if [[ -n "${TRAIN_RESUME_MEMBER_HEAD_RESOLVER:-}" ]]; then
+    "${TRAIN_RESUME_MEMBER_HEAD_RESOLVER}" "${pr}" "${trunk}" "${batch}"
+    return
+  fi
+  matches="$(git -C "${TRAIN_REPO_ROOT}" log --first-parent --format='%H%x09%s' \
+    "${trunk}..${batch}" | awk -F '\t' -v subject="train: merge #${pr}" '$2 == subject { print $1 }')" || return 1
+  [[ "$(sed '/^$/d' <<<"${matches}" | wc -l | tr -d ' ')" == "1" ]] || return 1
+  commit="$(sed '/^$/d' <<<"${matches}")"
+  row="$(git -C "${TRAIN_REPO_ROOT}" rev-list --parents -n 1 "${commit}")" || return 1
+  read -r self first second extra <<<"${row}"
+  [[ "${self}" == "${commit}" && "${first}" =~ ^[0-9a-fA-F]{40}$ \
+    && "${second}" =~ ^[0-9a-fA-F]{40}$ && -z "${extra:-}" ]] || return 1
+  printf '%s\n' "${second}"
+}
+
 # train_restore_retry_members <state-json> <batch-sha>: reconstruct the included
-# file from persisted member ids and their current GitHub head SHAs. Every head
-# must still be the exact open PR head incorporated into the validated batch.
+# file from persisted member ids and the immutable merge parents incorporated
+# into the batch. Every current GitHub head must equal its exact merge parent.
 train_restore_retry_members() {
-  local state="$1" batch_sha="$2" tmp selected='[]' pr row
+  local state="$1" trunk="$2" batch_sha="$3" tmp selected='[]' pr row expected_head current_head
   tmp="$(mktemp)"
   while IFS= read -r pr; do
+    expected_head="$(_train_resume_member_head "${pr}" "${trunk}" "${batch_sha}")" || {
+      rm -f "${tmp}"; return 1;
+    }
+    [[ "${expected_head}" =~ ^[0-9a-fA-F]{40}$ ]] || { rm -f "${tmp}"; return 1; }
     row="$(gh pr view "${pr}" --json number,state,headRefOid,createdAt,author 2>/dev/null)" || {
       rm -f "${tmp}"; return 1;
     }
@@ -26,10 +51,9 @@ train_restore_retry_members() {
       .number == $pr and .state == "OPEN"
       and (.headRefOid | type == "string" and test("^[0-9a-fA-F]{40}$"))
     ' >/dev/null <<<"${row}" || { rm -f "${tmp}"; return 1; }
-    local head
-    head="$(jq -r '.headRefOid' <<<"${row}")"
-    _train_resume_is_ancestor "${head}" "${batch_sha}" || { rm -f "${tmp}"; return 1; }
-    printf '%s\t%s\n' "${pr}" "${head}" >>"${tmp}"
+    current_head="$(jq -r '.headRefOid' <<<"${row}")"
+    [[ "${current_head}" == "${expected_head}" ]] || { rm -f "${tmp}"; return 1; }
+    printf '%s\t%s\n' "${pr}" "${expected_head}" >>"${tmp}"
     selected="$(jq -c --argjson row "${row}" '. + [{
       number: $row.number,
       headRefOid: $row.headRefOid,
@@ -82,7 +106,7 @@ train_restore_retry_intent() {
   [[ "${run_branch}" == "${batch}" && "${run_head}" == "${batch_sha}" \
     && "${current_attempt}" =~ ^[0-9]+$ && "${current_attempt}" -ge "${base}" ]] || return 2
 
-  selected="$(train_restore_retry_members "${state}" "${batch_sha}")" || return 2
+  selected="$(train_restore_retry_members "${state}" "${trunk}" "${batch_sha}")" || return 2
 
   TRAIN_RERUN_KIND="${kind}"
   TRAIN_RERUN_BASE_ATTEMPT="${base}"
