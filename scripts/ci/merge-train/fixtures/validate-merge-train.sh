@@ -450,6 +450,14 @@ assert_eq "state: last_landed_trunk" "$(jq -r '.last_landed_trunk' <<<"${sj}")" 
 
 echo
 echo "== select: exact-head PR/Review gates + ordering + fail-closed filters =="
+__queue_pages() {
+  jq -nc '{data:{repository:{pullRequests:{nodes:[range(0;100)|{number:(1000+.),headRefOid:"page1",isDraft:false,mergeable:"MERGEABLE",labels:{nodes:[]},createdAt:"2026-01-01T00:00:00Z",author:{login:"a"}}],pageInfo:{hasNextPage:true,endCursor:"p1"}}}}}'
+  jq -nc '{data:{repository:{pullRequests:{nodes:[{number:1100,headRefOid:"page2",isDraft:false,mergeable:"MERGEABLE",labels:{nodes:[]},createdAt:"2026-01-02T00:00:00Z",author:{login:"b"}}],pageInfo:{hasNextPage:false,endCursor:null}}}}}'
+}
+export -f __queue_pages
+export TRAIN_PR_QUEUE_PAGES_CMD=__queue_pages
+assert_eq "select: paginated queue includes entries beyond first 100" "$(train_open_pr_queue | jq length)" "101"
+unset TRAIN_PR_QUEUE_PAGES_CMD
 export TRAIN_PR_LIST_JSON='[
   {"number":10,"headRefOid":"aaa","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-02T00:00:00Z"},
   {"number":11,"headRefOid":"bbb","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-01T00:00:00Z"},
@@ -926,6 +934,9 @@ git checkout -q origin/trunk 2>/dev/null || true
 
 echo
 echo "== Single merge authority static guard =="
+bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" --self-test \
+  && ok "authority: positive/negative fixtures" \
+  || bad "authority: fixture coverage failed"
 bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" \
   && ok "authority: only merge-train.yml can land" \
   || bad "authority: multiple merge mechanisms detected"
