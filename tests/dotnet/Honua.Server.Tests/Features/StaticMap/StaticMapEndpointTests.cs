@@ -9,6 +9,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.StaticMap;
 
@@ -351,4 +352,259 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
             await fixture.DisposeAsync();
         }
     }
+
+    // --- Dimension entitlement band (honua-server#2945): 1280 (Community max) is the
+    // entitlement boundary, 4096 (Pro max) is the absolute hard cap. Everything strictly
+    // between the two requires the "staticmap.large-dimensions" entitlement.
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_DimensionAtCommunityMax_ReturnsImage()
+    {
+        // 1280x1280 is exactly the Community cap: allowed without any entitlement.
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/1280x1280.png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_DimensionAboveCommunityMax_ReturnsPaymentRequired()
+    {
+        // 2000 is within the Pro hard cap (4096) but above the Community entitlement
+        // boundary (1280): blocked for a Community-tier caller.
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/2000x2000.png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_ProEdition_DimensionWithinEntitlementBand_ReturnsImage()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/2000x2000.png");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_ProEdition_ExceedsHardCap_ReturnsBadRequest()
+    {
+        // The 4096 hard cap applies regardless of entitlement tier.
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/5000x5000.png");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // --- Overlay-count entitlement band: >10 markers or >20 path vertices require
+    // "staticmap.rich-overlays"; >100 markers / >500 vertices are always rejected.
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_MarkersWithinCommunityLimit_ReturnsImage()
+    {
+        var markers = BuildMarkers(10);
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?markers={markers}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_MarkersAboveCommunityLimit_ReturnsPaymentRequired()
+    {
+        var markers = BuildMarkers(11);
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?markers={markers}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_ProEdition_MarkersAboveCommunityLimit_ReturnsImage()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var markers = BuildMarkers(50);
+            var response = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?markers={markers}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_ProEdition_MarkersExceedProHardCap_ReturnsBadRequest()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var markers = BuildMarkers(101);
+            var response = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?markers={markers}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_PathWithinCommunityLimit_ReturnsImage()
+    {
+        var path = BuildPathVertices(20);
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?path={path}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_PathAboveCommunityLimit_ReturnsPaymentRequired()
+    {
+        var path = BuildPathVertices(21);
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?path={path}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_ProEdition_PathAboveCommunityLimit_ReturnsImage()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var path = BuildPathVertices(100);
+            var response = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?path={path}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // --- DPI entitlement band + actual output-resolution scaling ---
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_CommunityEdition_HighDpi_ReturnsPaymentRequired()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/400x300.png?dpi=150");
+
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
+    public async Task CenterZoom_ProEditionHighDpi_ScalesOutputResolution()
+    {
+        // honua-server#2945: prove the dpi parameter actually changes the rendered
+        // pixel dimensions (dpiFactor = dpi/72), not just that the request succeeds.
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            const int width = 144;
+            const int height = 96;
+            const int dpi = 150;
+
+            var baselineResponse = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/{width}x{height}.png");
+            var highDpiResponse = await fixture.Client.GetAsync(
+                $"/static/{WebAppFixture.TestServiceId}/-122.4194,37.7749,12/{width}x{height}.png?dpi={dpi}");
+
+            baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            highDpiResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var baselineBitmap = SKBitmap.Decode(await baselineResponse.Content.ReadAsByteArrayAsync());
+            using var highDpiBitmap = SKBitmap.Decode(await highDpiResponse.Content.ReadAsByteArrayAsync());
+
+            baselineBitmap.Width.Should().Be(width);
+            baselineBitmap.Height.Should().Be(height);
+
+            var dpiFactor = dpi / 72.0;
+            var expectedWidth = (int)Math.Round(width * dpiFactor);
+            var expectedHeight = (int)Math.Round(height * dpiFactor);
+
+            highDpiBitmap.Width.Should().Be(expectedWidth);
+            highDpiBitmap.Height.Should().Be(expectedHeight);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static string BuildMarkers(int count)
+        => string.Join('|', Enumerable.Range(0, count)
+            .Select(i => $"{-122.4 + (i * 0.001):F4},{37.7 + (i * 0.001):F4}"));
+
+    private static string BuildPathVertices(int count)
+        => string.Join('|', Enumerable.Range(0, count)
+            .Select(i => $"{-122.4 + (i * 0.001):F4},{37.7 + (i * 0.001):F4}"));
 }
