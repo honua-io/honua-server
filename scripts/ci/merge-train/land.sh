@@ -202,11 +202,24 @@ train_land() {
   fi
   TRAIN_LANDED_BATCH_SHA="${batch_sha}"
   export TRAIN_LANDED_BATCH_SHA
-  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
-  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${TRAIN_LANDED_BATCH_SHA}" ]] || return 1
+  local observed_trunk=""
+  if ! observed_trunk="$(train_land_observe_remote_trunk)"; then
+    train_warn "post-push trunk observation unavailable; retaining durable land intent"
+    return 11
+  fi
+  if [[ "${observed_trunk}" != "${TRAIN_LANDED_BATCH_SHA}" ]]; then
+    train_warn "post-push trunk no longer equals accepted batch; retaining durable land intent"
+    return 11
+  fi
   train_finalize_landed_members "${included_file}"
-  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
-  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${TRAIN_LANDED_BATCH_SHA}" ]] || return 1
+  if ! observed_trunk="$(train_land_observe_remote_trunk)"; then
+    train_warn "post-finalization trunk observation unavailable; retaining durable land intent"
+    return 11
+  fi
+  if [[ "${observed_trunk}" != "${TRAIN_LANDED_BATCH_SHA}" ]]; then
+    train_warn "post-finalization trunk no longer equals accepted batch; retaining durable land intent"
+    return 11
+  fi
 
   return 0
 }

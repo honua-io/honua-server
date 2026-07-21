@@ -20,14 +20,27 @@ is_safe_exclusion() {
 }
 
 normalized_source() {
-  # Remove comment-only/inline-comment text, collapse shell continuations, then
+  # Remove shell comments only when # occurs outside quotes, collapse shell continuations, then
   # delimit real lines. This catches evasive wrapping without joining unrelated
   # commands later in the workflow.
   awk '
-    /^[[:space:]]*#/ { next }
-    { sub(/[[:space:]]+#.*$/, "") }
-    /\\[[:space:]]*$/ { sub(/\\[[:space:]]*$/, ""); printf "%s ", $0; next }
-    { printf "%s ; ", $0 }
+    function without_comment(s, out, i, c, prev, sq, dq, esc) {
+      out = ""; sq = 0; dq = 0; esc = 0
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1); prev = (i == 1 ? "" : substr(s, i - 1, 1))
+        if (esc) { out = out c; esc = 0; continue }
+        if (c == "\\" && !sq) { out = out c; esc = 1; continue }
+        if (c == "\047" && !dq) { sq = !sq; out = out c; continue }
+        if (c == "\042" && !sq) { dq = !dq; out = out c; continue }
+        if (c == "#" && !sq && !dq && (i == 1 || prev ~ /[[:space:]]/)) break
+        out = out c
+      }
+      return out
+    }
+    { line = without_comment($0) }
+    line ~ /^[[:space:]]*$/ { next }
+    line ~ /\\[[:space:]]*$/ { sub(/\\[[:space:]]*$/, "", line); printf "%s ", line; next }
+    { printf "%s ; ", line }
   ' "$1"
 }
 
@@ -43,6 +56,10 @@ canonical_cli_source() {
       for (i = 1; i <= NF; i++) {
         cmd = token[i]
         gsub(/^["'"'"'`]+|["'"'"'`]+$/, "", cmd)
+        gsub(/\\/, "/", cmd)
+        sub(/^.*\//, "", cmd)
+        cmd = tolower(cmd)
+        sub(/\.exe$/, "", cmd)
         if (cmd != "git" && cmd != "gh") continue
         j = i + 1
         while (j <= NF && token[j] ~ /^-/) {
@@ -51,7 +68,7 @@ canonical_cli_source() {
               (cmd == "gh" && opt ~ /^(-R|--repo|--hostname|--config)$/)) j += 2
           else j++
         }
-        verb = token[j]
+        verb = tolower(token[j])
         gsub(/^["'"'"'`]+|["'"'"'`,]+$/, "", verb)
         if (cmd == "git" && verb == "push") {
           printf "git push"
@@ -80,9 +97,19 @@ source_has_forbidden_authority() {
 function_source() {
   local file="$1" function_name="$2"
   awk -v wanted="${function_name}" '
-    $0 ~ "^" wanted "\\(\\)[[:space:]]*\\{" { found=1 }
-    found && $0 !~ "^" wanted "\\(\\)[[:space:]]*\\{" &&
-      $0 ~ "^[A-Za-z_][A-Za-z0-9_]*\\(\\)[[:space:]]*\\{" { exit }
+    function declaration(s, is_function, name, rest) {
+      sub(/^[[:space:]]*/, "", s)
+      is_function = sub(/^function[[:space:]]+/, "", s)
+      if (match(s, /^[A-Za-z_][A-Za-z0-9_]*/) == 0) return ""
+      name = substr(s, RSTART, RLENGTH); rest = substr(s, RLENGTH + 1)
+      sub(/^[[:space:]]*/, "", rest)
+      if (rest ~ /^\([[:space:]]*\)[[:space:]]*\{/) return name
+      if (is_function && rest ~ /^\{/) return name
+      return ""
+    }
+    { declared = declaration($0) }
+    declared == wanted { found=1 }
+    found && declared != "" && declared != wanted { exit }
     found { print }
   ' "${file}"
 }
@@ -93,7 +120,19 @@ function_source() {
 scan_post_cas_call_graph() {
   local file="$1" root="train_finalize_landed_members" current body candidate
   local -a functions queue
-  mapfile -t functions < <(awk 'match($0,/^([A-Za-z_][A-Za-z0-9_]*)\(\)[[:space:]]*\{/,m){print m[1]}' "${file}")
+  mapfile -t functions < <(awk '
+    function declaration(s, is_function, name, rest) {
+      sub(/^[[:space:]]*/, "", s)
+      is_function = sub(/^function[[:space:]]+/, "", s)
+      if (match(s, /^[A-Za-z_][A-Za-z0-9_]*/) == 0) return ""
+      name = substr(s, RSTART, RLENGTH); rest = substr(s, RLENGTH + 1)
+      sub(/^[[:space:]]*/, "", rest)
+      if (rest ~ /^\([[:space:]]*\)[[:space:]]*\{/) return name
+      if (is_function && rest ~ /^\{/) return name
+      return ""
+    }
+    { name = declaration($0); if (name != "") print name }
+  ' "${file}")
   queue=("${root}")
   declare -A seen=()
   while [[ "${#queue[@]}" -gt 0 ]]; do
@@ -182,6 +221,9 @@ YAML
     $'gh pr \\\n      merge 1 --merge'
     'git push origin HEAD:trunk'
     'git -C /tmp/repo push origin HEAD:trunk'
+    '/usr/bin/GIT.EXE push origin HEAD:trunk'
+    'C:\\tools\\Gh.ExE pr merge 1 --merge'
+    $'printf "literal # still data"; gh pr merge 1 --merge'
     'git push origin batch:refs/heads/trunk'
     $'target=trunk\n      git push origin HEAD:${target}'
     $'target=refs/heads/trunk\n      git push origin HEAD:${target}'
@@ -196,8 +238,8 @@ YAML
   done
   rm -f "${scratch}/.github/workflows/other.yml"
   cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
-train_post_cas_writer() { gh -R o/r pr merge 1 --merge; }
-train_finalize_landed_members() { train_post_cas_writer; }
+  function train_post_cas_writer { gh -R o/r pr merge 1 --merge; }
+  train_finalize_landed_members () { train_post_cas_writer; }
 train_land() { git push origin batch:trunk; }
 SH
   scan_authorities "${scratch}" >/dev/null 2>&1 \
