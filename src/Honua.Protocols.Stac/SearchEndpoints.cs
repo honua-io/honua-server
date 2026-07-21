@@ -1462,8 +1462,9 @@ internal static class SearchEndpoints
         IQueryProcessor queryProcessor)
     {
         FilterExpression? combined = null;
-        FilterExpression? higherPrecedenceFieldsAreNull = null;
-        foreach (var canonicalKey in ImmutableArray.Create("stac_id", "item_id", "id"))
+        FilterExpression? higherPrecedenceFieldsAreAbsent = null;
+        var canonicalKeys = ImmutableArray.Create("stac_id", "item_id", "id");
+        foreach (var canonicalKey in canonicalKeys)
         {
             var field = resource.SchemaFields.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
@@ -1472,21 +1473,13 @@ internal static class SearchEndpoints
                 continue;
             }
 
-            var property = new PropertyReference(field.Name);
-            var literals = itemIds
-                .Select(itemId => TryCreateItemIdLiteral(field.Type, itemId, out var literal) ? literal : null)
-                .Where(static literal => literal is not null)
-                .Cast<FilterExpression>()
-                .ToArray();
-            if (literals.Length > 0)
+            var matches = BuildItemIdMatchExpression(field, itemIds);
+            if (matches is not null)
             {
-                FilterExpression matches = literals.Length == 1
-                    ? new BinaryExpression(property, BinaryOperator.Equal, literals[0])
-                    : new BinaryExpression(property, BinaryOperator.In, new ValueList(literals));
-                if (higherPrecedenceFieldsAreNull is not null)
+                if (higherPrecedenceFieldsAreAbsent is not null)
                 {
                     matches = new BinaryExpression(
-                        higherPrecedenceFieldsAreNull,
+                        higherPrecedenceFieldsAreAbsent,
                         BinaryOperator.And,
                         matches);
                 }
@@ -1496,10 +1489,31 @@ internal static class SearchEndpoints
                     : new BinaryExpression(combined, BinaryOperator.Or, matches);
             }
 
-            var fieldIsNull = new UnaryExpression(UnaryOperator.IsNull, property);
-            higherPrecedenceFieldsAreNull = higherPrecedenceFieldsAreNull is null
-                ? fieldIsNull
-                : new BinaryExpression(higherPrecedenceFieldsAreNull, BinaryOperator.And, fieldIsNull);
+            var fieldIsAbsent = BuildItemIdFieldAbsentExpression(field);
+            higherPrecedenceFieldsAreAbsent = higherPrecedenceFieldsAreAbsent is null
+                ? fieldIsAbsent
+                : new BinaryExpression(higherPrecedenceFieldsAreAbsent, BinaryOperator.And, fieldIsAbsent);
+        }
+
+        var primaryIdField = resource.FindPrimaryIdField();
+        if (primaryIdField is not null &&
+            !canonicalKeys.Any(key => string.Equals(key, primaryIdField.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            var primaryMatches = BuildItemIdMatchExpression(primaryIdField, itemIds);
+            if (primaryMatches is not null)
+            {
+                if (higherPrecedenceFieldsAreAbsent is not null)
+                {
+                    primaryMatches = new BinaryExpression(
+                        higherPrecedenceFieldsAreAbsent,
+                        BinaryOperator.And,
+                        primaryMatches);
+                }
+
+                combined = combined is null
+                    ? primaryMatches
+                    : new BinaryExpression(combined, BinaryOperator.Or, primaryMatches);
+            }
         }
 
         if (combined is null)
@@ -1511,6 +1525,42 @@ internal static class SearchEndpoints
             new UnifiedQuery { Filter = QueryFilter.FromExpression(combined) },
             resource);
         return translated.SqlFilter ?? new SqlFragment("1 = 0", []);
+    }
+
+    private static BinaryExpression? BuildItemIdMatchExpression(
+        MetadataV2Field field,
+        ImmutableArray<string> itemIds)
+    {
+        var literals = itemIds
+            .Select(itemId => TryCreateItemIdLiteral(field.Type, itemId, out var literal) ? literal : null)
+            .Where(static literal => literal is not null)
+            .Cast<FilterExpression>()
+            .ToArray();
+        if (literals.Length == 0)
+        {
+            return null;
+        }
+
+        var property = new PropertyReference(field.Name);
+        return literals.Length == 1
+            ? new BinaryExpression(property, BinaryOperator.Equal, literals[0])
+            : new BinaryExpression(property, BinaryOperator.In, new ValueList(literals));
+    }
+
+    private static FilterExpression BuildItemIdFieldAbsentExpression(MetadataV2Field field)
+    {
+        var property = new PropertyReference(field.Name);
+        var isNull = new UnaryExpression(UnaryOperator.IsNull, property);
+        if (field.Type != MetadataV2FieldType.String)
+        {
+            return isNull;
+        }
+
+        var isBlank = new BinaryExpression(
+            new FunctionCall("TRIM", [property]),
+            BinaryOperator.Equal,
+            new Literal(string.Empty, LiteralType.Text));
+        return new BinaryExpression(isNull, BinaryOperator.Or, isBlank);
     }
 
     private static bool TryCreateItemIdLiteral(

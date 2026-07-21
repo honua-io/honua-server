@@ -49,6 +49,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _connectionName = string.Empty;
     private bool _connectionCreated;
     private string _tableName = string.Empty;
+    private string _nonCanonicalIdTableName = string.Empty;
     private string _serviceName = string.Empty;
     private int? _layerId;
 
@@ -58,6 +59,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
         _tableName = $"layer_{Guid.NewGuid():N}";
+        _nonCanonicalIdTableName = $"{_tableName}_fid";
         _serviceName = $"svc_{Guid.NewGuid():N}";
 
         await CreateSecureConnectionAsync(_fixture.Postgres.ConnectionString);
@@ -172,7 +174,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             GeometryType = "Point",
             Srid = 4326,
             PrimaryKey = "id",
-            Fields = ["id", "stac_id", "name", "population"],
+            Fields = ["id", "stac_id", "item_id", "name", "population"],
             ServiceName = _serviceName,
             Enabled = true
         };
@@ -268,6 +270,36 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 .Be(0);
         }
 
+        var blankCanonicalIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=fallback-item&limit=10");
+        var blankCanonicalIdSearchPayload = await blankCanonicalIdSearchResponse.Content.ReadAsStringAsync();
+        blankCanonicalIdSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"response: {blankCanonicalIdSearchPayload}");
+        using (var blankCanonicalIdSearchDocument = JsonDocument.Parse(blankCanonicalIdSearchPayload))
+        {
+            blankCanonicalIdSearchDocument.RootElement
+                .GetProperty("features")
+                .EnumerateArray()
+                .Select(feature => feature.GetProperty("id").ToString())
+                .Should()
+                .Equal("fallback-item");
+        }
+
+        var multipleIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=123,fallback-item&limit=10");
+        var multipleIdSearchPayload = await multipleIdSearchResponse.Content.ReadAsStringAsync();
+        multipleIdSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {multipleIdSearchPayload}");
+        using (var multipleIdSearchDocument = JsonDocument.Parse(multipleIdSearchPayload))
+        {
+            multipleIdSearchDocument.RootElement
+                .GetProperty("features")
+                .EnumerateArray()
+                .Select(feature => feature.GetProperty("id").ToString())
+                .Should()
+                .BeEquivalentTo(["123", "fallback-item"]);
+        }
+
         var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
         var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
         itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");
@@ -290,6 +322,45 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var unmatchedObjectIdResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/999");
         unmatchedObjectIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        await CreateNonCanonicalIdSourceAsync();
+        var nonCanonicalPublishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = _nonCanonicalIdTableName,
+                LayerName = $"Layer {_nonCanonicalIdTableName}",
+                Description = "Layer publish STAC noncanonical primary id test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "fid",
+                Fields = ["fid", "name"],
+                ServiceName = _serviceName,
+                Enabled = true
+            }, options: _jsonOptions));
+        var nonCanonicalPublishPayload = await nonCanonicalPublishResponse.Content.ReadAsStringAsync();
+        nonCanonicalPublishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {nonCanonicalPublishPayload}");
+        var nonCanonicalPublishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(
+            nonCanonicalPublishPayload,
+            _jsonOptions);
+        var nonCanonicalCollectionId = nonCanonicalPublishApi!.Data!.LayerId
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var nonCanonicalIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={nonCanonicalCollectionId}&ids=77,88&limit=10");
+        var nonCanonicalIdSearchPayload = await nonCanonicalIdSearchResponse.Content.ReadAsStringAsync();
+        nonCanonicalIdSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"response: {nonCanonicalIdSearchPayload}");
+        using var nonCanonicalIdSearchDocument = JsonDocument.Parse(nonCanonicalIdSearchPayload);
+        nonCanonicalIdSearchDocument.RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("id").ToString())
+            .Should()
+            .BeEquivalentTo(["77", "88"]);
     }
 
     [IntegrationTest]
@@ -1746,9 +1817,10 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            ALTER TABLE public.{_tableName} ADD COLUMN stac_id INTEGER;
+            ALTER TABLE public.{_tableName} ADD COLUMN stac_id TEXT;
+            ALTER TABLE public.{_tableName} ADD COLUMN item_id TEXT;
             UPDATE public.{_tableName}
-            SET id = 900, stac_id = 123
+            SET id = 900, stac_id = '123'
             WHERE name = 'Test Feature';
             """;
 
@@ -1760,8 +1832,29 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            INSERT INTO public.{_tableName} (id, stac_id, name, population, geom)
-            VALUES (123, 456, 'Wrong Provider ObjectId', 999, ST_SetSRID(ST_Point(2, 2), 4326));
+            INSERT INTO public.{_tableName} (id, stac_id, item_id, name, population, geom)
+            VALUES
+                (123, '456', NULL, 'Wrong Provider ObjectId', 999, ST_SetSRID(ST_Point(2, 2), 4326)),
+                (901, '   ', 'fallback-item', 'Blank Canonical Id', 101, ST_SetSRID(ST_Point(3, 3), 4326));
+            """;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task CreateNonCanonicalIdSourceAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE TABLE public.{_nonCanonicalIdTableName} (
+                fid BIGINT PRIMARY KEY,
+                name TEXT NOT NULL,
+                geom geometry(Point, 4326) NOT NULL
+            );
+            INSERT INTO public.{_nonCanonicalIdTableName} (fid, name, geom)
+            VALUES
+                (77, 'Primary 77', ST_SetSRID(ST_Point(4, 4), 4326)),
+                (88, 'Primary 88', ST_SetSRID(ST_Point(5, 5), 4326));
             """;
 
         await command.ExecuteNonQueryAsync();
@@ -1904,7 +1997,10 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             return;
         }
 
-        var sql = $"DROP TABLE IF EXISTS public.{_tableName};";
+        var sql = $"""
+            DROP TABLE IF EXISTS public.{_tableName};
+            DROP TABLE IF EXISTS public.{_nonCanonicalIdTableName};
+            """;
         await _fixture.Postgres.ExecuteDdlUnderLockAsync(sql);
     }
 

@@ -21,8 +21,9 @@ namespace Honua.Databricks.Queries.Filters;
 /// Identifiers are backtick-quoted through <see cref="DatabricksSqlDialect"/>. Attribute
 /// predicates (comparison, logical, <c>IN</c>, <c>LIKE</c>, <c>BETWEEN</c>-as-range,
 /// <c>IS [NOT] NULL</c>, arithmetic) and envelope/relationship spatial predicates are
-/// supported. Temporal predicates, scalar <c>FunctionCall</c>s (EXTRACT/SUBSTRING/CAST and
-/// the rest of the GeoServices SQL function surface), distance predicates, and cross-SRID
+/// supported. The scalar <c>TRIM</c> function is supported; other scalar
+/// <c>FunctionCall</c>s (EXTRACT/SUBSTRING/CAST and the rest of the GeoServices SQL function
+/// surface), temporal predicates, distance predicates, and cross-SRID
 /// geometry literals are rejected with <see cref="NotSupportedException"/> in this slice so
 /// callers never receive over-broad results.
 /// </para>
@@ -102,6 +103,22 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
             _ => throw new NotSupportedException(
                 $"Unary operator '{unary.Operator}' is not supported by the Databricks provider."),
         };
+    }
+
+    protected override string TranslateFunction(FunctionCall function, FilterTranslationContext context)
+    {
+        if (!string.Equals(function.FunctionName, "TRIM", StringComparison.OrdinalIgnoreCase))
+        {
+            return base.TranslateFunction(function, context);
+        }
+
+        if (function.Arguments.Count != 1)
+        {
+            throw new NotSupportedException(
+                $"Function 'TRIM' requires exactly one argument; received {function.Arguments.Count}.");
+        }
+
+        return $"trim({TranslateExpression(function.Arguments[0], context)})";
     }
 
     protected override string TranslateProperty(PropertyReference property, FilterTranslationContext context)
