@@ -1,24 +1,48 @@
 #!/usr/bin/env bash
-# Step 7: land — fast-forward-only push of the CI-green batch onto trunk, guarded
-# by a compare-and-swap on the trunk SHA. If trunk moved since assembly, the FF
-# push is rejected (or pre-empted by the CAS check) and the caller re-assembles
-# — the train NEVER lands bytes that were not the exact bytes CI validated.
+# Step 7: land the immutable CI-green batch with a fast-forward trunk CAS.
 #
-#   git fetch origin trunk
-#   if rev-parse origin/trunk == <trunkShaAtAssembly>:  # CAS
-#       git push origin <batch>:trunk    # FF-only (no --force); non-FF rejected
-#   then `gh pr merge <n> --merge` per INCLUDED PR.
-#
-# A non-FF rejection (someone else advanced trunk in the race window) means
-# trunk moved => re-assemble. We never retry with force.
+# The batch commit is the authoritative merge unit. GitHub does not expose an
+# atomic transaction spanning trunk and multiple mutable PR head refs, so PR
+# finalization is post-push bookkeeping. Only members whose current head still
+# equals their admitted SHA are finalized with --match-head-commit. If a member
+# advances during landing, the tested snapshot still lands but the PR remains
+# open for its unreviewed delta. No unreviewed bytes can enter the batch.
 
-# train_land <batch-branch> <trunk-sha-at-assembly> <included-file>:
-#   returns 0 on success (landed), 10 on CAS/FF rejection (re-assemble), 1 on error.
+train_land_pr_info() {
+  local pr="$1"
+  if [[ -n "${TRAIN_LAND_PR_INFO_FOR:-}" ]]; then
+    "${TRAIN_LAND_PR_INFO_FOR}" "${pr}"
+    return
+  fi
+  gh pr view "${pr}" --json headRefOid,state --jq '[.headRefOid,.state] | @tsv'
+}
+
+train_land_clear_landing_label() {
+  local pr="$1"
+  if [[ -n "${TRAIN_LAND_CLEAR_LABEL_CMD:-}" ]]; then
+    "${TRAIN_LAND_CLEAR_LABEL_CMD}" "${pr}" || train_warn "could not clear landing label for #${pr}"
+  else
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" \
+      || train_warn "could not clear landing label for #${pr}"
+  fi
+  return 0
+}
+
+# train_land <batch-branch> <trunk-sha-at-assembly> <included-file>
+# Returns 0 once the exact batch lands, 10 when trunk CAS/FF rejects before any
+# landing, and 1 on a pre-push error. Post-push finalization never replays trunk.
 train_land() {
   local batch="$1" trunk_at_assembly="$2" included_file="$3"
+  TRAIN_LAND_FINALIZED_FILE="${TRAIN_LAND_FINALIZED_FILE:-${included_file}.finalized}"
+  TRAIN_LAND_ADVANCED_FILE="${TRAIN_LAND_ADVANCED_FILE:-${included_file}.advanced}"
+  TRAIN_LAND_PENDING_FILE="${TRAIN_LAND_PENDING_FILE:-${included_file}.pending}"
+  export TRAIN_LAND_FINALIZED_FILE TRAIN_LAND_ADVANCED_FILE TRAIN_LAND_PENDING_FILE
+  : >"${TRAIN_LAND_FINALIZED_FILE}"
+  : >"${TRAIN_LAND_ADVANCED_FILE}"
+  : >"${TRAIN_LAND_PENDING_FILE}"
 
-  # Selection may be hours old after batch CI. Re-attest every member directly
-  # before touching trunk; any mutable-state change invalidates this batch.
+  # Re-attest mutable admission before touching trunk. This reduces wasted work;
+  # safety itself comes from landing only the already-built immutable batch SHA.
   local admission_pr admission_sha
   while IFS=$'\t' read -r admission_pr admission_sha; do
     [[ -z "${admission_pr}" ]] && continue
@@ -31,43 +55,73 @@ train_land() {
   git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
   local current
   current="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
-
-  # Compare-and-swap precondition: trunk must be exactly what we assembled onto.
   if [[ "${current}" != "${trunk_at_assembly}" ]]; then
     train_warn "trunk advanced (${trunk_at_assembly:0:7} -> ${current:0:7}); re-assemble"
     return 10
   fi
 
-  # FF-only push. No --force, no --force-with-lease that could rewrite: a plain
-  # `push origin <batch>:trunk` is rejected by the server if it is not a
-  # fast-forward, which is exactly the guarantee we want.
+  # Plain FF push is the atomic landing boundary. Never force or rebuild here.
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"
-  else
-    if ! git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"; then
-      train_warn "FF push rejected (trunk moved in race window); re-assemble"
-      return 10
-    fi
+  elif ! git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"; then
+    train_warn "FF push rejected (trunk moved in race window); re-assemble"
+    return 10
   fi
 
-  # Mark each INCLUDED PR merged. With the batch already on trunk, `gh pr merge
-  # --merge` records the merge and closes the PR; GitHub recognizes the commits.
-  local pr admitted_sha
+  local pr admitted_sha info current_head current_state merge_rc
   while IFS=$'\t' read -r pr admitted_sha; do
     [[ -z "${pr}" ]] && continue
-    if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
-      if ! "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}"; then
-        train_warn "final merge refused for #${pr}: head no longer matches admitted SHA; re-select"
-        return 10
-      fi
-    elif [[ "${TRAIN_APPLY}" != "1" ]]; then
+    if [[ "${TRAIN_APPLY}" != "1" ]]; then
       train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
-    elif ! gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"; then
-      train_warn "final merge refused for #${pr}: head no longer matches admitted SHA; re-select"
-      return 10
+      printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
+      train_land_clear_landing_label "${pr}"
+      continue
     fi
-    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
-    train_log "landed #${pr} (#${pr})"
+
+    info="$(train_land_pr_info "${pr}" 2>/dev/null)" || info=""
+    IFS=$'\t' read -r current_head current_state <<<"${info}"
+    if [[ "${current_head}" != "${admitted_sha}" ]]; then
+      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head:-unknown}" >>"${TRAIN_LAND_ADVANCED_FILE}"
+      train_land_clear_landing_label "${pr}"
+      train_warn "snapshot for #${pr} landed, but head advanced (${admitted_sha:0:7} -> ${current_head:0:7}); leaving PR open for its delta"
+      continue
+    fi
+    if [[ "${current_state}" == "MERGED" ]]; then
+      printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
+      train_land_clear_landing_label "${pr}"
+      continue
+    fi
+    if [[ "${current_state}" != "OPEN" ]]; then
+      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state:-unknown}" >>"${TRAIN_LAND_PENDING_FILE}"
+      train_warn "snapshot for #${pr} landed, but PR state ${current_state:-unknown} cannot be finalized"
+      continue
+    fi
+
+    merge_rc=0
+    if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
+      "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}" || merge_rc=$?
+    else
+      gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}" || merge_rc=$?
+    fi
+    if [[ "${merge_rc}" != "0" ]]; then
+      info="$(train_land_pr_info "${pr}" 2>/dev/null)" || info=""
+      IFS=$'\t' read -r current_head current_state <<<"${info}"
+      if [[ "${current_head}" != "${admitted_sha}" ]]; then
+        printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head:-unknown}" >>"${TRAIN_LAND_ADVANCED_FILE}"
+        train_land_clear_landing_label "${pr}"
+        train_warn "snapshot for #${pr} landed; match-head finalization refused after head advance, leaving delta open"
+      elif [[ "${current_state}" == "MERGED" ]]; then
+        printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
+        train_land_clear_landing_label "${pr}"
+      else
+        printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state:-unknown}" >>"${TRAIN_LAND_PENDING_FILE}"
+        train_warn "snapshot for #${pr} landed, but exact-head finalization failed; leaving PR untouched for recovery"
+      fi
+      continue
+    fi
+    printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
+    train_land_clear_landing_label "${pr}"
+    train_log "finalized landed snapshot for #${pr} at ${admitted_sha:0:7}"
   done <"${included_file}"
 
   return 0
