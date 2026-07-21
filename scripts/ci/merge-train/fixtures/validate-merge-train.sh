@@ -717,6 +717,21 @@ assert_eq "state: included persisted" "$(jq -rc '.active_batch.included' <<<"${s
 assert_eq "state: max_batch in config" "$(jq -r '.config.max_batch' <<<"${sj}")" "${MAX_BATCH:-3}"
 assert_eq "state: last_landed_trunk" "$(jq -r '.last_landed_trunk' <<<"${sj}")" "cafef00d"
 
+__state_list_fail() { return 42; }
+__state_view_fail() { return 42; }
+export -f __state_list_fail __state_view_fail
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
+export TRAIN_STATE_ISSUE_LIST_CMD=__state_list_fail
+set +e; train_restore_post_land; state_list_fail_rc=$?; set -e
+assert_eq "state: issue-list failure fails startup closed" "${state_list_fail_rc}" "5"
+unset TRAIN_STATE_ISSUE_LIST_CMD
+export TRAIN_STATE_ISSUE_OVERRIDE=1 TRAIN_STATE_ISSUE_VIEW_CMD=__state_view_fail
+set +e; train_restore_post_land; state_view_fail_rc=$?; set -e
+assert_eq "state: issue-view failure fails startup closed" "${state_view_fail_rc}" "5"
+assert_contains "state: startup error cannot fall through to selection" "$(cat "${TRAIN_DIR}/train.sh")" \
+  'durable state lookup failed; refusing selection or state overwrite'
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_ISSUE_VIEW_CMD
+
 echo
 echo "== select: exact-head PR/Review gates + ordering + fail-closed filters =="
 __queue_pages() {
@@ -1226,7 +1241,7 @@ echo "== Single merge authority static guard =="
 node --test "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
   && ok "review gate: active/dismissed/unresolved evidence fixtures" \
   || bad "review gate: evidence fixtures failed"
-assert_contains "review gate: reaction API has least-privilege issues read" \
+assert_not_contains "review gate: reaction permission removed with reaction evidence" \
   "$(cat "${REAL_ROOT}/.github/workflows/review-gate.yml")" \
   "  issues: read"
 bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" --self-test \

@@ -70,15 +70,22 @@ train_state_issue_number() {
   if [[ -n "${TRAIN_STATE_ISSUE_OVERRIDE:-}" ]]; then
     echo "${TRAIN_STATE_ISSUE_OVERRIDE}"; return 0
   fi
-  gh issue list --label "${TRAIN_LABEL_STATE}" --state open \
-    --json number --jq '.[0].number // empty' 2>/dev/null || echo ""
+  if [[ -n "${TRAIN_STATE_ISSUE_LIST_CMD:-}" ]]; then
+    "${TRAIN_STATE_ISSUE_LIST_CMD}"
+  else
+    gh issue list --label "${TRAIN_LABEL_STATE}" --state open \
+      --json number --jq '.[0].number // empty' 2>/dev/null
+  fi
 }
 
 # train_state_write <body-file>: create-or-update the state issue. Side-effecting.
 train_state_write() {
   local body_file="$1"
   local num
-  num="$(train_state_issue_number)"
+  if ! num="$(train_state_issue_number)"; then
+    train_err "could not determine merge-train state issue; refusing to create or overwrite state"
+    return 1
+  fi
   if [[ -n "${num}" ]]; then
     train_side_effect gh issue edit "${num}" --body-file "${body_file}"
   else
@@ -91,12 +98,16 @@ train_state_write() {
 # READ-ONLY; used on startup to resume.
 train_state_read() {
   local num body
-  num="$(train_state_issue_number)"
+  num="$(train_state_issue_number)" || return 2
   [[ -z "${num}" ]] && return 0
   if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
     body="${TRAIN_STATE_BODY_OVERRIDE}"
   else
-    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null || echo "")"
+    if [[ -n "${TRAIN_STATE_ISSUE_VIEW_CMD:-}" ]]; then
+      body="$("${TRAIN_STATE_ISSUE_VIEW_CMD}" "${num}")" || return 2
+    else
+      body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 2
+    fi
   fi
   # Extract the fenced ```json ... ``` block.
   printf '%s\n' "${body}" | awk '
@@ -120,9 +131,9 @@ train_aggregate_block() {
   if [[ -n "${TRAIN_AGG_BODY_OVERRIDE:-}" ]]; then
     body="${TRAIN_AGG_BODY_OVERRIDE}"
   else
-    local num; num="$(train_state_issue_number)"
+    local num; num="$(train_state_issue_number)" || return 2
     [[ -z "${num}" ]] && return 0
-    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null || echo "")"
+    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 2
   fi
   printf '%s\n' "${body}" | awk '
     /^```json aggregate/ { inblk=1; next }
@@ -213,7 +224,7 @@ train_aggregate_dashboard_md() {
 train_aggregate_update() {
   local trunk="$1" last="$2" ttl="${3:-}"
   local prev agg
-  prev="$(train_aggregate_block)"
+  prev="$(train_aggregate_block)" || return 1
   agg="$(train_aggregate_merge "${prev}" "${ttl}")"
 
   # Render the human dashboard (always emitted to the Step Summary for visibility).
@@ -229,7 +240,10 @@ train_aggregate_update() {
   fi
 
   # Read the current machine-state block back so we re-emit a complete body.
-  local state_json; state_json="$(train_state_read)"
+  local state_json; state_json="$(train_state_read)" || {
+    train_err "could not read machine state while updating aggregate; preserving existing state"
+    return 1
+  }
   [[ -z "${state_json}" ]] && state_json='{}'
 
   local body="${TRAIN_AGG_BODY_FILE:-$(mktemp)}"

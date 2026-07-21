@@ -50,9 +50,13 @@ normalized_source() {
 canonical_cli_source() {
   awk '
     BEGIN { RS="[;\n]" }
+    function dequote(value) {
+      gsub(/["'"'"'`]/, "", value)
+      return value
+    }
     {
       gsub(/[|&()]/, " ")
-      for (i = 1; i <= NF; i++) token[i] = $i
+      for (i = 1; i <= NF; i++) token[i] = dequote($i)
       for (i = 1; i <= NF; i++) {
         cmd = token[i]
         gsub(/^["'"'"'`]+|["'"'"'`]+$/, "", cmd)
@@ -96,7 +100,7 @@ source_has_forbidden_authority() {
 
 function_source() {
   local file="$1" function_name="$2"
-  awk -v wanted="${function_name}" '
+  normalized_function_source "${file}" | awk -v wanted="${function_name}" '
     function declaration(s, is_function, name, rest) {
       sub(/^[[:space:]]*/, "", s)
       is_function = sub(/^function[[:space:]]+/, "", s)
@@ -111,7 +115,31 @@ function_source() {
     declared == wanted { found=1 }
     found && declared != "" && declared != wanted { exit }
     found { print }
-  ' "${file}"
+  '
+}
+
+# Join only a syntactically complete shell function header with a following
+# brace-only line. This is lexical normalization; no source is evaluated.
+normalized_function_source() {
+  awk '
+    function header(s) {
+      sub(/^[[:space:]]*/, "", s)
+      return s ~ /^(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(\([[:space:]]*\))?[[:space:]]*$/ &&
+        (s ~ /^function[[:space:]]+/ || s ~ /\([[:space:]]*\)[[:space:]]*$/)
+    }
+    NR == 1 { previous = $0; next }
+    {
+      current = $0
+      if (header(previous) && current ~ /^[[:space:]]*\{/) {
+        print previous " " current
+        previous = ""
+        next
+      }
+      if (previous != "") print previous
+      previous = current
+    }
+    END { if (previous != "") print previous }
+  ' "$1"
 }
 
 # Prove the post-CAS finalizer and every same-file helper reachable from it are
@@ -120,7 +148,7 @@ function_source() {
 scan_post_cas_call_graph() {
   local file="$1" root="train_finalize_landed_members" current body candidate
   local -a functions queue
-  mapfile -t functions < <(awk '
+  mapfile -t functions < <(normalized_function_source "${file}" | awk '
     function declaration(s, is_function, name, rest) {
       sub(/^[[:space:]]*/, "", s)
       is_function = sub(/^function[[:space:]]+/, "", s)
@@ -132,7 +160,7 @@ scan_post_cas_call_graph() {
       return ""
     }
     { name = declaration($0); if (name != "") print name }
-  ' "${file}")
+  ')
   queue=("${root}")
   declare -A seen=()
   while [[ "${#queue[@]}" -gt 0 ]]; do
@@ -223,6 +251,8 @@ YAML
     'git -C /tmp/repo push origin HEAD:trunk'
     '/usr/bin/GIT.EXE push origin HEAD:trunk'
     'C:\\tools\\Gh.ExE pr merge 1 --merge'
+    $'g'"'"'h'"'"' p'"'"'r'"'"' m'"'"'e'"'"'r'"'"'g'"'"'e 1 --merge'
+    $'/usr/bin/g'"'"'i'"'"'t push origin HEAD:trunk'
     $'printf "literal # still data"; gh pr merge 1 --merge'
     'git push origin batch:refs/heads/trunk'
     $'target=trunk\n      git push origin HEAD:${target}'
@@ -239,7 +269,8 @@ YAML
   rm -f "${scratch}/.github/workflows/other.yml"
   cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
   function train_post_cas_writer { gh -R o/r pr merge 1 --merge; }
-  train_finalize_landed_members () { train_post_cas_writer; }
+  train_finalize_landed_members ()
+  { train_post_cas_writer; }
 train_land() { git push origin batch:trunk; }
 SH
   scan_authorities "${scratch}" >/dev/null 2>&1 \
