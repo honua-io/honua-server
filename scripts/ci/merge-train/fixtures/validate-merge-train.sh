@@ -403,6 +403,8 @@ assert_eq "pre-CAS restart: admission-failure cleanup completes" "${rc_restart_a
 assert_contains "pre-CAS restart: admission-failure label cleared" "$(cat "${LABEL_CLEAR_RECORD}")" "706"
 assert_contains "pre-CAS orchestrator: cleanup returns to select at observed trunk" "$(cat "${TRAIN_DIR}/train.sh")" \
   '_write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "select" "" 0 0 null'
+assert_contains "post-land orchestrator: observed descendant remains current trunk" "$(cat "${TRAIN_DIR}/train.sh")" \
+  '_write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "done" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"'
 
 # The server may accept a push even when the client reports nonzero. Refetching
 # origin must recognize the exact batch and continue without pre-CAS cleanup.
@@ -428,6 +430,47 @@ git fetch -q origin trunk
 assert_eq "push ambiguity: origin confirms exact accepted batch" "$(git rev-parse origin/trunk)" "${ambig_sha}"
 assert_contains "push ambiguity: member finalizes only after origin proof" "$(cat "${SCRATCH}/ambig-finalized")" "707"
 unset TRAIN_LAND_PUSH_CMD TRAIN_LAND_PR_INFO_FOR
+
+# Client nonzero plus an unavailable verification read is irreducibly ambiguous:
+# rc11 retains phase=land and performs no label rollback.
+git checkout -q -B push-fetch-fail origin/trunk
+echo "ambiguous unavailable" >> push-fetch-fail.txt; git add -A; git commit -qm "ambiguous unavailable"
+fetch_fail_sha="$(git rev-parse HEAD)"
+: >"${INC}"; printf '709\t%s\n' "${fetch_fail_sha}" >>"${INC}"
+__push_error_only() { return 42; }
+__observe_trunk_fail() { return 1; }
+export -f __push_error_only __observe_trunk_fail
+export TRAIN_LAND_PUSH_CMD=__push_error_only TRAIN_LAND_REMOTE_TRUNK_OBSERVER=__observe_trunk_fail
+labels_before_fetch_fail="$(wc -l <"${LABEL_CLEAR_RECORD}" | tr -d ' ')"
+set +e; TRAIN_APPLY=1 train_land push-fetch-fail "${ambig_sha}" "${INC}"; rc_fetch_fail=$?; set -e
+assert_eq "push ambiguity unavailable: returns rc11" "${rc_fetch_fail}" "11"
+assert_eq "push ambiguity unavailable: does not clear landing labels" "$(wc -l <"${LABEL_CLEAR_RECORD}" | tr -d ' ')" "${labels_before_fetch_fail}"
+assert_contains "push ambiguity unavailable: orchestrator retains land phase" "$(cat "${TRAIN_DIR}/train.sh")" "retaining durable phase=land"
+unset TRAIN_LAND_PUSH_CMD TRAIN_LAND_REMOTE_TRUNK_OBSERVER
+
+# Client nonzero can also race a later trunk advance. A descendant proves the
+# batch landed, but exact-trunk post-land work is deferred to durable recovery.
+git checkout -q -B push-descendant origin/trunk
+echo "ambiguous descendant" >> push-descendant.txt; git add -A; git commit -qm "ambiguous descendant"
+push_desc_sha="$(git rev-parse HEAD)"
+: >"${INC}"; printf '710\t%s\n' "${push_desc_sha}" >>"${INC}"
+__push_accept_then_descend() {
+  git -C "${WORK}" push origin "$1:$2" >/dev/null
+  local tree child
+  tree="$(git -C "${WORK}" rev-parse "$1^{tree}")"
+  child="$(printf 'post-accept descendant\n' | git -C "${WORK}" commit-tree "${tree}" -p "$(git -C "${WORK}" rev-parse "$1")")"
+  git -C "${WORK}" push origin "${child}:$2" >/dev/null
+  return 42
+}
+export -f __push_accept_then_descend
+export TRAIN_LAND_PUSH_CMD=__push_accept_then_descend
+set +e; TRAIN_APPLY=1 train_land push-descendant "${ambig_sha}" "${INC}"; rc_push_desc=$?; set -e
+assert_eq "push ambiguity descendant: retains durable land intent" "${rc_push_desc}" "11"
+git fetch -q origin trunk
+git merge-base --is-ancestor "${push_desc_sha}" origin/trunk \
+  && ok "push ambiguity descendant: origin proves batch ancestry" \
+  || bad "push ambiguity descendant: batch ancestry missing"
+unset TRAIN_LAND_PUSH_CMD
 
 # Crash-state `land` plus trunk descendant means the batch did land and another
 # authority advanced later; recover observation-only rather than pre-CAS cleanup.
@@ -486,6 +529,10 @@ assert_contains "snapshot race restart: advanced member label eventually clears"
 
 # No post-CAS endpoint may be capable of writing trunk.
 assert_not_contains "post-CAS: PR merge endpoint removed" "$(cat "${TRAIN_DIR}/land.sh")" "gh pr merge"
+finalize_surface="$(awk '/^train_finalize_landed_members\(\)/{f=1} f{print} f && /^}/{exit}' "${TRAIN_DIR}/land.sh")"
+assert_not_contains "post-CAS: finalizer has no git push" "${finalize_surface}" "git push"
+assert_not_contains "post-CAS: finalizer has no gh api" "${finalize_surface}" "gh api"
+assert_not_contains "post-CAS: finalizer has no GraphQL" "${finalize_surface}" "graphql"
 
 # Kill/restart: the durable land record exists, trunk was pushed, and the first
 # controller dies before finalization. A fresh controller rebuilds journals from
