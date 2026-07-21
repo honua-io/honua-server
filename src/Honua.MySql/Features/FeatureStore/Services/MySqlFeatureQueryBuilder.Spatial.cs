@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.MySql;
 using Honua.MySql.Features.Infrastructure;
@@ -88,7 +89,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         List<object> parameters)
     {
         var wkbParam = $"@p{paramIndex++}";
-        parameters.Add(MySqlSpatialWkb.ToPlainWkb(filter.Geometry));
+        parameters.Add(WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry));
 
         // ST_GeomFromWKB parses canonical X/Y WKB and tags the result with the layer SRID so
         // MySQL's spatial functions reject mismatched references at evaluation time. On MySQL

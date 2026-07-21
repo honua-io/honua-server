@@ -23,9 +23,6 @@ internal static class SqlServerGeographyWinding
     [ThreadStatic]
     private static WKBReader? _reader;
 
-    [ThreadStatic]
-    private static WKBWriter? _writer;
-
     /// <summary>
     /// Returns WKB whose polygonal rings are oriented for SQL Server geography (CCW exterior,
     /// CW holes). Non-polygonal geometries and already-normalized polygons are returned as the
@@ -35,16 +32,6 @@ internal static class SqlServerGeographyWinding
     /// <param name="wkb">The client-supplied filter geometry as well-known binary.</param>
     /// <returns>WKB with CCW-exterior polygon winding, or the original bytes when no change applies.</returns>
     public static byte[] NormalizeToCcwExterior(byte[] wkb)
-        => Normalize(wkb, normalizeWinding: true);
-
-    /// <summary>
-    /// Removes EWKB metadata such as an embedded SRID without changing planar ring orientation.
-    /// SQL Server's static spatial constructors receive the authoritative SRID separately.
-    /// </summary>
-    public static byte[] NormalizeToPlainWkb(byte[] wkb)
-        => Normalize(wkb, normalizeWinding: false);
-
-    private static byte[] Normalize(byte[] wkb, bool normalizeWinding)
     {
         ArgumentNullException.ThrowIfNull(wkb);
 
@@ -60,13 +47,16 @@ internal static class SqlServerGeographyWinding
             return wkb;
         }
 
-        var normalized = normalizeWinding
-            ? RingOrientationNormalizer.Reorient(geometry, wantExteriorCcw: true) ?? geometry
-            : geometry;
+        var oriented = RingOrientationNormalizer.Reorient(geometry, wantExteriorCcw: true);
+        if (oriented is null)
+        {
+            return wkb;
+        }
 
-        // STGeomFromWKB takes the SRID as its second argument and expects plain WKB. Re-emitting
-        // with handleSRID disabled strips the EWKB header while retaining the geometry payload.
-        _writer ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false);
-        return _writer.Write(normalized);
+        var coordinates = oriented.Coordinates;
+        var hasZ = coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
+        var hasM = coordinates.Any(coordinate => !double.IsNaN(coordinate.M));
+        var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
+        return writer.Write(oriented);
     }
 }

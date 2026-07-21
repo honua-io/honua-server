@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.SqlServer.Features.FeatureStore.Services;
 
@@ -335,8 +336,8 @@ internal static partial class SqlServerFeatureQueryBuilder
         // predicate sees the intended region. The geometry (planar) type is orientation-insensitive,
         // so only its embedded EWKB SRID metadata is removed.
         var wkb = isGeography
-            ? SqlServerGeographyWinding.NormalizeToCcwExterior(filter.Geometry)
-            : SqlServerGeographyWinding.NormalizeToPlainWkb(filter.Geometry);
+            ? WkbSridNormalizer.RemoveEmbeddedSrid(SqlServerGeographyWinding.NormalizeToCcwExterior(filter.Geometry))
+            : WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry);
 
         var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
         parameters.Add(wkb);
