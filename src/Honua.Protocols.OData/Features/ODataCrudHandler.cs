@@ -891,16 +891,19 @@ internal sealed class ODataCrudHandler(
         CancellationToken cancellationToken)
     {
         var resolver = context.RequestServices.GetService<ODataFeatureProviderResolver>();
-        if (resolver is null || layerValidation.Resource is null)
+        if (resolver is null)
         {
-            return null;
+            return ODataUtilityService.CreateODataError(
+                context,
+                "InternalServerError",
+                "Feature provider routing is not configured.",
+                StatusCodes.Status500InternalServerError);
         }
 
-        var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
-            context,
+        var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+            layerValidation.Snapshot!,
             layerValidation.Publication,
-            layerValidation.Resource,
-            cancellationToken).ConfigureAwait(false);
+            layerValidation.Resource!);
         if (!storageLayerId.HasValue)
         {
             return ODataUtilityService.CreateODataError(
@@ -913,7 +916,7 @@ internal sealed class ODataCrudHandler(
         var support = await resolver.CheckWriteSupportAsync(
             layerValidation.Snapshot!,
             layerValidation.Service,
-            layerValidation.Resource,
+            layerValidation.Resource!,
             layerValidation.Publication,
             storageLayerId.Value,
             cancellationToken).ConfigureAwait(false);

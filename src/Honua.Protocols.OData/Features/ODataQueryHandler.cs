@@ -468,11 +468,10 @@ internal sealed partial class ODataQueryHandler(
             }
             var resource = layerValidation.Resource!;
             var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId;
-            var storageLayerId = await ResolveStorageLayerIdAsync(
-                context,
+            var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                layerValidation.Snapshot!,
                 layerValidation.Publication,
-                resource,
-                effectiveToken).ConfigureAwait(false);
+                resource);
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -482,17 +481,15 @@ internal sealed partial class ODataQueryHandler(
                     StatusCodes.Status500InternalServerError);
             }
 
-            var featureReader = _featureProviderResolver is null
-                ? _featureReader
-                : await _featureProviderResolver.ResolveReaderAsync(
+            var featureReader = await (_featureProviderResolver
+                ?? throw new InvalidOperationException("Feature provider routing is not configured."))
+                .ResolveQueryReaderAsync(
                     layerValidation.Snapshot!,
                     layerValidation.Service,
                     resource,
                     layerValidation.Publication,
                     storageLayerId.Value,
-                    pagination.Limit == 0 && count == true
-                        ? FeatureProviderReadOperation.Count
-                        : FeatureProviderReadOperation.Query,
+                    requireCount: count == true,
                     effectiveToken).ConfigureAwait(false);
 
             var requestActivity = Activity.Current;
@@ -929,19 +926,6 @@ internal sealed partial class ODataQueryHandler(
     private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)
     {
         return ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken);
-    }
-
-    private static async Task<int?> ResolveStorageLayerIdAsync(
-        HttpContext context,
-        MetadataV2Publication? publication,
-        MetadataV2Resource resource,
-        CancellationToken cancellationToken)
-    {
-        return await ODataV2Lookups.ResolveStorageLayerIdAsync(
-            context,
-            publication,
-            resource,
-            cancellationToken).ConfigureAwait(false);
     }
 
     private static IEnumerable<Dictionary<string, object?>> ApplyLayerPayloadOrdering(

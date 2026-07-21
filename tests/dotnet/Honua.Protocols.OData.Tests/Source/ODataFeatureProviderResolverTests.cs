@@ -26,6 +26,7 @@ public sealed class ODataFeatureProviderResolverTests
         secondaryProvider.ProviderName.Returns(DataProviderNames.SqlServer);
         secondaryProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
         secondaryProvider.Reader.Returns(secondaryReader);
+        secondaryProvider.Writer.Returns((IFeatureWriter?)null);
 
         var connectionRegistry = Substitute.For<ISecureConnectionRegistry>();
         connectionRegistry.GetConnectionAsync(connectionId.ToString(), Arg.Any<CancellationToken>())
@@ -46,7 +47,8 @@ public sealed class ODataFeatureProviderResolverTests
             connectionRegistry,
             new FeatureDataProviderRegistry([secondaryProvider]));
         var fallbackReader = Substitute.For<IFeatureReader>();
-        var resolver = new ODataFeatureProviderResolver(fallbackReader, router);
+        var fallbackWriter = Substitute.For<IFeatureWriter>();
+        var resolver = new ODataFeatureProviderResolver(fallbackReader, fallbackWriter, router);
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
         var resolved = await resolver.ResolveReaderAsync(
@@ -71,6 +73,120 @@ public sealed class ODataFeatureProviderResolverTests
         writeSupport.Supported.Should().BeFalse();
         writeSupport.ErrorMessage.Should().Contain("read-only");
         await fallbackReader.DidNotReceiveWithAnyArgs().CountAsync(default, default, default);
+    }
+
+    [Fact]
+    public async Task ResolveQueryReaderAsync_CountRequestedWithoutCountCapability_RejectsBeforeQuery()
+    {
+        var connectionId = Guid.NewGuid();
+        var secondaryReader = Substitute.For<IFeatureReader>();
+        var secondaryProvider = Substitute.For<IFeatureDataProvider>();
+        secondaryProvider.ProviderName.Returns(DataProviderNames.SqlServer);
+        secondaryProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical with { SupportsCount = false });
+        secondaryProvider.Reader.Returns(secondaryReader);
+        var router = CreateRouter(connectionId, secondaryProvider);
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IFeatureWriter>(),
+            router);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var act = () => resolver.ResolveQueryReaderAsync(
+            snapshot, service, resource, publication, 41, requireCount: true, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*count operations*");
+        await secondaryReader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
+    }
+
+    [Fact]
+    public async Task CheckWriteSupportAsync_PrimaryWriter_AllowsExistingCrudPipeline()
+    {
+        var connectionId = Guid.NewGuid();
+        var primaryWriter = Substitute.For<IFeatureWriter>();
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
+        provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        provider.Writer.Returns(primaryWriter);
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(), primaryWriter, CreateRouter(connectionId, provider));
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var support = await resolver.CheckWriteSupportAsync(
+            snapshot, service, resource, publication, 41, CancellationToken.None);
+
+        support.Supported.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CheckWriteSupportAsync_SecondaryWriter_RejectsPrimaryCrudFallback()
+    {
+        var connectionId = Guid.NewGuid();
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.SqlServer);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
+        provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        provider.Writer.Returns(Substitute.For<IFeatureWriter>());
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IFeatureWriter>(),
+            CreateRouter(connectionId, provider));
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var support = await resolver.CheckWriteSupportAsync(
+            snapshot, service, resource, publication, 41, CancellationToken.None);
+
+        support.Supported.Should().BeFalse();
+        support.ErrorMessage.Should().Contain("secondary");
+    }
+
+    [Fact]
+    public async Task ResolveReaderAsync_MissingRoutingMetadata_FailsClosed()
+    {
+        var connectionId = Guid.NewGuid();
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.SqlServer);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IFeatureWriter>(),
+            CreateRouter(connectionId, provider));
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var act = () => resolver.ResolveReaderAsync(
+            snapshot,
+            service,
+            resource,
+            publication with { StorageBindingId = null },
+            41,
+            FeatureProviderReadOperation.Query,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*routing metadata*");
+    }
+
+    private static FeatureProviderQueryRouter CreateRouter(Guid connectionId, IFeatureDataProvider provider)
+    {
+        var providerName = provider.ProviderName;
+        var connectionRegistry = Substitute.For<ISecureConnectionRegistry>();
+        connectionRegistry.GetConnectionAsync(connectionId.ToString(), Arg.Any<CancellationToken>())
+            .Returns(new DataConnection
+            {
+                ConnectionId = connectionId,
+                Name = "routed-provider",
+                Host = "provider.example.test",
+                Port = 1433,
+                DatabaseName = "spatial",
+                Username = "honua",
+                Provider = providerName,
+                SecretRef = "env:HONUA_TEST_PROVIDER",
+                SecretType = "environment",
+                CreatedBy = "test"
+            });
+        return new FeatureProviderQueryRouter(
+            connectionRegistry,
+            new FeatureDataProviderRegistry([provider]));
     }
 
     private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)

@@ -385,11 +385,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
             var resource = layerValidation.Resource!;
             var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
-            var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
-                context,
+            var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                layerValidation.Snapshot!,
                 layerValidation.Publication,
-                resource,
-                effectiveToken).ConfigureAwait(false);
+                resource);
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -398,15 +397,15 @@ internal sealed partial class ODataStreamingQueryHandler(
                     "Layer storage binding is not configured.",
                     StatusCodes.Status500InternalServerError);
             }
-            var featureReader = _featureProviderResolver is null
-                ? _featureReader
-                : await _featureProviderResolver.ResolveReaderAsync(
+            var featureReader = await (_featureProviderResolver
+                ?? throw new InvalidOperationException("Feature provider routing is not configured."))
+                .ResolveQueryReaderAsync(
                     layerValidation.Snapshot!,
                     layerValidation.Service,
                     resource,
                     layerValidation.Publication,
                     storageLayerId.Value,
-                    countValue == true ? FeatureProviderReadOperation.Count : FeatureProviderReadOperation.Query,
+                    requireCount: countValue == true,
                     effectiveToken).ConfigureAwait(false);
             var deltaDefinition = deltaState ?? new ODataDeltaService.DeltaQueryState
             {
@@ -1040,11 +1039,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
             var resource = layerValidation.Resource!;
             var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
-            var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
-                context,
+            var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                layerValidation.Snapshot!,
                 layerValidation.Publication,
-                resource,
-                effectiveToken).ConfigureAwait(false);
+                resource);
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -1053,9 +1051,9 @@ internal sealed partial class ODataStreamingQueryHandler(
                     "Layer storage binding is not configured.",
                     StatusCodes.Status500InternalServerError);
             }
-            var featureReader = _featureProviderResolver is null
-                ? _featureReader
-                : await _featureProviderResolver.ResolveReaderAsync(
+            var featureReader = await (_featureProviderResolver
+                ?? throw new InvalidOperationException("Feature provider routing is not configured."))
+                .ResolveReaderAsync(
                     layerValidation.Snapshot!,
                     layerValidation.Service,
                     resource,

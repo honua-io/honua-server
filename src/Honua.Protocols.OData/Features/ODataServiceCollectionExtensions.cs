@@ -74,6 +74,7 @@ internal static class ODataServiceCollectionExtensions
         services.AddScoped<ODataValidationService>();
         services.AddScoped(sp => new ODataFeatureProviderResolver(
             sp.GetRequiredService<IFeatureReader>(),
+            sp.GetRequiredService<IFeatureWriter>(),
             sp.GetService<FeatureProviderQueryRouter>()));
         services.AddScoped<ODataQueryDependencies>();
         services.AddScoped(sp =>

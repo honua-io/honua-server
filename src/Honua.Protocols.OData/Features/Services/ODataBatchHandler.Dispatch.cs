@@ -396,11 +396,10 @@ internal sealed partial class ODataBatchHandler
             }
         }
 
-        var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
-            context,
+        var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+            validation.Snapshot!,
             validation.Publication,
-            validation.Resource,
-            cancellationToken).ConfigureAwait(false);
+            validation.Resource);
         if (!storageLayerId.HasValue)
         {
             return (null, CreateErrorResponse(
@@ -413,23 +412,29 @@ internal sealed partial class ODataBatchHandler
         if (scope == AccessScope.Write)
         {
             var resolver = context.RequestServices.GetService<ODataFeatureProviderResolver>();
-            if (resolver is not null)
+            if (resolver is null)
             {
-                var support = await resolver.CheckWriteSupportAsync(
-                    validation.Snapshot!,
-                    validation.Service,
-                    validation.Resource,
-                    validation.Publication,
-                    storageLayerId.Value,
-                    cancellationToken).ConfigureAwait(false);
-                if (!support.Supported)
-                {
-                    return (null, CreateErrorResponse(
-                        requestId,
-                        StatusCodes.Status501NotImplemented,
-                        "ProviderWriteNotSupported",
-                        support.ErrorMessage!));
-                }
+                return (null, CreateErrorResponse(
+                    requestId,
+                    StatusCodes.Status500InternalServerError,
+                    "InternalServerError",
+                    "Feature provider routing is not configured."));
+            }
+
+            var support = await resolver.CheckWriteSupportAsync(
+                validation.Snapshot!,
+                validation.Service,
+                validation.Resource,
+                validation.Publication,
+                storageLayerId.Value,
+                cancellationToken).ConfigureAwait(false);
+            if (!support.Supported)
+            {
+                return (null, CreateErrorResponse(
+                    requestId,
+                    StatusCodes.Status501NotImplemented,
+                    "ProviderWriteNotSupported",
+                    support.ErrorMessage!));
             }
         }
 
