@@ -41,6 +41,11 @@ if [[ "${exclude_slow}" == "true" ]]; then
   filter="(${filter_expression})&Tier!=Slow"
 fi
 if [[ "${exclude_fast}" == "true" ]]; then
+  # #2943: Fast tests run once per CI run in dotnet-foundation-tests, which
+  # (as of #2943) covers Honua.Server.Tests AND the 8 protocol-split projects
+  # (Honua.Protocols.*.Tests, Honua.Ai.Tests) via dedicated foundation-job
+  # steps — so this exclusion is safe for every shard's csproj, not only the
+  # legacy Honua.Server.Tests.csproj default.
   filter="(${filter})&Tier!=Fast"
 fi
 
