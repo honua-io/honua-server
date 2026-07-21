@@ -19,7 +19,6 @@ on:
         type: string
 
 permissions:
-  checks: read
   contents: read
   pull-requests: read
   statuses: write

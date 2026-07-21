@@ -134,15 +134,11 @@ __fixture_admission() {
 }
 export -f __fixture_admission
 export TRAIN_ADMISSION_JSON_FOR_PR=__fixture_admission
-__fixture_reactions() { printf '[]\n'; }
-__fixture_observed_at() { printf 'null\n'; }
 __fixture_publish_review_gate() {
   [[ -n "${FIXTURE_REVIEW_STATUS_RECORD:-}" ]] && printf '%s\t%s\t%s\t%s\n' "$@" >>"${FIXTURE_REVIEW_STATUS_RECORD}"
   return 0
 }
-export -f __fixture_reactions __fixture_observed_at __fixture_publish_review_gate
-export TRAIN_ADMISSION_REACTIONS_FOR_PR=__fixture_reactions
-export TRAIN_ADMISSION_OBSERVED_AT_FOR_HEAD=__fixture_observed_at
+export -f __fixture_publish_review_gate
 export TRAIN_REVIEW_GATE_STATUS_PUBLISHER=__fixture_publish_review_gate
 
 # Point shard config + targeted script at the REAL repo files so attribution and
@@ -732,6 +728,18 @@ assert_contains "state: startup error cannot fall through to selection" "$(cat "
   'durable state lookup failed; refusing selection or state overwrite'
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_ISSUE_VIEW_CMD
 
+for malformed_state in 'no fenced state here' $'```json\nnot-json\n```' $'```json\n{}\n```' \
+  $'```json\n{"active_batch":{"phase":"unknown"}}\n```'; do
+  export TRAIN_STATE_ISSUE_OVERRIDE=1 TRAIN_STATE_BODY_OVERRIDE="${malformed_state}"
+  set +e; train_restore_post_land; malformed_state_rc=$?; set -e
+  assert_eq "state: malformed existing document fails startup closed" "${malformed_state_rc}" "5"
+done
+inactive_state="$(train_state_render '' cafef00d '' select '' 0 0 null)"
+export TRAIN_STATE_BODY_OVERRIDE="${inactive_state}"
+set +e; train_restore_post_land; inactive_state_rc=$?; set -e
+assert_eq "state: validated inactive document permits selection" "${inactive_state_rc}" "1"
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
+
 echo
 echo "== select: exact-head PR/Review gates + ordering + fail-closed filters =="
 __queue_pages() {
@@ -1244,6 +1252,13 @@ node --test "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
 assert_not_contains "review gate: reaction permission removed with reaction evidence" \
   "$(cat "${REAL_ROOT}/.github/workflows/review-gate.yml")" \
   "  issues: read"
+assert_not_contains "review gate: check-suite permission removed with timestamp evidence" \
+  "$(cat "${REAL_ROOT}/.github/workflows/review-gate.yml")" \
+  "  checks: read"
+assert_not_contains "review gate: live admission no longer fetches reactions" \
+  "$(cat "${TRAIN_DIR}/select.sh")" 'issues/${pr}/reactions'
+assert_not_contains "review gate: live admission no longer fetches head check suites" \
+  "$(cat "${TRAIN_DIR}/select.sh")" "check-suites"
 bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" --self-test \
   && ok "authority: positive/negative fixtures" \
   || bad "authority: fixture coverage failed"
