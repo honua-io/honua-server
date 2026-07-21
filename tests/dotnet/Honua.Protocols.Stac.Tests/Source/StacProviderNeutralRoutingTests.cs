@@ -41,6 +41,8 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     private const string CrossLayerOneDeltaId = "provider-neutral-cross-one-delta";
     private const string OverflowId = "provider-neutral-overflow";
     private const string CapIdPrefix = "qz";
+    private const string AggregateCapIdPrefix = "aggregate-cap-";
+    private const string AggregateOverflowIdPrefix = "aggregate-overflow-";
     private const string DetailId = "provider-neutral-detail";
     private readonly ConcurrentQueue<FeatureQuery> _capturedQueries = new();
     private readonly ConcurrentQueue<int> _capturedStorageLayerIds = new();
@@ -424,6 +426,38 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithoutCollections_WhenAggregateCandidatesEqualCap_SucceedsAcrossBoundTargets()
+    {
+        var ids = string.Join(',', Enumerable.Range(0, 256).Select(index => $"{AggregateCapIdPrefix}{index:D3}"));
+
+        var response = await _fixture.Client.GetAsync($"/stac/search?ids={ids}&sortby=name");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = System.Text.Json.JsonDocument.Parse(content);
+        json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(512,
+            "the global cap permits exactly 512 retained candidates across visible bound publications");
+        _capturedQueries.Should().HaveCount(6,
+            "each of the two visible bound publications queries its three canonical item-id fields");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithoutCollections_WhenAggregateCandidatesExceedCap_ReturnsBadRequestWithoutFurtherReads()
+    {
+        var ids = string.Join(',', Enumerable.Range(0, 257).Select(index => $"{AggregateOverflowIdPrefix}{index:D3}"));
+
+        var response = await _fixture.Client.GetAsync($"/stac/search?ids={ids}&sortby=name");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _capturedQueries.Should().HaveCount(6,
+            "routing must stop immediately after the second bound target breaches the aggregate cap");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter()
@@ -477,6 +511,27 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         if (where.Contains(CapIdPrefix, StringComparison.Ordinal))
         {
             return QueryResult<Feature>.Empty();
+        }
+
+        if (where.Contains(AggregateCapIdPrefix, StringComparison.Ordinal))
+        {
+            return Result(Enumerable.Range(0, 256)
+                .Select(index => FeatureWithIds(
+                    (layerId * 1_000L) + index,
+                    stacId: $"{AggregateCapIdPrefix}{index:D3}",
+                    name: $"Candidate {layerId:D2}-{index:D3}"))
+                .ToArray());
+        }
+
+        if (where.Contains(AggregateOverflowIdPrefix, StringComparison.Ordinal))
+        {
+            var candidateCount = layerId == WebAppFixture.TestLayerId ? 256 : 257;
+            return Result(Enumerable.Range(0, candidateCount)
+                .Select(index => FeatureWithIds(
+                    (layerId * 1_000L) + index,
+                    stacId: $"{AggregateOverflowIdPrefix}{index:D3}",
+                    name: $"Candidate {layerId:D2}-{index:D3}"))
+                .ToArray());
         }
 
         if (where.Contains(SortZuluId, StringComparison.Ordinal))

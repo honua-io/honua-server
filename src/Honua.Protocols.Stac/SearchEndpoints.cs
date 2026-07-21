@@ -428,14 +428,24 @@ internal static class SearchEndpoints
                         boundItemIds,
                         layerQueryResult.CandidateFilter,
                         cancellationToken).ConfigureAwait(false);
-                    totalMatched += matchedFeatures.Length;
 
                     if (globallyOrderedCandidates is not null)
                     {
+                        if (ExceedsGlobalCandidateBudget(globallyOrderedCandidates.Count, matchedFeatures.Length))
+                        {
+                            StacTelemetry.SetFailed(activity, "aggregate_id_candidate_limit");
+                            return StandardErrorHelpers.CreateBadRequest(
+                                context,
+                                $"ids with sortby supports at most {MaxItemIdCount} matches across selected collections.");
+                        }
+
                         globallyOrderedCandidates.AddRange(matchedFeatures.Select(feature =>
                             new GlobalSearchCandidate(feature, target, projection)));
+                        totalMatched += matchedFeatures.Length;
                         continue;
                     }
+
+                    totalMatched += matchedFeatures.Length;
 
                     if (remainingSkip >= matchedFeatures.Length)
                     {
@@ -484,7 +494,16 @@ internal static class SearchEndpoints
                             $"STAC item id candidate query exceeded the {unboundItemIds.Length}-feature safety limit.");
                     }
 
-                    totalMatched += Math.Max(result.TotalCount, result.Features.Length);
+                    var incomingCount = checked((int)Math.Max(result.TotalCount, result.Features.Length));
+                    if (ExceedsGlobalCandidateBudget(globallyOrderedCandidates.Count, incomingCount))
+                    {
+                        StacTelemetry.SetFailed(activity, "aggregate_id_candidate_limit");
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            $"ids with sortby supports at most {MaxItemIdCount} matches across selected collections.");
+                    }
+
+                    totalMatched += incomingCount;
                     globallyOrderedCandidates.AddRange(result.Features.Select(feature =>
                         new GlobalSearchCandidate(feature, target, projection)));
                     continue;
@@ -651,6 +670,9 @@ internal static class SearchEndpoints
         Feature Feature,
         StacV2Lookups.ResolvedStacPublication Target,
         StacFieldProjection? Projection);
+
+    private static bool ExceedsGlobalCandidateBudget(int currentCount, int incomingCount)
+        => incomingCount > MaxItemIdCount - currentCount;
 
     private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
