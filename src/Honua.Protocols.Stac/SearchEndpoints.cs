@@ -29,6 +29,7 @@ namespace Honua.Protocols.Stac;
 internal static class SearchEndpoints
 {
     private const int Wgs84Srid = 4326;
+    private const int MaxItemIdCount = 512;
     private delegate bool TryParseDelegate<TValue>(string input, out TValue value);
 
     /// <summary>
@@ -414,6 +415,7 @@ internal static class SearchEndpoints
                         target.Resource,
                         query,
                         boundItemIds,
+                        layerQueryResult.CandidateFilter,
                         cancellationToken).ConfigureAwait(false);
                     totalMatched += matchedFeatures.Length;
 
@@ -559,7 +561,7 @@ internal static class SearchEndpoints
         }
     }
 
-    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, string? Error)> TryBuildLayerQuery(
+    private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
         MetadataV2Resource resource,
         ImmutableArray<string>? requestedItemIds,
@@ -589,13 +591,13 @@ internal static class SearchEndpoints
                     out var north,
                     out error))
             {
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             if (request.Intersects.HasValue)
             {
                 error = "bbox and intersects cannot be combined.";
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             query = query with
@@ -614,7 +616,7 @@ internal static class SearchEndpoints
                     out var intersectsError))
             {
                 error = intersectsError;
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             if (intersectsSpatialFilter.HasValue)
@@ -646,10 +648,22 @@ internal static class SearchEndpoints
         if (!filterQueryResult.IsSuccess)
         {
             error = filterQueryResult.Error;
-            return (false, query, projection, error);
+            return (false, query, projection, null, error);
         }
 
-        if (filterQueryResult.SqlFilter is not null)
+        FilterExpression? candidateFilter = null;
+        if (isStorageBound && requestedItemIds is { Length: > 0 } && filterQueryResult.Expression is not null)
+        {
+            if (InMemoryFilterEvaluator.ExceedsMaxDepth(filterQueryResult.Expression) ||
+                !InMemoryFilterEvaluator.TryValidateStreamingExpression(filterQueryResult.Expression, out _))
+            {
+                error = "filter expression is not supported when combined with ids for a storage-bound collection.";
+                return (false, query, projection, null, error);
+            }
+
+            candidateFilter = filterQueryResult.Expression;
+        }
+        else if (filterQueryResult.SqlFilter is not null)
         {
             query = query with { SqlFilter = filterQueryResult.SqlFilter };
         }
@@ -672,7 +686,7 @@ internal static class SearchEndpoints
             if (!TryBuildSortOrder(resource, sortby, out var orderBy, out var sortError))
             {
                 error = sortError;
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             query = query with { OrderBy = orderBy };
@@ -683,16 +697,16 @@ internal static class SearchEndpoints
             if (!TryBuildFieldSelection(resource, request.Fields, out var outFields, out projection, out var fieldError))
             {
                 error = fieldError;
-                return (false, query, projection, error);
+                return (false, query, projection, null, error);
             }
 
             query = query with { OutFields = outFields };
         }
 
-        return (true, query, projection, null);
+        return (true, query, projection, candidateFilter, null);
     }
 
-    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, string? Error)> TryResolveFilterQuery(
+    private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, FilterExpression? Expression, string? Error)> TryResolveFilterQuery(
         StacSearchRequest request,
         MetadataV2Resource resource,
         Cql2FilterProcessor filterProcessor,
@@ -710,8 +724,8 @@ internal static class SearchEndpoints
             collectionId).ConfigureAwait(false);
 
         return result.IsSuccess
-            ? (true, result.SqlFilter, null)
-            : (false, null, result.ErrorMessage);
+            ? (true, result.SqlFilter, result.Expression, null)
+            : (false, null, null, result.ErrorMessage);
     }
 
     private static bool TryBuildSortOrder(
@@ -1434,6 +1448,7 @@ internal static class SearchEndpoints
         out string? error)
     {
         var builder = ImmutableArray.CreateBuilder<string>();
+        var distinct = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in values)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -1443,7 +1458,20 @@ internal static class SearchEndpoints
                 return false;
             }
 
-            builder.Add(value.Trim());
+            var normalized = value.Trim();
+            if (!distinct.Add(normalized))
+            {
+                continue;
+            }
+
+            if (builder.Count == MaxItemIdCount)
+            {
+                error = $"ids supports at most {MaxItemIdCount} distinct values.";
+                normalizedValues = default;
+                return false;
+            }
+
+            builder.Add(normalized);
         }
 
         normalizedValues = builder.ToImmutable();

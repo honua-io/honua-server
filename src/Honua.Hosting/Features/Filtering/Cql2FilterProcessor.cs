@@ -31,12 +31,14 @@ internal sealed class Cql2FilterProcessor(
         public bool IsSuccess { get; init; }
         public string? ErrorMessage { get; init; }
         public SqlFragment? SqlFilter { get; init; }
+        public FilterExpression? Expression { get; init; }
 
-        public static ProcessingResult Success(SqlFragment? sqlFilter)
+        public static ProcessingResult Success(SqlFragment? sqlFilter, FilterExpression? expression = null)
             => new()
             {
                 IsSuccess = true,
-                SqlFilter = sqlFilter
+                SqlFilter = sqlFilter,
+                Expression = expression
             };
 
         public static ProcessingResult Failure(string errorMessage)
@@ -138,9 +140,18 @@ internal sealed class Cql2FilterProcessor(
             }
         }
 
+        try
+        {
+            parsedExpression = _filterExpressionService.Normalize(parsedExpression, resource);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return ProcessingResult.Failure(ex.Message);
+        }
+
         var translationResult = _filterExpressionService.Translate(parsedExpression, resource);
         return translationResult.IsSuccess
-            ? ProcessingResult.Success(translationResult.SqlFilter)
+            ? ProcessingResult.Success(translationResult.SqlFilter, parsedExpression)
             : ProcessingResult.Failure(translationResult.ErrorMessage ?? "Invalid filter expression.");
     }
 

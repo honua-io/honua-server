@@ -29,6 +29,14 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
 {
     private const string SearchFirstId = "provider-neutral-a";
     private const string SearchSecondId = "provider-neutral-b";
+    private const string FilterMatchId = "provider-neutral-filter-match";
+    private const string FilterNonMatchId = "provider-neutral-filter-nonmatch";
+    private const string FilterProjectionId = "provider-neutral-filter-projection";
+    private const string SortZuluId = "provider-neutral-sort-zulu";
+    private const string SortAlphaHighId = "provider-neutral-sort-alpha-high";
+    private const string SortAlphaLowId = "provider-neutral-sort-alpha-low";
+    private const string OverflowId = "provider-neutral-overflow";
+    private const string CapIdPrefix = "qz";
     private const string DetailId = "provider-neutral-detail";
     private readonly ConcurrentQueue<FeatureQuery> _capturedQueries = new();
     private readonly WebAppFixture _fixture;
@@ -144,6 +152,173 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndSupportedFilter_EvaluatesMatchingAndNonMatchingCandidates()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var filter = Uri.EscapeDataString("properties.name = 'keep'");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={FilterMatchId},{FilterNonMatchId}&filter-lang=cql2-text&filter={filter}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = System.Text.Json.JsonDocument.Parse(content);
+        json.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString())
+            .Should().Equal(FilterMatchId);
+        json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(1);
+
+        _capturedQueries.Should().NotBeEmpty();
+        _capturedQueries.Should().OnlyContain(query => query.SqlFilter == null);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndMalformedFilter_ReturnsBadRequestBeforeProviderRouting()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var capturedBefore = _capturedQueries.Count;
+        var filter = Uri.EscapeDataString("properties.name =");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={FilterMatchId}&filter-lang=cql2-text&filter={filter}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _capturedQueries.Count.Should().Be(capturedBefore, "malformed filters must fail before provider routing");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndEvaluatorUnsupportedFilter_ReturnsBadRequestBeforeProviderRouting()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var capturedBefore = _capturedQueries.Count;
+        var filter = Uri.EscapeDataString("UPPER(properties.name) = 'KEEP'");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={FilterMatchId}&filter-lang=cql2-text&filter={filter}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _capturedQueries.Count.Should().Be(capturedBefore, "unsupported in-memory filters must fail before provider routing");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndFilterOnExcludedField_EvaluatesBeforeResponseProjection()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var filter = Uri.EscapeDataString("properties.name = 'keep'");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={FilterProjectionId}&filter-lang=cql2-text&filter={filter}&fields=-properties.name");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = System.Text.Json.JsonDocument.Parse(content);
+        var item = json.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
+        item.GetProperty("id").GetString().Should().Be(FilterProjectionId);
+        item.GetProperty("properties").TryGetProperty("name", out _).Should().BeFalse();
+
+        _capturedQueries.Should().NotBeEmpty();
+        _capturedQueries.Should().OnlyContain(query => query.OutFields == null,
+            "candidate evaluation must fetch attributes excluded from the response projection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithIdsAndSortBy_AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={SortZuluId},{SortAlphaHighId},{SortAlphaLowId}&sortby=name&limit=2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var page1 = System.Text.Json.JsonDocument.Parse(content);
+        page1.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(3,
+            "the same routed candidates returned by each canonical-field query must be deduplicated by Feature.Id");
+        page1.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(2);
+        page1.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString())
+            .Should().Equal([SortAlphaLowId, SortAlphaHighId],
+                "sortby must be applied globally, with Feature.Id as the stable tie-breaker, before paging");
+
+        var page1Queries = _capturedQueries.ToArray();
+        page1Queries.Should().HaveCount(3);
+        page1Queries.Should().OnlyContain(query => query.Limit == 4,
+            "each canonical-field query may fetch at most distinct requested ids plus one overflow sentinel");
+
+        var nextHref = page1.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "next")
+            .GetProperty("href").GetString();
+        var page2Response = await _fixture.Client.GetAsync(new Uri(nextHref!).PathAndQuery);
+        var page2Content = await page2Response.Content.ReadAsStringAsync();
+        page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
+
+        using var page2 = System.Text.Json.JsonDocument.Parse(page2Content);
+        page2.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetString())
+            .Should().Equal(SortZuluId);
+        page2.RootElement.GetProperty("links").EnumerateArray()
+            .Should().NotContain(link => link.GetProperty("rel").GetString() == "next");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsInternalServerError()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={OverflowId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        _capturedQueries.Should().ContainSingle();
+        _capturedQueries.Single().Limit.Should().Be(2,
+            "one requested id permits one candidate plus one overflow sentinel");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_With512DistinctIds_UsesBoundedOverflowSentinelQuery()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var ids = string.Join(',', Enumerable.Range(0, 512).Select(index => $"{CapIdPrefix}{index:D3}"));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={ids}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        _capturedQueries.Should().HaveCount(3);
+        _capturedQueries.Should().OnlyContain(query => query.Limit == 513,
+            "the maximum accepted distinct-id set still carries one overflow sentinel");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_With513DistinctIds_ReturnsBadRequestBeforeProviderRouting()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var ids = string.Join(',', Enumerable.Range(0, 513).Select(index => $"{CapIdPrefix}{index:D3}"));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids={ids}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _capturedQueries.Should().BeEmpty("over-cap input must be rejected before any provider query");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
     public async Task GetItem_RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter()
@@ -184,6 +359,29 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     private static QueryResult<Feature> BuildCandidateResult(FeatureQuery query)
     {
         var where = query.Where ?? string.Empty;
+        if (where.Contains(OverflowId, StringComparison.Ordinal))
+        {
+            return QueryResult<Feature>.Create(
+                2,
+                [
+                    FeatureWithIds(501, stacId: OverflowId),
+                    FeatureWithIds(502, stacId: OverflowId)
+                ]);
+        }
+
+        if (where.Contains(CapIdPrefix, StringComparison.Ordinal))
+        {
+            return QueryResult<Feature>.Empty();
+        }
+
+        if (where.Contains(SortZuluId, StringComparison.Ordinal))
+        {
+            return Result(
+                FeatureWithIds(410, stacId: SortZuluId, name: "Zulu"),
+                FeatureWithIds(420, stacId: SortAlphaHighId, name: "Alpha"),
+                FeatureWithIds(415, stacId: SortAlphaLowId, name: "Alpha"));
+        }
+
         if (where.Contains(SearchFirstId, StringComparison.Ordinal))
         {
             if (where.Contains("stac_id", StringComparison.Ordinal))
@@ -202,6 +400,18 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
             }
         }
 
+        if (where.Contains(FilterMatchId, StringComparison.Ordinal))
+        {
+            return Result(
+                FeatureWithIds(601, stacId: FilterMatchId, name: "keep"),
+                FeatureWithIds(602, stacId: FilterNonMatchId, name: "drop"));
+        }
+
+        if (where.Contains(FilterProjectionId, StringComparison.Ordinal))
+        {
+            return Result(FeatureWithIds(603, stacId: FilterProjectionId, name: "keep"));
+        }
+
         if (where.Contains(DetailId, StringComparison.Ordinal))
         {
             return where.Contains("stac_id", StringComparison.Ordinal)
@@ -215,10 +425,15 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     private static QueryResult<Feature> Result(params Feature[] features)
         => QueryResult<Feature>.Create(features.Length, [.. features]);
 
-    private static Feature FeatureWithIds(long objectId, string? stacId = null, string? itemId = null, string? id = null)
+    private static Feature FeatureWithIds(
+        long objectId,
+        string? stacId = null,
+        string? itemId = null,
+        string? id = null,
+        string? name = null)
     {
         var attributes = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
-            .Add("name", $"Feature {objectId}");
+            .Add("name", name ?? $"Feature {objectId}");
         if (stacId is not null) attributes = attributes.Add("stac_id", stacId);
         if (itemId is not null) attributes = attributes.Add("item_id", itemId);
         if (id is not null) attributes = attributes.Add("id", id);

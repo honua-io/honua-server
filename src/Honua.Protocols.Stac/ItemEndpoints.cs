@@ -431,6 +431,7 @@ internal static class ItemEndpoints
                 OutputSrid = Wgs84Srid
             },
             [itemId],
+            candidateFilter: null,
             cancellationToken).ConfigureAwait(false);
         foreach (var candidate in candidates)
         {
