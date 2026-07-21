@@ -39,6 +39,7 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 
     private readonly ConcurrentDictionary<string, MetadataV2GraphSnapshot> _bySchema = new(StringComparer.Ordinal);
     private MetadataV2GraphSnapshot _baseline;
+    private MetadataV2Graph? _activateAfterNextRead;
 
     public TestMetadataV2GraphProvider(MetadataV2Graph graph, string? etag = null)
     {
@@ -73,7 +74,26 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
     }
 
     public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-        => new(CurrentSnapshot());
+    {
+        var snapshot = CurrentSnapshot();
+        var activatedGraph = Interlocked.Exchange(ref _activateAfterNextRead, null);
+        if (activatedGraph is not null)
+        {
+            SetGraph(activatedGraph);
+        }
+
+        return new(snapshot);
+    }
+
+    /// <summary>
+    /// Replaces the current graph immediately after the next current-snapshot read returns.
+    /// Tests use this to reproduce metadata activation races deterministically.
+    /// </summary>
+    public void ActivateAfterNextRead(MetadataV2Graph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        Volatile.Write(ref _activateAfterNextRead, graph);
+    }
 
     /// <summary>
     /// Returns the snapshot for an explicit schema partition (or the shared baseline when

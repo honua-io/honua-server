@@ -67,7 +67,7 @@ internal static class StacBoundItemQueryExecutor
         }
 
         var matched = candidates.Values
-            .Select(feature => (Feature: feature, ItemId: StacMappingService.ResolveItemId(feature)))
+            .Select(feature => (Feature: feature, ItemId: StacMappingService.ResolveItemId(feature, resource)))
             .Where(candidate => requestedOrder.ContainsKey(candidate.ItemId))
             .ToImmutableArray();
 
@@ -92,7 +92,7 @@ internal static class StacBoundItemQueryExecutor
         var features = matched.Select(static candidate => candidate.Feature).ToImmutableArray();
         if (baseQuery.OrderBy is { IsDefaultOrEmpty: false } orderBy)
         {
-            return FeatureOrdering.Apply(features, orderBy);
+            return FeatureOrdering.Apply(features, orderBy, resource);
         }
 
         return matched

@@ -96,6 +96,7 @@ internal static class ItemEndpoints
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
+                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
                 validation.Service,
                 resource,
                 publication,
@@ -262,6 +263,7 @@ internal static class ItemEndpoints
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
+                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
                 validation.Service,
                 resource,
                 publication,

@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -366,6 +367,11 @@ internal static class SearchEndpoints
         try
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
+            var globallyOrderedCandidates = requestedItemIds is { Length: > 0 } &&
+                request.Sortby is { IsDefault: false, Length: > 0 }
+                    ? new List<GlobalSearchCandidate>()
+                    : null;
+            ImmutableArray<OrderByClause>? globalOrderBy = null;
             long totalMatched = 0;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
@@ -396,9 +402,14 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
+                if (globallyOrderedCandidates is not null && query.OrderBy.HasValue)
+                {
+                    globalOrderBy ??= query.OrderBy.Value;
+                }
                 var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                     context,
                     featureReader,
+                    target.Snapshot,
                     target.Service,
                     target.Resource,
                     target.Publication,
@@ -418,6 +429,13 @@ internal static class SearchEndpoints
                         layerQueryResult.CandidateFilter,
                         cancellationToken).ConfigureAwait(false);
                     totalMatched += matchedFeatures.Length;
+
+                    if (globallyOrderedCandidates is not null)
+                    {
+                        globallyOrderedCandidates.AddRange(matchedFeatures.Select(feature =>
+                            new GlobalSearchCandidate(feature, target, projection)));
+                        continue;
+                    }
 
                     if (remainingSkip >= matchedFeatures.Length)
                     {
@@ -444,6 +462,31 @@ internal static class SearchEndpoints
                     }
 
                     remainingSkip = 0;
+                    continue;
+                }
+
+                if (globallyOrderedCandidates is not null && requestedItemIds is { Length: > 0 } unboundItemIds)
+                {
+                    var candidateLimit = checked(unboundItemIds.Length + 1);
+                    var result = await targetReader.QueryAsync(
+                        storageLayerId,
+                        query with
+                        {
+                            Offset = null,
+                            Limit = candidateLimit,
+                            OrderBy = null,
+                            OutFields = null
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                    if (result.TotalCount > unboundItemIds.Length || result.Features.Length > unboundItemIds.Length)
+                    {
+                        throw new InvalidOperationException(
+                            $"STAC item id candidate query exceeded the {unboundItemIds.Length}-feature safety limit.");
+                    }
+
+                    totalMatched += Math.Max(result.TotalCount, result.Features.Length);
+                    globallyOrderedCandidates.AddRange(result.Features.Select(feature =>
+                        new GlobalSearchCandidate(feature, target, projection)));
                     continue;
                 }
 
@@ -504,6 +547,49 @@ internal static class SearchEndpoints
                 }
             }
 
+            if (globallyOrderedCandidates is not null)
+            {
+                if (globallyOrderedCandidates.Count == 0)
+                {
+                    globalOrderBy = null;
+                }
+                else if (globalOrderBy is not { IsDefaultOrEmpty: false })
+                {
+                    throw new InvalidOperationException("A globally ordered STAC id search requires a valid sort order.");
+                }
+
+                if (globalOrderBy is { IsDefaultOrEmpty: false } orderBy)
+                {
+                    globallyOrderedCandidates.Sort((left, right) =>
+                    {
+                        var comparison = FeatureOrdering.Compare(
+                            left.Feature,
+                            left.Target.Resource,
+                            right.Feature,
+                            right.Target.Resource,
+                            orderBy);
+                        return comparison != 0
+                            ? comparison
+                            : left.Target.LayerIndex.CompareTo(right.Target.LayerIndex);
+                    });
+                }
+
+                allItems.AddRange(globallyOrderedCandidates
+                    .Skip(offset)
+                    .Take(effectiveLimit)
+                    .Select(candidate => ApplyFieldProjection(
+                        StacMappingService.MapFeatureToItem(
+                            candidate.Feature,
+                            candidate.Target.Resource,
+                            candidate.Target.Publication,
+                            candidate.Target.LayerIndex,
+                            baseUrl,
+                            candidate.Projection?.SelectedProperties,
+                            geometrySrid: Wgs84Srid),
+                        candidate.Projection)));
+                remainingSkip = 0;
+            }
+
             var stacBase = $"{baseUrl}/stac";
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
@@ -560,6 +646,11 @@ internal static class SearchEndpoints
             throw;
         }
     }
+
+    private readonly record struct GlobalSearchCandidate(
+        Feature Feature,
+        StacV2Lookups.ResolvedStacPublication Target,
+        StacFieldProjection? Projection);
 
     private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, FilterExpression? CandidateFilter, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,

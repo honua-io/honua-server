@@ -154,7 +154,7 @@ internal sealed class StacMappingService
         int? geometrySrid = null)
     {
         var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
-        var itemId = ResolveItemId(feature);
+        var itemId = ResolveItemId(feature, resource);
         var escapedItemId = Uri.EscapeDataString(itemId);
         var idFieldName = resource.FindPrimaryIdField()?.Name ?? "objectid";
         var ogcItemId = ResolveOgcPublicId(feature, idFieldName);
@@ -351,11 +351,13 @@ internal sealed class StacMappingService
             ?? DateTimeOffset.UnixEpoch;
     }
 
-    internal static string ResolveItemId(Feature feature)
+    internal static string ResolveItemId(Feature feature, MetadataV2Resource? resource = null)
     {
         foreach (var key in new[] { "stac_id", "item_id", "id" })
         {
-            if (feature.Attributes is null || !feature.Attributes.TryGetValue(key, out var value) || value is null)
+            var actualName = resource?.SchemaFields.FirstOrDefault(field =>
+                string.Equals(field.Name, key, StringComparison.OrdinalIgnoreCase))?.Name ?? key;
+            if (!TryGetAttribute(feature.Attributes, actualName, out var value) || value is null)
             {
                 continue;
             }
@@ -368,6 +370,32 @@ internal sealed class StacMappingService
         }
 
         return feature.ObjectId?.ToString(CultureInfo.InvariantCulture) ?? "0";
+    }
+
+    private static bool TryGetAttribute(
+        ImmutableDictionary<string, object?>? attributes,
+        string name,
+        out object? value)
+    {
+        if (attributes is not null)
+        {
+            if (attributes.TryGetValue(name, out value))
+            {
+                return true;
+            }
+
+            foreach (var attribute in attributes)
+            {
+                if (string.Equals(attribute.Key, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = attribute.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = null;
+        return false;
     }
 
     private static bool IsItemIdAttribute(string attributeName)

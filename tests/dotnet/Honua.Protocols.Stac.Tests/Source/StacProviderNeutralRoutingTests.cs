@@ -35,10 +35,15 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     private const string SortZuluId = "provider-neutral-sort-zulu";
     private const string SortAlphaHighId = "provider-neutral-sort-alpha-high";
     private const string SortAlphaLowId = "provider-neutral-sort-alpha-low";
+    private const string CrossLayerZeroAlphaId = "provider-neutral-cross-zero-alpha";
+    private const string CrossLayerZeroCharlieId = "provider-neutral-cross-zero-charlie";
+    private const string CrossLayerOneBravoId = "provider-neutral-cross-one-bravo";
+    private const string CrossLayerOneDeltaId = "provider-neutral-cross-one-delta";
     private const string OverflowId = "provider-neutral-overflow";
     private const string CapIdPrefix = "qz";
     private const string DetailId = "provider-neutral-detail";
     private readonly ConcurrentQueue<FeatureQuery> _capturedQueries = new();
+    private readonly ConcurrentQueue<int> _capturedStorageLayerIds = new();
     private readonly WebAppFixture _fixture;
     private int _boundReaderCreations;
 
@@ -48,8 +53,9 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         routedReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
+                _capturedStorageLayerIds.Enqueue(call.ArgAt<int>(0));
                 var query = CaptureProviderNeutralQuery(call.ArgAt<FeatureQuery>(1));
-                return Task.FromResult(BuildCandidateResult(query));
+                return Task.FromResult(BuildCandidateResult(call.ArgAt<int>(0), query));
             });
         routedReader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>
@@ -84,29 +90,50 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _fixture.UpdateV2ResourceSchemaField(
             WebAppFixture.TestLayerId,
-            new MetadataV2Field { Name = "stac_id", Type = MetadataV2FieldType.String, Nullable = true });
+            new MetadataV2Field { Name = "STAC_ID", Type = MetadataV2FieldType.String, Nullable = true });
         _fixture.UpdateV2ResourceSchemaField(
             WebAppFixture.TestLayerId,
-            new MetadataV2Field { Name = "item_id", Type = MetadataV2FieldType.String, Nullable = true });
+            new MetadataV2Field { Name = "ITEM_ID", Type = MetadataV2FieldType.String, Nullable = true });
         _fixture.UpdateV2ResourceSchemaField(
             WebAppFixture.TestLayerId,
-            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Nullable = true });
+            new MetadataV2Field { Name = "ID", Type = MetadataV2FieldType.String, Nullable = true });
+        _fixture.UpdateV2ResourceSchemaField(
+            1,
+            new MetadataV2Field { Name = "STAC_ID", Type = MetadataV2FieldType.String, Nullable = true });
+        _fixture.UpdateV2ResourceSchemaField(
+            1,
+            new MetadataV2Field { Name = "ITEM_ID", Type = MetadataV2FieldType.String, Nullable = true });
+        _fixture.UpdateV2ResourceSchemaField(
+            1,
+            new MetadataV2Field { Name = "ID", Type = MetadataV2FieldType.String, Nullable = true });
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var publication = snapshot.Graph.Publications.First(candidate =>
+        var primaryPublication = snapshot.Graph.Publications.First(candidate =>
             candidate.LayerIndex == WebAppFixture.TestLayerId);
-        var storageBinding = snapshot.Graph.StorageBindings.First(candidate =>
-            candidate.ResourceId == publication.ResourceId && candidate.StorageLayerId.HasValue);
+        var primaryBinding = snapshot.Graph.StorageBindings.First(binding =>
+            binding.ResourceId == primaryPublication.ResourceId && binding.StorageLayerId.HasValue);
+        var secondaryPublication = snapshot.Graph.Publications.First(candidate => candidate.LayerIndex == 1);
+        var secondaryBinding = primaryBinding with
+        {
+            Metadata = primaryBinding.Metadata with { Id = $"{primaryBinding.Metadata.Id}-secondary" },
+            ResourceId = secondaryPublication.ResourceId,
+            StorageLayerId = 1
+        };
         var publications = snapshot.Graph.Publications
-            .Select(candidate => candidate.LayerIndex == WebAppFixture.TestLayerId
-                ? candidate with { StorageBindingId = storageBinding.Metadata.Id }
+            .Select(candidate => candidate.LayerIndex is WebAppFixture.TestLayerId or 1
+                ? candidate with
+                {
+                    StorageBindingId = candidate.LayerIndex == WebAppFixture.TestLayerId
+                        ? primaryBinding.Metadata.Id
+                        : secondaryBinding.Metadata.Id
+                }
                 : candidate)
             .ToArray();
-        var graphProvider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException("Test metadata graph provider is unavailable.");
+        var graphProvider = _fixture.GetService<TestMetadataV2GraphProvider>();
         graphProvider.SetGraph(snapshot.Graph with
         {
             Publications = publications,
+            StorageBindings = [.. snapshot.Graph.StorageBindings, secondaryBinding],
             Revision = snapshot.Graph.Revision + 1
         });
     }
@@ -139,9 +166,9 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
             !query.Where!.Contains(" OR ", StringComparison.Ordinal) &&
             !query.Where.Contains("TRIM", StringComparison.OrdinalIgnoreCase) &&
             !query.Where.Contains("IS NULL", StringComparison.OrdinalIgnoreCase));
-        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("stac_id", StringComparison.Ordinal));
-        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("item_id", StringComparison.Ordinal));
-        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("id", StringComparison.Ordinal));
+        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("STAC_ID", StringComparison.Ordinal));
+        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("ITEM_ID", StringComparison.Ordinal));
+        queries.Select(query => query.Where).Should().Contain(where => where!.Contains("ID", StringComparison.Ordinal));
 
         var returnedIds = System.Text.Json.JsonDocument.Parse(content).RootElement
             .GetProperty("features")
@@ -149,6 +176,44 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
             .Select(feature => feature.GetProperty("id").GetString())
             .ToArray();
         returnedIds.Should().BeEquivalentTo(SearchFirstId, SearchSecondId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WhenGraphActivatesAfterAuthorization_RoutesAuthorizedSnapshotBinding()
+    {
+        var authorizedSnapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = authorizedSnapshot.Graph.Publications.First(candidate =>
+            candidate.LayerIndex == WebAppFixture.TestLayerId &&
+            candidate.PublicationType == MetadataV2PublicationType.StacCollection);
+        var authorizedBinding = authorizedSnapshot.Index.StorageBindingsById[publication.StorageBindingId!];
+        var activatedBinding = authorizedBinding with
+        {
+            Metadata = authorizedBinding.Metadata with { Id = $"{authorizedBinding.Metadata.Id}-activated" },
+            StorageLayerId = 777
+        };
+        var activatedGraph = authorizedSnapshot.Graph with
+        {
+            Revision = authorizedSnapshot.Graph.Revision + 1,
+            StorageBindings = [.. authorizedSnapshot.Graph.StorageBindings, activatedBinding],
+            Publications = authorizedSnapshot.Graph.Publications
+                .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                    ? candidate with { StorageBindingId = activatedBinding.Metadata.Id }
+                    : candidate)
+                .ToArray()
+        };
+        _capturedStorageLayerIds.Clear();
+        var graphProvider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        graphProvider.ActivateAfterNextRead(activatedGraph);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={WebAppFixture.TestLayerId}&ids={SearchFirstId},{SearchSecondId}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        _capturedStorageLayerIds.Should().NotBeEmpty();
+        _capturedStorageLayerIds.Should().OnlyContain(layerId => layerId == authorizedBinding.StorageLayerId);
     }
 
     [IntegrationTest]
@@ -273,6 +338,46 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
+    public async Task SearchGet_WithTwoBoundCollections_InterleavesGlobalSortAcrossPageBoundaries()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/stac/search?collections=0,1&ids={CrossLayerZeroAlphaId},{CrossLayerOneBravoId},{CrossLayerZeroCharlieId},{CrossLayerOneDeltaId}&sortby=name&limit=2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var page1 = System.Text.Json.JsonDocument.Parse(content);
+        page1.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(4);
+        page1.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => (
+                Id: feature.GetProperty("id").GetString(),
+                Collection: feature.GetProperty("collection").GetString()))
+            .Should().Equal(
+                (CrossLayerZeroAlphaId, "0"),
+                (CrossLayerOneBravoId, "1"));
+
+        var nextHref = page1.RootElement.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == "next")
+            .GetProperty("href").GetString();
+        var page2Response = await _fixture.Client.GetAsync(new Uri(nextHref!).PathAndQuery);
+        var page2Content = await page2Response.Content.ReadAsStringAsync();
+        page2Response.StatusCode.Should().Be(HttpStatusCode.OK, page2Content);
+
+        using var page2 = System.Text.Json.JsonDocument.Parse(page2Content);
+        page2.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => (
+                Id: feature.GetProperty("id").GetString(),
+                Collection: feature.GetProperty("collection").GetString()))
+            .Should().Equal(
+                (CrossLayerZeroCharlieId, "0"),
+                (CrossLayerOneDeltaId, "1"));
+        page2.RootElement.GetProperty("links").EnumerateArray()
+            .Should().NotContain(link => link.GetProperty("rel").GetString() == "next");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
     public async Task SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsInternalServerError()
     {
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
@@ -338,9 +443,9 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         queries.Should().OnlyContain(query => query.SqlFilter == null);
         queries.Should().OnlyContain(query =>
             !string.IsNullOrWhiteSpace(query.Where) && query.Where.Contains(DetailId, StringComparison.Ordinal));
-        queries[0].Where.Should().Contain("stac_id");
-        queries[1].Where.Should().Contain("item_id");
-        queries[2].Where.Should().Contain("id");
+        queries[0].Where.Should().Contain("STAC_ID");
+        queries[1].Where.Should().Contain("ITEM_ID");
+        queries[2].Where.Should().Contain("ID");
         System.Text.Json.JsonDocument.Parse(content).RootElement.GetProperty("id").GetString().Should().Be(DetailId);
     }
 
@@ -356,7 +461,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
         return query;
     }
 
-    private static QueryResult<Feature> BuildCandidateResult(FeatureQuery query)
+    private static QueryResult<Feature> BuildCandidateResult(int layerId, FeatureQuery query)
     {
         var where = query.Where ?? string.Empty;
         if (where.Contains(OverflowId, StringComparison.Ordinal))
@@ -382,15 +487,26 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
                 FeatureWithIds(415, stacId: SortAlphaLowId, name: "Alpha"));
         }
 
+        if (where.Contains(CrossLayerZeroAlphaId, StringComparison.Ordinal))
+        {
+            return layerId == 0
+                ? Result(
+                    FeatureWithIds(710, stacId: CrossLayerZeroAlphaId, name: "Alpha"),
+                    FeatureWithIds(730, stacId: CrossLayerZeroCharlieId, name: "Charlie"))
+                : Result(
+                    FeatureWithIds(720, stacId: CrossLayerOneBravoId, name: "Bravo"),
+                    FeatureWithIds(740, stacId: CrossLayerOneDeltaId, name: "Delta"));
+        }
+
         if (where.Contains(SearchFirstId, StringComparison.Ordinal))
         {
-            if (where.Contains("stac_id", StringComparison.Ordinal))
+            if (where.Contains("STAC_ID", StringComparison.Ordinal))
             {
                 return Result(
                     FeatureWithIds(101, stacId: SearchFirstId),
                     FeatureWithIds(102, stacId: SearchSecondId));
             }
-            if (where.Contains("item_id", StringComparison.Ordinal))
+            if (where.Contains("ITEM_ID", StringComparison.Ordinal))
             {
                 return Result(FeatureWithIds(201, stacId: "different-effective-id", itemId: SearchFirstId));
             }
@@ -414,7 +530,7 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
 
         if (where.Contains(DetailId, StringComparison.Ordinal))
         {
-            return where.Contains("stac_id", StringComparison.Ordinal)
+            return where.Contains("STAC_ID", StringComparison.Ordinal)
                 ? Result(FeatureWithIds(301, stacId: "not-the-requested-id", itemId: DetailId))
                 : Result(FeatureWithIds(302, stacId: " ", itemId: DetailId));
         }
@@ -434,9 +550,10 @@ public sealed class StacProviderNeutralRoutingTests : IAsyncLifetime
     {
         var attributes = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("name", name ?? $"Feature {objectId}");
-        if (stacId is not null) attributes = attributes.Add("stac_id", stacId);
-        if (itemId is not null) attributes = attributes.Add("item_id", itemId);
-        if (id is not null) attributes = attributes.Add("id", id);
+        if (stacId is not null) attributes = attributes.Add("STAC_ID", stacId);
+        if (itemId is not null) attributes = attributes.Add("ITEM_ID", itemId);
+        if (id is not null) attributes = attributes.Add("ID", id);
         return Feature.Create(objectId, geometry: null, attributes);
     }
+
 }

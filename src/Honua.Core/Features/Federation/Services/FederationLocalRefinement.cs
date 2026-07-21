@@ -132,6 +132,13 @@ internal static class FederationLocalRefinement
     private static object? GetValue(in Feature feature, string field) =>
         feature.Attributes.TryGetValue(field, out var value) ? value : null;
 
+    internal static int CompareValues(
+        object? left,
+        object? right,
+        NullOrdering nullOrdering,
+        bool ascending) =>
+        new FederationValueComparer(nullOrdering, ascending).Compare(left, right);
+
     private static bool TryGetTimestamp(in Feature feature, string field, out DateTimeOffset value)
     {
         value = default;
