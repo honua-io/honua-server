@@ -22,4 +22,9 @@ function evaluateCodexEvidence({ reviews, reactions, unresolvedCount, head, obse
     new Date(reaction.created_at).getTime() > negativeAt);
   return { exactReview, freshCleanReaction };
 }
+if (require.main === module) {
+  const fs = require('node:fs');
+  const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+  process.stdout.write(JSON.stringify(evaluateCodexEvidence(input)));
+}
 module.exports = { evaluateCodexEvidence, isCodex };
