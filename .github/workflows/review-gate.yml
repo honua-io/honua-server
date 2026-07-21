@@ -20,8 +20,8 @@ on:
 
 permissions:
   checks: read
-  contents: write
   pull-requests: read
+  statuses: write
 
 concurrency:
   group: review-gate-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.inputs.pr }}
@@ -36,7 +36,8 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const BOT = 'chatgpt-codex-connector[bot]';
+            const isCodex = login => login === 'chatgpt-codex-connector' ||
+              login === 'chatgpt-codex-connector[bot]';
             const prNumber = Number(
               context.payload.pull_request?.number ||
               context.payload.workflow_run?.pull_requests?.[0]?.number ||
@@ -92,14 +93,14 @@ jobs:
 
             const unresolved = pr.reviewThreads.nodes.filter(thread =>
               !thread.isResolved && thread.comments.nodes.some(comment =>
-                comment.author?.login === BOT && comment.commit?.oid === head));
+                isCodex(comment.author?.login) && comment.commit?.oid === head));
             if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
 
             const codexReviews = pr.reviews.nodes
-              .filter(review => review.author?.login === BOT &&
+              .filter(review => isCodex(review.author?.login) &&
                 (/Codex Review/i.test(review.body || '') || /Reviewed commit/i.test(review.body || '')))
               .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-            const exactReview = codexReviews[0]?.commit?.oid === head;
+            const exactReview = unresolved.length === 0 && codexReviews[0]?.commit?.oid === head;
 
             const suites = await github.paginate(github.rest.checks.listSuitesForRef, {
               ...context.repo, ref: head, per_page: 100,
@@ -111,8 +112,10 @@ jobs:
             const reactions = await github.paginate(github.rest.reactions.listForIssue, {
               ...context.repo, issue_number: prNumber, per_page: 100,
             });
-            const freshCleanReaction = observedAt !== null && reactions.some(reaction =>
-              reaction.user?.login === BOT && reaction.content === '+1' &&
+            // An unresolved exact-head finding always overrides an earlier clean
+            // reaction on the same SHA; resolution must be re-attested.
+            const freshCleanReaction = unresolved.length === 0 && observedAt !== null && reactions.some(reaction =>
+              isCodex(reaction.user?.login) && reaction.content === '+1' &&
               new Date(reaction.created_at).getTime() >= observedAt);
 
             if (!exactReview && !freshCleanReaction) {
@@ -127,4 +130,3 @@ jobs:
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
             });
             if (state !== 'success') core.setFailed(description);
-

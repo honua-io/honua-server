@@ -216,13 +216,28 @@ train_pr_admission() {
   jq -e '(.labelsTruncated or .reviewThreadsTruncated or .checksTruncated) | not' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: snapshot truncated"; return 1; }
   labels="$(jq -c '.labels // []' <<<"${snapshot}")"
   train_pr_has_hold_label "${labels}" && { train_warn "reject #${pr}: held/escalated"; return 1; }
-  jq -e --arg bot 'chatgpt-codex-connector[bot]' --arg head "${expected_head}" '
+  jq -e --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${expected_head}" '
     all(.reviewThreads[]?;
       .isResolved == true or
-      ([.comments.nodes[]? | select(.author.login == $bot and .commit.oid == $head)] | length == 0))
+      ([.comments.nodes[]? | select((.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head)] | length == 0))
   ' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: unresolved Codex review thread"; return 1; }
   train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
   train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
+}
+
+# Fetch the complete open-PR queue. `gh pr list --limit 100` silently truncated
+# busy queues, starving newer PRs forever; GraphQL pagination has no fixed cap.
+train_open_pr_queue() {
+  local pages
+  if [[ -n "${TRAIN_PR_QUEUE_PAGES_CMD:-}" ]]; then
+    pages="$("${TRAIN_PR_QUEUE_PAGES_CMD}")"
+  else
+    pages="$(gh api graphql --paginate \
+      -F owner="${GITHUB_REPOSITORY%%/*}" -F repo="${GITHUB_REPOSITORY#*/}" \
+      -F base="${TRAIN_BASE_BRANCH}" \
+      -f query='query($owner:String!,$repo:String!,$base:String!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequests(first:100,after:$endCursor,states:OPEN,baseRefName:$base,orderBy:{field:CREATED_AT,direction:ASC}){nodes{number headRefOid isDraft mergeable mergeStateStatus labels(first:100){nodes{name}} createdAt author{login}} pageInfo{hasNextPage endCursor}}}}')"
+  fi
+  jq -sc '[.[].data.repository.pullRequests.nodes[] | .labels = (.labels.nodes // [])]' <<<"${pages}"
 }
 
 # train_select: emit the selected batch as JSON lines (one object per PR):
@@ -236,9 +251,7 @@ train_select() {
   if [[ -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
     pr_list="${TRAIN_PR_LIST_JSON}"
   else
-    pr_list="$(gh pr list --base "${TRAIN_BASE_BRANCH}" --state open \
-      --json number,headRefOid,isDraft,mergeable,mergeStateStatus,labels,createdAt,files,author \
-      --limit 100)"
+    pr_list="$(train_open_pr_queue)"
   fi
 
   # Oldest createdAt first.
