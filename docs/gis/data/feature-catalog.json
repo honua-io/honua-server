@@ -15746,7 +15746,7 @@
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ai.workflow-generation"
     },
     {
       "id": "post-api-v1-console-workflow-packages-packageid-versions",
@@ -19785,7 +19785,7 @@
       ],
       "proof_ledger_surface": "spec-engine",
       "maturity": "implemented",
-      "capability": "ai.spec-artifacts"
+      "capability": "ai.spec-apply"
     },
     {
       "id": "post-v1-spec-cancel",
