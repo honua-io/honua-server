@@ -13,6 +13,7 @@ env:
 permissions:
   contents: write
   packages: read
+  pull-requests: write
 
 concurrency:
   group: cross-server-consume-nightly-${{ github.ref }}
@@ -77,8 +78,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/internal/compatibility/cross-server-consume-gap-report.md
           git commit -m "docs: refresh cross-server consume gap report"
-          git push origin HEAD:${GITHUB_REF_NAME} || \
-            echo "::warning::Could not push cross-server consume gap report; create a PR manually if needed."
+          branch="automation/cross-server-gap-${GITHUB_RUN_ID}"
+          git push origin "HEAD:refs/heads/automation/cross-server-gap-${GITHUB_RUN_ID}"
+          gh pr create --base trunk --head "${branch}" \
+            --title "docs: refresh cross-server consume gap report" \
+            --body "Automated nightly refresh. Merge through the sole merge train authority." || \
+            echo "::warning::Could not create the gap-report PR; inspect branch ${branch}."
 
       - name: Upload consume artifacts
         if: always()
