@@ -410,6 +410,29 @@ internal sealed partial class ODataBatchHandler
                 $"Layer {layerId} not found."));
         }
 
+        if (scope == AccessScope.Write)
+        {
+            var resolver = context.RequestServices.GetService<ODataFeatureProviderResolver>();
+            if (resolver is not null)
+            {
+                var support = await resolver.CheckWriteSupportAsync(
+                    validation.Snapshot!,
+                    validation.Service,
+                    validation.Resource,
+                    validation.Publication,
+                    storageLayerId.Value,
+                    cancellationToken).ConfigureAwait(false);
+                if (!support.Supported)
+                {
+                    return (null, CreateErrorResponse(
+                        requestId,
+                        StatusCodes.Status501NotImplemented,
+                        "ProviderWriteNotSupported",
+                        support.ErrorMessage!));
+                }
+            }
+        }
+
         var srid = validation.Resource.ReadSrid() ?? 4326;
         return (new ODataBatchLayerContext(
             layerId,

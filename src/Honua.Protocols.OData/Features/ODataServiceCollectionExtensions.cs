@@ -4,6 +4,7 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Query;
@@ -71,6 +72,9 @@ internal static class ODataServiceCollectionExtensions
         services.AddScoped<ODataSearchService>();
         services.AddScoped<ODataQuerySearchService>();
         services.AddScoped<ODataValidationService>();
+        services.AddScoped(sp => new ODataFeatureProviderResolver(
+            sp.GetRequiredService<IFeatureReader>(),
+            sp.GetService<FeatureProviderQueryRouter>()));
         services.AddScoped<ODataQueryDependencies>();
         services.AddScoped(sp =>
         {

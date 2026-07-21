@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
@@ -38,6 +39,7 @@ internal sealed partial class ODataQueryHandler(
 
     private readonly IFeatureReader _featureReader = (dependencies
         ?? throw new ArgumentNullException(nameof(dependencies))).FeatureReader;
+    private readonly ODataFeatureProviderResolver? _featureProviderResolver = dependencies.FeatureProviderResolver;
     private readonly IGeometryService _geometryService = dependencies.GeometryService;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly ODataValidationService _validationService = dependencies.ValidationService;
@@ -480,6 +482,19 @@ internal sealed partial class ODataQueryHandler(
                     StatusCodes.Status500InternalServerError);
             }
 
+            var featureReader = _featureProviderResolver is null
+                ? _featureReader
+                : await _featureProviderResolver.ResolveReaderAsync(
+                    layerValidation.Snapshot!,
+                    layerValidation.Service,
+                    resource,
+                    layerValidation.Publication,
+                    storageLayerId.Value,
+                    pagination.Limit == 0 && count == true
+                        ? FeatureProviderReadOperation.Count
+                        : FeatureProviderReadOperation.Query,
+                    effectiveToken).ConfigureAwait(false);
+
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
@@ -516,6 +531,7 @@ internal sealed partial class ODataQueryHandler(
                     format,
                     bbox,
                     storageLayerId.Value,
+                    featureReader,
                     effectiveToken);
             }
 
@@ -590,7 +606,7 @@ internal sealed partial class ODataQueryHandler(
             }
 
             // Execute query
-            var queryResult = await _featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
+            var queryResult = await featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
 
             // The query fetched up to pagination.Limit + 1 rows as a continuation probe.
             // A returned count exceeding the requested page size means more rows remain,
@@ -799,6 +815,7 @@ internal sealed partial class ODataQueryHandler(
         string? format,
         BoundingBox? bbox,
         int storageLayerId,
+        IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
         long? totalCount = null;
@@ -828,7 +845,7 @@ internal sealed partial class ODataQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
             }
 
-            totalCount = await _featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
+            totalCount = await featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
