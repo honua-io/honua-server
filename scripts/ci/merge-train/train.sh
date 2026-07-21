@@ -407,9 +407,11 @@ main() {
     # Restore the existing batch directly into the common CI-gate loop. The
     # startup helper already waited for attempt > baseline and validated the
     # Actions run, batch branch, and trunk CAS base.
-    local batch trunk_sha included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns
+    local batch trunk_sha trunk_sha7 included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns
     batch="$(jq -r '.active_batch.branch' <<<"${resume_state}")"
     trunk_sha="$(jq -r '.active_batch.trunk_base' <<<"${resume_state}")"
+    trunk_sha7="${trunk_sha:0:7}"
+    jq -r '.active_batch.run_id' <<<"${resume_state}" >"${TRAIN_RUN_ID_FILE}"
     included="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${resume_state}")"
     fwdfix="$(jq -r '.active_batch.fwdfix_attempts // 0' <<<"${resume_state}")"
     flake_reruns="$(jq -r '.active_batch.flake_reruns // 0' <<<"${resume_state}")"

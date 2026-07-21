@@ -231,3 +231,43 @@ grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || 
 [[ "$(jq -r '.outcome' "${fixture_metrics}")" == "landed" ]] || fail "resumed SUCCESS did not emit landed metrics"
 [[ "$(jq -r '.counts.landed' "${fixture_metrics}")" == "1" ]] || fail "resumed SUCCESS metrics lost reconstructed membership"
 pass "end-to-end resumed SUCCESS lands exact members and emits metrics"
+
+# A resumed failed attempt must retain the original run id and trunk-base
+# context through timeout precedence and attribution. It must not dispatch a
+# new batch or request another rerun.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+: >"${record}"
+fixture_pushed=0
+export TRAIN_RUN_LOG_TEXT='Testcontainers timed out after 20 minutes; Process completed with exit code 124.'
+gh() {
+  if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
+  elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then printf 'failure\n'
+  else fail "resumed failure attempted unexpected gh operation: $*"
+  fi
+}
+train_ci_jobs_are_terminal() { [[ "$1" == "123" ]] || fail "failure classification lost resumed run id"; }
+train_expected_shards_are_classifiable() { [[ "$1" == "123" ]] || fail "shard classification lost resumed run id"; }
+train_failing_jobs() { [[ "$1" == "123" ]] || fail "failure reader lost resumed run id"; printf 'Server Tests (OData Core)\n'; }
+train_preexisting_filter() {
+  [[ "$1" == "123" ]] || fail "pre-existing filter lost resumed run id"
+  printf '%s\n' "$2"
+}
+flake_called=0
+train_classify_flake() { flake_called=1; return 2; }
+train_attribute() {
+  printf 'attribute-called\n' >>"${record}"
+  [[ "$(cat "${TRAIN_RUN_ID_FILE}")" == "123" ]] || fail "attribution lost persisted run id"
+  [[ "${trunk_sha7:-}" == "aaaaaaa" ]] || fail "attribution lost restored trunk base"
+  [[ "$(cat "$2")" == $'101\t'"${fixture_member_sha}" ]] || fail "attribution lost reconstructed member head"
+  printf '101\n'
+}
+train_run_batch_ci() { fail "resumed failure dispatched a new batch"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+now_value=100
+main || fail "resumed failure did not complete attribution path"
+[[ "${flake_called}" == "0" ]] || fail "persistent resumed timeout reached flake merge-through"
+grep -Fqx 'attribute-called' "${record}" || fail "resumed persistent timeout did not reach attribution"
+! grep -Eq 'gh (workflow run|run rerun)' "${record}" || fail "resumed failure dispatched or reran work"
+pass "end-to-end resumed FAILURE preserves run/base context through attribution"
