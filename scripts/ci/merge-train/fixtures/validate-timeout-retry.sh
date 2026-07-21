@@ -7,6 +7,8 @@ export TRAIN_APPLY=0
 . "${TRAIN_DIR}/lib.sh"
 . "${TRAIN_DIR}/smart-ci.sh"
 . "${TRAIN_DIR}/classify-timeout.sh"
+. "${TRAIN_DIR}/state.sh"
+. "${TRAIN_DIR}/resume-retry.sh"
 
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 pass() { printf 'PASS: %s\n' "$1"; }
@@ -91,6 +93,37 @@ train_wait_for_new_run_attempt 123 "${TRAIN_RERUN_BASE_ATTEMPT}" || fail "resume
 unset TRAIN_RERUN_RESUME_STATE_JSON
 pass "cancellation/resume idempotency"
 
+# Production startup restoration: matching persisted intent waits on the old
+# run id, accepts only completed(new), and performs no dispatch/rerun side effect.
+: >"${record}"
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+resume_fetcher() { return 0; }
+export TRAIN_RESUME_FETCHER=resume_fetcher
+train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
+gh_mode=resume
+printf '0' >"${sequence_calls}"
+gh() {
+  if [[ "$*" == *'--json headBranch,attempt'* ]]; then
+    printf 'train/batch/abc/1\t1\n'
+  elif [[ "$*" == *'--json attempt,status'* ]]; then
+    local n; n=$(( $(cat "${sequence_calls}") + 1 )); printf '%s' "${n}" >"${sequence_calls}"
+    case "${n}" in 1) printf '1\tcompleted\n' ;; 2) printf '2\tqueued\n' ;; *) printf '2\tcompleted\n' ;; esac
+  elif [[ "$*" == *'--json jobs'* ]]; then
+    printf 'success\n'
+  else
+    fail "resume startup attempted unexpected gh operation: $*"
+  fi
+}
+resumed_json="$(train_restore_retry_intent)" || fail "production startup did not restore retry intent"
+[[ "$(jq -r '.resume_gate' <<<"${resumed_json}")" == "SUCCESS" ]] || fail "resumed main path did not recover new-attempt gate"
+[[ ! -s "${record}" ]] || fail "resumed main path dispatched a batch or duplicate rerun"
+unset TRAIN_STATE_BODY_OVERRIDE TRAIN_STATE_ISSUE_OVERRIDE TRAIN_RESUME_FETCHER
+pass "restarted-main production resume path"
+
+# Restore the simple attempt reader for the remaining classifier cases.
+gh() { printf '1\n'; }
+
 # Persistent timeout wins over an overlapping known-flake signature.
 flake_called=0
 train_classify_flake() { flake_called=1; return 2; }
@@ -115,3 +148,27 @@ rc=0
 train_classify_retry_candidate 123 0 0 'Server Tests (OData Core)' || rc=$?
 [[ "${rc}" == "0" && "${TRAIN_RETRY_KIND}" == "flake" ]] || fail "main policy did not fall through to known flake"
 pass "main-loop classifier behavior"
+
+# End-to-end restarted main: source the production orchestrator, make selection
+# fatal if reached, and prove startup consumes retry intent first without any
+# workflow dispatch or duplicate rerun.
+export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=1
+. "${TRAIN_DIR}/train.sh"
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-intent","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_RESUME_FETCHER=resume_fetcher
+train_select() { fail "restarted main incorrectly entered selection"; }
+train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
+gh() {
+  if [[ "$*" == *'--json headBranch,attempt'* ]]; then printf 'train/batch/abc/1\t1\n'
+  elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
+  elif [[ "$*" == *'--json jobs'* ]]; then printf 'success\n'
+  else fail "restarted main attempted unexpected gh operation: $*"
+  fi
+}
+: >"${record}"
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+now_value=100
+main || fail "restarted production main failed to consume retry intent"
+[[ ! -s "${record}" ]] || fail "restarted production main dispatched or reran work"
+pass "end-to-end restarted main bypasses selection and duplicate work"

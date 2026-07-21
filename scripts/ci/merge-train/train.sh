@@ -57,6 +57,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/land.sh"
 # shellcheck source=state.sh
 . "${TRAIN_DIR}/state.sh"
+# shellcheck source=resume-retry.sh
+. "${TRAIN_DIR}/resume-retry.sh"
 
 train_require git jq gh || { train_err "missing prerequisites"; exit 2; }
 
@@ -152,6 +154,7 @@ train_run_batch_ci() {
       return 0
     fi
   fi
+
   train_smart_ci_run "${batch}"
 }
 
@@ -280,6 +283,24 @@ main() {
   train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
+  local resume_state="" resume_rc=1 resumed=0
+  if [[ "${TRAIN_APPLY}" == "1" ]]; then
+    if resume_state="$(train_restore_retry_intent)"; then resume_rc=0; else resume_rc=$?; fi
+    if [[ "${resume_rc}" == "0" ]]; then
+      resumed=1
+      train_notice "restoring interrupted failed-job rerun before selection; no new batch or rerun will be dispatched"
+    elif [[ "${resume_rc}" == "2" ]]; then
+      train_err "persisted retry intent does not match its Actions run/batch; failing closed"
+      return 1
+    fi
+  fi
+
+  # Offline fixture seam: proves startup selects the production resume path
+  # before selection/assembly without executing the remainder of a live land.
+  [[ "${resumed}" == "1" && "${TRAIN_RESUME_STARTUP_TEST_ONLY:-0}" == "1" ]] && return 0
+
+  if [[ "${resumed}" != "1" ]]; then
+
   # --- select ----------------------------------------------------------------
   train_group select "pick ready PRs (oldest-first, capped at ${MAX_BATCH})"
   train_step_begin select
@@ -381,6 +402,29 @@ main() {
   fi
   train_step_end smart-ci >/dev/null
   train_endgroup
+
+  else
+    # Restore the existing batch directly into the common CI-gate loop. The
+    # startup helper already waited for attempt > baseline and validated the
+    # Actions run, batch branch, and trunk CAS base.
+    local batch trunk_sha included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns
+    batch="$(jq -r '.active_batch.branch' <<<"${resume_state}")"
+    trunk_sha="$(jq -r '.active_batch.trunk_base' <<<"${resume_state}")"
+    included="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${resume_state}")"
+    fwdfix="$(jq -r '.active_batch.fwdfix_attempts // 0' <<<"${resume_state}")"
+    flake_reruns="$(jq -r '.active_batch.flake_reruns // 0' <<<"${resume_state}")"
+    timeout_reruns="$(jq -r '.active_batch.timeout_reruns // 0' <<<"${resume_state}")"
+    gate="$(jq -r '.resume_gate' <<<"${resume_state}")"
+    shard_descriptor="$(jq -c '.resume_shard_descriptor' <<<"${resume_state}")"
+    selected="$(train_select | jq -s -c --arg csv "${included}" \
+      '($csv | split(",") | map(tonumber)) as $ids | map(select(.number as $n | $ids | index($n)))')"
+    [[ "$(jq 'length' <<<"${selected}")" == "$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | wc -l | tr -d ' ')" ]] || {
+      train_err "resumed batch members no longer match selectable PR state; failing closed"
+      return 1
+    }
+    train_metric_set flake_reruns "${flake_reruns}"
+    train_metric_set timeout_reruns "${timeout_reruns}"
+  fi
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_log "dry-run: stopping before CI gate evaluation/land (no pushes happened)"
@@ -794,4 +838,6 @@ _dashboard() {
   train_summary "_Machine-readable metrics: \`merge-train-metrics.json\` (workflow artifact). Aggregate over-time dashboard: the **Merge Train State** issue._"
 }
 
-main "$@"
+if [[ "${TRAIN_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi
