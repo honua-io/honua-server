@@ -122,6 +122,7 @@ train_request_failed_job_rerun() {
   if [[ "${send_rc}" == "5" ]]; then
     if [[ -n "${callback}" ]] && ! "${callback}" "${kind}" "${next_count}" "${base}" "${run_id}" rejected; then
       train_err "definitive rerun rejection could not be persisted"
+      return 6
     fi
     return 5
   fi
@@ -194,7 +195,8 @@ train_classify_timeout() {
 # matches a known-flake regex, so the known-flake merge-through path is skipped.
 # Returns 0=rerun accepted, 1=real, 2=known-flake merge-through,
 # 3=pre-request failure, 4=ambiguous requesting state preserved, 5=definitive
-# API rejection persisted for terminal recovery.
+# API rejection persisted for terminal recovery, 6=rejection known but terminal
+# state persistence failed (cleanup is unauthorized and must not run).
 # TRAIN_RETRY_KIND is set to timeout or flake for successful rerun requests.
 train_classify_retry_candidate() {
   local run_id="$1" timeout_count="${2:-0}" flake_count="${3:-0}" jobs="${4:-}" callback="${5:-}"
@@ -204,7 +206,7 @@ train_classify_retry_candidate() {
   case "${rc}" in
     0) TRAIN_RETRY_KIND=timeout; return 0 ;;
     2) return 1 ;;
-    3|4|5) return "${rc}" ;;
+    3|4|5|6) return "${rc}" ;;
   esac
 
   rc=0

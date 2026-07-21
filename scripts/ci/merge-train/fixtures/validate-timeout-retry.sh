@@ -247,6 +247,15 @@ rc=0; train_state_read >/dev/null || rc=$?
 state_case=zero
 : >"${record}"; train_state_write "${state_body_file}" || fail "proven initial state absence did not allow creation"
 grep -Fq 'gh issue create' "${record}" || fail "successful zero-result lookup did not use initial creation path"
+# Live invocations cannot race or ambiguously create state authorities: without
+# the pre-provisioned fixed ID, every simultaneous zero lookup fails before a
+# create side effect.
+export TRAIN_APPLY=1
+: >"${record}"
+rc_a=0; train_state_write "${state_body_file}" || rc_a=$?
+rc_b=0; train_state_write "${state_body_file}" || rc_b=$?
+[[ "${rc_a}" != "0" && "${rc_b}" != "0" && ! -s "${record}" ]] || fail "simultaneous live zero lookups attempted ambiguous state creation"
+export TRAIN_APPLY=0
 rm -f "${state_body_file}"
 pass "state lookup/read/write authority fails closed"
 
@@ -591,6 +600,27 @@ grep -Fqx 'selection-entered' "${record}" || fail "later controller remained tra
 ! grep -Eq 'gh (workflow run|pr merge)|git push' "${record}" || fail "rejected recovery unsafely landed or requeued the rejected batch"
 unset TRAIN_RERUN_REQUESTER TRAIN_RESUME_STARTUP_TEST_ONLY
 pass "definitive rerun rejection is terminal and later controller progresses"
+
+# A definitive rejection does not authorize cleanup until `retry-rejected` is
+# durable. Simulate persistence failing after the API response: requesting must
+# remain authoritative and no escalation/clear side effects may occur.
+: >"${record}"
+export TRAIN_RERUN_REQUESTER=requester
+request_mode=rejected
+reject_persist_fails() {
+  if [[ "$5" == "rejected" ]]; then return 1; fi
+  _persist_retry_intent "$@"
+}
+timeout_reruns=0
+TRAIN_RERUN_KIND=""
+TRAIN_RERUN_BASE_ATTEMPT=""
+rc=0
+train_classify_retry_candidate 444 0 0 'Server Tests (OData Core)' reject_persist_fails || rc=$?
+[[ "${rc}" == "6" ]] || fail "rejected-state persistence failure did not fail closed distinctly"
+grep -Fq '"phase": "timeout-retry-requesting"' "${TRAIN_WORK}/state.md" || fail "persistence failure did not preserve requesting authority"
+! grep -Eq 'add-label train:escalated|remove-label train:landing|"phase": "select"' "${record}" || fail "unpersistence rejection triggered unauthorized cleanup"
+unset TRAIN_RERUN_REQUESTER
+pass "rejection persistence failure cannot authorize cleanup"
 
 # Controller A expires while the accepted attempt is still queued. It must
 # leave the retry intent untouched. Controller B then consumes that same run

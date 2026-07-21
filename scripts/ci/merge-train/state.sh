@@ -77,6 +77,16 @@ train_state_issue_number() {
   if [[ -n "${TRAIN_STATE_ISSUE_OVERRIDE:-}" ]]; then
     echo "${TRAIN_STATE_ISSUE_OVERRIDE}"; return 0
   fi
+  if [[ -n "${TRAIN_STATE_ISSUE_NUMBER:-}" ]]; then
+    local pinned
+    [[ "${TRAIN_STATE_ISSUE_NUMBER}" =~ ^[0-9]+$ ]] || return 2
+    pinned="$(gh issue view "${TRAIN_STATE_ISSUE_NUMBER}" --json number,state,labels \
+      --jq '.number as $n | select(.state=="OPEN" and any(.labels[]; .name=="'"${TRAIN_LABEL_STATE}"'")) | $n' \
+      2>/dev/null)" || return 1
+    [[ "${pinned}" == "${TRAIN_STATE_ISSUE_NUMBER}" ]] || { train_err "configured state issue #${TRAIN_STATE_ISSUE_NUMBER} is missing, closed, or lacks ${TRAIN_LABEL_STATE}"; return 2; }
+    printf '%s\n' "${pinned}"
+    return 0
+  fi
   local rows count
   rows="$(gh issue list --label "${TRAIN_LABEL_STATE}" --state open --limit 100 \
     --json number --jq '.[].number' 2>/dev/null)" || return 1
@@ -94,6 +104,10 @@ train_state_write() {
   if [[ -n "${num}" ]]; then
     train_side_effect gh issue edit "${num}" --body-file "${body_file}"
   else
+    if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
+      train_err "live state creation is disabled; configure the pre-provisioned TRAIN_STATE_ISSUE_NUMBER"
+      return 2
+    fi
     train_side_effect gh issue create --title "${TRAIN_STATE_TITLE}" \
       --label "${TRAIN_LABEL_STATE}" --body-file "${body_file}"
   fi

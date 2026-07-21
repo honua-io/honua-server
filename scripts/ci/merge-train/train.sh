@@ -614,6 +614,12 @@ main() {
       _emit_metrics "ci-rerun-requesting" "${trunk_sha}" "" "${shard_descriptor}"
       return 1
     fi
+    if [[ "${rc_retry}" == "6" ]]; then
+      train_annotate_warn "Actions rejected the rerun but terminal state persistence failed; stopping without cleanup or state overwrite"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-rejection-persist-failed" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
     if [[ "${rc_retry}" == "5" ]]; then
       train_annotate_warn "Actions definitively rejected the failed-job rerun; escalating this batch and clearing it so the queue can progress"
       train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
