@@ -1,28 +1,28 @@
 # Merge coordination runbook (webhook-driven)
 
 Merge-queue coordination on `honua-server` is **fully event-driven (webhook)**.
-Session-side polling — a Claude `/loop` heartbeat or a `gh`-polling Monitor babysitting
-the queue — is **no longer required to drain the queue**. Three workflows cooperate, all
+Session-side polling â€” a Claude `/loop` heartbeat or a `gh`-polling Monitor babysitting
+the queue â€” is **no longer required to drain the queue**. Three workflows cooperate, all
 triggered by GitHub events, none needing a live session:
 
 | Workflow | Trigger | Job |
 |---|---|---|
-| `pr-merge-train.yml` | `push` to trunk, `check_suite` completed, 15-min backstop cron | Merges the oldest **CLEAN** PR (squash); else freshens every **BEHIND** PR. One mechanical action per trigger, re-triggers itself. |
+| `merge-train.yml` | 15-minute schedule or explicit live dispatch | Sole merge authority: exact-head admission, batch assembly/CI, and compare-and-swap landing. |
 | `auto-rerun-flaky.yml` | `workflow_run` (CI) completed, `run_attempt == 1` | Gives a PR's CI exactly **one** retry when only known-flaky shards failed (40P01 deadlock, Testcontainers/Docker). Never reruns a real gate. |
-| `ci-failure-triage.yml` | `workflow_run` (CI) completed, `conclusion == failure` | The missing piece (#2021): **AI triage of genuinely-real failures** + autonomous rerun-orchestration backstop. Does *not* merge — that stays in the train. |
+| `ci-failure-triage.yml` | `workflow_run` (CI) completed, `conclusion == failure` | The missing piece (#2021): **AI triage of genuinely-real failures** + autonomous rerun-orchestration backstop. Does *not* merge â€” that stays in the train. |
 
 ## What `ci-failure-triage.yml` does
 
 1. Resolves the associated PR(s) from the CI run's head SHA (incl. fork PRs, via a head-SHA search).
-2. Runs the **shared deterministic classifier** (`scripts/ci/ci-failure-classifier.js`) — the
+2. Runs the **shared deterministic classifier** (`scripts/ci/ci-failure-classifier.js`) â€” the
    single source of the leaf/aggregator + FLAKY-shard/SOLID-gate regex sets, also consumed by
    `auto-rerun-flaky.yml` so the two can never drift.
 3. Acts on the verdict:
-   - **clean** (only aggregator roll-ups failed) → nothing; the train handles merge/freshen.
-   - **flake-only** → ensures a rerun happened **at most once** (only on `run_attempt == 1`,
-     after `auto-rerun-flaky` owns the first attempt — this is the backstop; a second rerun of
+   - **clean** (only aggregator roll-ups failed) â†’ nothing; the train handles merge/freshen.
+   - **flake-only** â†’ ensures a rerun happened **at most once** (only on `run_attempt == 1`,
+     after `auto-rerun-flaky` owns the first attempt â€” this is the backstop; a second rerun of
      the same attempt is rejected by GitHub, which is the desired "no storms" behavior).
-   - **real-failure** (a SOLID gate failed, or an unrecognized leaf) → gathers the failing
+   - **real-failure** (a SOLID gate failed, or an unrecognized leaf) â†’ gathers the failing
      job's log tail, calls **Bedrock** for a triage verdict `{classification, rootCause,
      suggestedAction}`, posts it as a PR comment, and applies the `ci-needs-triage` label
      (created on first use). **AI is used only here.**
@@ -30,10 +30,10 @@ triggered by GitHub events, none needing a live session:
    serialized per head branch (`cancel-in-progress: false`). Uses `secrets.MERGE_TRAIN_TOKEN`
    so it can comment/label PRs whose delta touches `.github/workflows/**`.
 
-## Bedrock auth in CI — and graceful degradation
+## Bedrock auth in CI â€” and graceful degradation
 
 The triage AI step talks to Claude on **Amazon Bedrock** via the **Converse API** using the
-standard **AWS credential chain** — no API key. Today there is **no CI Bedrock credential path**
+standard **AWS credential chain** â€” no API key. Today there is **no CI Bedrock credential path**
 (the only `aws-actions/configure-aws-credentials` usage in the repo is in `deploy.yml` /
 `deploy-platform-images.yml`, with static ECR push keys, not Bedrock). So the AI step
 **degrades gracefully**: when no creds are present it skips the model call, still labels the PR
@@ -54,7 +54,7 @@ Converse API + IAM credential chain, model is a Bedrock id / inference profile.
 ## Testing & validation
 
 - `scripts/ci/ci-failure-classifier.js` is unit-tested (`node --test scripts/ci/ci-failure-classifier.test.js`)
-  against flake-only / real-gate / mixed / unknown job-name sets — proving it matches
+  against flake-only / real-gate / mixed / unknown job-name sets â€” proving it matches
   `auto-rerun-flaky`'s intent.
 - `scripts/ci/bedrock-triage.js` returns `available: false` with a notice when no AWS creds are
   present (graceful skip), so the workflow is safe with Bedrock unconfigured.

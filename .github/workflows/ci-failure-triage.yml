@@ -2,7 +2,7 @@ name: CI failure triage
 
 # Event-driven AI merge-coordinator triage (#2021). AUGMENTS the existing
 # webhook coordinator — it does NOT replace it:
-#   * pr-merge-train.yml     merges the oldest CLEAN PR / freshens the oldest BEHIND one.
+#   * merge-train.yml        is the repository's sole merge authority.
 #   * auto-rerun-flaky.yml   gives a PR's CI exactly ONE retry when only known-flaky
 #                            shards failed.
 # Both stay AS-IS. This workflow adds the missing piece that made session-side
@@ -81,7 +81,7 @@ jobs:
         with:
           # Workflow-scoped token so triage can comment / label PRs whose delta
           # touches .github/workflows/** (GITHUB_TOKEN is forbidden from that),
-          # matching pr-merge-train.yml and auto-rerun-flaky.yml.
+          # matching merge-train.yml and auto-rerun-flaky.yml.
           github-token: ${{ secrets.MERGE_TRAIN_TOKEN }}
           script: |
             const owner = context.repo.owner, repo = context.repo.repo;

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Step 1: select — pick the ready PRs for the next batch.
+# Step 1: select â€” pick the ready PRs for the next batch.
 #
-# Ready = non-draft, labels exclude train:hold / train:escalated (and the
-# pre-existing `hold` opt-out), mergeable == MERGEABLE, and the CI Gate check
-# is SUCCESS OR a flake-only failure. Ordered oldest-createdAt first, capped at
-# MAX_BATCH.
+# Ready = open, non-draft, unheld, mergeable, and exact-current-head PR Gate +
+# Review Gate are both successful. Ordered oldest-createdAt first.
 #
 # READ-ONLY: this step never mutates anything (only gh ... --json reads), so it
 # runs identically in dry-run and live mode.
@@ -15,7 +13,7 @@
 : "${TRAIN_REAL_GATE_JOB_REGEX:=Build & Format|Analyze C#|\.NET Foundation Tests|Architecture|CI Router|OpenAPI|drift}"
 # Aggregator-only job names: these are roll-ups (the required "CI Gate" check and
 # the shard fan-in summary). When the ONLY failing jobs are aggregators, a shard
-# was cancelled/flaked underneath them — treat that as a flake, not a real break.
+# was cancelled/flaked underneath them â€” treat that as a flake, not a real break.
 : "${TRAIN_AGGREGATOR_JOB_REGEX:=^(CI Gate|Test Suite Summary)$}"
 
 # train_select_run_id_from_rollup <gate-json>: extract the Actions run id from a
@@ -68,17 +66,17 @@ train_select_job_log() {
 # break (FAIL). Returns 0 = flake-only (=> FLAKE), 1 = real break OR
 # undeterminable (=> FAIL).
 #
-# Each input line is "<conclusion>\t<name>". Rules (conservative — default to
+# Each input line is "<conclusion>\t<name>". Rules (conservative â€” default to
 # FAIL on any uncertainty):
 #   * NO non-successful jobs fetched (jobs unavailable) => FAIL.
 #   * ANY failing job whose NAME matches the real-gate regex => FAIL (a human
 #     must fix it). Note: only an actual `failure` real-gate job is
 #     authoritative; a `cancelled` real-gate job is just runner starvation.
 #   * Otherwise every non-successful job must be one of:
-#       - an aggregator-only roll-up (CI Gate / Test Suite Summary — a shard
+#       - an aggregator-only roll-up (CI Gate / Test Suite Summary â€” a shard
 #         under them cancelled/flaked), OR
 #       - a CANCELLED / TIMED_OUT / STARTUP_FAILURE shard (runner starvation /
-#         cancel-cascade — treated as flake), OR
+#         cancel-cascade â€” treated as flake), OR
 #       - a `failure` shard whose log matches the flake regex.
 #     If even one `failure` shard's log does NOT match (or can't be fetched),
 #     => FAIL.
@@ -184,12 +182,55 @@ train_pr_has_hold_label() {
     <<<"${labels_json}" >/dev/null 2>&1
 }
 
+train_pr_admission_snapshot() {
+  local pr="$1"
+  if [[ -n "${TRAIN_ADMISSION_JSON_FOR_PR:-}" ]]; then
+    "${TRAIN_ADMISSION_JSON_FOR_PR}" "${pr}"
+    return
+  fi
+  gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number state isDraft headRefOid labels(first:100){nodes{name} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{author{login} commit{oid}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}} pageInfo{hasNextPage}}}}}}}}}' \
+    -F owner="${GITHUB_REPOSITORY%%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F number="${pr}" \
+    --jq '.data.repository.pullRequest | {number,state,isDraft,headRefOid,labels:.labels.nodes,labelsTruncated:.labels.pageInfo.hasNextPage,reviewThreads:.reviewThreads.nodes,reviewThreadsTruncated:(.reviewThreads.pageInfo.hasNextPage or any(.reviewThreads.nodes[]?; .comments.pageInfo.hasNextPage)),statusCheckRollup:(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []),checksTruncated:(.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false)}'
+}
+
+train_snapshot_gate_success() {
+  local snapshot="$1" context="$2"
+  jq -e --arg context "${context}" '
+    [.statusCheckRollup[]
+      | select((.__typename == "CheckRun" and .name == $context and .status == "COMPLETED" and .conclusion == "SUCCESS")
+            or (.__typename == "StatusContext" and .context == $context and .state == "SUCCESS"))]
+    | length > 0' <<<"${snapshot}" >/dev/null
+}
+
+# Re-fetch all mutable PR state. The rollup belongs to headRefOid, so comparing
+# expected_head binds both gate results to the exact admitted SHA.
+train_pr_admission() {
+  local pr="$1" expected_head="$2" snapshot labels
+  snapshot="$(train_pr_admission_snapshot "${pr}" 2>/dev/null)" || {
+    train_warn "reject #${pr}: admission snapshot unavailable"; return 1;
+  }
+  [[ -n "${snapshot}" && "${snapshot}" != "null" ]] || return 1
+  [[ "$(jq -r '.state' <<<"${snapshot}")" == "OPEN" ]] || { train_warn "reject #${pr}: closed"; return 1; }
+  [[ "$(jq -r '.isDraft' <<<"${snapshot}")" == "false" ]] || { train_warn "reject #${pr}: draft"; return 1; }
+  [[ "$(jq -r '.headRefOid' <<<"${snapshot}")" == "${expected_head}" ]] || { train_warn "reject #${pr}: head advanced"; return 1; }
+  jq -e '(.labelsTruncated or .reviewThreadsTruncated or .checksTruncated) | not' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: snapshot truncated"; return 1; }
+  labels="$(jq -c '.labels // []' <<<"${snapshot}")"
+  train_pr_has_hold_label "${labels}" && { train_warn "reject #${pr}: held/escalated"; return 1; }
+  jq -e --arg bot 'chatgpt-codex-connector[bot]' --arg head "${expected_head}" '
+    all(.reviewThreads[]?;
+      .isResolved == true or
+      ([.comments.nodes[]? | select(.author.login == $bot and .commit.oid == $head)] | length == 0))
+  ' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: unresolved Codex review thread"; return 1; }
+  train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
+  train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
+}
+
 # train_select: emit the selected batch as JSON lines (one object per PR):
 #   {number, headRefOid, createdAt, gate}
 # Honors MAX_BATCH. Caller pipes through `jq -s .` if it wants an array.
 #
 # Inputs (overridable for testing):
-#   TRAIN_PR_LIST_JSON — if set, used verbatim instead of calling gh (fixtures).
+#   TRAIN_PR_LIST_JSON â€” if set, used verbatim instead of calling gh (fixtures).
 train_select() {
   local pr_list
   if [[ -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
@@ -224,33 +265,17 @@ train_select() {
       train_log "skip #${number}: mergeable=${mergeable}"; continue
     fi
 
-    # CI Gate state. In fixture mode the caller may inject a `gate` field.
-    local gate rollup
-    gate="$(jq -r '.gate // empty' <<<"${line}")"
-    if [[ -z "${gate}" ]]; then
-      if [[ -n "${TRAIN_ROLLUP_JSON_FOR_PR:-}" ]]; then
-        rollup="$("${TRAIN_ROLLUP_JSON_FOR_PR}" "${number}")"
-      else
-        rollup="$(gh pr view "${number}" --json statusCheckRollup \
-          --jq '.statusCheckRollup' 2>/dev/null || echo '[]')"
-      fi
-      gate="$(train_select_ci_gate_state "${rollup}")"
+    # Exact-head admission is mandatory. Batch CI remains the integration
+    # authority, but cannot substitute for PR and Codex-review readiness.
+    local gate expected_head
+    expected_head="$(jq -r '.headRefOid' <<<"${line}")"
+    if ! train_pr_admission "${number}" "${expected_head}"; then
+      train_log "skip #${number}: exact-head admission failed"; continue
     fi
-
-    # OPTIMISTIC BATCH-AND-FIX: do NOT require a green per-PR CI to batch a PR.
-    # The ONE batch CI is the authoritative gate; real failures are fixed forward
-    # (autofix) or the culprit is attributed + dropped (train:escalated), so a
-    # genuinely-broken PR self-excludes after one try. This is what buys "less
-    # CI" — one batch run judges N PRs instead of gating on N green per-PR runs.
-    # The gate value is retained only as an informational signal and for the
-    # all-green direct-merge fast-path in train.sh.
-    case "${gate}" in
-      SUCCESS|FLAKE) : ;;
-      *) train_log "include #${number} despite CI Gate=${gate}: batch CI + autofix is the judge" ;;
-    esac
+    gate="SUCCESS"
 
     jq -nc --argjson n "${number}" \
-           --arg oid "$(jq -r '.headRefOid' <<<"${line}")" \
+           --arg oid "${expected_head}" \
            --arg created "$(jq -r '.createdAt' <<<"${line}")" \
            --arg gate "${gate}" \
            --arg author "$(jq -r '.author.login // .author.name // "?"' <<<"${line}")" \
@@ -271,7 +296,7 @@ train_select() {
 # should wait for the earlier PR (A) to land first.
 #
 # train_pr_overlap_ratio <filesA-newline> <filesB-newline>: emit an integer
-# percentage (0-100) of B's files that also appear in A (|A∩B|/|B|). Pure +
+# percentage (0-100) of B's files that also appear in A (|Aâˆ©B|/|B|). Pure +
 # testable; no network.
 train_pr_overlap_ratio() {
   local files_a="$1" files_b="$2"
@@ -287,7 +312,7 @@ train_pr_overlap_ratio() {
 # Returns 0 = WAIT (skip B this batch), 1 = proceed (include B).
 #
 # Deterministic fallback (TRAIN_LLM=0, Bedrock error, or below-threshold
-# overlap): NEVER wait — keep oldest-first ordering, i.e. exactly Phase 1.
+# overlap): NEVER wait â€” keep oldest-first ordering, i.e. exactly Phase 1.
 # The LLM is consulted ONLY when overlap >= TRAIN_OVERLAP_PCT (default 60),
 # which is the "ambiguous" condition. Logs prompt-class + decision via train_log.
 : "${TRAIN_OVERLAP_PCT:=60}"

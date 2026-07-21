@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture harness for the merge train (Phase 1). Builds a throwaway local git
 # repo with synthetic "PR" branches and asserts the train's git/decision logic
-# offline — NO network, NO gh, NO dotnet. Each case targets one decision path:
+# offline â€” NO network, NO gh, NO dotnet. Each case targets one decision path:
 #
 #   1. clean-merge       -> two non-conflicting PRs both INCLUDED.
 #   2. trunk-conflict    -> a PR conflicting with trunk is SKIPPED (zero residue).
@@ -108,6 +108,31 @@ export TRAIN_REPO_ROOT="${WORK}"
 . "${TRAIN_DIR}/state.sh"
 . "${TRAIN_DIR}/recovery.sh"
 
+# Exact-head admission seam shared by selection and pre-land fixtures.
+__fixture_admission() {
+  local pr="$1" head state=OPEN draft=false labels='[]' gate=SUCCESS review=SUCCESS threads='[]'
+  head="$(awk -v n="${pr}" '$1==n{print $2}' "${TRAIN_INCLUDED_FILE}" 2>/dev/null || true)"
+  if [[ -z "${head}" && -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
+    head="$(jq -r --argjson n "${pr}" '.[] | select(.number==$n) | .headRefOid' <<<"${TRAIN_PR_LIST_JSON}")"
+  fi
+  case "${ADMISSION_CASE:-ok}" in
+    gate-fail) gate=FAILURE ;;
+    review-fail) review=FAILURE ;;
+    unresolved) threads="[{\"isResolved\":false,\"comments\":{\"nodes\":[{\"author\":{\"login\":\"chatgpt-codex-connector[bot]\"},\"commit\":{\"oid\":\"${head}\"}}]}}]" ;;
+    held) labels='[{"name":"train:hold"}]' ;;
+    escalated) labels='[{"name":"train:escalated"}]' ;;
+    draft) draft=true ;;
+    closed) state=CLOSED ;;
+    advanced) head=advanced ;;
+  esac
+  jq -nc --argjson n "${pr}" --arg head "${head}" --arg state "${state}" \
+    --argjson draft "${draft}" --argjson labels "${labels}" --arg gate "${gate}" \
+    --arg review "${review}" --argjson threads "${threads}" \
+    '{number:$n,state:$state,isDraft:$draft,headRefOid:$head,labels:$labels,labelsTruncated:false,reviewThreads:$threads,reviewThreadsTruncated:false,checksTruncated:false,statusCheckRollup:[{__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:$gate},{__typename:"StatusContext",context:"Review Gate",state:$review}]}'
+}
+export -f __fixture_admission
+export TRAIN_ADMISSION_JSON_FOR_PR=__fixture_admission
+
 # Point shard config + targeted script at the REAL repo files so attribution and
 # smart-CI exercise production routing.
 REAL_ROOT="$(cd "${TRAIN_DIR}/../../.." && pwd)"
@@ -199,7 +224,7 @@ if train_forward_fix fwdfix-batch 0; then
   after="$(git rev-parse HEAD)"
   [[ "${before}" != "${after}" ]] && ok "fwdfix: produced a commit" || bad "fwdfix: no commit"
   git log -1 --pretty=%s | grep -Fq "style: dotnet format (train forward-fix)" && ok "fwdfix: correct commit subject" || bad "fwdfix: wrong subject"
-  git log -1 --pretty='%an <%ae>%n%b' | grep -Eqi 'co-authored-by|generated with|🤖' && bad "fwdfix: bot attribution present" || ok "fwdfix: no bot attribution"
+  git log -1 --pretty='%an <%ae>%n%b' | grep -Eqi 'co-authored-by|generated with|ðŸ¤–' && bad "fwdfix: bot attribution present" || ok "fwdfix: no bot attribution"
 else
   bad "fwdfix: should have applied a change"
 fi
@@ -337,7 +362,7 @@ assert_eq "ff-cas: non-FF push server-rejected => rc10" "${rc2}" "10"
 echo
 echo "== Case 8: smart-CI shard computation on a real batch diff =="
 # pr101 touched a FeatureServer path => the descriptor must target FeatureServer
-# shards (not run_all) — proving smart-CI uses production routing.
+# shards (not run_all) â€” proving smart-CI uses production routing.
 git fetch -q origin trunk
 git checkout -q -B smartci-batch origin/trunk
 mkdir -p src/Honua.Protocols.GeoServices/FeatureServer
@@ -424,21 +449,24 @@ assert_eq "state: max_batch in config" "$(jq -r '.config.max_batch' <<<"${sj}")"
 assert_eq "state: last_landed_trunk" "$(jq -r '.last_landed_trunk' <<<"${sj}")" "cafef00d"
 
 echo
-echo "== select: CI-Gate classification + ordering + hold/draft filters =="
+echo "== select: exact-head PR/Review gates + ordering + fail-closed filters =="
 export TRAIN_PR_LIST_JSON='[
-  {"number":10,"headRefOid":"aaa","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","labels":[],"createdAt":"2026-01-02T00:00:00Z","gate":"SUCCESS"},
-  {"number":11,"headRefOid":"bbb","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","labels":[],"createdAt":"2026-01-01T00:00:00Z","gate":"SUCCESS"},
-  {"number":12,"headRefOid":"ccc","isDraft":true,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","labels":[],"createdAt":"2026-01-03T00:00:00Z","gate":"SUCCESS"},
-  {"number":13,"headRefOid":"ddd","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","labels":[{"name":"hold"}],"createdAt":"2026-01-04T00:00:00Z","gate":"SUCCESS"},
-  {"number":14,"headRefOid":"eee","isDraft":false,"mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","labels":[],"createdAt":"2026-01-05T00:00:00Z","gate":"SUCCESS"},
-  {"number":15,"headRefOid":"fff","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","labels":[],"createdAt":"2026-01-06T00:00:00Z","gate":"FAIL"}
+  {"number":10,"headRefOid":"aaa","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-02T00:00:00Z"},
+  {"number":11,"headRefOid":"bbb","isDraft":false,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-01T00:00:00Z"},
+  {"number":12,"headRefOid":"ccc","isDraft":true,"mergeable":"MERGEABLE","labels":[],"createdAt":"2026-01-03T00:00:00Z"},
+  {"number":13,"headRefOid":"ddd","isDraft":false,"mergeable":"MERGEABLE","labels":[{"name":"hold"}],"createdAt":"2026-01-04T00:00:00Z"},
+  {"number":14,"headRefOid":"eee","isDraft":false,"mergeable":"CONFLICTING","labels":[],"createdAt":"2026-01-05T00:00:00Z"}
 ]'
 MAX_BATCH=3 sel="$(MAX_BATCH=3 train_select | jq -s -c '[.[].number]')"
-# Optimistic batch-and-fix: draft/hold/conflict are still excluded, but a CI
-# FAILURE no longer excludes a PR — it is batched and judged by the ONE batch CI
-# (autofix/attribute handle real breaks). #15 (gate=FAIL) is now INCLUDED.
-assert_eq "select: oldest-first; draft/hold/conflict excluded; CI-fail INCLUDED" "${sel}" "[11,10,15]"
-unset TRAIN_PR_LIST_JSON
+assert_eq "select: oldest-first; draft/hold/conflict excluded" "${sel}" "[11,10]"
+
+for admission_case in gate-fail review-fail unresolved held escalated draft closed advanced; do
+  export ADMISSION_CASE="${admission_case}"
+  train_pr_admission 10 aaa \
+    && bad "admission: ${admission_case} must fail closed" \
+    || ok "admission: ${admission_case} fails closed"
+done
+unset ADMISSION_CASE TRAIN_PR_LIST_JSON
 # CI Gate state mapping.
 assert_eq "select: COMPLETED+SUCCESS => SUCCESS" "$(train_select_ci_gate_state '[{"name":"CI Gate","status":"COMPLETED","conclusion":"SUCCESS"}]')" "SUCCESS"
 # A bare FAILURE rollup with no detailsUrl/jobs => conservative FAIL (unchanged).
@@ -875,7 +903,7 @@ assert_contains "autofix(on): request says fix FORWARD" "${req_body}" "Fix forwa
 assert_contains "autofix(on): request forbids bot attribution" "${req_body}" "Add NO bot attribution"
 assert_contains "autofix(on): request authors as Mike McDougall" "${req_body}" "Mike McDougall"
 # The fix commit carries NO bot attribution.
-git -C "${WORK}" log -1 --pretty='%an <%ae>%n%b' autofix-batch | grep -Eqi 'co-authored-by|generated with|🤖' \
+git -C "${WORK}" log -1 --pretty='%an <%ae>%n%b' autofix-batch | grep -Eqi 'co-authored-by|generated with|ðŸ¤–' \
   && bad "autofix(on): bot attribution present" || ok "autofix(on): fix commit has no bot attribution"
 # Cap: at the cap, no attempt is made (rc1 => escalate).
 set +e
@@ -895,6 +923,12 @@ assert_eq "autofix(on): agent declined (no commit) => rc1 (escalate)" "${rc_noc}
 unset TRAIN_AUTOFIX TRAIN_AUTOFIX_STEP_CMD TRAIN_AUTOFIX_DIFF_CMD TRAIN_AUTOFIX_CAP
 export TRAIN_APPLY=0
 git checkout -q origin/trunk 2>/dev/null || true
+
+echo
+echo "== Single merge authority static guard =="
+bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" \
+  && ok "authority: only merge-train.yml can land" \
+  || bad "authority: multiple merge mechanisms detected"
 
 echo
 printf 'RESULT: %d passed, %d failed\n' "${PASS}" "${FAIL}"
