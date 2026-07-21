@@ -960,6 +960,9 @@ echo "== Single merge authority static guard =="
 node --test "${REAL_ROOT}/scripts/ci/review-gate-evidence.test.js" \
   && ok "review gate: active/dismissed/unresolved evidence fixtures" \
   || bad "review gate: evidence fixtures failed"
+assert_contains "review gate: reaction API has least-privilege issues read" \
+  "$(cat "${REAL_ROOT}/.github/workflows/review-gate.yml")" \
+  "  issues: read"
 bash "${REAL_ROOT}/scripts/ci/validate-single-merge-authority.sh" --self-test \
   && ok "authority: positive/negative fixtures" \
   || bad "authority: fixture coverage failed"
