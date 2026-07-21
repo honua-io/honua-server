@@ -4267,6 +4267,8 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithUnknownEnvironment_ReturnsUnavailableManifestState",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithWorkspaceClaimTypeDifferentCasing_MatchesRbacWorkspaceScope",
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_OmittingManifestCapability_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalDisabled_OmitsEveryExperimentalCapability",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability"
       ],
@@ -5498,6 +5500,7 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestInfrastructure_Quality_MeetsHighStandards",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestQualityMetrics_AllCriteria_AchievesPerfectScore",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.Health_GetLiveness_ShouldReturnHealthy",
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Security.HostValidationMiddlewareTests.HealthRequest_WithForgedHostHeader_AllowsRequest",
         "Honua.Server.Tests.HealthEndpointTests.LivenessEndpoint_MultipleRequests_AllSucceed",
         "Honua.Server.Tests.HealthEndpointTests.LivenessEndpoint_ReturnsHealthy",
@@ -11893,6 +11896,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.MissingProfile_PreservesFullSurfaceBehavior",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetStacCatalog_FreshServer_Returns200WithEmptyChildLinks",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetStacCatalog_FreshServer_ReturnsValidContentType",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCatalogTests.GetCatalog_AdvertisesQueryablesRelLink",
@@ -12311,6 +12316,7 @@
       "protocol": "operation-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_LayerWithGeometryTypeButNoGeometryField_IncludesGeometryElement",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_UnsupportedOutputFormat_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeFeatureType_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
@@ -15760,7 +15766,7 @@
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "capability": "ai.workflow-generation"
     },
     {
       "id": "post-api-v1-console-workflow-packages-packageid-versions",
@@ -19799,7 +19805,7 @@
       ],
       "proof_ledger_surface": "spec-engine",
       "maturity": "implemented",
-      "capability": "ai.spec-artifacts"
+      "capability": "ai.spec-apply"
     },
     {
       "id": "post-v1-spec-cancel",

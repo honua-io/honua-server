@@ -128,6 +128,40 @@ that is out of scope for this issue; it is left for whoever picks up the
 seed-retirement swap, tracked by the `TODO(#2893)` comments already in
 `label-sync.yml` and the seed file itself.
 
+## GA criteria (#2946)
+
+A capability key may be advertised as GA (implemented, on by default, no experimental
+flag) only when all four hold:
+
+1. **Interface-level proving tests exercising the core operation.** At least one
+   `[IntegrationTest]` proving test drives the capability's actual operation (not only
+   its error/validation paths) through a real protocol surface, and that test runs on
+   the PR-or-train CI path (a weekly-only conformance cron does not count as the
+   proving evidence for GA).
+2. **Matrix-joined evidence where applicable.** Where an official conformance suite or
+   parity crosswalk exists for the capability (OGC CITE, `geoservices-rest-parity.json`
+   via `esriCompatMatrix`), `capability-matrix.v1.json`'s `cite`/`parity` join for that
+   key is non-empty and passing.
+3. **A factually correct `noSurface` allowlist reason.** If the capability has zero
+   `feature-catalog.json` entries, its
+   [`capability-no-surface-allowlist.v1.json`](data/capability-no-surface-allowlist.v1.json)
+   row must describe a real, verifiable mechanism (an actual config flag, background
+   job, or SDK/MCP-only call path) — not an aspirational or historically-stale claim.
+4. **Live-provable where a route exists.** When the capability has a routed HTTP/gRPC
+   surface, that route must be reachable and correctly gated (auth, entitlement,
+   capability-experimental-flag) on a deployed candidate, not only inside a test host.
+
+A key that fails (1) is a **demotion candidate** — evaluate whether the gap is closed
+by test-depth work already in flight before demoting (see the July 2026 re-grade
+below for the specific policy applied). A key that fails (3) gets its allowlist reason
+corrected, not a maturity change. A key that fails (2) or (4) gets a tracked follow-up;
+CITE/parity/live-provability gaps are evidence work, not necessarily a reason to hide
+an otherwise-real, tested capability.
+
+See
+[`capability-ga-regrade-2026-07.md`](capability-ga-regrade-2026-07.md) for the full
+per-key re-grade decision record produced by applying this bar (#2946).
+
 ## Drift gates
 
 `Honua.Architecture.Tests` (`CapabilityKeyDriftTests`,

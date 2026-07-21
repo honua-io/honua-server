@@ -139,9 +139,17 @@ availability must not be presented as OGC certification or passing evidence.
 
 ## How To Refresh This Page
 
-1. Trigger the
-   [`CITE Evidence Report` workflow](https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml)
-   on `trunk`.
+The
+[`CITE Evidence Report` workflow](https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml)
+now runs on a weekly schedule (Friday 08:00 UTC, after the Wed/Thu per-suite
+crons) in addition to `workflow_dispatch` (honua-server#2944). A scheduled or
+manual run also asserts this page's "Last reviewed" date is no more than 14
+days old (`scripts/ci/check-cite-status-freshness.sh`) — the workflow fails
+and opens/updates a `cite-evidence` issue when either a suite regresses or
+this page has gone stale, since the automated run does not itself rewrite the
+hand-maintained table below.
+
+1. Trigger the workflow on `trunk` (or wait for the weekly schedule).
 2. Wait for `allPassed=true` (the workflow fails otherwise).
 3. Copy the per-suite totals from the
    `cite-conformance-evidence-*` artifact's `conformance-summary.md` into the
