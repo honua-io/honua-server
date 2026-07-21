@@ -319,6 +319,9 @@ scan_authorities() {
   # of how train_apply is spelled or valued. Canonical locations are separately
   # allowlisted; every other executable source must be unable to wake this flow.
   local live_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([\"']?([^[:space:]\"']*/)?merge-train\.yml[\"']?|[\"']Merge[[:space:]]+Train[\"'])|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
+  # A variable workflow selector cannot be proven non-authoritative statically.
+  # Reject it everywhere except the explicit dispatch authority allowlist.
+  local dynamic_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+[^[:space:];]*[$][^[:space:];]*|createWorkflowDispatch[^)]*workflow_id[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]"
   local file rel source found=0 candidates reject_ansi
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -342,6 +345,9 @@ scan_authorities() {
     fi
     if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${live_dispatch}" <<<"${source}"; then
       echo "forbidden live merge-train dispatch in ${rel}" >&2; found=1
+    fi
+    if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${dynamic_dispatch}" <<<"${source}"; then
+      echo "forbidden dynamic workflow dispatch in ${rel}" >&2; found=1
     fi
   done <<<"${candidates}"
   [[ "${found}" == 0 ]] || {
@@ -428,13 +434,17 @@ YAML
     "gh workflow run 'merge-train.yml' -f train_apply=false"
     'gh workflow run "Merge Train" -f train_apply=${mode}'
     "gh workflow run 'Merge Train' -f train_apply=false"
+    $'flow=\'Merge Train\'\n      gh workflow run "$flow" -f train_apply=${mode}'
+    $'flow=merge-train.yml\n      gh workflow run "${flow}" -f train_apply=false'
+    'gh workflow run $flow -f train_apply=false'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
+    $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: flow,\n        ref: "trunk"\n      })'
   )
   for fixture in "${fixtures[@]}"; do
     n=$((n + 1))
     printf 'jobs:\n  bad:\n    steps:\n      - run: |\n        %s\n' "${fixture}" >"${scratch}/.github/workflows/other.yml"
     scan_authorities "${scratch}" >/dev/null 2>&1 \
-      && { echo "forbidden fixture ${n} escaped" >&2; return 1; }
+      && { echo "forbidden fixture ${n} escaped: ${fixture}" >&2; return 1; }
   done
   n=$((n + 1))
   cat >"${scratch}/.github/workflows/other.yml" <<'YAML'
