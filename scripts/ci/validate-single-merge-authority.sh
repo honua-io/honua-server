@@ -321,7 +321,13 @@ scan_authorities() {
   local live_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([\"']?([^[:space:]\"']*/)?merge-train\.yml[\"']?|[\"']Merge[[:space:]]+Train[\"'])|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
   # A variable workflow selector cannot be proven non-authoritative statically.
   # Reject it everywhere except the explicit dispatch authority allowlist.
-  local dynamic_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+[^[:space:];]*[$][^[:space:];]*|createWorkflowDispatch[^)]*workflow_id[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]"
+  # Outside the allowlist, reject variable selectors and any invocation whose
+  # selector is preceded by a flag. Inherited flags (-R/--repo, --hostname, and
+  # future flags) make positional parsing unsafe; static selectors in the first
+  # position remain provably non-authoritative unless live_dispatch matches.
+  # For JS calls, quoted and computed workflow_id keys are equivalent to the
+  # bare key and must not hide a dynamic selector.
+  local dynamic_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+(-[^[:space:];]*|[^[:space:];]*[$][^[:space:];]*)|createWorkflowDispatch[^)]*(\[[[:space:]]*[\"']workflow_id[\"'][[:space:]]*\]|[\"']?workflow_id[\"']?)[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]"
   local file rel source found=0 candidates reject_ansi
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -437,8 +443,13 @@ YAML
     $'flow=\'Merge Train\'\n      gh workflow run "$flow" -f train_apply=${mode}'
     $'flow=merge-train.yml\n      gh workflow run "${flow}" -f train_apply=false'
     'gh workflow run $flow -f train_apply=false'
+    'gh workflow run -R honua-io/honua-server merge-train.yml -f train_apply=true'
+    'gh workflow run --repo honua-io/honua-server merge-train.yml -f train_apply=true'
+    'gh workflow run --hostname github.example --repo honua-io/honua-server merge-train.yml -f train_apply=true'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: flow,\n        ref: "trunk"\n      })'
+    $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        "workflow_id": flow,\n        ref: "trunk"\n      })'
+    $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        ["workflow_id"]: flow,\n        ref: "trunk"\n      })'
   )
   for fixture in "${fixtures[@]}"; do
     n=$((n + 1))
