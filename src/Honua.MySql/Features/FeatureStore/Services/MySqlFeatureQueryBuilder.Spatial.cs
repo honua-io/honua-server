@@ -88,7 +88,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         List<object> parameters)
     {
         var wkbParam = $"@p{paramIndex++}";
-        parameters.Add(filter.Geometry);
+        parameters.Add(MySqlSpatialWkb.ToPlainWkb(filter.Geometry));
 
         // ST_GeomFromWKB parses canonical X/Y WKB and tags the result with the layer SRID so
         // MySQL's spatial functions reject mismatched references at evaluation time. On MySQL
