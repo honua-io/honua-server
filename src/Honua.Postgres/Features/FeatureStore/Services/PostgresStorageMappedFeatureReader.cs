@@ -946,6 +946,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 continue;
             }
 
+            var inMatch = InRegex().Match(part);
+            if (inMatch.Success)
+            {
+                var inColumn = ResolveColumnExpression(inMatch.Groups["field"].Value);
+                var placeholders = SplitValueTokens(inMatch.Groups["values"].Value)
+                    .Select(valueToken => sql.AddParameter(ParseValueToken(valueToken, forceText: false)));
+                parameterizedExpressions.Add($"{inColumn} IN ({string.Join(", ", placeholders)})");
+                continue;
+            }
+
             var comparisonMatch = ComparisonRegex().Match(part);
             if (!comparisonMatch.Success)
             {
@@ -1512,6 +1522,40 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return parts;
     }
 
+    private static List<string> SplitValueTokens(string values)
+    {
+        var tokens = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        for (var index = 0; index < values.Length; index++)
+        {
+            var value = values[index];
+            if (value == '\'' && inQuotes && index + 1 < values.Length && values[index + 1] == '\'')
+            {
+                current.Append("''");
+                index++;
+            }
+            else if (value == '\'')
+            {
+                inQuotes = !inQuotes;
+                current.Append(value);
+            }
+            else if (value == ',' && !inQuotes)
+            {
+                tokens.Add(current.ToString().Trim());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(value);
+            }
+        }
+
+        tokens.Add(current.ToString().Trim());
+        return tokens;
+    }
+
     private static bool IsAndTokenAt(string whereClause, int index)
     {
         if (index + 3 > whereClause.Length)
@@ -1537,6 +1581,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ComparisonRegex();
+
+    [GeneratedRegex(
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InRegex();
 
     [GeneratedRegex(
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",

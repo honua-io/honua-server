@@ -93,6 +93,15 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
+            var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                context,
+                featureReader,
+                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
+                validation.Service,
+                resource,
+                publication,
+                layerId,
+                cancellationToken).ConfigureAwait(false);
 
             // Reject limit < 1 with 400 to match the canonical POST /search surface
             // (SearchEndpoints), which 400s on limit < 1. Previously this path silently
@@ -144,7 +153,10 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+            var result = await readerResolution.Reader.QueryAsync(
+                readerResolution.StorageLayerId,
+                query,
+                cancellationToken);
 
             var items = result.Features
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
@@ -248,21 +260,69 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC item handler requires one.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
-
-            Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(
+            var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
+                context,
                 featureReader,
+                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
+                validation.Service,
+                resource,
+                publication,
                 layerId,
-                resourceSrid,
+                cancellationToken).ConfigureAwait(false);
+
+            var isStorageBound = !string.IsNullOrEmpty(publication.StorageBindingId);
+            var hasNumericItemId = long.TryParse(
                 itemId,
-                cancellationToken);
-            if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var objectId);
+            Feature? feature;
+            if (isStorageBound)
+            {
+                feature = await TryGetBoundFeatureByCanonicalItemIdAsync(
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
+                    resourceSrid,
+                    resource,
+                    itemId,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                feature = await TryGetFeatureByCanonicalItemIdAsync(
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
+                    resourceSrid,
+                    itemId,
+                    cancellationToken);
+                if (feature is null && hasNumericItemId)
+                {
+                    feature = await TryGetFeatureByObjectIdAsStacAsync(
+                        readerResolution.Reader,
+                        readerResolution.StorageLayerId,
+                        resourceSrid,
+                        objectId,
+                        cancellationToken);
+                }
+            }
+
+            if (feature is null && isStorageBound && hasNumericItemId)
             {
                 feature = await TryGetFeatureByObjectIdAsStacAsync(
-                    featureReader,
-                    layerId,
+                    readerResolution.Reader,
+                    readerResolution.StorageLayerId,
                     resourceSrid,
                     objectId,
                     cancellationToken);
+            }
+
+            if (feature is { } resolvedFeature &&
+                !string.Equals(
+                    StacMappingService.ResolveItemId(resolvedFeature),
+                    itemId,
+                    StringComparison.Ordinal))
+            {
+                feature = null;
             }
 
             if (feature is null)
@@ -355,6 +415,34 @@ internal static class ItemEndpoints
         return bestMatch;
     }
 
+    private static async Task<Feature?> TryGetBoundFeatureByCanonicalItemIdAsync(
+        IFeatureReader featureReader,
+        int storageLayerId,
+        int layerSrid,
+        MetadataV2Resource resource,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await StacBoundItemQueryExecutor.QueryAsync(
+            featureReader,
+            storageLayerId,
+            resource,
+            new FeatureQuery
+            {
+                SpatialReferenceSrid = layerSrid,
+                OutputSrid = Wgs84Srid
+            },
+            [itemId],
+            candidateFilter: null,
+            cancellationToken).ConfigureAwait(false);
+        foreach (var candidate in candidates)
+        {
+            return candidate;
+        }
+
+        return null;
+    }
+
     private static async Task<Feature?> TryGetFeatureByObjectIdAsStacAsync(
         IFeatureReader featureReader,
         int layerId,
@@ -381,6 +469,15 @@ internal static class ItemEndpoints
 
     private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId)
     {
+        if (feature is not { } resolvedFeature ||
+            !string.Equals(
+                StacMappingService.ResolveItemId(resolvedFeature),
+                itemId,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var attributes = feature?.Attributes;
         if (attributes is null)
         {

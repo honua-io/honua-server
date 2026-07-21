@@ -375,6 +375,21 @@ internal static partial class OracleFeatureQueryBuilder
                 continue;
             }
 
+            var inMatch = InExpressionRegex().Match(trimmed);
+            if (inMatch.Success)
+            {
+                var field = inMatch.Groups["field"].Value;
+                OracleIdentifier.EnsureValid(field, "WHERE column");
+                var placeholders = new List<string>();
+                foreach (Match valueMatch in InValueRegex().Matches(inMatch.Groups["values"].Value))
+                {
+                    placeholders.Add(":p" + parameters.Count.ToString(CultureInfo.InvariantCulture));
+                    parameters.Add(ParseValueToken(valueMatch.Value));
+                }
+                rendered.Add($"{OracleIdentifier.Quote(field)} IN ({string.Join(", ", placeholders)})");
+                continue;
+            }
+
             var compMatch = ComparisonRegex().Match(trimmed);
             if (compMatch.Success)
             {
@@ -490,4 +505,10 @@ internal static partial class OracleFeatureQueryBuilder
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NullCheckRegex();
+
+    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex InExpressionRegex();
+
+    [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]
+    private static partial Regex InValueRegex();
 }

@@ -6,6 +6,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -20,6 +22,7 @@ using Npgsql;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -46,6 +49,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _connectionName = string.Empty;
     private bool _connectionCreated;
     private string _tableName = string.Empty;
+    private string _nonCanonicalIdTableName = string.Empty;
     private string _serviceName = string.Empty;
     private int? _layerId;
 
@@ -55,6 +59,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         _client = _fixture.CreateAdminClient();
         _schema = PublishSchema;
         _tableName = $"layer_{Guid.NewGuid():N}";
+        _nonCanonicalIdTableName = $"{_tableName}_fid";
         _serviceName = $"svc_{Guid.NewGuid():N}";
 
         await CreateSecureConnectionAsync(_fixture.Postgres.ConnectionString);
@@ -144,6 +149,218 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         toggleApi!.Success.Should().BeTrue();
         toggleApi.Data.Should().NotBeNull();
         toggleApi.Data!.Enabled.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /stac/collections")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    [Endpoint("GET /stac/collections/{collectionId}/items/{itemId}")]
+    [Endpoint("GET /stac/search")]
+    public async Task PublishLayer_CreatesDiscoverableStacCollection()
+    {
+        await ConfigureCanonicalIdCollisionSourceAsync();
+
+        var publishRequest = new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Layer publish STAC discovery integration test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = ["id", "stac_id", "item_id", "name", "population"],
+            ServiceName = _serviceName,
+            Enabled = true
+        };
+
+        var publishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(publishRequest, options: _jsonOptions));
+
+        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
+        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
+        publishApi.Should().NotBeNull();
+        publishApi!.Data.Should().NotBeNull();
+        _layerId = publishApi.Data!.LayerId;
+        var collectionId = _layerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var storageLayerId = checked(_layerId.Value + 1_000_000);
+
+        await RemovePublishedStacStorageBindingAsync();
+
+        var failedSearchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
+        var failedSearchPayload = await failedSearchResponse.Content.ReadAsStringAsync();
+        failedSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.InternalServerError,
+            $"a missing explicit binding must fail closed; response: {failedSearchPayload}");
+
+        var failedItemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
+        failedItemsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
+        failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        await SetPublishedStacStorageLayerIdAsync(storageLayerId);
+        await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
+        await InsertCanonicalIdCollisionAsync();
+
+        var collectionsResponse = await _client.GetAsync("/stac/collections");
+        var collectionsPayload = await collectionsResponse.Content.ReadAsStringAsync();
+        collectionsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {collectionsPayload}");
+        using (var collectionsDocument = JsonDocument.Parse(collectionsPayload))
+        {
+            collectionsDocument.RootElement
+                .GetProperty("collections")
+                .EnumerateArray()
+                .Select(collection => collection.GetProperty("id").GetString())
+                .Should()
+                .Contain(collectionId);
+        }
+
+        var collectionResponse = await _client.GetAsync($"/stac/collections/{collectionId}");
+        var collectionPayload = await collectionResponse.Content.ReadAsStringAsync();
+        collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {collectionPayload}");
+        using (var collectionDocument = JsonDocument.Parse(collectionPayload))
+        {
+            collectionDocument.RootElement.GetProperty("id").GetString().Should().Be(collectionId);
+            collectionDocument.RootElement.GetProperty("type").GetString().Should().Be("Collection");
+        }
+
+        var searchResponse = await _client.GetAsync($"/stac/search?collections={collectionId}&limit=10");
+        var searchPayload = await searchResponse.Content.ReadAsStringAsync();
+        searchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {searchPayload}");
+        using var searchDocument = JsonDocument.Parse(searchPayload);
+        var features = searchDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        var searchFeature = features.Single(feature =>
+            feature.GetProperty("properties").GetProperty("name").GetString() == "Test Feature");
+        searchFeature.GetProperty("collection").GetString().Should().Be(collectionId);
+
+        var idSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=123&limit=10");
+        var idSearchPayload = await idSearchResponse.Content.ReadAsStringAsync();
+        idSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {idSearchPayload}");
+        using (var idSearchDocument = JsonDocument.Parse(idSearchPayload))
+        {
+            var matchingIds = idSearchDocument.RootElement
+                .GetProperty("features")
+                .EnumerateArray()
+                .Select(feature => feature.GetProperty("id").ToString())
+                .ToArray();
+            matchingIds.Should().Equal("123");
+        }
+
+        var lowerPrecedenceIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=900&limit=10");
+        var lowerPrecedenceIdSearchPayload = await lowerPrecedenceIdSearchResponse.Content.ReadAsStringAsync();
+        lowerPrecedenceIdSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"response: {lowerPrecedenceIdSearchPayload}");
+        using (var lowerPrecedenceIdSearchDocument = JsonDocument.Parse(lowerPrecedenceIdSearchPayload))
+        {
+            lowerPrecedenceIdSearchDocument.RootElement
+                .GetProperty("features")
+                .GetArrayLength()
+                .Should()
+                .Be(0);
+        }
+
+        var blankCanonicalIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=fallback-item&limit=10");
+        var blankCanonicalIdSearchPayload = await blankCanonicalIdSearchResponse.Content.ReadAsStringAsync();
+        blankCanonicalIdSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"response: {blankCanonicalIdSearchPayload}");
+        using (var blankCanonicalIdSearchDocument = JsonDocument.Parse(blankCanonicalIdSearchPayload))
+        {
+            blankCanonicalIdSearchDocument.RootElement
+                .GetProperty("features")
+                .EnumerateArray()
+                .Select(feature => feature.GetProperty("id").ToString())
+                .Should()
+                .Equal("fallback-item");
+        }
+
+        var multipleIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={collectionId}&ids=123,fallback-item&limit=10");
+        var multipleIdSearchPayload = await multipleIdSearchResponse.Content.ReadAsStringAsync();
+        multipleIdSearchResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {multipleIdSearchPayload}");
+        using (var multipleIdSearchDocument = JsonDocument.Parse(multipleIdSearchPayload))
+        {
+            multipleIdSearchDocument.RootElement
+                .GetProperty("features")
+                .EnumerateArray()
+                .Select(feature => feature.GetProperty("id").ToString())
+                .Should()
+                .BeEquivalentTo(["123", "fallback-item"]);
+        }
+
+        var itemsResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items?limit=10");
+        var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");
+        using (var itemsDocument = JsonDocument.Parse(itemsPayload))
+        {
+            var items = itemsDocument.RootElement.GetProperty("features").EnumerateArray().ToArray();
+            items.Should().Contain(item =>
+                item.GetProperty("properties").GetProperty("name").GetString() == "Test Feature");
+        }
+
+        var itemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/123");
+        var itemPayload = await itemResponse.Content.ReadAsStringAsync();
+        itemResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemPayload}");
+        using var itemDocument = JsonDocument.Parse(itemPayload);
+        itemDocument.RootElement.GetProperty("id").ToString().Should().Be("123");
+        itemDocument.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+
+        var lowerPrecedenceIdResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/900");
+        lowerPrecedenceIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var unmatchedObjectIdResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/999");
+        unmatchedObjectIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        await CreateNonCanonicalIdSourceAsync();
+        var nonCanonicalPublishResponse = await _client.PostAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers",
+            JsonContent.Create(new PublishLayerRequest
+            {
+                Schema = _schema,
+                Table = _nonCanonicalIdTableName,
+                LayerName = $"Layer {_nonCanonicalIdTableName}",
+                Description = "Layer publish STAC noncanonical primary id test",
+                GeometryColumn = "geom",
+                GeometryType = "Point",
+                Srid = 4326,
+                PrimaryKey = "fid",
+                Fields = ["fid", "name"],
+                ServiceName = _serviceName,
+                Enabled = true
+            }, options: _jsonOptions));
+        var nonCanonicalPublishPayload = await nonCanonicalPublishResponse.Content.ReadAsStringAsync();
+        nonCanonicalPublishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {nonCanonicalPublishPayload}");
+        var nonCanonicalPublishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(
+            nonCanonicalPublishPayload,
+            _jsonOptions);
+        var nonCanonicalCollectionId = nonCanonicalPublishApi!.Data!.LayerId
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var nonCanonicalIdSearchResponse = await _client.GetAsync(
+            $"/stac/search?collections={nonCanonicalCollectionId}&ids=77,88&limit=10");
+        var nonCanonicalIdSearchPayload = await nonCanonicalIdSearchResponse.Content.ReadAsStringAsync();
+        nonCanonicalIdSearchResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"response: {nonCanonicalIdSearchPayload}");
+        using var nonCanonicalIdSearchDocument = JsonDocument.Parse(nonCanonicalIdSearchPayload);
+        nonCanonicalIdSearchDocument.RootElement
+            .GetProperty("features")
+            .EnumerateArray()
+            .Select(feature => feature.GetProperty("id").ToString())
+            .Should()
+            .BeEquivalentTo(["77", "88"]);
     }
 
     [IntegrationTest]
@@ -1580,6 +1797,121 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
+    private async Task PoisonCanonicalFeatureStoreAsync(int layerId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE features
+            SET attributes = jsonb_set(attributes, '{name}', '"Wrong Default Store"'::jsonb)
+            WHERE layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+
+        var updated = await command.ExecuteNonQueryAsync();
+        updated.Should().BeGreaterThan(0, "the isolation regression requires a conflicting default-store feature");
+    }
+
+    private async Task ConfigureCanonicalIdCollisionSourceAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            ALTER TABLE public.{_tableName} ADD COLUMN stac_id TEXT;
+            ALTER TABLE public.{_tableName} ADD COLUMN item_id TEXT;
+            UPDATE public.{_tableName}
+            SET id = 900, stac_id = '123'
+            WHERE name = 'Test Feature';
+            """;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task InsertCanonicalIdCollisionAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO public.{_tableName} (id, stac_id, item_id, name, population, geom)
+            VALUES
+                (123, '456', NULL, 'Wrong Provider ObjectId', 999, ST_SetSRID(ST_Point(2, 2), 4326)),
+                (901, '   ', 'fallback-item', 'Blank Canonical Id', 101, ST_SetSRID(ST_Point(3, 3), 4326));
+            """;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task CreateNonCanonicalIdSourceAsync()
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE TABLE public.{_nonCanonicalIdTableName} (
+                fid BIGINT PRIMARY KEY,
+                name TEXT NOT NULL,
+                geom geometry(Point, 4326) NOT NULL
+            );
+            INSERT INTO public.{_nonCanonicalIdTableName} (fid, name, geom)
+            VALUES
+                (77, 'Primary 77', ST_SetSRID(ST_Point(4, 4), 4326)),
+                (88, 'Primary 88', ST_SetSRID(ST_Point(5, 5), 4326));
+            """;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task SetPublishedStacStorageLayerIdAsync(int storageLayerId)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == _layerId &&
+            publication.PublicationType == MetadataV2PublicationType.StacCollection);
+        var binding = snapshot.ResolveStorageBinding(publication)
+            ?? throw new InvalidOperationException("Published STAC collection did not resolve a storage binding.");
+        var bindings = snapshot.Graph.StorageBindings
+            .Select(candidate => candidate.Metadata.Id == binding.Metadata.Id
+                ? candidate with { StorageLayerId = storageLayerId }
+                : candidate)
+            .ToArray();
+        var publications = snapshot.Graph.Publications
+            .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                ? candidate with { StorageBindingId = binding.Metadata.Id }
+                : candidate)
+            .ToArray();
+
+        await SaveMetadataGraphAsync(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = publications,
+            StorageBindings = bindings
+        });
+    }
+
+    private async Task RemovePublishedStacStorageBindingAsync()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.Single(publication =>
+            publication.LayerIndex == _layerId &&
+            publication.PublicationType == MetadataV2PublicationType.StacCollection);
+        var publications = snapshot.Graph.Publications
+            .Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                ? candidate with { StorageBindingId = "missing-stac-binding" }
+                : candidate)
+            .ToArray();
+        await SaveMetadataGraphAsync(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = publications
+        });
+    }
+
+    private async Task SaveMetadataGraphAsync(MetadataV2Graph graph)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        await store.SaveAsync(graph, expectedEtag: null);
+    }
+
     private static async Task CreatePostGisTableAsync(string connectionString, string tableName)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -1665,7 +1997,10 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             return;
         }
 
-        var sql = $"DROP TABLE IF EXISTS public.{_tableName};";
+        var sql = $"""
+            DROP TABLE IF EXISTS public.{_tableName};
+            DROP TABLE IF EXISTS public.{_nonCanonicalIdTableName};
+            """;
         await _fixture.Postgres.ExecuteDdlUnderLockAsync(sql);
     }
 

@@ -78,18 +78,32 @@ internal sealed partial class PostgreSqlLayerPublishingService
             geometryColumn,
             storageSrid,
             now);
-        var publication = BuildPublishedPublication(
+        var featurePublication = BuildPublishedPublication(
             service,
             resource,
             binding,
             layerIdText,
             request.LayerName.Trim(),
+            MetadataV2PublicationType.EsriFeatureLayer,
+            isPrimary: true,
+            idPrefix: "pub",
+            now);
+        var stacPublication = BuildPublishedPublication(
+            service,
+            resource,
+            binding,
+            layerIdText,
+            request.LayerName.Trim(),
+            MetadataV2PublicationType.StacCollection,
+            isPrimary: false,
+            idPrefix: "pub-stac",
             now);
         var connection = BuildPublishedConnection(request.ConnectionId, now);
         service = service with
         {
             PublicationIds = service.PublicationIds
-                .Append(publication.Metadata.Id)
+                .Append(featurePublication.Metadata.Id)
+                .Append(stacPublication.Metadata.Id)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray()
         };
@@ -119,7 +133,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Resources = resourcesWithStyles,
             StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
-            Publications = UpsertPublication(graph.Publications, publication),
+            Publications = UpsertPublication(
+                UpsertPublication(graph.Publications, featurePublication),
+                stacPublication),
             Connections = connection is null
                 ? graph.Connections
                 : UpsertById(graph.Connections, connection, static item => item.Metadata.Id)
@@ -512,13 +528,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2StorageBinding binding,
         string layerIdText,
         string layerTitle,
+        MetadataV2PublicationType publicationType,
+        bool isPrimary,
+        string idPrefix,
         DateTimeOffset now)
     {
         return new MetadataV2Publication
         {
             Metadata = new MetadataV2ObjectMetadata
             {
-                Id = $"pub-{service.Metadata.Id}-{layerIdText}",
+                Id = $"{idPrefix}-{service.Metadata.Id}-{layerIdText}",
                 Name = layerIdText,
                 Title = layerTitle,
                 CreatedAt = now,
@@ -527,13 +546,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ResourceId = resource.Metadata.Id,
             ServiceId = service.Metadata.Id,
             StorageBindingId = binding.Metadata.Id,
-            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            PublicationType = publicationType,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = layerIdText,
                 IsNumeric = true
             },
-            IsPrimary = true,
+            IsPrimary = isPrimary,
             SupportedFormats = _defaultFormats,
             Capabilities = _defaultCapabilities,
             Status = ActiveReadyStatus(now)
@@ -694,7 +713,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 existing.ServiceId,
                 publication.ServiceId,
                 StringComparison.Ordinal) &&
-                existing.LayerIndex == publication.LayerIndex;
+                existing.LayerIndex == publication.LayerIndex &&
+                existing.PublicationType == publication.PublicationType;
 
             if (sameIdentity || sameServiceLayer)
             {
