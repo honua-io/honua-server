@@ -25,6 +25,8 @@ internal static class CapabilityManifestServiceCollectionExtensions
             options.FromRegistry = configuration.GetValue<bool>(
                 CapabilityManifestFeatureOptions.FromRegistryConfigKey));
         services.AddSingleton<CapabilityManifestOptionsSnapshot>();
+        services.AddSingleton<DeploymentCapabilityProfile>();
+        services.AddSingleton<DeploymentCapabilityRouteCatalog>();
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;
     }

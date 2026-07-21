@@ -139,6 +139,9 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
     <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
+    <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
+                      Link="DeploymentProfiles\feature-catalog.json"
+                      LogicalName="Honua.Server.DeploymentProfiles.feature-catalog.json" />
   </ItemGroup>
 
   <ItemGroup>
