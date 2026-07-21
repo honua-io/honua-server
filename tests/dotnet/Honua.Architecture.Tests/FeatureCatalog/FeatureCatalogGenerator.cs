@@ -250,9 +250,15 @@ internal static class FeatureCatalogGenerator
         // through to the in-release surface (implemented) like any other GA capability.
 
         // Native mTLS (client certificates) — /api/v1/admin/security/client-certificates/* was
-        // promoted to GA (Implemented) in #2431, so it is no longer a flipped experimental group:
-        // its routes fall through to the in-release surface (implemented) like any other GA
-        // capability.
+        // promoted to GA (Implemented) in #2431, then DEMOTED back to experimental in #2958
+        // (release-safety follow-up to #2946/#2431): the always-on client-certificate scheme/RBAC
+        // layer interposed on admin requests regardless of bearer-token validity. It is a flipped
+        // experimental group again.
+        if (route.StartsWith(
+            "/api/v1/admin/security/client-certificates/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "security.mtls";
+        }
 
         // Disconnected-sync replica / conflict review — /api/v1/admin/services/{serviceId}/replicas/*
         if (route.StartsWith("/api/v1/admin/services/", StringComparison.OrdinalIgnoreCase) &&

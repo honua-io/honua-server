@@ -35,7 +35,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `HONUA_ADMIN_PASSWORD` | — (**required in production**) | Password for the admin API (`/api/v1/admin/*`). |
-| `Authentication__ClientCertificates__Mode` | `Disabled` | Client-certificate auth mode: `Disabled`, `Optional`, `RequiredForNative`, `RequiredForAdmin`, `RequiredForEnvironment`. |
+| `Authentication__ClientCertificates__Mode` | `Disabled` | Client-certificate auth mode: `Disabled`, `Optional`, `RequiredForNative`, `RequiredForAdmin`, `RequiredForEnvironment`. **Experimental** — has no effect unless `Capabilities__Experimental__security.mtls__Enabled=true` (or the global experimental switch); see [TLS and mTLS](../../guides/secure/tls-and-mtls.md). |
 | `Authentication__ClientCertificates__EnvironmentId` | — | Environment id matched by `RequiredForEnvironment` and trust profiles. |
 | `Authentication__ClientCertificates__ProtectedAdminPathPrefixes__N` | — | Admin path prefixes protected by client-certificate auth. |
 | `Authentication__ClientCertificates__ProtectedGrpcServices__N` | — | gRPC service names protected by client-certificate auth. |

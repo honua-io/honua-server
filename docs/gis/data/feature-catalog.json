@@ -516,7 +516,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableProfile_ExistingProfile_ReturnsDisabledProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -530,7 +530,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.DisableMapping_ExistingMapping_ReturnsDisabledMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -544,7 +544,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.RemoveRevocation_ExistingRevocation_ReturnsOk"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -3636,10 +3636,11 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithAdminAuth_ReturnsConfiguredProfiles",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListProfiles_WithProEdition_ReturnsPaymentRequired",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_AfterGaPromotion_IsNotExperimentalGated"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ClientCertificatesEndpoint_WhenExperimentalEnabled_IsNotExperimentalGated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -3653,7 +3654,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.GetProfile_ExistingProfile_ReturnsProfile"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -3667,7 +3668,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListMappings_ExistingProfile_ReturnsMappings"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -3681,7 +3682,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ListRevocations_ExistingProfile_ReturnsRevocations"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -4086,6 +4087,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetVersion_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.RequiredForAdmin_WithApiKeyButMissingCertificate_ReturnsMachineReadableProblem",
+        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_MtlsCapabilityDisabled_ValidBearerToken_ReturnsCleanOk",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled"
       ],
@@ -15115,7 +15117,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateProfile_WithMalformedCustomTrustAnchor_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -15132,7 +15134,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.CreateMapping_WithInvertedValidityWindow_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -15146,7 +15148,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.AddRevocation_ValidRequest_ReturnsCreated"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -15161,7 +15163,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.ValidateCertificate_WithMappedCertificate_ReturnsValidResult"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -20456,7 +20458,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateProfile_ExistingProfile_ReturnsUpdatedRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {
@@ -20470,7 +20472,7 @@
         "Honua.Server.Tests.Features.Admin.ClientCertificateAdminEndpointsTests.UpdateMapping_ExistingMapping_ReturnsUpdatedMapping"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "identity.mtls-client-certificate"
     },
     {

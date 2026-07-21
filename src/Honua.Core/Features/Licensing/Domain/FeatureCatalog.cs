@@ -214,7 +214,9 @@ public static class FeatureCatalog
     /// Entitlement key for native mTLS client-certificate authentication (#2431). Enterprise-only:
     /// gates the client-certificate trust-profile admin surface
     /// (<c>/api/v1/admin/security/client-certificates/*</c>) and the enforcement pipeline that maps
-    /// a presented client certificate to a Honua principal.
+    /// a presented client certificate to a Honua principal. The capability itself is also
+    /// experimental again (#2958; registry id <c>security.mtls</c>) — it is off by default
+    /// regardless of edition until <c>Capabilities:Experimental:security.mtls:Enabled=true</c>.
     /// </summary>
     public const string MtlsClientCertificateKey = "identity.mtls-client-certificate";
 

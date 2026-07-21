@@ -155,6 +155,12 @@ deployment. It lights up when the customer opts in.
 > `Disabled`) — but that is a runtime enablement switch, not experimental gating.
 > The mTLS entry in the two-mechanism roster below is superseded by this note.
 
+> **Update (#2958).** The #2431 GA promotion above is superseded: **mTLS
+> client-certificate validation** (`security.mtls`) is DEMOTED back to **experimental**
+> (release-safety follow-up) — the always-on client-certificate scheme/RBAC layer could
+> 403 a fully valid bearer-token admin request (#2945). It is `maturity: experimental`
+> again, gated behind `Capabilities:Experimental:security.mtls:Enabled`.
+
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
 route-bearing experimental capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime
