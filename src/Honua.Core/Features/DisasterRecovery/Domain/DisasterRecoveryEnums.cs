@@ -8,8 +8,11 @@ namespace Honua.Core.Features.DisasterRecovery.Domain;
 /// <summary>
 /// Category of a recorded backup artifact. The kinds map to the PostgreSQL backup
 /// strategy described in the backup-and-restore runbook: full base backups taken with
-/// <c>pg_basebackup</c>, continuous WAL segments archived between base backups, and Redis
-/// cache-state snapshots used to warm a failover target (#356, ADR-0024).
+/// <c>pg_basebackup</c> and continuous WAL segments archived between base backups
+/// (#356, ADR-0024). There is no Redis cache-state backup kind: Honua Server never
+/// produces one (verified zero producers/consumers, #2946) and cache/backup ownership
+/// for Redis is an infrastructure-layer concern (see
+/// <c>capability-no-surface-allowlist.v1.json</c>'s <c>dr.cache-backup</c> entry).
 /// </summary>
 public enum BackupKind
 {
@@ -25,13 +28,7 @@ public enum BackupKind
     /// point forward from the most recent base backup, shrinking the recovery-point window.
     /// </summary>
     [JsonStringEnumMemberName("postgres_wal")]
-    PostgresWal = 1,
-
-    /// <summary>
-    /// A Redis cache-state snapshot used to pre-warm a failover target's distributed cache.
-    /// </summary>
-    [JsonStringEnumMemberName("redis_snapshot")]
-    RedisSnapshot = 2
+    PostgresWal = 1
 }
 
 /// <summary>
