@@ -56,6 +56,73 @@ normalized_source() {
   logical_shell_source "$1" | awk 'NF { printf "%s ; ", $0 }'
 }
 
+tokenize_workflow_args() {
+  local input="$1" char quote="" token="" started=0 i
+  GH_WORKFLOW_TOKENS=()
+  for ((i = 0; i < ${#input}; i++)); do
+    char="${input:i:1}"
+    if [[ -n "${quote}" ]]; then
+      if [[ "${char}" == "${quote}" ]]; then
+        quote=""
+      elif [[ "${char}" == '\\' && "${quote}" == '"' ]]; then
+        i=$((i + 1)); [[ ${i} -lt ${#input} ]] || return 1
+        token+="${input:i:1}"
+      else
+        token+="${char}"
+      fi
+      continue
+    fi
+    case "${char}" in
+      "'"|'"') quote="${char}"; started=1 ;;
+      '\\')
+        i=$((i + 1)); [[ ${i} -lt ${#input} ]] || return 1
+        token+="${input:i:1}"; started=1 ;;
+      ' '|$'\t'|$'\r'|$'\n')
+        if [[ "${started}" == 1 ]]; then
+          GH_WORKFLOW_TOKENS+=("${token}"); token=""; started=0
+        fi ;;
+      *) token+="${char}"; started=1 ;;
+    esac
+  done
+  [[ -z "${quote}" ]] || return 1
+  [[ "${started}" == 0 ]] || GH_WORKFLOW_TOKENS+=("${token}")
+}
+
+workflow_run_selector() {
+  tokenize_workflow_args "$1" || return 1
+  local i=0 token
+  while ((i < ${#GH_WORKFLOW_TOKENS[@]})); do
+    token="${GH_WORKFLOW_TOKENS[i]}"
+    case "${token}" in
+      --)
+        i=$((i + 1)); ((i < ${#GH_WORKFLOW_TOKENS[@]})) || return 1
+        printf '%s\n' "${GH_WORKFLOW_TOKENS[i]}"; return 0 ;;
+      -R|--repo|--hostname|-r|--ref|-f|--raw-field|-F|--field)
+        i=$((i + 2)); ((i <= ${#GH_WORKFLOW_TOKENS[@]})) || return 1 ;;
+      --repo=*|--hostname=*|--ref=*|--raw-field=*|--field=*|-R?*|-r?*|-f?*|-F?*)
+        i=$((i + 1)) ;;
+      --json|--help)
+        i=$((i + 1)) ;;
+      -*) return 1 ;;
+      *) printf '%s\n' "${token}"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+has_forbidden_workflow_run() {
+  local rest="$1" args selector base lower match
+  while [[ "${rest}" =~ (^|[[:space:];\|\&])gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([^;\|\&]*) ]]; do
+    match="${BASH_REMATCH[0]}"; args="${BASH_REMATCH[2]}"
+    selector="$(workflow_run_selector "${args}")" || return 0
+    base="${selector##*/}"; lower="${selector,,}"
+    case "${selector}" in *'$'*|*'`'*) return 0 ;; esac
+    [[ "${base,,}" != merge-train.yml && "${lower}" != "merge train" ]] || return 0
+    rest="${rest#*"${match}"}"
+  done
+  return 1
+}
+
 # Canonicalize the command verb without evaluating source. Git and GitHub CLI
 # accept global options before their subcommand, so raw adjacency regexes are
 # insufficient (for example, `git -C repo push` and `gh -R o/r pr merge`).
@@ -318,16 +385,12 @@ scan_authorities() {
   # Dispatching the live-capable train is itself a merge authority regardless
   # of how train_apply is spelled or valued. Canonical locations are separately
   # allowlisted; every other executable source must be unable to wake this flow.
-  local live_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([\"']?([^[:space:]\"']*/)?merge-train\.yml[\"']?|[\"']Merge[[:space:]]+Train[\"'])|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
+  local live_dispatch="gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
   # A variable workflow selector cannot be proven non-authoritative statically.
   # Reject it everywhere except the explicit dispatch authority allowlist.
-  # Outside the allowlist, reject variable selectors and any invocation whose
-  # selector is preceded by a flag. Inherited flags (-R/--repo, --hostname, and
-  # future flags) make positional parsing unsafe; static selectors in the first
-  # position remain provably non-authoritative unless live_dispatch matches.
   # For JS calls, quoted and computed workflow_id keys are equivalent to the
   # bare key and must not hide a dynamic selector.
-  local dynamic_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+(-[^[:space:];]*|[^[:space:];]*[$][^[:space:];]*)|createWorkflowDispatch[^)]*(\[[[:space:]]*[\"']workflow_id[\"'][[:space:]]*\]|[\"']?workflow_id[\"']?)[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]"
+  local dynamic_dispatch="createWorkflowDispatch[^)]*(\[[[:space:]]*[\"']workflow_id[\"'][[:space:]]*\]|[\"']?workflow_id[\"']?)[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]"
   local file rel source found=0 candidates reject_ansi
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -351,6 +414,9 @@ scan_authorities() {
     fi
     if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${live_dispatch}" <<<"${source}"; then
       echo "forbidden live merge-train dispatch in ${rel}" >&2; found=1
+    fi
+    if ! is_dispatch_allowlisted "${rel}" && has_forbidden_workflow_run "${source}"; then
+      echo "forbidden live or dynamic workflow dispatch in ${rel}" >&2; found=1
     fi
     if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${dynamic_dispatch}" <<<"${source}"; then
       echo "forbidden dynamic workflow dispatch in ${rel}" >&2; found=1
@@ -389,6 +455,9 @@ jobs:
   inspect:
     steps:
       - run: gh api repos/o/r/pulls/1
+      - run: gh workflow run -R o/r docs.yml
+      - run: gh workflow run --repo o/r lint.yml
+      - run: gh workflow run --hostname github.example --repo o/r audit.yml
       # `git push origin HEAD:trunk` is documentation, not executable.
       - run: git push origin HEAD:refs/heads/automation/report-${GITHUB_RUN_ID}
 YAML
@@ -446,6 +515,7 @@ YAML
     'gh workflow run -R honua-io/honua-server merge-train.yml -f train_apply=true'
     'gh workflow run --repo honua-io/honua-server merge-train.yml -f train_apply=true'
     'gh workflow run --hostname github.example --repo honua-io/honua-server merge-train.yml -f train_apply=true'
+    'gh workflow run -R honua-io/honua-server $flow -f train_apply=true'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: flow,\n        ref: "trunk"\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        "workflow_id": flow,\n        ref: "trunk"\n      })'
