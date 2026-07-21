@@ -129,7 +129,9 @@ train_recovery_complete_continuation() {
 train_recovery_reassemble() {
   local records="$1" current="$2" reason="$3" included="${4:-}" batch="$5" run_id="$6" last="$7" event_sha="$8"
   train_warn "green rerun cannot land the recorded batch: ${reason}; resetting selection"
-  train_recovery_clear_labels "${records}" "${included}" 0
+  # A stale batch is being made selectable again. Clear both transient labels
+  # across state + commit-derived membership or selection will still exclude it.
+  train_recovery_clear_labels "${records}" "${included}" 1
   local rc=0
   train_recovery_complete_continuation select "${batch}" "${current}" "${included}" "${run_id}" "${last}" "${event_sha}" || rc=$?
   [[ "${rc}" == 0 ]] || return "${rc}"

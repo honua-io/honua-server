@@ -1165,6 +1165,9 @@ assert_eq "escalate: phase reset to select" "$(jq -r '.active_batch.phase' <<<"$
 
 echo
 echo "== Roll-forward Cap. 2b: state-aware green rerun recovery =="
+grep -Fq '  actions: write' "${REAL_ROOT}/.github/workflows/merge-train-rerun-recovery.yml" \
+  && ok "recovery: workflow grants actions write for live fallback dispatch" \
+  || bad "recovery: workflow lacks actions write for live fallback dispatch"
 __recover_records() {
   [[ "$1" == train/batch/deadbee/123 ]] || return 0
   [[ "$2" == base123 ]] || return 0
@@ -1173,7 +1176,7 @@ __recover_records() {
 __recover_info() {
   case "$1" in
     1944) printf 'sha1944\tOPEN\ttrain:escalated,train:landing\n' ;;
-    1961) printf 'sha1961\tOPEN\ttrain:landing\n' ;;
+    1961) printf 'sha1961\tOPEN\ttrain:escalated,train:landing\n' ;;
     *) return 1 ;;
   esac
 }
@@ -1227,8 +1230,8 @@ export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base
 # landing labels, reset state, and dispatch one serialized live reassembly.
 __recover_info_changed() {
   case "$1" in
-    1944) printf 'changed1944\tOPEN\ttrain:landing\n' ;;
-    1961) printf 'sha1961\tOPEN\ttrain:landing\n' ;;
+    1944) printf 'changed1944\tOPEN\ttrain:escalated,train:landing\n' ;;
+    1961) printf 'sha1961\tOPEN\ttrain:escalated,train:landing\n' ;;
   esac
 }
 export -f __recover_info_changed
@@ -1237,6 +1240,7 @@ STALE_HEAD_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 ba
 assert_not_contains "recovery: changed PR head is never landed" "${STALE_HEAD_LOG}" "LAND-MOCK"
 assert_not_contains "recovery: changed PR head is never stamped" "${STALE_HEAD_LOG}" "statuses/"
 assert_contains "recovery: stale landing label is cleared" "${STALE_HEAD_LOG}" "gh pr edit 1944 --remove-label train:landing"
+assert_contains "recovery: stale escalation label is cleared" "${STALE_HEAD_LOG}" "gh pr edit 1944 --remove-label train:escalated"
 assert_contains "recovery: changed head queues one reassembly" "${STALE_HEAD_LOG}" "DISPATCH-MOCK"
 assert_contains "recovery: changed head explains reset" "${STALE_HEAD_LOG}" "no longer matches validated head"
 
@@ -1252,6 +1256,7 @@ export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info RECOVERY_TRUNK=base123
 MEMBER_MISMATCH_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
 assert_contains "recovery: mismatch clears commit-derived member" "${MEMBER_MISMATCH_LOG}" "gh pr edit 1944 --remove-label train:landing"
 assert_contains "recovery: mismatch clears state-only member" "${MEMBER_MISMATCH_LOG}" "gh pr edit 1961 --remove-label train:landing"
+assert_contains "recovery: mismatch clears state-only escalation" "${MEMBER_MISMATCH_LOG}" "gh pr edit 1961 --remove-label train:escalated"
 assert_eq "recovery: mismatch dispatches exactly once" "$(grep -Fc DISPATCH-MOCK <<<"${MEMBER_MISMATCH_LOG}")" "1"
 assert_not_contains "recovery: mismatch never lands" "${MEMBER_MISMATCH_LOG}" "LAND-MOCK"
 export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
@@ -1263,6 +1268,8 @@ MOVED_REF_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 bat
 assert_contains "recovery: moved batch ref resets active state" "${MOVED_REF_LOG}" "missing or no longer equals successful run head"
 assert_contains "recovery: moved batch clears #1944 landing" "${MOVED_REF_LOG}" "gh pr edit 1944 --remove-label train:landing"
 assert_contains "recovery: moved batch clears #1961 landing" "${MOVED_REF_LOG}" "gh pr edit 1961 --remove-label train:landing"
+assert_contains "recovery: moved batch clears #1944 escalation" "${MOVED_REF_LOG}" "gh pr edit 1944 --remove-label train:escalated"
+assert_contains "recovery: moved batch clears #1961 escalation" "${MOVED_REF_LOG}" "gh pr edit 1961 --remove-label train:escalated"
 assert_eq "recovery: moved batch dispatches exactly once" "$(grep -Fc DISPATCH-MOCK <<<"${MOVED_REF_LOG}")" "1"
 assert_not_contains "recovery: moved batch never lands" "${MOVED_REF_LOG}" "LAND-MOCK"
 export RECOVERY_REMOTE=batchsha
