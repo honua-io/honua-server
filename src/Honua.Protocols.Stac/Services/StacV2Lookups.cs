@@ -32,7 +32,8 @@ internal static class StacV2Lookups
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
         MetadataV2Service Service,
-        int LayerIndex);
+        int LayerIndex,
+        MetadataV2GraphSnapshot Snapshot);
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible
@@ -94,7 +95,7 @@ internal static class StacV2Lookups
                 continue;
             }
 
-            resolved.Add(new ResolvedStacPublication(pub, resource, service, pub.LayerIndex.Value));
+            resolved.Add(new ResolvedStacPublication(pub, resource, service, pub.LayerIndex.Value, snapshot));
         }
 
         // Deterministic order keyed on layer index keeps catalog child links stable.
@@ -166,7 +167,7 @@ internal static class StacV2Lookups
                 continue;
             }
 
-            return new ResolvedStacPublication(pub, resource, service, pub.LayerIndex.Value);
+            return new ResolvedStacPublication(pub, resource, service, pub.LayerIndex.Value, snapshot);
         }
 
         return null;

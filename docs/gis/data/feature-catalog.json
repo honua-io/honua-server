@@ -11920,6 +11920,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_EachHasRequiredStacFields",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_ReturnsCollectionsList",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollections_ReturnsStrongETagAndSupportsConditionalRequest"
@@ -11936,6 +11937,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_ById_ReturnsDeclaredStacMetadata",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_ById_ReturnsStacCollection",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_ById_ReturnsStrongETagAndSupportsConditionalRequest",
@@ -11956,6 +11958,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_EachItemHasRequiredStacFields",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_EncodesBboxInPaginationLinks",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_EncodesDatetimeInPaginationLinks",
@@ -11983,12 +11986,14 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItem_ById_ReturnsStacItem",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItem_ByNumericLookingStacId_ReturnsStacItemBeforeObjectIdFallback",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItem_ByStacId_PrefersCanonicalStacIdBeyondIdCollisions",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItem_ByStringId_ReturnsStacItem",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItem_NotFound_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacProjectedGeometryTests.GetItem_FromProjectedLayer_ReturnsWgs84GeometryAndBbox"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProjectedGeometryTests.GetItem_FromProjectedLayer_ReturnsWgs84GeometryAndBbox",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.GetItem_RoutesCanonicalEqualityWhereInPrecedenceOrderWithoutSqlFilter"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -12060,6 +12065,20 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WhenGraphActivatesAfterAuthorization_RoutesAuthorizedSnapshotBinding",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsInternalServerError",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_With512DistinctIds_UsesBoundedOverflowSentinelQuery",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_With513DistinctIds_ReturnsBadRequestBeforeProviderRouting",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndEvaluatorUnsupportedFilter_ReturnsBadRequestBeforeProviderRouting",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndFilterOnExcludedField_EvaluatesBeforeResponseProjection",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndMalformedFilter_ReturnsBadRequestBeforeProviderRouting",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndSortBy_AppliesGlobalOrderBeforePagingAndDeduplicatesCandidates",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIdsAndSupportedFilter_EvaluatesMatchingAndNonMatchingCandidates",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithIds_RoutesCanonicalWhereWithoutSqlFilter",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithTwoBoundCollections_InterleavesGlobalSortAcrossPageBoundaries",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithoutCollections_WhenAggregateCandidatesEqualCap_SucceedsAcrossBoundTargets",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithoutCollections_WhenAggregateCandidatesExceedCap_ReturnsBadRequestWithoutFurtherReads",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_NoFilters_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_RecordsSharedTelemetryForSearchWork",
@@ -13278,6 +13297,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.PublishLayer_WhenResolverThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_BulkToggle_DisablesServiceLayers",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ByConnectionName_RoutesStorageMappedFeatureServerQueries",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_DuplicateLayer_ReturnsConflictOrBadRequest",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerNearestNeighbor_OrdersSourceBackedRows",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable",
