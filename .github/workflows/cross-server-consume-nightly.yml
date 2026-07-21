@@ -68,6 +68,8 @@ jobs:
 
       - name: Commit refreshed gap report
         if: always() && hashFiles('docs/internal/compatibility/cross-server-consume-gap-report.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- docs/internal/compatibility/cross-server-consume-gap-report.md; then
             echo "Gap report unchanged."
@@ -78,12 +80,23 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/internal/compatibility/cross-server-consume-gap-report.md
           git commit -m "docs: refresh cross-server consume gap report"
-          branch="automation/cross-server-gap-${GITHUB_RUN_ID}"
-          git push origin "HEAD:refs/heads/automation/cross-server-gap-${GITHUB_RUN_ID}"
-          gh pr create --base trunk --head "${branch}" \
-            --title "docs: refresh cross-server consume gap report" \
-            --body "Automated nightly refresh. Merge through the sole merge train authority." || \
-            echo "::warning::Could not create the gap-report PR; inspect branch ${branch}."
+          # One automation-owned branch/PR prevents a failed create from leaving
+          # a new orphan on every nightly run. Force-with-lease is confined to
+          # this bot-owned branch and can never target trunk.
+          branch="automation/cross-server-gap-report"
+          git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}" || true
+          if git push --force-with-lease origin HEAD:refs/heads/automation/cross-server-gap-report; then
+            existing="$(gh pr list --state open --head "${branch}" --base trunk --json number --jq '.[0].number // empty')"
+            if [[ -n "${existing}" ]]; then
+              echo "Updated existing gap-report PR #${existing}."
+            elif ! gh pr create --base trunk --head "${branch}" \
+              --title "docs: refresh cross-server consume gap report" \
+              --body "Automated nightly refresh. Merge through the sole merge train authority."; then
+              echo "::warning::Branch updated but PR creation failed; the next run will reuse the same branch."
+            fi
+          else
+            echo "::warning::Could not update the fixed gap-report branch; no new orphan branch was created."
+          fi
 
       - name: Upload consume artifacts
         if: always()
