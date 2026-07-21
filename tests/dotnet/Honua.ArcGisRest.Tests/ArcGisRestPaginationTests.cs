@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -174,7 +175,13 @@ public sealed class ArcGisRestPaginationTests
         var client = new PagingArcGisRestFeatureClient(upstreamMaxRecordCount: 2, totalFeatures: 5);
         var reader = CreateReader(client, out _);
 
-        var activities = new List<Activity>();
+        // #2943: the process-global ActivityListener means a sibling test class that
+        // also matches "Honua.ArcGisRest" can invoke this listener's ActivityStopped
+        // callback concurrently from a different thread. A plain List<Activity> is not
+        // thread-safe against a concurrent Add racing this test's own Assert.Single
+        // enumeration ("Collection was modified" — observed once wiring this project
+        // into CI for the first time). ConcurrentBag<T> tolerates concurrent adds.
+        var activities = new ConcurrentBag<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "Honua.ArcGisRest" || source.Name == TestSourceName,
