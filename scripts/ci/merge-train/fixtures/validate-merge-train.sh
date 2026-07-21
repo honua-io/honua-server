@@ -448,8 +448,53 @@ assert_eq "push ambiguity unavailable: does not clear landing labels" "$(wc -l <
 assert_contains "push ambiguity unavailable: orchestrator retains land phase" "$(cat "${TRAIN_DIR}/train.sh")" "retaining durable phase=land"
 unset TRAIN_LAND_PUSH_CMD TRAIN_LAND_REMOTE_TRUNK_OBSERVER
 
+# A successful push followed by an unavailable first observation is also
+# ambiguous. The durable land phase must survive rather than becoming rc1.
+git fetch -q origin trunk
+POST_FETCH_BASE="$(git rev-parse origin/trunk)"
+git checkout -q -B post-push-first-fetch-fail origin/trunk
+echo "first post-push fetch unavailable" >> post-push-fetch.txt; git add -A; git commit -qm "first post-push fetch unavailable"
+POST_FETCH_SHA="$(git rev-parse HEAD)"
+: >"${INC}"; printf '711\t%s\n' "${POST_FETCH_SHA}" >>"${INC}"
+__push_accept_ok() { git -C "${WORK}" push origin "$1:$2" >/dev/null; }
+__land_info_post_fetch_merged() { printf '%s\tMERGED\n' "${POST_FETCH_SHA}"; }
+export POST_FETCH_SHA
+export -f __push_accept_ok __land_info_post_fetch_merged
+export TRAIN_LAND_PUSH_CMD=__push_accept_ok TRAIN_LAND_REMOTE_TRUNK_OBSERVER=__observe_trunk_fail
+export TRAIN_LAND_PR_INFO_FOR=__land_info_post_fetch_merged
+set +e; TRAIN_APPLY=1 train_land post-push-first-fetch-fail "${POST_FETCH_BASE}" "${INC}"; rc_first_post_fetch=$?; set -e
+assert_eq "post-push first fetch unavailable: returns durable rc11" "${rc_first_post_fetch}" "11"
+unset TRAIN_LAND_REMOTE_TRUNK_OBSERVER
+git fetch -q origin trunk
+assert_eq "post-push first fetch unavailable: accepted batch remains on trunk" "$(git rev-parse origin/trunk)" "${POST_FETCH_SHA}"
+
+# If the first observation succeeds but the observation after member
+# finalization fails, the same durable ambiguity contract applies.
+SECOND_FETCH_BASE="${POST_FETCH_SHA}"
+git checkout -q -B post-push-second-fetch-fail origin/trunk
+echo "second post-push fetch unavailable" >> post-push-fetch.txt; git add -A; git commit -qm "second post-push fetch unavailable"
+SECOND_FETCH_SHA="$(git rev-parse HEAD)"
+: >"${INC}"; printf '712\t%s\n' "${SECOND_FETCH_SHA}" >>"${INC}"
+POST_FETCH_COUNT_FILE="${SCRATCH}/post-fetch-count"; printf '0\n' >"${POST_FETCH_COUNT_FILE}"
+__observe_then_fail() {
+  local count; count="$(cat "${POST_FETCH_COUNT_FILE}")"; count=$((count + 1)); printf '%s\n' "${count}" >"${POST_FETCH_COUNT_FILE}"
+  if [[ "${count}" == "1" ]]; then git -C "${WORK}" ls-remote origin refs/heads/trunk | cut -f1; else return 1; fi
+}
+__land_info_second_fetch_merged() { printf '%s\tMERGED\n' "${SECOND_FETCH_SHA}"; }
+export SECOND_FETCH_SHA POST_FETCH_COUNT_FILE
+export -f __observe_then_fail __land_info_second_fetch_merged
+export TRAIN_LAND_REMOTE_TRUNK_OBSERVER=__observe_then_fail TRAIN_LAND_PR_INFO_FOR=__land_info_second_fetch_merged
+set +e; TRAIN_APPLY=1 train_land post-push-second-fetch-fail "${SECOND_FETCH_BASE}" "${INC}"; rc_second_post_fetch=$?; set -e
+assert_eq "post-push second fetch unavailable: returns durable rc11" "${rc_second_post_fetch}" "11"
+assert_eq "post-push second fetch unavailable: both observations attempted" "$(cat "${POST_FETCH_COUNT_FILE}")" "2"
+unset TRAIN_LAND_PUSH_CMD TRAIN_LAND_REMOTE_TRUNK_OBSERVER TRAIN_LAND_PR_INFO_FOR
+git fetch -q origin trunk
+assert_eq "post-push second fetch unavailable: accepted batch remains on trunk" "$(git rev-parse origin/trunk)" "${SECOND_FETCH_SHA}"
+
 # Client nonzero can also race a later trunk advance. A descendant proves the
 # batch landed, but exact-trunk post-land work is deferred to durable recovery.
+git fetch -q origin trunk
+PUSH_DESC_BASE="$(git rev-parse origin/trunk)"
 git checkout -q -B push-descendant origin/trunk
 echo "ambiguous descendant" >> push-descendant.txt; git add -A; git commit -qm "ambiguous descendant"
 push_desc_sha="$(git rev-parse HEAD)"
@@ -464,7 +509,7 @@ __push_accept_then_descend() {
 }
 export -f __push_accept_then_descend
 export TRAIN_LAND_PUSH_CMD=__push_accept_then_descend
-set +e; TRAIN_APPLY=1 train_land push-descendant "${ambig_sha}" "${INC}"; rc_push_desc=$?; set -e
+set +e; TRAIN_APPLY=1 train_land push-descendant "${PUSH_DESC_BASE}" "${INC}"; rc_push_desc=$?; set -e
 assert_eq "push ambiguity descendant: retains durable land intent" "${rc_push_desc}" "11"
 git fetch -q origin trunk
 git merge-base --is-ancestor "${push_desc_sha}" origin/trunk \

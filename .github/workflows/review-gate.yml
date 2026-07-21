@@ -102,22 +102,25 @@ jobs:
                 isCodex(comment.author?.login) && comment.commit?.oid === head));
             if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
 
-            const suites = await github.paginate(github.rest.checks.listSuitesForRef, {
-              ...context.repo, ref: head, per_page: 100,
-            });
-            const suiteTimes = suites
-              .filter(suite => suite.head_sha === head && suite.created_at)
-              .map(suite => new Date(suite.created_at).getTime());
-            const observedAt = suiteTimes.length ? Math.min(...suiteTimes) : null;
-            const reactions = await github.paginate(github.rest.reactions.listForIssue, {
+            const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo, issue_number: prNumber, per_page: 100,
             });
+            const exactHeadArtifacts = comments.filter(comment =>
+              comment.body?.toLowerCase().includes(head.toLowerCase()));
+            const reactionArtifacts = await Promise.all(exactHeadArtifacts.map(async comment => ({
+              body: comment.body,
+              createdAt: comment.created_at,
+              updatedAt: comment.updated_at,
+              reactions: await github.paginate(github.rest.reactions.listForIssueComment, {
+                ...context.repo, comment_id: comment.id, per_page: 100,
+              }),
+            })));
             const { exactReview, freshCleanReaction } = evaluateCodexEvidence({
-              reviews: pr.reviews.nodes, reactions, unresolvedCount: unresolved.length, head, observedAt,
+              reviews: pr.reviews.nodes, reactionArtifacts, unresolvedCount: unresolved.length, head,
             });
 
             if (!exactReview && !freshCleanReaction) {
-              reasons.push('no exact-head Codex review or fresh clean reaction');
+              reasons.push('no exact-head Codex review or SHA-bound clean reaction');
             }
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
