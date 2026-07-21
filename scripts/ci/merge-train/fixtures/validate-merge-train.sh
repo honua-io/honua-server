@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture harness for the merge train (Phase 1). Builds a throwaway local git
 # repo with synthetic "PR" branches and asserts the train's git/decision logic
-# offline â€” NO network, NO gh, NO dotnet. Each case targets one decision path:
+# offline — NO network, NO gh, NO dotnet. Each case targets one decision path:
 #
 #   1. clean-merge       -> two non-conflicting PRs both INCLUDED.
 #   2. trunk-conflict    -> a PR conflicting with trunk is SKIPPED (zero residue).
@@ -232,7 +232,9 @@ if train_forward_fix fwdfix-batch 0; then
   after="$(git rev-parse HEAD)"
   [[ "${before}" != "${after}" ]] && ok "fwdfix: produced a commit" || bad "fwdfix: no commit"
   git log -1 --pretty=%s | grep -Fq "style: dotnet format (train forward-fix)" && ok "fwdfix: correct commit subject" || bad "fwdfix: wrong subject"
-  git log -1 --pretty='%an <%ae>%n%b' | grep -Eqi 'co-authored-by|generated with|ðŸ¤–' && bad "fwdfix: bot attribution present" || ok "fwdfix: no bot attribution"
+  git log -1 --pretty='%an <%ae>%n%b' | grep -Eqi 'co-authored-by|generated with|🤖' && bad "fwdfix: bot attribution present" || ok "fwdfix: no bot attribution"
+  printf 'generated 🤖\n' | grep -Eqi 'co-authored-by|generated with|🤖' \
+    && ok "fwdfix: actual bot marker is detected" || bad "fwdfix: actual bot marker escaped"
 else
   bad "fwdfix: should have applied a change"
 fi
@@ -627,13 +629,13 @@ unset TRAIN_LAND_PR_INFO_FOR TRAIN_LAND_CLEAR_LABEL_CMD TRAIN_STATE_BODY_OVERRID
 echo
 echo "== Case 8: smart-CI shard computation on a real batch diff =="
 # pr101 touched a FeatureServer path => the descriptor must target FeatureServer
-# shards (not run_all) â€” proving smart-CI uses production routing.
+# shards (not run_all) — proving smart-CI uses production routing.
 git fetch -q origin trunk
-git checkout -q -B smartci-batch origin/trunk
+git checkout -q -B train/batch/smartci-batch origin/trunk
 mkdir -p src/Honua.Protocols.GeoServices/FeatureServer
 echo "// change" >> src/Honua.Protocols.GeoServices/FeatureServer/fs.cs
 git add -A; git commit -qm "featureserver change"
-desc="$(train_smart_ci_shards smartci-batch)"
+desc="$(train_smart_ci_shards train/batch/smartci-batch)"
 assert_contains "smart-ci: descriptor is valid JSON with shards" "$(jq -r 'has("shards")' <<<"${desc}")" "true"
 assert_contains "smart-ci: FeatureServer-only diff targets FeatureServer shard" "${desc}" "FeatureServer"
 assert_eq "smart-ci: not run_all for a targeted feature diff" "$(jq -r '.run_all' <<<"${desc}")" "false"
@@ -683,14 +685,14 @@ gh() {
 immediate_gate="$(TRAIN_APPLY=1 \
   TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
   TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
-  train_smart_ci_run smartci-batch)"
+  train_smart_ci_run train/batch/smartci-batch)"
 assert_eq "smart-ci: immediately visible dispatched run is not in baseline" "${immediate_gate}" "SUCCESS"
 
 smart_ci_mode=stale
 stale_gate="$(TRAIN_APPLY=1 \
   TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
   TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
-  train_smart_ci_run smartci-batch)"
+  train_smart_ci_run train/batch/smartci-batch)"
 assert_eq "smart-ci: stale green run fails closed when no new run appears" "${stale_gate}" "FAILURE"
 
 rm -f "${smart_ci_dispatch_marker}" "${smart_ci_baseline_calls}"
@@ -698,7 +700,7 @@ smart_ci_mode=baseline-failure
 baseline_failure_gate="$(TRAIN_APPLY=1 \
   TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=0 \
   TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS=0 \
-  train_smart_ci_run smartci-batch)"
+  train_smart_ci_run train/batch/smartci-batch)"
 unset -f gh
 assert_eq "smart-ci: baseline query failure fails closed" "${baseline_failure_gate}" "FAILURE"
 assert_eq "smart-ci: baseline query failure prevents dispatch" "$([[ -e "${smart_ci_dispatch_marker}" ]] && echo yes || echo no)" "no"
@@ -756,6 +758,9 @@ assert_eq "state: valid plus malformed second JSON fence fails startup closed" "
 export TRAIN_STATE_BODY_OVERRIDE="${inactive_state%\`\`\`}"
 set +e; train_restore_post_land; unclosed_fence_rc=$?; set -e
 assert_eq "state: machine JSON fence open at EOF fails startup closed" "${unclosed_fence_rc}" "5"
+export TRAIN_STATE_BODY_OVERRIDE="${inactive_state%\`\`\`}"$'```evil'
+set +e; train_restore_post_land; suffixed_fence_rc=$?; set -e
+assert_eq "state: suffixed machine JSON fence fails startup closed" "${suffixed_fence_rc}" "5"
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 
 echo
@@ -1241,7 +1246,7 @@ assert_contains "autofix(on): request says fix FORWARD" "${req_body}" "Fix forwa
 assert_contains "autofix(on): request forbids bot attribution" "${req_body}" "Add NO bot attribution"
 assert_contains "autofix(on): request authors as Mike McDougall" "${req_body}" "Mike McDougall"
 # The fix commit carries NO bot attribution.
-git -C "${WORK}" log -1 --pretty='%an <%ae>%n%b' autofix-batch | grep -Eqi 'co-authored-by|generated with|ðŸ¤–' \
+git -C "${WORK}" log -1 --pretty='%an <%ae>%n%b' autofix-batch | grep -Eqi 'co-authored-by|generated with|🤖' \
   && bad "autofix(on): bot attribution present" || ok "autofix(on): fix commit has no bot attribution"
 # Cap: at the cap, no attempt is made (rc1 => escalate).
 set +e

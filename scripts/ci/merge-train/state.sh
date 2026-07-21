@@ -110,6 +110,7 @@ train_state_read() {
     fi
   fi
   # An existing issue must contain exactly one parseable machine-state block.
+  # Fence markers may have trailing whitespace, but no other suffix.
   # Empty output is reserved for a confirmed absent issue.
   json="$(printf '%s\n' "${body}" | awk '
     /^```json[[:space:]]*$/ {
@@ -118,7 +119,7 @@ train_state_read() {
       inblk=1
       next
     }
-    /^```/ {
+    /^```[[:space:]]*$/ {
       if (inblk) { closers++; inblk=0 }
       next
     }

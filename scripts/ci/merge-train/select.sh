@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
-# Step 1: select â€” pick the ready PRs for the next batch.
+# Step 1: select — pick the ready PRs for the next batch.
 #
 # Ready = open, non-draft, unheld, mergeable, and exact-current-head PR Gate +
 # Review Gate are both successful. Ordered oldest-createdAt first.
@@ -15,7 +15,7 @@ HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 : "${TRAIN_REAL_GATE_JOB_REGEX:=Build & Format|Analyze C#|\.NET Foundation Tests|Architecture|CI Router|OpenAPI|drift}"
 # Aggregator-only job names: these are roll-ups (the required "CI Gate" check and
 # the shard fan-in summary). When the ONLY failing jobs are aggregators, a shard
-# was cancelled/flaked underneath them â€” treat that as a flake, not a real break.
+# was cancelled/flaked underneath them — treat that as a flake, not a real break.
 : "${TRAIN_AGGREGATOR_JOB_REGEX:=^(CI Gate|Test Suite Summary)$}"
 
 # train_select_run_id_from_rollup <gate-json>: extract the Actions run id from a
@@ -68,17 +68,17 @@ train_select_job_log() {
 # break (FAIL). Returns 0 = flake-only (=> FLAKE), 1 = real break OR
 # undeterminable (=> FAIL).
 #
-# Each input line is "<conclusion>\t<name>". Rules (conservative â€” default to
+# Each input line is "<conclusion>\t<name>". Rules (conservative — default to
 # FAIL on any uncertainty):
 #   * NO non-successful jobs fetched (jobs unavailable) => FAIL.
 #   * ANY failing job whose NAME matches the real-gate regex => FAIL (a human
 #     must fix it). Note: only an actual `failure` real-gate job is
 #     authoritative; a `cancelled` real-gate job is just runner starvation.
 #   * Otherwise every non-successful job must be one of:
-#       - an aggregator-only roll-up (CI Gate / Test Suite Summary â€” a shard
+#       - an aggregator-only roll-up (CI Gate / Test Suite Summary — a shard
 #         under them cancelled/flaked), OR
 #       - a CANCELLED / TIMED_OUT / STARTUP_FAILURE shard (runner starvation /
-#         cancel-cascade â€” treated as flake), OR
+#         cancel-cascade — treated as flake), OR
 #       - a `failure` shard whose log matches the flake regex.
 #     If even one `failure` shard's log does NOT match (or can't be fetched),
 #     => FAIL.
@@ -280,7 +280,7 @@ train_open_pr_queue() {
 # Honors MAX_BATCH. Caller pipes through `jq -s .` if it wants an array.
 #
 # Inputs (overridable for testing):
-#   TRAIN_PR_LIST_JSON â€” if set, used verbatim instead of calling gh (fixtures).
+#   TRAIN_PR_LIST_JSON — if set, used verbatim instead of calling gh (fixtures).
 train_select() {
   local pr_list
   if [[ -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
@@ -356,7 +356,7 @@ train_has_selectable_pr() {
 # should wait for the earlier PR (A) to land first.
 #
 # train_pr_overlap_ratio <filesA-newline> <filesB-newline>: emit an integer
-# percentage (0-100) of B's files that also appear in A (|Aâˆ©B|/|B|). Pure +
+# percentage (0-100) of B's files that also appear in A (|A∩B|/|B|). Pure +
 # testable; no network.
 train_pr_overlap_ratio() {
   local files_a="$1" files_b="$2"
@@ -372,7 +372,7 @@ train_pr_overlap_ratio() {
 # Returns 0 = WAIT (skip B this batch), 1 = proceed (include B).
 #
 # Deterministic fallback (TRAIN_LLM=0, Bedrock error, or below-threshold
-# overlap): NEVER wait â€” keep oldest-first ordering, i.e. exactly Phase 1.
+# overlap): NEVER wait — keep oldest-first ordering, i.e. exactly Phase 1.
 # The LLM is consulted ONLY when overlap >= TRAIN_OVERLAP_PCT (default 60),
 # which is the "ambiguous" condition. Logs prompt-class + decision via train_log.
 : "${TRAIN_OVERLAP_PCT:=60}"
