@@ -123,64 +123,79 @@ recovered; restore the matching file-storage backup instead.
 - **Startup migration failure after restore** — the restored schema is newer than the deployed image (you restored a dump taken under a later release); deploy the matching or newer application version.
 - **Attachments 404 after restore** — file-storage snapshot not restored or `FileStorage__*` settings point at a different bucket/volume.
 
-## Automated backups and RTO/RPO (Enterprise)
+## Disaster recovery ownership (IaC / managed database, by design)
 
-The manual sequence above is the portable baseline every deployment can run. Enterprise
-deployments add automated, objective-driven disaster recovery (ADR-0024, #356):
+Honua Server is a **stateless** application tier: every replica can be destroyed and
+recreated without data loss, because durable state lives in PostgreSQL (and, for
+in-flight jobs, Redis — see [Redis durable-job loss contract](#redis-durable-job-loss-contract)
+below), not in the application process. Following from that, **disaster recovery
+(backup automation, failover, and RTO/RPO reporting) is owned by the deployment's
+infrastructure/managed-database layer, not implemented inside this server** (#2946
+re-grade of #356/ADR-0024):
 
-| Capability | Entitlement key | What it does |
-|---|---|---|
-| Backup Automation | `dr.backup-automation` | Scheduled `pg_basebackup` base backups plus continuous WAL archiving for point-in-time recovery. |
-| Failover Playbooks | `dr.failover` | Active-passive failover driven by automated health checks against the primary serving surface. |
-| Cache State Backup | `dr.cache-backup` | Backup/restore Redis cache state so warm cache contents survive a regional failover. |
-| RTO/RPO Reporting | `dr.rto-rpo-reporting` | Tracks recovery objectives and reports recovery readiness, last successful backup, and the restorable point. |
+| Capability key | What actually gates it today |
+|---|---|
+| `dr.backup-automation` | No server-side background job or route. Managed-database backups (for example RDS automated backups/snapshots and multi-AZ) are parameterized by `honua-terraform`. |
+| `dr.failover` | No server-side evaluator or orchestrator. Failover (promoting a standby, cutover) is owned by the managed-database layer and documented as a drill procedure in `honua-terraform`. |
+| `dr.cache-backup` | No cache-state backup/restore feature exists in this server. Redis persistence (RDB/AOF) is an infrastructure-layer setting the deployment owns. |
+| `dr.rto-rpo-reporting` | No server-computed RTO/RPO posture. Recovery-point/recovery-time evidence comes from the infrastructure layer's backup/restore and failover drills, captured against `honua-terraform`'s `dr-evidence-template.json` schema. |
 
-### Recovery objectives (RTO/RPO)
+A **bring-your-own-database** deployment delegates all four of the above entirely to
+the customer's managed database — there is nothing for Honua Server to do regardless
+of edition.
+
+These four keys are catalogued in `docs/gis/data/capability-keys.v1.json` (Enterprise
+edition) for sales/roadmap visibility, but carry no HTTP route and are recorded with an
+`infra-owned` reason in
+[`capability-no-surface-allowlist.v1.json`](../../gis/data/capability-no-surface-allowlist.v1.json)
+rather than silently omitted. `Honua.Core`'s `Features/DisasterRecovery` domain still
+holds reusable, pure vocabulary types (`RecoveryObjectives`, `BackupRecord`,
+`BackupSchedule`, `RecoveryReadiness`, `IBackupStatusProvider`) that a future concrete
+backup-status provider could implement; a prior pure `FailoverDecisionEvaluator` /
+`RecoveryReadinessEvaluator` pair and their supporting types had zero callers anywhere
+in the codebase and were removed as dead code in #2946 (recoverable from git history if
+that work resumes).
+
+### Recovery objectives (RTO/RPO) as vocabulary
 
 - **Recovery Time Objective (RTO)** — the maximum tolerable time to restore service after a
-  disaster. Default enterprise target: **1 hour**.
+  disaster.
 - **Recovery Point Objective (RPO)** — the maximum tolerable data loss, measured as the age
-  of the most recent restorable point. Default enterprise target: **5 minutes**, sustained by
-  a daily base backup plus a 5-minute WAL `archive_timeout`.
+  of the most recent restorable point.
 
-For the restorable point to stay inside the RPO, the WAL archive interval must be at or below
-the RPO; a base backup is always required to anchor recovery (archived WAL alone cannot
-rebuild a cluster).
+`RecoveryObjectives.Default` (1 hour RTO / 5 minute RPO) exists in `Honua.Core` as a shared
+default for whoever computes these numbers — today that is the infrastructure layer's backup
+drills, not a Honua Server endpoint.
 
-### Recovery readiness
+## Redis durable-job loss contract
 
-Readiness reporting projects recorded backups onto the objectives and reports one of:
+Redis is required for durable jobs/workflows (queue, execution logs, run state) — it is not a
+pure cache. The contract for what happens to an in-flight job when Redis becomes unavailable
+mid-execution:
 
-| Readiness | Meaning | Action |
-|---|---|---|
-| `not_ready` | No successful base backup exists. | Cannot recover — take a base backup immediately. |
-| `at_risk` | A base backup exists, but the restorable point is older than the RPO. | Investigate WAL archiving / backup cadence. |
-| `ready` | A base backup exists and the restorable point is within the RPO. | Recoverable inside objectives. |
-
-The shared posture rules live in `Honua.Core` (`Features/DisasterRecovery`), so the admin
-reporting surface and provider implementations agree on a single definition of recoverable.
-
-### Failover decision (active-passive)
-
-The failover playbook reacts to automated health checks against the primary serving surface.
-The shared decision rules also live in `Honua.Core` (`Features/DisasterRecovery`) so the
-failover automation, the admin reporting surface, and tests agree on when to fail over:
-
-| Decision | When | Action |
-|---|---|---|
-| `hold` | The primary is healthy, or it has fewer consecutive failed health checks than the configured threshold. | Stay on the primary. |
-| `promote` | The primary has reached the consecutive-failure threshold and the standby is recoverable inside its objectives (`ready`). | Promote the standby. |
-| `block` | The primary has reached the threshold but the standby is not recoverable inside its objectives. | Block automated failover and page an operator — promoting now would breach the RPO. |
-
-The default enterprise policy triggers after **three consecutive failed health checks** and
-requires the standby to be recoverable before an automated promotion proceeds; a policy may
-opt out of the standby-readiness gate for environments that accept best-effort failover.
-
-> Scope note (#356): the landed slices ship the licensing catalog entries, the
-> recovery-objective / backup-record / readiness domain, the active-passive failover decision
-> domain, and this runbook. The PostgreSQL backup service that executes the schedule, the
-> Redis backup path, the failover orchestration runtime, the admin endpoint, and the
-> multi-region Terraform modules are tracked as follow-up work on the same issue.
+- `JobExecutionService`'s heartbeat pump writes are wrapped so a failed write is logged and
+  retried on the next heartbeat interval — it never crashes the worker.
+- The worker's outer claim loop (and the separate `JobReconciliationService` sweep) both catch
+  broadly around every Redis call for the same reason: one failed Redis operation must not take
+  down the worker process.
+- The server's Redis connection is configured with `AbortOnConnectFail = false` and an
+  exponential reconnect policy (`src/Honua.Server/Program.cs`), so a transient Redis restart is
+  followed by automatic reconnection rather than a permanent failure.
+- If a job's heartbeat goes stale (the owning worker never recovers in time), the reconciliation
+  sweep detects the expired heartbeat and — depending on the job's retry policy — either
+  requeues it to `Queued` (`ClaimedBy`/`LastHeartbeatAt` cleared, immediately re-claimable by any
+  worker) or fails it terminally. Either outcome is loud (a status transition + log line) and
+  re-submittable; there is no silent loss and no permanent wedge in `Running` with nobody able
+  to observe or recover it.
+- This is proven end-to-end against a real Redis container stop/restart (not just a hand-set
+  stale timestamp) by
+  `RedisJobExecutionResilienceTests.JobExecutionService_WhenRedisRestartsMidJob_JobSurvivesWithNoSilentLossOrPermanentWedge`
+  (`tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/`), which starts a job,
+  stops the Redis container while it is `Running`, restarts it, and asserts the job still
+  completes; the complementary "owning worker never comes back" half of the contract (stale
+  heartbeat → reconciler requeues for retry) was already covered by
+  `RedisExecutionSubstrateIntegrationTests.JobReconciliationService_WithRedis_RequeuesHeartbeatExpiredJobForRetry`
+  in the same directory.
 
 ## Next steps
 

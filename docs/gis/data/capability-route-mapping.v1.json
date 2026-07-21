@@ -246,6 +246,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/console/workflow-packages/generate",
+      "capability": "ai.workflow-generation"
+    },
+    {
+      "family": "Admin API",
       "capability": "admin.control-plane"
     },
     {
@@ -349,6 +354,11 @@
     {
       "family": "HTTP",
       "capability": "ops.health"
+    },
+    {
+      "family": "HTTP+gRPC",
+      "routePrefix": "/v1/spec/apply",
+      "capability": "ai.spec-apply"
     },
     {
       "family": "HTTP+gRPC",
