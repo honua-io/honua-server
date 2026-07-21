@@ -117,24 +117,26 @@ train_state_read() {
     inblk      { print }
   ')"
   [[ -n "${json}" ]] || return 3
-  jq -e '
-    type == "object" and
-    (.active_batch | type == "object") and
-    (.active_batch.branch | type == "string") and
-    (.active_batch.trunk_base | type == "string") and
-    (.active_batch.included | type == "array" and all(.[]; type == "number")) and
-    (.active_batch.phase | type == "string" and IN("select","assemble","smart-ci","forward-fix","preexisting-filter","classify-flake","autofix","attribute","ci-incomplete","land","pre-land-cleanup","post-land-finalize","done")) and
-    (.active_batch.run_id == null or (.active_batch.run_id | type == "number" or type == "string")) and
-    (.active_batch.fwdfix_attempts == null or (.active_batch.fwdfix_attempts | type == "number")) and
-    (.active_batch.flake_reruns == null or (.active_batch.flake_reruns | type == "number")) and
-    (.active_batch.included_heads | type == "array") and
-    (.active_batch.batch_sha == null or (.active_batch.batch_sha | type == "string" and test("^[0-9a-fA-F]{40}$"))) and
-    (.config == null or ((.config | type == "object") and
-      (.config.max_batch | type == "number") and
-      (.config.flake_signatures | type == "string"))) and
-    (.last_landed_trunk == null or (.last_landed_trunk | type == "string"))
+  jq -se '
+    length == 1 and (.[0] |
+      type == "object" and
+      (.active_batch | type == "object") and
+      (.active_batch.branch | type == "string") and
+      (.active_batch.trunk_base | type == "string") and
+      (.active_batch.included | type == "array" and all(.[]; type == "number")) and
+      (.active_batch.phase | type == "string" and IN("select","assemble","smart-ci","forward-fix","preexisting-filter","classify-flake","autofix","attribute","ci-incomplete","land","pre-land-cleanup","post-land-finalize","done")) and
+      (.active_batch.run_id == null or (.active_batch.run_id | type == "number" or type == "string")) and
+      (.active_batch.fwdfix_attempts == null or (.active_batch.fwdfix_attempts | type == "number")) and
+      (.active_batch.flake_reruns == null or (.active_batch.flake_reruns | type == "number")) and
+      (.active_batch.included_heads | type == "array") and
+      (.active_batch.batch_sha == null or (.active_batch.batch_sha | type == "string" and test("^[0-9a-fA-F]{40}$"))) and
+      (.config == null or ((.config | type == "object") and
+        (.config.max_batch | type == "number") and
+        (.config.flake_signatures | type == "string"))) and
+      (.last_landed_trunk == null or (.last_landed_trunk | type == "string"))
+    )
   ' <<<"${json}" >/dev/null || return 3
-  printf '%s\n' "${json}"
+  jq -sc '.[0]' <<<"${json}"
 }
 
 # --- persistent over-time dashboard (the founder's "dashboard") ---------------
