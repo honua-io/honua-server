@@ -214,6 +214,16 @@ FROM read_csv('/data/stations.csv');
 Ensure the `ObjectIdColumn` is a `BIGINT PRIMARY KEY` and the geometry column uses
 the `GEOMETRY` type.
 
+## Testing
+
+`Honua.ProviderSmoke.Tests` boots a full HTTP-stack host with `DataSource:Provider=duckdb`
+against a standalone, file-backed database and asserts real seeded-row correctness — not
+just 200s — through GeoServices FeatureServer, OGC API Features, OData, and tiles
+(TileJSON + a raster PNG tile; vector MVT is out of scope, see below). Runs nightly and on
+demand via
+[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
+part of standard PR CI.
+
 ## Limitations
 
 | Capability | Status |

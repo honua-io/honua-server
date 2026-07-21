@@ -203,6 +203,17 @@ The test fixture creates and drops a temporary table named
 have `CREATE TABLE` and `DROP TABLE` permission in the target database (a scratch
 database such as `tempdb` is recommended).
 
+### HTTP-Stack Smoke Coverage (nightly)
+
+`Honua.ProviderSmoke.Tests` boots a full HTTP stack (Postgres primary + this provider
+registered as a secondary connection) against a Testcontainers
+`mcr.microsoft.com/mssql/server:2022-latest` instance and asserts real seeded-row
+correctness — not just 200s — through GeoServices FeatureServer and OGC API Features.
+Runs nightly and on demand via
+[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
+part of standard PR CI. See [Limitations and Known Gaps](#limitations-and-known-gaps)
+below for why OData and OGC API Tiles are excluded from this suite for this provider.
+
 ## Limitations and Known Gaps
 
 - **Read-only.** Edits, transactions, and applyEdits are not implemented.
@@ -214,6 +225,14 @@ database such as `tempdb` is recommended).
   `STEnvelope` indexing tricks beyond the explicit `EnvelopeIntersects` filter.
 - **WHERE grammar is intentionally narrow.** Use the canonical filter pipeline
   (`SqlFragment`/`Filter`) for complex predicates rather than free-form SQL.
+- **OData and OGC API Tiles do not reach SQL Server-backed layers.** Both resolve
+  `IFeatureReader`/`ITileProvider` directly via DI (always the primary provider) instead of
+  through `FeatureProviderQueryRouter`, so a layer whose storage binding routes to this
+  provider is only reachable via GeoServices FeatureServer and OGC API Features today.
+  Found during the honua-server#2947 HTTP-stack smoke-coverage work; tracked as a real
+  product gap in [honua-server#2962](https://github.com/honua-io/honua-server/issues/2962).
+  The same gap applies to every other secondary/additional provider (Oracle, Redshift,
+  Snowflake, Databricks).
 
 Follow-ups for write support, admin UI wiring, native output formats, statistics, and
 temporal/H3 aggregations are tracked under epic
