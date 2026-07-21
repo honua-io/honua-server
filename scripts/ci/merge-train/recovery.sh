@@ -72,36 +72,72 @@ train_recovery_write_state() {
   train_state_write "${body}"; rm -f "${body}"
 }
 
+train_recovery_continuation_exists() {
+  local key="$1"
+  if [[ -n "${TRAIN_RECOVERY_CONTINUATION_EXISTS_FOR:-}" ]]; then
+    "${TRAIN_RECOVERY_CONTINUATION_EXISTS_FOR}" "${key}"; return $?
+  fi
+  gh api "repos/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/workflows/merge-train.yml/runs?per_page=100" \
+    | jq -e --arg title "Merge Train [${key}]" \
+      '.workflow_runs | any(.display_title == $title)' >/dev/null
+}
+
 train_recovery_dispatch_live() {
+  local key="$1"
+  if train_recovery_continuation_exists "${key}"; then
+    train_log "recovery continuation ${key} is already durably dispatched"
+    return 0
+  fi
   if [[ -n "${TRAIN_RECOVERY_DISPATCH_CMD:-}" ]]; then
-    "${TRAIN_RECOVERY_DISPATCH_CMD}"; return 0
+    "${TRAIN_RECOVERY_DISPATCH_CMD}" "${key}"; return 0
   fi
   train_side_effect gh workflow run merge-train.yml \
     --repo "${GITHUB_REPOSITORY:-honua-io/honua-server}" --ref "${TRAIN_BASE_BRANCH}" \
-    -f train_apply=true -f max_batch="${MAX_BATCH}"
+    -f train_apply=true -f max_batch="${MAX_BATCH}" -f recovery_key="${key}"
 }
 
-train_recovery_clear_landing() {
-  local records="$1" state_included="${2:-}" pr info _sha _state labels
+train_recovery_clear_labels() {
+  local records="$1" state_included="${2:-}" clear_escalated="${3:-0}" pr info _sha _state labels
   while IFS= read -r pr; do
     [[ -z "${pr}" ]] && continue
     info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
     IFS=${HONUA_TAB} read -r _sha _state labels <<<"${info}"
     train_recovery_has_label "${labels}" "${TRAIN_LABEL_LANDING}" \
       && train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
+    if [[ "${clear_escalated}" == 1 ]] && train_recovery_has_label "${labels}" "${TRAIN_LABEL_ESCALATED}"; then
+      train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_ESCALATED}"
+    fi
   done < <({ cut -f1 <<<"${records}"; tr ',' '\n' <<<"${state_included}"; } | sed '/^$/d' | sort -nu)
 }
 
+train_recovery_complete_continuation() {
+  local target="$1" batch="$2" trunk="$3" included="$4" run_id="$5" last="$6" event_sha="$7"
+  local key="recovery-${run_id}-${event_sha:0:12}"
+  train_recovery_write_state "${batch}" "${trunk}" "${included}" requeue "${run_id}" "${last}"
+  if [[ -n "${TRAIN_RECOVERY_BEFORE_DISPATCH_CMD:-}" ]]; then
+    "${TRAIN_RECOVERY_BEFORE_DISPATCH_CMD}" "${target}" "${key}" || return $?
+  fi
+  train_recovery_dispatch_live "${key}"
+  if [[ "${target}" == done ]]; then
+    train_recovery_write_state "" "${event_sha}" "" done "" "${event_sha}"
+  else
+    train_recovery_write_state "" "${trunk}" "" select "" null
+  fi
+  train_decision "RECOVERY CONTINUATION: ${key} durably dispatched; state=${target}"
+}
+
 train_recovery_reassemble() {
-  train_warn "green rerun cannot land the recorded batch: $3; resetting selection"
-  train_recovery_clear_landing "$1" "${4:-}"
-  train_recovery_write_state "" "$2" "" select "" null
-  train_recovery_dispatch_live
-  train_decision "RECOVERY REASSEMBLE: $3; queued one live merge-train run"
+  local records="$1" current="$2" reason="$3" included="${4:-}" batch="$5" run_id="$6" last="$7" event_sha="$8"
+  train_warn "green rerun cannot land the recorded batch: ${reason}; resetting selection"
+  train_recovery_clear_labels "${records}" "${included}" 0
+  local rc=0
+  train_recovery_complete_continuation select "${batch}" "${current}" "${included}" "${run_id}" "${last}" "${event_sha}" || rc=$?
+  [[ "${rc}" == 0 ]] || return "${rc}"
+  train_decision "RECOVERY REASSEMBLE: ${reason}; queued one live merge-train run"
 }
 
 train_recovery_finalize() {
-  local records="$1" batch_sha="$2" batch="$3" record pr validated info sha state labels
+  local records="$1" batch_sha="$2" batch="$3" included="$4" run_id="$5" last="$6" record pr validated info sha state labels
   while IFS= read -r record; do
     IFS=${HONUA_TAB} read -r pr validated <<<"${record}"; [[ -z "${pr}" ]] && continue
     info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
@@ -111,12 +147,10 @@ train_recovery_finalize() {
     elif [[ "${state}" == OPEN && "${sha}" != "${validated}" ]]; then
       train_warn "recovery did not close #${pr}: head changed after batch push"
     fi
-    train_recovery_has_label "${labels}" "${TRAIN_LABEL_LANDING}" \
-      && train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
   done <<<"${records}"
-  train_recovery_write_state "" "${batch_sha}" "" done "" "${batch_sha}"
+  train_recovery_clear_labels "${records}" "${included}" 1
   train_notice "RECOVERY LANDED: finalized ${batch} at ${batch_sha:0:12}"
-  train_recovery_dispatch_live
+  train_recovery_complete_continuation done "${batch}" "${batch_sha}" "${included}" "${run_id}" "${last}" "${batch_sha}"
 }
 
 train_recover_green_batch_rerun() {
@@ -143,31 +177,39 @@ train_recover_green_batch_rerun() {
   included="$(jq -r '.active_batch.included|map(tostring)|join(",")' <<<"${state}")"
   last="$(jq -r '.last_landed_trunk//"null"' <<<"${state}")"
   if [[ "${active_branch}" != "${batch}" || "${active_run}" != "${run_id}" \
-     || ( "${phase}" != ci-incomplete && "${phase}" != land ) ]]; then
+     || ( "${phase}" != ci-incomplete && "${phase}" != land && "${phase}" != requeue ) ]]; then
     train_log "recovery skipped: run is not the active recoverable batch"; return 0
   fi
 
   local remote_sha records record_prs state_prs current
   current="$(train_recovery_trunk_head 2>/dev/null || true)"
   [[ -n "${current}" ]] || { train_err "recovery could not resolve trunk"; return 1; }
+  if [[ "${phase}" == requeue ]]; then
+    if [[ "${current}" == "${event_sha}" ]]; then
+      train_recovery_complete_continuation done "${batch}" "${current}" "${included}" "${run_id}" "${last}" "${event_sha}"
+    else
+      train_recovery_complete_continuation select "${batch}" "${current}" "${included}" "${run_id}" "${last}" "${event_sha}"
+    fi
+    return 0
+  fi
   remote_sha="$(train_recovery_remote_head "${batch}" 2>/dev/null || true)"
   if [[ "${remote_sha}" != "${event_sha}" ]]; then
     records="$(train_recovery_batch_pr_records "${batch}" "${trunk_base}")"
     train_recovery_reassemble "${records}" "${current}" \
-      "batch branch is missing or no longer equals successful run head" "${included}"
-    return 0
+      "batch branch is missing or no longer equals successful run head" "${included}" "${batch}" "${run_id}" "${last}" "${event_sha}"
+    return $?
   fi
   records="$(train_recovery_batch_pr_records "${batch}" "${trunk_base}")"
   record_prs="$(cut -f1 <<<"${records}" | sed '/^$/d' | sort -n | paste -sd, -)"
   state_prs="$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | sort -n | paste -sd, -)"
   if [[ -z "${records}" || "${record_prs}" != "${state_prs}" ]]; then
-    train_recovery_reassemble "${records}" "${current}" "batch members differ from active state" "${included}"; return 0
+    train_recovery_reassemble "${records}" "${current}" "batch members differ from active state" "${included}" "${batch}" "${run_id}" "${last}" "${event_sha}"; return $?
   fi
   if [[ "${phase}" == land && "${current}" == "${event_sha}" ]]; then
-    train_recovery_finalize "${records}" "${event_sha}" "${batch}"; return 0
+    train_recovery_finalize "${records}" "${event_sha}" "${batch}" "${included}" "${run_id}" "${last}"; return $?
   fi
   if [[ "${current}" != "${trunk_base}" ]]; then
-    train_recovery_reassemble "${records}" "${current}" "trunk advanced from recorded base" "${included}"; return 0
+    train_recovery_reassemble "${records}" "${current}" "trunk advanced from recorded base" "${included}" "${batch}" "${run_id}" "${last}" "${event_sha}"; return $?
   fi
 
   local record pr validated sha pr_state labels
@@ -176,7 +218,7 @@ train_recover_green_batch_rerun() {
     info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
     IFS=${HONUA_TAB} read -r sha pr_state labels <<<"${info}"
     if [[ "${pr_state}" != OPEN || "${sha}" != "${validated}" ]]; then
-      train_recovery_reassemble "${records}" "${current}" "PR #${pr} no longer matches validated head" "${included}"; return 0
+      train_recovery_reassemble "${records}" "${current}" "PR #${pr} no longer matches validated head" "${included}" "${batch}" "${run_id}" "${last}" "${event_sha}"; return $?
     fi
   done <<<"${records}"
 
@@ -190,12 +232,12 @@ train_recover_green_batch_rerun() {
   rm -f "${included_file}"
   if [[ "${rc}" == 10 ]]; then
     current="$(train_recovery_trunk_head 2>/dev/null || true)"
-    train_recovery_reassemble "${records}" "${current}" "land admission or FF-CAS changed" "${included}"; return 0
+    train_recovery_reassemble "${records}" "${current}" "land admission or FF-CAS changed" "${included}" "${batch}" "${run_id}" "${last}" "${event_sha}"; return $?
   fi
   [[ "${rc}" == 0 ]] || return "${rc}"
   current="$(train_recovery_trunk_head 2>/dev/null || true)"
   if [[ "${TRAIN_APPLY}" == 1 && "${current}" != "${event_sha}" ]]; then
     train_err "land returned success but trunk is not the validated batch head"; return 1
   fi
-  train_recovery_finalize "${records}" "${event_sha}" "${batch}"
+  train_recovery_finalize "${records}" "${event_sha}" "${batch}" "${included}" "${run_id}" "${last}"
 }

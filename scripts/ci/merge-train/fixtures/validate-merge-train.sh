@@ -1181,13 +1181,14 @@ __recover_run() { printf 'CI\tcompleted\tsuccess\ttrain/batch/deadbee/123\tbatch
 __recover_remote() { printf '%s\n' "${RECOVERY_REMOTE}"; }
 __recover_trunk() { printf '%s\n' "${RECOVERY_TRUNK}"; }
 __recover_land() { printf 'LAND-MOCK %s %s\n' "$1" "$2"; cat "$3"; }
-__recover_dispatch() { printf 'DISPATCH-MOCK\n'; }
+__recover_dispatch() { printf 'DISPATCH-MOCK %s\n' "$1"; }
+__recover_continuation_exists() { [[ "${RECOVERY_CONTINUATION_EXISTS:-0}" == 1 ]]; }
 __recover_state() {
   jq -nc --arg branch "$1" --arg base "$2" --arg phase "$3" --arg run "$4" \
     '{active_batch:{branch:$branch,trunk_base:$base,included:[1944,1961],phase:$phase,run_id:($run|tonumber),fwdfix_attempts:0,flake_reruns:0},config:{max_batch:10,flake_signatures:""},last_landed_trunk:null}'
 }
 export -f __recover_records __recover_info __recover_run __recover_remote \
-  __recover_trunk __recover_land __recover_dispatch __recover_state
+  __recover_trunk __recover_land __recover_dispatch __recover_continuation_exists __recover_state
 export TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH=__recover_records
 export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info
 export TRAIN_RECOVERY_RUN_INFO_FOR=__recover_run
@@ -1195,6 +1196,7 @@ export TRAIN_RECOVERY_REMOTE_HEAD_FOR=__recover_remote
 export TRAIN_RECOVERY_TRUNK_HEAD_FOR=__recover_trunk
 export TRAIN_RECOVERY_LAND_CMD=__recover_land
 export TRAIN_RECOVERY_DISPATCH_CMD=__recover_dispatch
+export TRAIN_RECOVERY_CONTINUATION_EXISTS_FOR=__recover_continuation_exists
 export TRAIN_STATE_ISSUE_OVERRIDE=2044
 export RECOVERY_TRUNK=base123 RECOVERY_REMOTE=batchsha
 export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
@@ -1208,6 +1210,7 @@ assert_contains "recovery: land receives immutable #1944 head" "${RECOVERY_LOG}"
 assert_contains "recovery: successful resume finalizes once" "${RECOVERY_LOG}" "RECOVERY LANDED"
 assert_contains "recovery: successful resume queues continued drain" "${RECOVERY_LOG}" "DISPATCH-MOCK"
 assert_not_contains "recovery: never stamps CI Gate on mutable heads" "${RECOVERY_LOG}" "statuses/"
+assert_contains "recovery: finalize clears stale escalation" "${RECOVERY_LOG}" "gh pr edit 1944 --remove-label train:escalated"
 
 # Member reconstruction must use the recorded assembly base, not current trunk.
 # The record seam returns no members unless it receives base123; this remains
@@ -1264,8 +1267,57 @@ assert_eq "recovery: moved batch dispatches exactly once" "$(grep -Fc DISPATCH-M
 assert_not_contains "recovery: moved batch never lands" "${MOVED_REF_LOG}" "LAND-MOCK"
 export RECOVERY_REMOTE=batchsha
 
+# Reassembly crash window: requeue is durable before dispatch. A duplicate sees
+# that phase, issues the missing keyed dispatch once, then commits select.
+__recover_crash_before_dispatch() { printf 'CRASH-BEFORE-DISPATCH %s %s\n' "$1" "$2"; return 99; }
+export -f __recover_crash_before_dispatch
+export TRAIN_RECOVERY_BEFORE_DISPATCH_CMD=__recover_crash_before_dispatch
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info_changed RECOVERY_TRUNK=base123
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
+set +e
+REASSEMBLE_CRASH_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+REASSEMBLE_CRASH_RC=$?
+set -e
+assert_eq "recovery: reassemble crash is surfaced" "${REASSEMBLE_CRASH_RC}" "99"
+assert_contains "recovery: reassemble writes pending phase before crash" "${REASSEMBLE_CRASH_LOG}" "CRASH-BEFORE-DISPATCH select"
+assert_not_contains "recovery: reassemble crash occurs before dispatch" "${REASSEMBLE_CRASH_LOG}" "DISPATCH-MOCK"
+unset TRAIN_RECOVERY_BEFORE_DISPATCH_CMD
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 requeue 123)"
+REASSEMBLE_RESUME_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+assert_eq "recovery: reassemble resume dispatches once" "$(grep -Fc DISPATCH-MOCK <<<"${REASSEMBLE_RESUME_LOG}")" "1"
+assert_contains "recovery: reassemble resume persists select after dispatch" "${REASSEMBLE_RESUME_LOG}" "state=select"
+
+# Finalize crash window follows the same protocol, but the duplicate commits
+# done only after the missing continuation is durably dispatched.
+export TRAIN_RECOVERY_BEFORE_DISPATCH_CMD=__recover_crash_before_dispatch
+export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info RECOVERY_TRUNK=batchsha
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 land 123)"
+set +e
+FINALIZE_CRASH_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+FINALIZE_CRASH_RC=$?
+set -e
+assert_eq "recovery: finalize crash is surfaced" "${FINALIZE_CRASH_RC}" "99"
+assert_contains "recovery: finalize writes pending phase before crash" "${FINALIZE_CRASH_LOG}" "CRASH-BEFORE-DISPATCH done"
+assert_contains "recovery: finalize clears landing before pending dispatch" "${FINALIZE_CRASH_LOG}" "gh pr edit 1944 --remove-label train:landing"
+assert_contains "recovery: finalize clears escalation before pending dispatch" "${FINALIZE_CRASH_LOG}" "gh pr edit 1944 --remove-label train:escalated"
+assert_not_contains "recovery: finalize crash occurs before dispatch" "${FINALIZE_CRASH_LOG}" "DISPATCH-MOCK"
+unset TRAIN_RECOVERY_BEFORE_DISPATCH_CMD
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 batchsha requeue 123)"
+FINALIZE_RESUME_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+assert_eq "recovery: finalize resume dispatches once" "$(grep -Fc DISPATCH-MOCK <<<"${FINALIZE_RESUME_LOG}")" "1"
+assert_contains "recovery: finalize resume persists done after dispatch" "${FINALIZE_RESUME_LOG}" "state=done"
+
+# Crash after dispatch but before final state is deduplicated by the exact key.
+export RECOVERY_CONTINUATION_EXISTS=1
+FINALIZE_DEDUP_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
+assert_contains "recovery: existing keyed continuation is recognized" "${FINALIZE_DEDUP_LOG}" "already durably dispatched"
+assert_not_contains "recovery: existing keyed continuation is not dispatched twice" "${FINALIZE_DEDUP_LOG}" "DISPATCH-MOCK"
+assert_contains "recovery: deduplicated continuation still persists done" "${FINALIZE_DEDUP_LOG}" "state=done"
+export RECOVERY_CONTINUATION_EXISTS=0
+
 # A trunk move follows the same reset path and never reaches land.
 export TRAIN_RECOVERY_PR_INFO_FOR=__recover_info RECOVERY_TRUNK=advancedtrunk
+export TRAIN_RECOVERY_STATE_JSON="$(__recover_state train/batch/deadbee/123 base123 ci-incomplete 123)"
 STALE_TRUNK_LOG="$(train_recover_green_batch_rerun 123 train/batch/deadbee/123 batchsha run-url 2>&1)"
 assert_not_contains "recovery: stale trunk never lands" "${STALE_TRUNK_LOG}" "LAND-MOCK"
 assert_contains "recovery: stale trunk queues reassembly" "${STALE_TRUNK_LOG}" "trunk advanced from recorded base"
@@ -1288,8 +1340,9 @@ assert_not_contains "recovery: duplicate event does not dispatch" "${DUP_LOG}" "
 unset TRAIN_RECOVERY_PR_RECORDS_FOR_BRANCH TRAIN_RECOVERY_PR_INFO_FOR \
   TRAIN_RECOVERY_RUN_INFO_FOR TRAIN_RECOVERY_REMOTE_HEAD_FOR \
   TRAIN_RECOVERY_TRUNK_HEAD_FOR TRAIN_RECOVERY_LAND_CMD \
-  TRAIN_RECOVERY_DISPATCH_CMD TRAIN_RECOVERY_STATE_JSON TRAIN_STATE_ISSUE_OVERRIDE \
-  RECOVERY_TRUNK RECOVERY_REMOTE
+  TRAIN_RECOVERY_DISPATCH_CMD TRAIN_RECOVERY_CONTINUATION_EXISTS_FOR \
+  TRAIN_RECOVERY_BEFORE_DISPATCH_CMD TRAIN_RECOVERY_STATE_JSON TRAIN_STATE_ISSUE_OVERRIDE \
+  RECOVERY_TRUNK RECOVERY_REMOTE RECOVERY_CONTINUATION_EXISTS
 
 echo
 echo "== Roll-forward Cap. 4: autofix disabled (TRAIN_AUTOFIX=0) => behaves like today =="
