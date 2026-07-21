@@ -28,11 +28,8 @@ train_land_clear_landing_label() {
   return 0
 }
 
-# train_land <batch-branch> <trunk-sha-at-assembly> <included-file>
-# Returns 0 once the exact batch lands, 10 when trunk CAS/FF rejects before any
-# landing, and 1 on a pre-push error. Post-push finalization never replays trunk.
-train_land() {
-  local batch="$1" trunk_at_assembly="$2" included_file="$3"
+train_prepare_land_journals() {
+  local included_file="$1"
   TRAIN_LAND_FINALIZED_FILE="${TRAIN_LAND_FINALIZED_FILE:-${included_file}.finalized}"
   TRAIN_LAND_ADVANCED_FILE="${TRAIN_LAND_ADVANCED_FILE:-${included_file}.advanced}"
   TRAIN_LAND_PENDING_FILE="${TRAIN_LAND_PENDING_FILE:-${included_file}.pending}"
@@ -40,6 +37,73 @@ train_land() {
   : >"${TRAIN_LAND_FINALIZED_FILE}"
   : >"${TRAIN_LAND_ADVANCED_FILE}"
   : >"${TRAIN_LAND_PENDING_FILE}"
+}
+
+# Post-CAS bookkeeping is observation-only with respect to trunk. GitHub will
+# normally mark reachable PR heads merged itself. Exact OPEN heads remain pending
+# for restart reconciliation; no endpoint here can create another trunk commit.
+train_finalize_landed_members() {
+  local included_file="$1" pr admitted_sha info current_head current_state
+  while IFS=$'\t' read -r pr admitted_sha; do
+    [[ -z "${pr}" ]] && continue
+    info="$(train_land_pr_info "${pr}" 2>/dev/null)" || info=""
+    IFS=$'\t' read -r current_head current_state <<<"${info}"
+    if [[ "${current_head}" != "${admitted_sha}" && -n "${current_head}" ]]; then
+      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head}" >>"${TRAIN_LAND_ADVANCED_FILE}"
+      train_land_clear_landing_label "${pr}"
+      train_warn "snapshot for #${pr} landed, but head advanced; leaving PR open for its delta"
+    elif [[ "${current_head}" == "${admitted_sha}" && "${current_state}" == "MERGED" ]]; then
+      printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
+      train_land_clear_landing_label "${pr}"
+    else
+      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state:-unknown}" >>"${TRAIN_LAND_PENDING_FILE}"
+      train_warn "landed snapshot for #${pr} awaits GitHub merged-state reconciliation"
+    fi
+  done <"${included_file}"
+}
+
+# Recover a crash after the durable land intent was written. Returns 0 when all
+# members reconcile, 1 when the push never occurred, 2 on mismatch, 3 pending.
+train_restore_post_land() {
+  local state phase batch batch_sha trunk current remote_batch
+  state="$(train_state_read 2>/dev/null || echo '')"
+  [[ -n "${state}" ]] || return 1
+  phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  [[ "${phase}" == "land" || "${phase}" == "post-land-finalize" ]] || return 1
+  batch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
+  batch_sha="$(jq -r '.active_batch.batch_sha // empty' <<<"${state}")"
+  trunk="$(jq -r '.active_batch.trunk_base // empty' <<<"${state}")"
+  [[ "${batch}" == train/batch/* && "${batch_sha}" =~ ^[0-9a-fA-F]{40}$ && "${trunk}" =~ ^[0-9a-fA-F]{40}$ ]] || return 2
+  jq -e '.active_batch.included_heads | type == "array" and length > 0 and
+    all(.[]; (.number|type)=="number" and (.head|type)=="string" and (.head|test("^[0-9a-fA-F]{40}$"))) and
+    ([.[].number] | unique | length) == length' <<<"${state}" >/dev/null || return 2
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" "${batch}" || return 2
+  current="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" || return 2
+  remote_batch="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${batch}")" || return 2
+  [[ "${remote_batch}" == "${batch_sha}" ]] || return 2
+  [[ "${current}" == "${trunk}" ]] && return 1
+  [[ "${current}" == "${batch_sha}" ]] || return 2
+  jq -r '.active_batch.included_heads[] | [.number,.head] | @tsv' <<<"${state}" >"${TRAIN_INCLUDED_FILE}"
+  train_prepare_land_journals "${TRAIN_INCLUDED_FILE}"
+  TRAIN_LANDED_BATCH_SHA="${batch_sha}"
+  train_finalize_landed_members "${TRAIN_INCLUDED_FILE}"
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" || return 2
+  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${batch_sha}" ]] || return 2
+  TRAIN_POST_LAND_BATCH="${batch}"
+  TRAIN_POST_LAND_BATCH_SHA="${batch_sha}"
+  TRAIN_POST_LAND_TRUNK_BASE="${trunk}"
+  TRAIN_POST_LAND_INCLUDED="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${state}")"
+  export TRAIN_POST_LAND_BATCH TRAIN_POST_LAND_BATCH_SHA TRAIN_POST_LAND_TRUNK_BASE TRAIN_POST_LAND_INCLUDED
+  [[ -s "${TRAIN_LAND_PENDING_FILE}" ]] && return 3
+  return 0
+}
+
+# train_land <batch-branch> <trunk-sha-at-assembly> <included-file>
+# Returns 0 once the exact batch lands, 10 when trunk CAS/FF rejects before any
+# landing, and 1 on a pre-push error. Post-push finalization never replays trunk.
+train_land() {
+  local batch="$1" trunk_at_assembly="$2" included_file="$3"
+  train_prepare_land_journals "${included_file}"
 
   # Re-attest mutable admission before touching trunk. This reduces wasted work;
   # safety itself comes from landing only the already-built immutable batch SHA.
@@ -67,62 +131,13 @@ train_land() {
     train_warn "FF push rejected (trunk moved in race window); re-assemble"
     return 10
   fi
-
-  local pr admitted_sha info current_head current_state merge_rc
-  while IFS=$'\t' read -r pr admitted_sha; do
-    [[ -z "${pr}" ]] && continue
-    if [[ "${TRAIN_APPLY}" != "1" ]]; then
-      train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
-      printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
-      train_land_clear_landing_label "${pr}"
-      continue
-    fi
-
-    info="$(train_land_pr_info "${pr}" 2>/dev/null)" || info=""
-    IFS=$'\t' read -r current_head current_state <<<"${info}"
-    if [[ "${current_head}" != "${admitted_sha}" ]]; then
-      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head:-unknown}" >>"${TRAIN_LAND_ADVANCED_FILE}"
-      train_land_clear_landing_label "${pr}"
-      train_warn "snapshot for #${pr} landed, but head advanced (${admitted_sha:0:7} -> ${current_head:0:7}); leaving PR open for its delta"
-      continue
-    fi
-    if [[ "${current_state}" == "MERGED" ]]; then
-      printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
-      train_land_clear_landing_label "${pr}"
-      continue
-    fi
-    if [[ "${current_state}" != "OPEN" ]]; then
-      printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state:-unknown}" >>"${TRAIN_LAND_PENDING_FILE}"
-      train_warn "snapshot for #${pr} landed, but PR state ${current_state:-unknown} cannot be finalized"
-      continue
-    fi
-
-    merge_rc=0
-    if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
-      "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}" || merge_rc=$?
-    else
-      gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}" || merge_rc=$?
-    fi
-    if [[ "${merge_rc}" != "0" ]]; then
-      info="$(train_land_pr_info "${pr}" 2>/dev/null)" || info=""
-      IFS=$'\t' read -r current_head current_state <<<"${info}"
-      if [[ "${current_head}" != "${admitted_sha}" ]]; then
-        printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head:-unknown}" >>"${TRAIN_LAND_ADVANCED_FILE}"
-        train_land_clear_landing_label "${pr}"
-        train_warn "snapshot for #${pr} landed; match-head finalization refused after head advance, leaving delta open"
-      elif [[ "${current_state}" == "MERGED" ]]; then
-        printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
-        train_land_clear_landing_label "${pr}"
-      else
-        printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_state:-unknown}" >>"${TRAIN_LAND_PENDING_FILE}"
-        train_warn "snapshot for #${pr} landed, but exact-head finalization failed; leaving PR untouched for recovery"
-      fi
-      continue
-    fi
-    printf '%s\t%s\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_FINALIZED_FILE}"
-    train_land_clear_landing_label "${pr}"
-    train_log "finalized landed snapshot for #${pr} at ${admitted_sha:0:7}"
-  done <"${included_file}"
+  TRAIN_LANDED_BATCH_SHA="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${batch}")"
+  export TRAIN_LANDED_BATCH_SHA
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
+  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${TRAIN_LANDED_BATCH_SHA}" ]] || return 1
+  train_finalize_landed_members "${included_file}"
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
+  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${TRAIN_LANDED_BATCH_SHA}" ]] || return 1
 
   return 0
 }

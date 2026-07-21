@@ -337,6 +337,9 @@ train_select() {
     if train_pr_has_hold_label "${labels}"; then
       train_log "skip #${number}: hold/escalated label"; continue
     fi
+    if jq -e --arg landing "${TRAIN_LABEL_LANDING}" 'any(.[]; .name == $landing)' <<<"${labels}" >/dev/null; then
+      train_log "skip #${number}: post-land finalization pending"; continue
+    fi
     if [[ "${mergeable}" != "MERGEABLE" ]]; then
       train_log "skip #${number}: mergeable=${mergeable}"; continue
     fi

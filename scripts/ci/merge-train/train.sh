@@ -276,6 +276,25 @@ train_refine_attribute_candidates() {
 main() {
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
+  if [[ "${TRAIN_APPLY}" == "1" ]]; then
+    local post_land_rc=1
+    if train_restore_post_land; then post_land_rc=0; else post_land_rc=$?; fi
+    if [[ "${post_land_rc}" == "0" || "${post_land_rc}" == "3" ]]; then
+      local recovered_phase=done
+      if [[ "${post_land_rc}" == "3" ]]; then
+        recovered_phase=post-land-finalize
+        _write_state "${TRAIN_POST_LAND_BATCH}" "${TRAIN_POST_LAND_TRUNK_BASE}" "${TRAIN_POST_LAND_INCLUDED}" "${recovered_phase}" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
+      else
+        _write_state "" "${TRAIN_POST_LAND_BATCH_SHA}" "" "done" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
+      fi
+      train_notice "reconciled durable post-land state before selection (phase=${recovered_phase})"
+      return 0
+    elif [[ "${post_land_rc}" == "2" ]]; then
+      train_err "durable post-land state mismatches trunk or batch; failing closed"
+      return 1
+    fi
+  fi
+
   # --- select ----------------------------------------------------------------
   train_group select "pick ready PRs (oldest-first, capped at ${MAX_BATCH})"
   train_step_begin select
@@ -611,7 +630,11 @@ main() {
   train_metric_set landed "$(grep -c . "${TRAIN_LAND_FINALIZED_FILE}" 2>/dev/null || echo 0)"
   train_metric_set advanced_after_snapshot "$(grep -c . "${TRAIN_LAND_ADVANCED_FILE}" 2>/dev/null || echo 0)"
   train_metric_set finalization_pending "$(grep -c . "${TRAIN_LAND_PENDING_FILE}" 2>/dev/null || echo 0)"
-  _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
+  if [[ -s "${TRAIN_LAND_PENDING_FILE}" ]]; then
+    _write_state "${batch}" "${trunk_sha}" "${included}" "post-land-finalize" "" 0 0 "${new_trunk}"
+  else
+    _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
+  fi
   train_notice "LANDED batch ${batch} ($(tr ',' ' ' <<<"${included}")); trunk now ${new_trunk:0:7}"
   train_step_end land >/dev/null
   train_endgroup
@@ -624,8 +647,12 @@ main() {
 
 # _write_state branch trunk_base included-csv phase run_id fwdfix flake [last_landed]
 _write_state() {
-  local body="${TRAIN_WORK}/state.md"
-  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" >"${body}"
+  local body="${TRAIN_WORK}/state.md" heads='[]' batch_sha=""
+  if [[ -n "$1" && -s "${TRAIN_INCLUDED_FILE:-}" ]]; then
+    heads="$(jq -Rn '[inputs | split("\t") | {number:(.[0]|tonumber),head:.[1]}]' <"${TRAIN_INCLUDED_FILE}")"
+    batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "$1" 2>/dev/null || echo '')"
+  fi
+  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${heads}" "${batch_sha}" >"${body}"
   train_state_write "${body}"
 }
 
