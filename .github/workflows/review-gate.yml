@@ -21,7 +21,6 @@ on:
 permissions:
   checks: read
   contents: read
-  issues: read
   pull-requests: read
   statuses: write
 
@@ -102,29 +101,16 @@ jobs:
                 isCodex(comment.author?.login) && comment.commit?.oid === head));
             if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
 
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              ...context.repo, issue_number: prNumber, per_page: 100,
-            });
-            const exactHeadArtifacts = comments.filter(comment =>
-              comment.body?.toLowerCase().includes(head.toLowerCase()));
-            const reactionArtifacts = await Promise.all(exactHeadArtifacts.map(async comment => ({
-              body: comment.body,
-              createdAt: comment.created_at,
-              updatedAt: comment.updated_at,
-              reactions: await github.paginate(github.rest.reactions.listForIssueComment, {
-                ...context.repo, comment_id: comment.id, per_page: 100,
-              }),
-            })));
-            const { exactReview, freshCleanReaction } = evaluateCodexEvidence({
-              reviews: pr.reviews.nodes, reactionArtifacts, unresolvedCount: unresolved.length, head,
+            const { exactReview } = evaluateCodexEvidence({
+              reviews: pr.reviews.nodes, unresolvedCount: unresolved.length, head,
             });
 
-            if (!exactReview && !freshCleanReaction) {
-              reasons.push('no exact-head Codex review or SHA-bound clean reaction');
+            if (!exactReview) {
+              reasons.push('no commit-bound exact-head Codex review');
             }
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
-              ? (exactReview ? 'Codex reviewed this exact head' : 'Codex clean reaction observed on this head')
+              ? 'Codex reviewed this exact head'
               : reasons.join('; ').slice(0, 140);
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: head, state, context: 'Review Gate', description,

@@ -296,6 +296,9 @@ main() {
     elif [[ "${post_land_rc}" == "2" ]]; then
       train_err "durable post-land state mismatches trunk or batch; failing closed"
       return 1
+    elif [[ "${post_land_rc}" == "5" ]]; then
+      train_err "durable state lookup failed; refusing selection or state overwrite"
+      return 1
     fi
   fi
 

@@ -88,7 +88,9 @@ train_finalize_landed_members() {
 # members reconcile, 1 when the push never occurred, 2 on mismatch, 3 pending.
 train_restore_post_land() {
   local state phase batch batch_sha trunk current
-  state="$(train_state_read 2>/dev/null || echo '')"
+  local state_rc=0
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 5
   [[ -n "${state}" ]] || return 1
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
   [[ "${phase}" == "land" || "${phase}" == "pre-land-cleanup" || "${phase}" == "post-land-finalize" ]] || return 1

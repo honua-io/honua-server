@@ -18,10 +18,10 @@ test('clean reaction before a negative review cannot attest', () => {
   const reactionArtifacts = [{ body: `@codex review ${head}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', reactions }];
   assert.equal(evaluateCodexEvidence({ reviews: [review('CHANGES_REQUESTED', '2026-01-03T00:00:00Z')], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
 });
-test('clean reaction after a negative review can attest', () => {
+test('clean reaction after a negative review cannot attest without a commit-bound review', () => {
   const reactions = [{ user: { login: 'chatgpt-codex-connector[bot]' }, content: '+1', created_at: '2026-01-04T00:00:00Z' }];
   const reactionArtifacts = [{ body: `@codex review ${head}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', reactions }];
-  assert.equal(evaluateCodexEvidence({ reviews: [review('CHANGES_REQUESTED', '2026-01-03T00:00:00Z')], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, true);
+  assert.equal(evaluateCodexEvidence({ reviews: [review('CHANGES_REQUESTED', '2026-01-03T00:00:00Z')], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
 });
 test('later nonnegative exact-head review supersedes negative review', () => {
   const reviews = [review('CHANGES_REQUESTED', '2026-01-02T00:00:00Z'), review('COMMENTED', '2026-01-03T00:00:00Z')];
@@ -44,5 +44,20 @@ test('late old-head reaction after a new suite cannot attest', () => {
 test('editing an old reacted artifact to the new head cannot rebind it', () => {
   const reactions = [{ user: { login: 'chatgpt-codex-connector[bot]' }, content: '+1', created_at: '2026-01-02T00:00:00Z' }];
   const reactionArtifacts = [{ body: `@codex review ${head}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-03T00:00:00Z', reactions }];
+  assert.equal(evaluateCodexEvidence({ reviews: [], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
+});
+test('multi-SHA reaction artifact cannot attest', () => {
+  const reactions = [{ user: { login: 'chatgpt-codex-connector[bot]' }, content: '+1', created_at: '2026-01-04T00:00:01Z' }];
+  const reactionArtifacts = [{ body: `@codex review old123 ${head}`, createdAt: '2026-01-04T00:00:00Z', updatedAt: '2026-01-04T00:00:00Z', reactions }];
+  assert.equal(evaluateCodexEvidence({ reviews: [], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
+});
+test('pre-staged current-SHA reaction artifact cannot attest', () => {
+  const reactions = [{ user: { login: 'chatgpt-codex-connector[bot]' }, content: '+1', created_at: '2026-01-05T00:00:00Z' }];
+  const reactionArtifacts = [{ body: `@codex review ${head}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', reactions }];
+  assert.equal(evaluateCodexEvidence({ reviews: [], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
+});
+test('same-second edit and reaction cannot attest', () => {
+  const reactions = [{ user: { login: 'chatgpt-codex-connector[bot]' }, content: '+1', created_at: '2026-01-04T00:00:00Z' }];
+  const reactionArtifacts = [{ body: `@codex review ${head}`, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-04T00:00:00Z', reactions }];
   assert.equal(evaluateCodexEvidence({ reviews: [], reactionArtifacts, unresolvedCount: 0, head }).freshCleanReaction, false);
 });
