@@ -309,7 +309,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 8,
+      "provingTestCount": 10,
       "maturity": {
         "implemented": 1
       },
@@ -326,7 +326,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 1
       },
@@ -343,7 +343,7 @@
       "category": "Analytics",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 3,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 2
       },
@@ -394,7 +394,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 5,
       "maturity": {
         "implemented": 1
       },
@@ -411,7 +411,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 3,
+      "provingTestCount": 4,
       "maturity": {
         "implemented": 1
       },
@@ -962,7 +962,7 @@
       "category": "Identity",
       "edition": "Pro",
       "entryCount": 6,
-      "provingTestCount": 7,
+      "provingTestCount": 13,
       "maturity": {
         "implemented": 6
       },
@@ -1583,7 +1583,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 45,
-      "provingTestCount": 307,
+      "provingTestCount": 309,
       "maturity": {
         "implemented": 45
       },
@@ -1763,7 +1763,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 21,
-      "provingTestCount": 242,
+      "provingTestCount": 243,
       "maturity": {
         "implemented": 21
       },
@@ -1809,7 +1809,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 10,
-      "provingTestCount": 116,
+      "provingTestCount": 129,
       "maturity": {
         "implemented": 10
       },
@@ -1916,7 +1916,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 7,
-      "provingTestCount": 35,
+      "provingTestCount": 36,
       "maturity": {
         "implemented": 7
       },
@@ -2293,7 +2293,7 @@
       "category": "Temporal",
       "edition": "Pro",
       "entryCount": 2,
-      "provingTestCount": 5,
+      "provingTestCount": 7,
       "maturity": {
         "implemented": 2
       },

@@ -55,9 +55,13 @@ internal static partial class FeatureServerEndpoints
                 $"Invalid tile coordinates: x={x}, y={y}, z={z}");
         }
 
+        // /tiles is not an Esri protocol surface: unlike GeoServices /rest, layer-not-found
+        // must be a real HTTP 404 with a problem+json body, not a 200-wrapped GeoServices
+        // error envelope (honua-server#2945).
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
+            LayerValidationHelpers.ValidationProtocol.ProblemJson,
             requiredProtocol: FeatureServerProtocolName,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
@@ -76,8 +80,13 @@ internal static partial class FeatureServerEndpoints
         var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
         if (storageLayerId is null)
         {
-            return StandardErrorHelpers.CreateNotFound(
+            // /tiles is not an Esri protocol surface (honua-server#2945): a real 404, not
+            // the GeoServices 200-envelope that path-based classification would otherwise apply.
+            return ProblemDetailsHelpers.CreateProblem(
                 context,
+                "about:blank",
+                StatusCodes.Status404NotFound,
+                "Not Found",
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 

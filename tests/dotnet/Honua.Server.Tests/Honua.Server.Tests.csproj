@@ -21,6 +21,7 @@
     <PackageReference Include="Moq" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="ParquetSharp" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">

@@ -47,7 +47,16 @@ internal static class LayerValidationHelpers
     internal enum ValidationProtocol
     {
         OData,
-        OgcFeatures
+        OgcFeatures,
+
+        /// <summary>
+        /// RFC 7807 <c>application/problem+json</c> formatting with a real HTTP status
+        /// code, bypassing the path-classified <see cref="StandardErrorResponseFormatter"/>
+        /// (which treats every <c>/tiles</c> path as GeoServices and wraps errors in a
+        /// 200-envelope). Used by the tiles surface (tile.json / .mvt / h3 .mvt), which is
+        /// not an Esri protocol and must return real error status codes (honua-server#2945).
+        /// </summary>
+        ProblemJson
     }
 
     /// <summary>
@@ -102,6 +111,22 @@ internal static class LayerValidationHelpers
         };
     }
 
+    /// <summary>
+    /// Creates an RFC 7807 problem+json error response with the real HTTP status code,
+    /// independent of <see cref="StandardErrorResponseFormatter"/>'s path-based protocol
+    /// classification. See <see cref="ValidationProtocol.ProblemJson"/>.
+    /// </summary>
+    private static IResult CreateProblemJsonError(HttpContext context, string message, int statusCode)
+    {
+        var title = statusCode switch
+        {
+            StatusCodes.Status400BadRequest => "Bad Request",
+            StatusCodes.Status404NotFound => "Not Found",
+            _ => "Error"
+        };
+        return ProblemDetailsHelpers.CreateProblem(context, "about:blank", statusCode, title, message);
+    }
+
     // ---- Metadata v2 validation. Resolves a (publication, resource, service) triple
     // from the V2 graph snapshot for the given layer id (or collection id) and applies
     // the same access-policy + protocol-enablement checks as the v1 methods above.
@@ -132,6 +157,7 @@ internal static class LayerValidationHelpers
             {
                 ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
                 ValidationProtocol.OgcFeatures => CreateOgcError(context, msg, StatusCodes.Status404NotFound),
+                ValidationProtocol.ProblemJson => CreateProblemJsonError(context, msg, StatusCodes.Status404NotFound),
                 _ => StandardErrorHelpers.CreateNotFound(context, msg),
             };
             return new MetadataV2ValidationResult(false, null, null, null, error);
@@ -157,6 +183,7 @@ internal static class LayerValidationHelpers
             {
                 ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
                 ValidationProtocol.OgcFeatures => CreateOgcError(context, msg, StatusCodes.Status404NotFound),
+                ValidationProtocol.ProblemJson => CreateProblemJsonError(context, msg, StatusCodes.Status404NotFound),
                 _ => StandardErrorHelpers.CreateNotFound(context, msg),
             };
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
