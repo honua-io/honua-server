@@ -23,6 +23,8 @@ train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
   printf '%s\n' "$*" >>"${record}"
 }
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"phase":"select"}}\n```'
 
 # One deadline is initialized once and never reset for a retry.
 now_value=10
@@ -213,6 +215,41 @@ train_run_attempt_status() {
 }
 pass "two-phase rerun crash, visibility, and conflict recovery"
 
+# State authority is trustworthy only after a successful lookup returning zero
+# or one issue. Failures/duplicates block reads and writes; successful zero is
+# the only path allowed to create the initial issue.
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
+state_body_file="$(mktemp)"
+printf 'state\n' >"${state_body_file}"
+state_case=list_fail
+gh() {
+  if [[ "$*" == issue\ list* ]]; then
+    case "${state_case}" in list_fail) return 1 ;; duplicate) printf '11\n12\n' ;; zero) : ;; *) printf '11\n' ;; esac
+  elif [[ "$*" == 'issue view 11 --json body --jq .body' ]]; then
+    [[ "${state_case}" == "read_fail" ]] && return 1
+    printf '```json\n{"active_batch":{"phase":"select"}}\n```\n'
+  else
+    fail "state authority attempted unexpected gh operation: $*"
+  fi
+}
+rc=0; train_state_read >/dev/null || rc=$?
+[[ "${rc}" != "0" ]] || fail "state list failure was treated as no state"
+: >"${record}"; rc=0; train_state_write "${state_body_file}" || rc=$?
+[[ "${rc}" != "0" && ! -s "${record}" ]] || fail "state list failure allowed issue creation"
+state_case=read_fail
+rc=0; train_state_read >/dev/null || rc=$?
+[[ "${rc}" != "0" ]] || fail "state body read failure was treated as no state"
+state_case=duplicate
+rc=0; train_state_read >/dev/null || rc=$?
+[[ "${rc}" != "0" ]] || fail "duplicate state issues were accepted for read"
+: >"${record}"; rc=0; train_state_write "${state_body_file}" || rc=$?
+[[ "${rc}" != "0" && ! -s "${record}" ]] || fail "duplicate state issues allowed edit/create"
+state_case=zero
+: >"${record}"; train_state_write "${state_body_file}" || fail "proven initial state absence did not allow creation"
+grep -Fq 'gh issue create' "${record}" || fail "successful zero-result lookup did not use initial creation path"
+rm -f "${state_body_file}"
+pass "state lookup/read/write authority fails closed"
+
 # Production startup restoration: matching persisted intent waits on the old
 # run id, accepts only completed(new), and performs no dispatch/rerun side effect.
 : >"${record}"
@@ -347,6 +384,7 @@ train_restore_retry_intent >/dev/null || rc=$?
 [[ "${rc}" == "2" ]] || fail "malformed nonempty retry state was treated as no retry"
 unset TRAIN_STATE_BODY_OVERRIDE
 pass "resume exact-head, descendant-base, and malformed-state guards"
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"phase":"select"}}\n```'
 
 # Restore the simple attempt reader for the remaining classifier cases.
 gh() { printf '1\n'; }
@@ -383,6 +421,14 @@ pass "main-loop classifier behavior"
 export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
 train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
+unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
+: >"${record}"
+gh() { [[ "$*" == issue\ list* ]] && return 1; fail "state-list startup failure attempted unexpected gh operation: $*"; }
+train_select() { fail "state-list startup failure reached selection"; }
+rc=0
+main || rc=$?
+[[ "${rc}" == "1" && ! -s "${record}" ]] || fail "state-list failure did not stop controller before selection"
+pass "startup state-list failure stops before selection"
 export TRAIN_STATE_ISSUE_OVERRIDE=1
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"timeout_reruns_total":2,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_FETCHER=resume_fetcher

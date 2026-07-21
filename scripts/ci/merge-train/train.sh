@@ -303,8 +303,9 @@ train_refine_attribute_candidates() {
 # remains safely retryable and selection cannot observe unreleased members.
 # Returns 0=recovered, 1=no rejected recovery, 2=malformed or cleanup failure.
 train_recover_rejected_retry() {
-  local state phase trunk included total last body pr
-  state="$(train_state_read 2>/dev/null || echo "")"
+  local state phase trunk included total last body pr state_rc=0
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 2
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"

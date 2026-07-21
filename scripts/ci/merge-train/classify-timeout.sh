@@ -59,7 +59,12 @@ train_request_failed_job_rerun() {
   TRAIN_RERUN_RECONCILED=0
 
   if [[ -z "${state}" ]] && declare -F train_state_read >/dev/null 2>&1; then
-    state="$(train_state_read 2>/dev/null || echo "")"
+    local state_rc=0
+    state="$(train_state_read 2>/dev/null)" || state_rc=$?
+    if [[ "${state_rc}" != "0" ]]; then
+      train_err "could not read authoritative merge-train state before rerun"
+      return 3
+    fi
   fi
   if [[ -n "${state}" ]] && jq -e . >/dev/null 2>&1 <<<"${state}"; then
     state_run="$(jq -r '.active_batch.run_id // empty' <<<"${state}")"

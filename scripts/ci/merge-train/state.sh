@@ -71,20 +71,26 @@ train_state_render() {
   printf 'Machine-managed state for the optimistic batch merge train. Do not edit by hand.\n\n```json\n%s\n```\n' "${json}"
 }
 
-# train_state_issue_number: find the state issue number (or empty). READ-ONLY.
+# train_state_issue_number: emit the sole state issue number, or empty only
+# after a successful lookup proves none exists. API errors and duplicates fail.
 train_state_issue_number() {
   if [[ -n "${TRAIN_STATE_ISSUE_OVERRIDE:-}" ]]; then
     echo "${TRAIN_STATE_ISSUE_OVERRIDE}"; return 0
   fi
-  gh issue list --label "${TRAIN_LABEL_STATE}" --state open \
-    --json number --jq '.[0].number // empty' 2>/dev/null || echo ""
+  local rows count
+  rows="$(gh issue list --label "${TRAIN_LABEL_STATE}" --state open --limit 100 \
+    --json number --jq '.[].number' 2>/dev/null)" || return 1
+  count="$(printf '%s\n' "${rows}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  [[ "${count}" -le 1 ]] || { train_err "multiple open ${TRAIN_LABEL_STATE} issues found; refusing ambiguous state authority"; return 2; }
+  printf '%s\n' "${rows}" | sed '/^$/d'
 }
 
 # train_state_write <body-file>: create-or-update the state issue. Side-effecting.
 train_state_write() {
   local body_file="$1"
-  local num
-  num="$(train_state_issue_number)"
+  local num lookup_rc=0
+  num="$(train_state_issue_number)" || lookup_rc=$?
+  [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   if [[ -n "${num}" ]]; then
     train_side_effect gh issue edit "${num}" --body-file "${body_file}"
   else
@@ -96,20 +102,23 @@ train_state_write() {
 # train_state_read: emit the parsed JSON block of the state issue (or empty).
 # READ-ONLY; used on startup to resume.
 train_state_read() {
-  local num body
-  num="$(train_state_issue_number)"
+  local num body json lookup_rc=0
+  num="$(train_state_issue_number)" || lookup_rc=$?
+  [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   [[ -z "${num}" ]] && return 0
   if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
     body="${TRAIN_STATE_BODY_OVERRIDE}"
   else
-    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null || echo "")"
+    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 1
   fi
   # Extract the fenced ```json ... ``` block.
-  printf '%s\n' "${body}" | awk '
+  json="$(printf '%s\n' "${body}" | awk '
     /^```json/ { inblk=1; next }
     /^```/     { if (inblk) { inblk=0 } ; next }
     inblk      { print }
-  '
+  ')"
+  [[ -n "${json}" ]] || return 2
+  printf '%s\n' "${json}"
 }
 
 # --- persistent over-time dashboard (the founder's "dashboard") ---------------
@@ -126,9 +135,11 @@ train_aggregate_block() {
   if [[ -n "${TRAIN_AGG_BODY_OVERRIDE:-}" ]]; then
     body="${TRAIN_AGG_BODY_OVERRIDE}"
   else
-    local num; num="$(train_state_issue_number)"
+    local num lookup_rc=0
+    num="$(train_state_issue_number)" || lookup_rc=$?
+    [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
     [[ -z "${num}" ]] && return 0
-    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null || echo "")"
+    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 1
   fi
   printf '%s\n' "${body}" | awk '
     /^```json aggregate/ { inblk=1; next }

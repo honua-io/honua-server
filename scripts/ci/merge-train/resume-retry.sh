@@ -101,8 +101,9 @@ _train_resume_run_identity() {
 # 3 when the accepted newer attempt is still pending at the shared deadline,
 # 4 when requesting state remains safely resumable after an API failure.
 train_restore_retry_intent() {
-  local state phase batch trunk run_id kind base row run_branch run_head current_attempt run_event run_path batch_sha selected
-  state="$(train_state_read 2>/dev/null || echo "")"
+  local state phase batch trunk run_id kind base row run_branch run_head current_attempt run_event run_path batch_sha selected state_rc=0
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 2
   [[ -n "${state}" ]] || return 1
   jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
