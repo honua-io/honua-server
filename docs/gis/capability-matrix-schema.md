@@ -17,6 +17,15 @@ this aggregation lifts-and-shifts to the public `honua-evidence` repo in Phase
 B (#2892). The schema below is the contract that survives the move — moving
 the aggregation is a CI-job relocation, not a redesign.
 
+**"Implemented" here is evidence-count-derived, not a GA sign-off.** The
+`maturity` field below counts `feature-catalog.json` entries by their
+generator-resolved tier; it does not by itself certify that a capability meets
+the bar for being advertised GA. See
+[`capability-keys-schema.md#ga-criteria-2946`](capability-keys-schema.md#ga-criteria-2946)
+for that bar and
+[`capability-ga-regrade-2026-07.md`](capability-ga-regrade-2026-07.md) for the
+2026-07 re-grade decisions applied against it.
+
 ## Generation
 
 ```bash
