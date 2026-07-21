@@ -747,6 +747,15 @@ assert_eq "state: duplicate valid land/select fences fail startup closed" "${dup
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"${sj}"$'\n'"${sj}"$'\n```'
 set +e; train_restore_post_land; multi_value_rc=$?; set -e
 assert_eq "state: multiple JSON values in one fence fail startup closed" "${multi_value_rc}" "5"
+export TRAIN_STATE_BODY_OVERRIDE="${inactive_state}"$'\n```json\n```'
+set +e; train_restore_post_land; empty_second_fence_rc=$?; set -e
+assert_eq "state: valid plus empty second JSON fence fails startup closed" "${empty_second_fence_rc}" "5"
+export TRAIN_STATE_BODY_OVERRIDE="${inactive_state}"$'\n```json\nnot-json\n```'
+set +e; train_restore_post_land; malformed_second_fence_rc=$?; set -e
+assert_eq "state: valid plus malformed second JSON fence fails startup closed" "${malformed_second_fence_rc}" "5"
+export TRAIN_STATE_BODY_OVERRIDE="${inactive_state%\`\`\`}"
+set +e; train_restore_post_land; unclosed_fence_rc=$?; set -e
+assert_eq "state: machine JSON fence open at EOF fails startup closed" "${unclosed_fence_rc}" "5"
 unset TRAIN_STATE_ISSUE_OVERRIDE TRAIN_STATE_BODY_OVERRIDE
 
 echo

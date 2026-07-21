@@ -8,6 +8,8 @@
 # advances during landing, the tested snapshot still lands but the PR remains
 # open for its unreviewed delta. No unreviewed bytes can enter the batch.
 
+TRAIN_LAND_TAB="$(printf '\tX')"; TRAIN_LAND_TAB="${TRAIN_LAND_TAB%X}"
+
 train_land_pr_info() {
   local pr="$1"
   if [[ -n "${TRAIN_LAND_PR_INFO_FOR:-}" ]]; then
@@ -48,7 +50,7 @@ train_prepare_land_journals() {
 
 train_cleanup_deferred_members() {
   local included_file="$1" pr admitted_sha
-  while IFS=$'\t' read -r pr admitted_sha; do
+  while IFS="${TRAIN_LAND_TAB}" read -r pr admitted_sha; do
     [[ -z "${pr}" ]] && continue
     if ! train_land_clear_landing_label "${pr}"; then
       printf '%s\t%s\tpre-land-label-cleanup\n' "${pr}" "${admitted_sha}" >>"${TRAIN_LAND_PENDING_FILE}"
@@ -62,10 +64,10 @@ train_cleanup_deferred_members() {
 # for restart reconciliation; no endpoint here can create another trunk commit.
 train_finalize_landed_members() {
   local included_file="$1" pr admitted_sha info current_head current_state
-  while IFS=$'\t' read -r pr admitted_sha; do
+  while IFS="${TRAIN_LAND_TAB}" read -r pr admitted_sha; do
     [[ -z "${pr}" ]] && continue
     info="$(train_land_pr_info "${pr}" 2>/dev/null)" || info=""
-    IFS=$'\t' read -r current_head current_state <<<"${info}"
+    IFS="${TRAIN_LAND_TAB}" read -r current_head current_state <<<"${info}"
     if [[ "${current_head}" != "${admitted_sha}" && -n "${current_head}" ]]; then
       printf '%s\t%s\t%s\n' "${pr}" "${admitted_sha}" "${current_head}" >>"${TRAIN_LAND_ADVANCED_FILE}"
       if ! train_land_clear_landing_label "${pr}"; then
@@ -149,7 +151,7 @@ train_land() {
   # Re-attest mutable admission before touching trunk. This reduces wasted work;
   # safety itself comes from landing only the already-built immutable batch SHA.
   local admission_pr admission_sha
-  while IFS=$'\t' read -r admission_pr admission_sha; do
+  while IFS="${TRAIN_LAND_TAB}" read -r admission_pr admission_sha; do
     [[ -z "${admission_pr}" ]] && continue
     if ! train_pr_admission "${admission_pr}" "${admission_sha}"; then
       train_warn "pre-land admission failed for #${admission_pr}; re-select"

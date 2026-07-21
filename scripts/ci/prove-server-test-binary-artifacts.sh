@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Package and execute representative no-build/no-restore tests for all shard projects.
 
 set -euo pipefail
@@ -27,7 +28,7 @@ mkdir -p "${OUTPUT_DIR}" "${EMPTY_NUGET}"
 git -C "${REPO_ROOT}" worktree add --detach "${CONSUMER_ROOT}" "${SOURCE_SHA}" >/dev/null
 
 manifests=()
-while IFS=$'\t' read -r project suffix proof_filter; do
+while IFS=${HONUA_TAB} read -r project suffix proof_filter; do
   echo "::group::Package ${project}"
   manifest="${OUTPUT_DIR}/server-test-binaries-${suffix}.manifest.json"
   if [[ "${USE_EXISTING}" == "true" ]]; then

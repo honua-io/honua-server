@@ -112,10 +112,21 @@ train_state_read() {
   # An existing issue must contain exactly one parseable machine-state block.
   # Empty output is reserved for a confirmed absent issue.
   json="$(printf '%s\n' "${body}" | awk '
-    /^```json[[:space:]]*$/ { inblk=1; next }
-    /^```/     { if (inblk) { inblk=0 } ; next }
-    inblk      { print }
-  ')"
+    /^```json[[:space:]]*$/ {
+      openers++
+      if (inblk) invalid=1
+      inblk=1
+      next
+    }
+    /^```/ {
+      if (inblk) { closers++; inblk=0 }
+      next
+    }
+    inblk { print }
+    END {
+      if (invalid || inblk || openers != 1 || closers != 1) exit 3
+    }
+  ')" || return 3
   [[ -n "${json}" ]] || return 3
   jq -se '
     length == 1 and (.[0] |

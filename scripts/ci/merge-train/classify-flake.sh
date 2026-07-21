@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Step 5: classify-flake — run BEFORE attribute. Scan the failing jobs' logs for
 # the flake signature regex (40P01 / deadlock detected / ryuk / Testcontainers
 # timeouts/connection-refused). On a match, do a SINGLE `gh run rerun <id>
@@ -54,7 +55,7 @@ train_failing_job_logs() {
     return 0
   fi
   for jid in ${jids}; do
-    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"$'\n'
+    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"${HONUA_NL}
   done
   printf '%s' "${out}" | tail -c 12000
 }

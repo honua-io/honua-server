@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Step 5.5 (NEW): pre-existing-failure filter - deterministic, no AI.
 #
 # Before the train blocks/escalates a failed batch, fetch the LATEST trunk CI
@@ -197,8 +198,8 @@ train_run_failure_signatures() {
       matched=0
       while IFS= read -r record; do
         [[ -z "${record}" ]] && continue
-        job_id="${record%%$'\t'*}"
-        record_job="${record#*$'\t'}"
+        job_id="${record%%${HONUA_TAB}*}"
+        record_job="${record#*${HONUA_TAB}}"
         [[ "${record_job}" == "${record}" ]] && { record_job="${record}"; job_id=""; }
         if [[ "${record_job}" == "${job}" ]]; then
           matched=1
@@ -214,8 +215,8 @@ train_run_failure_signatures() {
 
   while IFS= read -r record; do
     [[ -z "${record}" ]] && continue
-    job_id="${record%%$'\t'*}"
-    job="${record#*$'\t'}"
+    job_id="${record%%${HONUA_TAB}*}"
+    job="${record#*${HONUA_TAB}}"
     [[ "${job}" == "${record}" ]] && { job="${record}"; job_id=""; }
     train_emit_job_failure_signatures "${run_id}" "${job}" "${job_id}"
   done <<<"$(train_run_failing_job_records "${run_id}")" | sort -u

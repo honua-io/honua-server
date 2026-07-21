@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 set -euo pipefail
 
 usage() {
@@ -236,7 +238,7 @@ append_result() {
   local transcript_rel="$4"
   local note="$5"
 
-  note="${note//$'\n'/ }"
+  note="${note//${HONUA_NL}/ }"
   printf '%s\t%s\t%s\t%s\t%s\n' "$check_id" "$status" "$http_status" "$transcript_rel" "$note" >> "$CURRENT_RESULTS_FILE"
 }
 
@@ -290,8 +292,8 @@ request_json() {
 
   local curl_output time_total
   curl_output="$(curl -sS -o "$body_file" -D "$headers_file" -H "Accept: ${accept}" -w '%{http_code}\t%{time_total}' "$url")" || curl_exit=$?
-  http_status="${curl_output%%$'\t'*}"
-  time_total="${curl_output#*$'\t'}"
+  http_status="${curl_output%%${HONUA_TAB}*}"
+  time_total="${curl_output#*${HONUA_TAB}}"
   LAST_DURATION_MS="$(awk "BEGIN {printf \"%.0f\", ${time_total:-0} * 1000}")"
 
   if [[ $curl_exit -ne 0 ]]; then
@@ -338,8 +340,8 @@ request_text() {
 
   local curl_output time_total
   curl_output="$(curl -sS -o "$body_file" -D "$headers_file" -H "Accept: ${accept}" -w '%{http_code}\t%{time_total}' "$url")" || curl_exit=$?
-  http_status="${curl_output%%$'\t'*}"
-  time_total="${curl_output#*$'\t'}"
+  http_status="${curl_output%%${HONUA_TAB}*}"
+  time_total="${curl_output#*${HONUA_TAB}}"
   LAST_DURATION_MS="$(awk "BEGIN {printf \"%.0f\", ${time_total:-0} * 1000}")"
 
   if [[ $curl_exit -ne 0 ]]; then
@@ -386,8 +388,8 @@ request_json_4xx() {
 
   local curl_output time_total
   curl_output="$(curl -sS -o "$body_file" -D "$headers_file" -H "Accept: ${accept}" -w '%{http_code}\t%{time_total}' "$url")" || curl_exit=$?
-  http_status="${curl_output%%$'\t'*}"
-  time_total="${curl_output#*$'\t'}"
+  http_status="${curl_output%%${HONUA_TAB}*}"
+  time_total="${curl_output#*${HONUA_TAB}}"
   LAST_DURATION_MS="$(awk "BEGIN {printf \"%.0f\", ${time_total:-0} * 1000}")"
 
   if [[ $curl_exit -ne 0 ]]; then
@@ -491,7 +493,7 @@ finalize_lane() {
     echo
     echo "| Check | Status | HTTP | Transcript | Note |"
     echo "|---|---|---:|---|---|"
-    while IFS=$'\t' read -r check_id status http_status transcript_rel note; do
+    while IFS=${HONUA_TAB} read -r check_id status http_status transcript_rel note; do
       local uppercase_status
       uppercase_status="$(printf '%s' "$status" | tr '[:lower:]' '[:upper:]')"
       printf '| `%s` | %s | %s | `%s` | %s |\n' \

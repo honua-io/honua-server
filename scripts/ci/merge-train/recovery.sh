@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Recovery for a manually-rerun batch CI that turns green after the train already
 # escalated the batch. The normal train loop lands a green run while it is still
 # waiting. This helper handles the later workflow_run case: clear stale
@@ -30,7 +31,7 @@ train_recovery_batch_pr_records() {
   fi
 
   git -C "${TRAIN_REPO_ROOT}" log --reverse --format='%H%x09%s' "${range}" \
-    | while IFS=$'\t' read -r merge_commit subject; do
+    | while IFS=${HONUA_TAB} read -r merge_commit subject; do
         if [[ "${subject}" =~ ^train:\ merge\ \#([0-9]+)$ ]]; then
           local pr="${BASH_REMATCH[1]}" validated_head
           validated_head="$(
@@ -100,14 +101,14 @@ train_recover_green_batch_rerun() {
   local recovered=0 record
   while IFS= read -r record; do
     local pr validated_sha
-    IFS=$'\t' read -r pr validated_sha <<<"${record}"
+    IFS=${HONUA_TAB} read -r pr validated_sha <<<"${record}"
     [[ -z "${pr}" ]] && continue
 
     local info sha state labels
     info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
     [[ -z "${info}" ]] && { train_warn "recovery skipped #${pr}: could not read PR info"; continue; }
 
-    IFS=$'\t' read -r sha state labels <<<"${info}"
+    IFS=${HONUA_TAB} read -r sha state labels <<<"${info}"
     if [[ "${state}" != "OPEN" ]]; then
       train_log "recovery skipped #${pr}: state=${state}"
       continue
