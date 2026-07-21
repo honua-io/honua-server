@@ -7,8 +7,6 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.SqlServer.Features.FeatureStore.Services;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.SqlServer.Tests;
 
@@ -218,16 +216,7 @@ public class SqlServerFeatureQueryBuilderTests
     public void BuildSelectQuery_GeoServicesEwkb_BindsPlainWkb()
     {
         var mapping = BuildMapping();
-        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
-            new GeoServicesGeometry
-            {
-                Xmin = -1,
-                Ymin = -1,
-                Xmax = 1,
-                Ymax = 1,
-                SpatialReference = new GeoServicesSpatialReference { Wkid = 4326 }
-            },
-            srid: 4326);
+        var ewkb = CreateEwkbPointZm();
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
@@ -238,7 +227,21 @@ public class SqlServerFeatureQueryBuilderTests
         var boundWkb = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
         var typeWord = BinaryPrimitives.ReadUInt32LittleEndian(boundWkb.AsSpan(1, sizeof(uint)));
         Assert.Equal(0u, typeWord & 0x20000000u);
-        Assert.Equal(3u, typeWord);
+        Assert.Equal(0xC0000001u, typeWord);
+        Assert.Equal(ewkb.AsSpan(9).ToArray(), boundWkb.AsSpan(5).ToArray());
+    }
+
+    private static byte[] CreateEwkbPointZm()
+    {
+        var ewkb = new byte[1 + sizeof(uint) + sizeof(uint) + (4 * sizeof(double))];
+        ewkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(1), 0xE0000001u);
+        BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(5), 4326u);
+        BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(9), -1.25);
+        BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(17), 2.75);
+        BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(25), 3.5);
+        BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(33), 4.25);
+        return ewkb;
     }
 
     [Fact]
