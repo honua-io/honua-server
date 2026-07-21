@@ -180,15 +180,33 @@ rc=0
 train_request_failed_job_rerun 123 timeout 1 state_callback || rc=$?
 [[ "${rc}" == "4" && ! -s "${record}" ]] || fail "beyond-grace ambiguity repeated the rerun POST"
 
-# A GitHub conflict/already-running response is asynchronous acceptance, not a
-# hard failure; accepted state is persisted and normal attempt waiting resumes.
+# A strict already-running response is accepted only with observed attempt
+# advancement; conflict text alone is never evidence.
 : >"${record}"; : >"${phase_log}"
 unset TRAIN_RERUN_RESUME_STATE_JSON
 export TRAIN_RERUN_VISIBILITY_GRACE_SECONDS=0
-train_run_attempt_status() { printf '1\tcompleted\n'; }
+train_run_attempt_status() { printf '2\tqueued\n'; }
 request_mode=conflict
 train_request_failed_job_rerun 123 timeout 1 state_callback || fail "rerun conflict was not reconciled as accepted"
 [[ "$(paste -sd, "${phase_log}")" == "requesting,accepted" ]] || fail "rerun conflict did not persist two-phase acceptance"
+
+# Production stderr with a bare HTTP 409 and no attempt advancement remains
+# ambiguous/requesting and cannot be promoted to accepted.
+: >"${record}"; : >"${phase_log}"
+unset TRAIN_RERUN_REQUESTER
+export TRAIN_APPLY=1
+train_run_attempt_status() { printf '1\tcompleted\n'; }
+gh() {
+  if [[ "$*" == *'--json attempt'* ]]; then printf '1\n'
+  elif [[ "$*" == 'run rerun 123 --failed' ]]; then printf 'HTTP 409: Conflict\n' >&2; return 1
+  else fail "bare-409 attempted unexpected gh operation: $*"
+  fi
+}
+rc=0
+train_request_failed_job_rerun 123 timeout 1 state_callback || rc=$?
+[[ "${rc}" == "4" ]] || fail "bare HTTP 409 was not kept ambiguous"
+[[ "$(cat "${phase_log}")" == "requesting" ]] || fail "bare HTTP 409 was falsely persisted accepted"
+export TRAIN_APPLY=0
 unset TRAIN_RERUN_RESUME_STATE_JSON TRAIN_RERUN_REQUESTER TRAIN_RERUN_VISIBILITY_GRACE_SECONDS
 train_run_attempt_status() {
   gh run view "$1" --json attempt,status --jq '[.attempt, .status] | @tsv' 2>/dev/null
@@ -493,9 +511,9 @@ train_request_failed_job_rerun 222 timeout 1 state_callback || fail "same-run B 
 unset TRAIN_RERUN_RESUME_STATE_JSON TRAIN_RERUN_REQUESTER
 pass "timeout retry budget and request identity are scoped per Actions run"
 
-# A definitive API rejection uses the production persistence callback to write
-# terminal rejected state. The next controller must not treat it as an in-flight
-# request and must proceed into selection rather than deadlocking forever.
+# A definitive API rejection uses the production persistence callback. Simulate
+# a crash immediately after rejected persistence: the next controller must
+# escalate/remove landing, clear state, and only then enter selection.
 : >"${record}"; : >"${phase_log}"
 export TRAIN_RERUN_REQUESTER=requester
 request_mode=rejected
@@ -518,7 +536,13 @@ export TRAIN_STATE_BODY_OVERRIDE="${rejected_state_body}" TRAIN_RESUME_STARTUP_T
 train_select() { printf 'selection-entered\n' >>"${record}"; }
 unset TRAIN_CONTROLLER_DEADLINE_EPOCH
 main || fail "later controller failed after terminal rerun rejection"
+grep -Fqx "gh pr edit 101 --add-label ${TRAIN_LABEL_ESCALATED}" "${record}" || fail "rejected recovery did not escalate member"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || fail "rejected recovery did not remove landing label"
+grep -Fq 'gh issue edit 1 --body-file' "${record}" || fail "rejected recovery did not clear active state after labels"
 grep -Fqx 'selection-entered' "${record}" || fail "later controller remained trapped behind terminal rerun rejection"
+[[ "$(grep -n "remove-label ${TRAIN_LABEL_LANDING}\|selection-entered" "${record}" | cut -d: -f2- | paste -sd, -)" == *"remove-label ${TRAIN_LABEL_LANDING}"*selection-entered* ]] \
+  || fail "selection occurred before rejected member cleanup"
+! grep -Eq 'gh (workflow run|pr merge)|git push' "${record}" || fail "rejected recovery unsafely landed or requeued the rejected batch"
 unset TRAIN_RERUN_REQUESTER TRAIN_RESUME_STARTUP_TEST_ONLY
 pass "definitive rerun rejection is terminal and later controller progresses"
 

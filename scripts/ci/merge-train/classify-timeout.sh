@@ -120,6 +120,13 @@ train_request_failed_job_rerun() {
     fi
     return 5
   fi
+  if [[ "${send_rc}" == "4" ]]; then
+    if ! train_wait_for_rerun_visibility "${run_id}" "${base}"; then
+      train_warn "rerun API conflict for run ${run_id} has no newer-attempt evidence; preserving requesting state"
+      return 4
+    fi
+    train_warn "rerun API conflict reconciled only after observing attempt advancement for run ${run_id}"
+  fi
   if [[ "${send_rc}" != "0" && "${send_rc}" != "4" ]]; then
     train_err "failed to request failed-job rerun for ${kind} run ${run_id}; requesting state remains recoverable"
     [[ -n "${callback}" ]] && return 4 || return 3

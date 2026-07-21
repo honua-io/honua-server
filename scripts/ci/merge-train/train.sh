@@ -296,12 +296,51 @@ train_refine_attribute_candidates() {
 
   printf '%s\n' "${queue[@]}" | sort -u
 }
+
+# train_recover_rejected_retry: finish the terminal cleanup transaction after a
+# controller crashed between persisting `*-retry-rejected` and releasing the
+# batch. Required label mutations precede the active-state clear, so any crash
+# remains safely retryable and selection cannot observe unreleased members.
+# Returns 0=recovered, 1=no rejected recovery, 2=malformed or cleanup failure.
+train_recover_rejected_retry() {
+  local state phase trunk included total last body pr
+  state="$(train_state_read 2>/dev/null || echo "")"
+  [[ -n "${state}" ]] || return 1
+  jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
+  phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  case "${phase}" in timeout-retry-rejected|flake-retry-rejected) ;; *) return 1 ;; esac
+  jq -e '.active_batch.branch | type == "string" and startswith("train/batch/")' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.trunk_base | type == "string" and test("^[0-9a-fA-F]{40}$")' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.run_id | type == "number"' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.included | type == "array" and length > 0
+    and all(.[]; type == "number" and floor == .) and (unique | length) == length' >/dev/null <<<"${state}" || return 2
+
+  trunk="$(jq -r '.active_batch.trunk_base' <<<"${state}")"
+  included="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${state}")"
+  total="$(jq -r '.active_batch.timeout_reruns_total // 0' <<<"${state}")"
+  last="$(jq -r '.last_landed_trunk // "null"' <<<"${state}")"
+  for pr in $(tr ',' ' ' <<<"${included}"); do
+    train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}" || return 2
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" || return 2
+  done
+
+  body="$(mktemp)"
+  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
+  train_state_write "${body}" || { rm -f "${body}"; return 2; }
+  rm -f "${body}"
+  train_notice "completed terminal rerun-rejection cleanup for batch members ${included}"
+}
 main() {
   train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
-  local resume_state="" resume_rc=1 resumed=0
+  local resume_state="" resume_rc=1 resumed=0 rejected_rc=1
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
+    train_recover_rejected_retry || rejected_rc=$?
+    if [[ "${rejected_rc}" == "2" ]]; then
+      train_err "persisted rerun rejection cleanup is malformed or incomplete; failing closed before selection"
+      return 1
+    fi
     if resume_state="$(train_restore_retry_intent)"; then resume_rc=0; else resume_rc=$?; fi
     if [[ "${resume_rc}" == "0" ]]; then
       resumed=1
