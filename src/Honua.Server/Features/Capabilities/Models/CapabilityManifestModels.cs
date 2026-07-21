@@ -33,7 +33,18 @@ internal sealed record CapabilityManifestDocument
 
     public required CapabilityManifestPolicies Policies { get; init; }
 
+    public required CapabilityManifestDeploymentProfile DeploymentProfile { get; init; }
+
     public required CapabilityManifestLink[] Links { get; init; }
+}
+
+internal sealed record CapabilityManifestDeploymentProfile
+{
+    public required bool Configured { get; init; }
+
+    public required string? SchemaVersion { get; init; }
+
+    public required string[] EnabledCapabilities { get; init; }
 }
 
 internal sealed record CapabilityManifestScope

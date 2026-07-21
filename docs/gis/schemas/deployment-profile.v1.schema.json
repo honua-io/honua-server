@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/schemas/deployment-profile.v1.schema.json",
+  "title": "Honua deployment capability profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "capabilities",
+    "requiredEdition",
+    "capacitySuggestion",
+    "profileFingerprint",
+    "security"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://honua.io/schemas/deployment-profile.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+      }
+    },
+    "requiredEdition": {
+      "enum": ["Community", "Pro", "Enterprise"]
+    },
+    "capacitySuggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["band", "servingUnits", "servingUnitCeiling", "annualPriceUsd", "quoteRequired"],
+      "properties": {
+        "band": {
+          "enum": ["Starter", "Team", "Scale", "Private"]
+        },
+        "servingUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "servingUnitCeiling": {
+          "type": ["integer", "null"],
+          "enum": [3, 10, 25, null]
+        },
+        "annualPriceUsd": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "quoteRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "profileFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "grantsEntitlements", "notice"],
+      "properties": {
+        "scope": {
+          "const": "configuration-only"
+        },
+        "grantsEntitlements": {
+          "const": false
+        },
+        "notice": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

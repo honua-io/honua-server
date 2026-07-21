@@ -673,12 +673,17 @@ jobs:
     # This job restores and builds its own affected project closure. Run it in
     # parallel with Build & Format Check; CI Gate still requires both results.
     needs: changes
-    # Bumped 35→70 to absorb Coverlet XPlat-collector instrumentation
+    # Bumped 35→70→100 to absorb Coverlet XPlat-collector instrumentation
     # overhead across the per-project test steps (Core 30m, Server Fast 20m,
-    # Architecture 10m, Security 3m). Step-level timeouts still bound each
-    # individual run; this just keeps the orchestrator from cancelling the
-    # job before the steps get to fail naturally (#1144).
-    timeout-minutes: 70
+    # Architecture 10m, Security 3m), then the #2943 revival of the 8
+    # protocol-split projects' Fast tier plus the previously-orphaned
+    # DuckDB/Plugins/ArcGisRest/Oracle/Postgres.Security/Worker.Gdal/MySql
+    # projects (an additional ~60m of step-level budget; see the "Run .NET
+    # Tests (...)" steps below for the per-group rationale). Step-level
+    # timeouts still bound each individual run; this just keeps the
+    # orchestrator from cancelling the job before the steps get to fail
+    # naturally (#1144).
+    timeout-minutes: 100
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -844,6 +849,155 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      - name: Run .NET Tests (Protocol Fast Tier)
+        # #2943: the 8 protocol-split test projects created by the ADR-0042
+        # modularization (Honua.Protocols.{GeoServices,OgcApi,OgcClassic,
+        # OData,Scene,SensorThings,Stac}.Tests) plus Honua.Ai.Tests were never
+        # extended into this foundation lane. scripts/ci/run-server-test-shard.sh
+        # unconditionally appends `&Tier!=Fast` to every server-tests shard
+        # filter (see that script and the server-tests job comment above) on
+        # the assumption that Fast tests "run only once in
+        # dotnet-foundation-tests" — but that was only ever true for
+        # Honua.Server.Tests, leaving ~1,237 [UnitTest] cases dark (worst:
+        # Honua.Ai.Tests 483/558 never ran). Build + run each project's own
+        # Tier=Fast filter here, mirroring the Server Fast Tier step above.
+        # Restore/build is self-contained per project (rather than relying on
+        # the affected-projects computation used for "Build foundation test
+        # binaries") so this step's correctness never depends on the PR diff
+        # touching these projects. Verified locally before wiring in
+        # (Honua.Protocols.OData.Tests --filter Tier=Fast passed).
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          projects=(
+            Honua.Protocols.GeoServices
+            Honua.Protocols.OgcApi
+            Honua.Protocols.OgcClassic
+            Honua.Protocols.OData
+            Honua.Protocols.Scene
+            Honua.Protocols.SensorThings
+            Honua.Protocols.Stac
+            Honua.Ai
+          )
+          for project in "${projects[@]}"; do
+            csproj="tests/dotnet/${project}.Tests/${project}.Tests.csproj"
+            echo "::group::${project}.Tests (Tier=Fast)"
+            dotnet build "${csproj}" --no-restore --configuration Release
+            dotnet test "${csproj}" \
+              --no-build \
+              --configuration Release \
+              --filter "Tier=Fast" \
+              --logger "trx;LogFileName=${project}-fast-tier.trx" \
+              --logger "console;verbosity=minimal" \
+              --results-directory ./tests/TestResults
+            echo "::endgroup::"
+          done
+
+      - name: Run .NET Tests (Orphaned Unit Projects)
+        # #2943: these five projects compiled only as part of the full-solution
+        # build (Honua.sln) and were never invoked by any CI workflow, so
+        # their tests never ran anywhere. All are self-contained, fast, and
+        # need no external services:
+        #   - Honua.DuckDB.Tests: in-process DuckDB, no network/services.
+        #   - Honua.Plugins.Tests / Honua.ArcGisRest.Tests: pure unit tests.
+        #   - Honua.Oracle.Tests: unit-only today (no live Oracle instance is
+        #     wired up; see the sibling warehouse-nightly.yml lane for the
+        #     creds-gated story).
+        #   - Honua.Worker.Gdal.Tests: self-skips its [GdalCliFact]/Docker
+        #     cases when the GDAL/PDAL CLI or Docker image are absent from the
+        #     runner, so this step is safe on a lean ubuntu-latest agent.
+        # Verified locally before wiring in (DuckDB 95/95, Honua.Plugins.Tests
+        # 75/75, Honua.Oracle.Tests 55/55, Honua.ArcGisRest.Tests 93/93 passed
+        # — the latter's one observed "Collection was modified" flake from a
+        # process-global ActivityListener racing a plain List<T> was fixed
+        # alongside this PR, see ArcGisRestPaginationTests.cs).
+        # Honua.Postgres.Security.Tests is deliberately NOT in this list — see
+        # the separate advisory step below.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          projects=(
+            Honua.DuckDB
+            Honua.Plugins
+            Honua.ArcGisRest
+            Honua.Oracle
+            Honua.Worker.Gdal
+          )
+          for project in "${projects[@]}"; do
+            csproj="tests/dotnet/${project}.Tests/${project}.Tests.csproj"
+            echo "::group::${project}.Tests"
+            dotnet build "${csproj}" --no-restore --configuration Release
+            dotnet test "${csproj}" \
+              --no-build \
+              --configuration Release \
+              --logger "trx;LogFileName=${project}-tests.trx" \
+              --logger "console;verbosity=minimal" \
+              --results-directory ./tests/TestResults
+            echo "::endgroup::"
+          done
+
+      - name: Run .NET Tests (Postgres Security, advisory)
+        # #2943: Honua.Postgres.Security.Tests was never invoked by any CI
+        # workflow and, when run for the first time while preparing this PR,
+        # 3 of its 7 tests FAILED against current `Honua.Postgres` behavior
+        # (real product/test divergence, not test bugs):
+        #   - SecureConnectionResolverSslModeTests.ResolveConnectionStringAsync_
+        #     SecretReferenceHostOrPortMismatch_ThrowsInvalidOperation expects a
+        #     host/port tamper check for secret-reference connections, but
+        #     SecureConnectionResolver.cs explicitly skips that check when
+        #     connection.SecretRef is set (see the comment at the `if
+        #     (string.IsNullOrWhiteSpace(connection.SecretRef))` guard).
+        #   - SecureConnectionDataSourceCacheTests.GetOrCreate_WithConfiguredDefaultSchema_
+        #     EmbedsSearchPathInOptions expects the secure-connection data
+        #     source cache to embed the configured `Database:Schema` into
+        #     `Options=search_path=...` the same way the default NpgsqlDataSource
+        #     does, but SecureConnectionDataSourceCache does not currently do so
+        #     — a potential multi-tenant schema-isolation gap for background/
+        #     service callers using named secure connections.
+        # Fixing product behavior is out of scope for a CI-wiring PR (#2943 is
+        # about execution, not product fixes), so this step is advisory
+        # (continue-on-error) rather than gating, keeping the failing tests
+        # VISIBLE on every PR instead of silently absent. Tracked as #2949 —
+        # promote this step to blocking once that issue is resolved.
+        timeout-minutes: 10
+        continue-on-error: true
+        run: |
+          dotnet build tests/dotnet/Honua.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj --no-restore --configuration Release
+          dotnet test tests/dotnet/Honua.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --logger "trx;LogFileName=postgres-security-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+      - name: Run .NET Tests (MySql Testcontainers)
+        # #2943: Honua.MySql.Tests (177 tests) exercises the read/query-only
+        # MySQL/MariaDB provider against a self-managed Testcontainers
+        # mysql:8.0.36 image — no external credentials required, gated only by
+        # HONUA_TEST_MYSQL=1 (RequiredEnvironmentFact) so a stray full-project
+        # test run never spins up Docker by accident. It was never referenced
+        # by any workflow; wire it in here so the provider gets PR coverage.
+        # Verified locally before wiring in (177/177 passed) after fixing one
+        # test-fixture bug this revival surfaced: Query_WithBboxIntersectsFilter_
+        # ReturnsSubset built its bbox WKB via a raw `ST_AsWKB(ST_GeomFromText(...,
+        # 'axis-order=long-lat'))` call that put the axis-order option on the
+        # WKT parse but not the outer ST_AsWKB serialization, so MySQL emitted
+        # SRS-native (lat-long) WKB bytes that disagreed with the canonical X/Y
+        # contract MySqlSpatialSql.GeomFromWkb expects for real filter
+        # geometries (see MySqlFeatureStoreIntegrationTests.cs) — not a product
+        # bug in Honua.MySql.
+        timeout-minutes: 15
+        env:
+          HONUA_TEST_MYSQL: '1'
+        run: |
+          dotnet build tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj --no-restore --configuration Release
+          dotnet test tests/dotnet/Honua.MySql.Tests/Honua.MySql.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --logger "trx;LogFileName=mysql-tests.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
         run: |
@@ -933,7 +1087,11 @@ jobs:
     # needed. The PR shard step composes its filter with `&Tier!=Slow` so
     # [EmulatorTest]/[ScaleTest]/[ExternalServiceTest]/[CloudTest] methods
     # in a shard's namespace stay in nightly-slow-tier.yml, and `&Tier!=Fast`
-    # so Fast tests run only once in dotnet-foundation-tests.
+    # so Fast tests run only once in dotnet-foundation-tests. Per #2943 that
+    # foundation "Run .NET Tests (Protocol Fast Tier)" step now covers all 8
+    # protocol-split projects (not just Honua.Server.Tests), so this
+    # exclusion is safe for every shard's csproj, not only the legacy
+    # Honua.Server.Tests.csproj default.
     #
     # Advisory shards (matrix.advisory==true — the #1965 rotted Features.* buckets)
     # are SKIPPED on pull_request: they are non-gating, currently always-red, and

@@ -20,10 +20,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 365,
-      "provingTestCount": 947,
+      "entryCount": 364,
+      "provingTestCount": 944,
       "maturity": {
-        "implemented": 365
+        "implemented": 364
       },
       "noSurface": null,
       "cite": [],
@@ -118,16 +118,12 @@
       "displayName": "Spec Apply Execution",
       "category": "AI",
       "edition": "Pro",
-      "entryCount": 0,
-      "provingTestCount": 0,
-      "maturity": {},
-      "noSurface": {
-        "capability": "ai.spec-apply",
-        "reasonCode": "sdk-only",
-        "reason": "Spec-apply execution is invoked via MCP tool call and internal job submission, not a distinct catalogued HTTP route in this slice.",
-        "category": "Ai",
-        "edition": "Pro"
+      "entryCount": 1,
+      "provingTestCount": 18,
+      "maturity": {
+        "implemented": 1
       },
+      "noSurface": null,
       "cite": [],
       "parity": [],
       "esriAssess": [],
@@ -139,10 +135,10 @@
       "displayName": "Spec Artifact Retrieval",
       "category": "AI",
       "edition": "Community",
-      "entryCount": 5,
-      "provingTestCount": 36,
+      "entryCount": 4,
+      "provingTestCount": 18,
       "maturity": {
-        "implemented": 5
+        "implemented": 4
       },
       "noSurface": null,
       "cite": [],
@@ -156,16 +152,12 @@
       "displayName": "AI Workflow and Content Generation",
       "category": "AI",
       "edition": "Pro",
-      "entryCount": 0,
-      "provingTestCount": 0,
-      "maturity": {},
-      "noSurface": {
-        "capability": "ai.workflow-generation",
-        "reasonCode": "sdk-only",
-        "reason": "Workflow/content generation is invoked via MCP tool call, not a distinct catalogued HTTP route in this slice.",
-        "category": "Ai",
-        "edition": "Pro"
+      "entryCount": 1,
+      "provingTestCount": 3,
+      "maturity": {
+        "implemented": 1
       },
+      "noSurface": null,
       "cite": [],
       "parity": [],
       "esriAssess": [],
@@ -653,7 +645,7 @@
       "category": "Discovery",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 11,
+      "provingTestCount": 13,
       "maturity": {
         "implemented": 2
       },
@@ -674,8 +666,8 @@
       "maturity": {},
       "noSurface": {
         "capability": "dr.backup-automation",
-        "reasonCode": "ops-background-job",
-        "reason": "Scheduled backup automation is an operational background job, not an HTTP route.",
+        "reasonCode": "infra-owned",
+        "reason": "Honua Server is stateless and runs no backup automation of its own; base backups/WAL archiving are owned by the deployment's infrastructure layer. honua-terraform parameterizes managed-database backups (for example RDS automated backups/snapshots and multi-AZ) and documents the backup/restore drill procedure. A bring-your-own-database deployment delegates backup automation entirely to the customer's managed database. No server-side background job or HTTP route performs backups; see docs/guides/deploy/backup-and-restore.md in this repo for the server-side operator guidance that exists today.",
         "category": "DisasterRecovery",
         "edition": "Enterprise"
       },
@@ -695,8 +687,8 @@
       "maturity": {},
       "noSurface": {
         "capability": "dr.cache-backup",
-        "reasonCode": "ops-background-job",
-        "reason": "Cache-state backup/restore is an operational background job, not an HTTP route.",
+        "reasonCode": "infra-owned",
+        "reason": "There is no cache-state backup/restore feature in this server today (verified: no producer ever records a Redis-snapshot backup; the legacy BackupKind.RedisSnapshot enum value was removed as dead code in #2946). Redis persistence (RDB/AOF) and any cache backup/restore is an infrastructure-layer concern the deployment owns, not a server capability.",
         "category": "DisasterRecovery",
         "edition": "Enterprise"
       },
@@ -716,8 +708,8 @@
       "maturity": {},
       "noSurface": {
         "capability": "dr.failover",
-        "reasonCode": "ops-background-job",
-        "reason": "Failover playbooks are operational health-check-driven automation, not an HTTP route.",
+        "reasonCode": "infra-owned",
+        "reason": "Honua Server does not evaluate or trigger failover; promoting a standby and cutting over connections is owned by the deployment's infrastructure/managed-database layer (for example RDS Multi-AZ automated failover), with the drill procedure documented in honua-terraform. A bring-your-own-database deployment delegates failover entirely to the customer's managed database. The Honua.Core FailoverDecisionEvaluator was a pure, unit-tested but uncalled evaluator with no consumer anywhere in the codebase; it was removed as dead code in #2946 rather than being (falsely) counted as the surface behind this key.",
         "category": "DisasterRecovery",
         "edition": "Enterprise"
       },
@@ -737,8 +729,8 @@
       "maturity": {},
       "noSurface": {
         "capability": "dr.rto-rpo-reporting",
-        "reasonCode": "ops-background-job",
-        "reason": "RTO/RPO objective tracking is a reporting computation surfaced through the operational status surface (ops.observability), not a distinct route.",
+        "reasonCode": "infra-owned",
+        "reason": "Honua Server computes no RTO/RPO posture; recovery-point/recovery-time evidence comes from the infrastructure layer's backup/restore and failover drills, captured against honua-terraform's dr-evidence-template.json schema. A bring-your-own-database deployment's RTO/RPO is defined by the customer's managed database, not by this server. The Honua.Core RecoveryReadinessEvaluator was a pure, unit-tested but uncalled evaluator with no consumer anywhere in the codebase; it was removed as dead code in #2946 rather than being (falsely) counted as the surface behind this key.",
         "category": "DisasterRecovery",
         "edition": "Enterprise"
       },
@@ -1127,7 +1119,7 @@
       "category": "Ops",
       "edition": "Community",
       "entryCount": 15,
-      "provingTestCount": 54,
+      "provingTestCount": 55,
       "maturity": {
         "implemented": 15
       },
@@ -1284,7 +1276,7 @@
       "noSurface": {
         "capability": "raster.cloud-storage-config",
         "reasonCode": "config-flag",
-        "reason": "Cloud storage connection configuration is an admin setting under raster.cloud-cog-serving, not a distinct route.",
+        "reason": "Cloud storage provider selection (AWS S3 / Azure Blob) is process-startup dependency-injection wiring driven by configuration/environment variables (for example HONUA_STORAGE_PROVIDER; see FileStorageServiceCollectionExtensions.AddCloudFileStorage), not a request-time HTTP route. Verified: no LicenseGate call checks this entitlement key anywhere in the codebase. Paid-tier enforcement for cloud-served COG/raster delivery happens at request time through the distinct raster.cloud-cog-serving entitlement gate (CogTileResolver); raster.cloud-storage-config exists only as a descriptive FeatureCatalog entry today, not an enforced gate.",
         "category": "Raster",
         "edition": "Pro"
       },
@@ -1899,7 +1891,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 12,
-      "provingTestCount": 79,
+      "provingTestCount": 81,
       "maturity": {
         "implemented": 12
       },
@@ -1965,7 +1957,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 109,
+      "provingTestCount": 110,
       "maturity": {
         "implemented": 2
       },

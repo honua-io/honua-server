@@ -24,8 +24,7 @@ public sealed record BackupRecord(
 {
     /// <summary>
     /// Returns true when this record represents a PostgreSQL artifact that protects
-    /// committed data — a base backup or an archived WAL segment. Redis snapshots warm a
-    /// cache and do not extend the restorable point, so they are excluded.
+    /// committed data — a base backup or an archived WAL segment.
     /// </summary>
     public bool IsDataProtecting
         => Kind is BackupKind.PostgresBase or BackupKind.PostgresWal;
