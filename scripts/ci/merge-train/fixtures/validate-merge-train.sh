@@ -401,6 +401,55 @@ export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"tr
 set +e; train_restore_post_land; rc_restart_admission=$?; set -e
 assert_eq "pre-CAS restart: admission-failure cleanup completes" "${rc_restart_admission}" "4"
 assert_contains "pre-CAS restart: admission-failure label cleared" "$(cat "${LABEL_CLEAR_RECORD}")" "706"
+assert_contains "pre-CAS orchestrator: cleanup returns to select at observed trunk" "$(cat "${TRAIN_DIR}/train.sh")" \
+  '_write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "select" "" 0 0 null'
+
+# The server may accept a push even when the client reports nonzero. Refetching
+# origin must recognize the exact batch and continue without pre-CAS cleanup.
+git fetch -q origin trunk
+AMBIG_BASE="$(git rev-parse origin/trunk)"
+git checkout -q -B push-ambiguous origin/trunk
+echo "accepted despite client error" >> push-ambiguous.txt; git add -A; git commit -qm "ambiguous accepted batch"
+ambig_sha="$(git rev-parse HEAD)"
+: >"${INC}"; printf '707\t%s\n' "${ambig_sha}" >>"${INC}"
+__push_accept_then_error() {
+  git -C "${WORK}" push origin "$1:$2" >/dev/null
+  return 42
+}
+__land_info_ambiguous_merged() { printf '%s\tMERGED\n' "${ambig_sha}"; }
+export WORK ambig_sha
+export -f __push_accept_then_error __land_info_ambiguous_merged
+export TRAIN_LAND_PUSH_CMD=__push_accept_then_error
+export TRAIN_LAND_PR_INFO_FOR=__land_info_ambiguous_merged
+TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/ambig-finalized" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/ambig-advanced" TRAIN_LAND_PENDING_FILE="${SCRATCH}/ambig-pending" \
+  TRAIN_APPLY=1 train_land push-ambiguous "${AMBIG_BASE}" "${INC}"; rc_ambig=$?
+assert_eq "push ambiguity: server-accepted/client-nonzero lands" "${rc_ambig}" "0"
+git fetch -q origin trunk
+assert_eq "push ambiguity: origin confirms exact accepted batch" "$(git rev-parse origin/trunk)" "${ambig_sha}"
+assert_contains "push ambiguity: member finalizes only after origin proof" "$(cat "${SCRATCH}/ambig-finalized")" "707"
+unset TRAIN_LAND_PUSH_CMD TRAIN_LAND_PR_INFO_FOR
+
+# Crash-state `land` plus trunk descendant means the batch did land and another
+# authority advanced later; recover observation-only rather than pre-CAS cleanup.
+git push -q origin push-ambiguous:refs/heads/train/batch/descendant/1
+git checkout -q -B descendant-after-batch origin/trunk
+echo "later trunk commit" >> later-trunk.txt; git add -A; git commit -qm "later trunk advance"
+descendant_sha="$(git rev-parse HEAD)"
+git push -q origin HEAD:trunk
+admitted_descendant=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/descendant/1\",\"trunk_base\":\"${AMBIG_BASE}\",\"included\":[708],\"included_heads\":[{\"number\":708,\"head\":\"${admitted_descendant}\"}],\"batch_sha\":\"${ambig_sha}\",\"phase\":\"land\"}}"$'\n```'
+__land_info_descendant_closed() { printf '%s\tCLOSED\n' "${admitted_descendant}"; }
+export admitted_descendant
+export -f __land_info_descendant_closed
+export TRAIN_LAND_PR_INFO_FOR=__land_info_descendant_closed
+TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/desc-finalized" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/desc-advanced" TRAIN_LAND_PENDING_FILE="${SCRATCH}/desc-pending"
+export TRAIN_LAND_FINALIZED_FILE TRAIN_LAND_ADVANCED_FILE TRAIN_LAND_PENDING_FILE
+train_restore_post_land; rc_descendant=$?
+assert_eq "land restart descendant: recognized as already landed" "${rc_descendant}" "0"
+git fetch -q origin trunk
+assert_eq "land restart descendant: observation does not move trunk" "$(git rev-parse origin/trunk)" "${descendant_sha}"
+assert_contains "land restart descendant: member bookkeeping reconciled" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" "708"
+unset TRAIN_LAND_PR_INFO_FOR TRAIN_STATE_BODY_OVERRIDE
 
 # A PR can advance after admission while the immutable batch is being pushed.
 # The exact batch SHA still lands, but the advanced PR must remain unfinalized.

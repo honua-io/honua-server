@@ -279,7 +279,11 @@ main() {
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     local post_land_rc=1
     if train_restore_post_land; then post_land_rc=0; else post_land_rc=$?; fi
-    if [[ "${post_land_rc}" == "0" || "${post_land_rc}" == "3" || "${post_land_rc}" == "4" ]]; then
+    if [[ "${post_land_rc}" == "4" ]]; then
+      _write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "select" "" 0 0 null
+      train_notice "completed durable pre-land cleanup; returning to selection without recording a landing"
+      return 0
+    elif [[ "${post_land_rc}" == "0" || "${post_land_rc}" == "3" ]]; then
       local recovered_phase=done
       if [[ "${post_land_rc}" == "3" ]]; then
         recovered_phase="${TRAIN_POST_LAND_RECOVERY_PHASE:-post-land-finalize}"

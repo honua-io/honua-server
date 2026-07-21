@@ -101,20 +101,25 @@ train_restore_post_land() {
   TRAIN_POST_LAND_TRUNK_BASE="${trunk}"
   TRAIN_POST_LAND_INCLUDED="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${state}")"
   export TRAIN_POST_LAND_BATCH TRAIN_POST_LAND_BATCH_SHA TRAIN_POST_LAND_TRUNK_BASE TRAIN_POST_LAND_INCLUDED
-  if [[ "${phase}" == "pre-land-cleanup" || ( "${phase}" == "land" && "${current}" != "${batch_sha}" ) ]]; then
+  local batch_is_ancestor=0 observed_trunk="${current}"
+  git -C "${TRAIN_REPO_ROOT}" merge-base --is-ancestor "${batch_sha}" "${current}" && batch_is_ancestor=1
+  if [[ "${phase}" == "pre-land-cleanup" || ( "${phase}" == "land" && "${current}" != "${batch_sha}" && "${batch_is_ancestor}" != "1" ) ]]; then
     TRAIN_POST_LAND_RECOVERY_PHASE=pre-land-cleanup
-    export TRAIN_POST_LAND_RECOVERY_PHASE
+    TRAIN_POST_LAND_OBSERVED_TRUNK="${current}"
+    export TRAIN_POST_LAND_RECOVERY_PHASE TRAIN_POST_LAND_OBSERVED_TRUNK
     train_cleanup_deferred_members "${TRAIN_INCLUDED_FILE}"
     [[ -s "${TRAIN_LAND_PENDING_FILE}" ]] && return 3
     return 4
   fi
-  [[ "${current}" == "${batch_sha}" ]] || return 2
+  [[ "${current}" == "${batch_sha}" || "${batch_is_ancestor}" == "1" ]] || return 2
   TRAIN_POST_LAND_RECOVERY_PHASE=post-land-finalize
   export TRAIN_POST_LAND_RECOVERY_PHASE
   TRAIN_LANDED_BATCH_SHA="${batch_sha}"
   train_finalize_landed_members "${TRAIN_INCLUDED_FILE}"
   git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" || return 2
-  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${batch_sha}" ]] || return 2
+  [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${observed_trunk}" ]] || return 2
+  TRAIN_POST_LAND_OBSERVED_TRUNK="${observed_trunk}"
+  export TRAIN_POST_LAND_OBSERVED_TRUNK
   [[ -s "${TRAIN_LAND_PENDING_FILE}" ]] && return 3
   return 0
 }
@@ -124,6 +129,8 @@ train_restore_post_land() {
 # landing, and 1 on a pre-push error. Post-push finalization never replays trunk.
 train_land() {
   local batch="$1" trunk_at_assembly="$2" included_file="$3"
+  local batch_sha
+  batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${batch}")" || return 1
   train_prepare_land_journals "${included_file}"
 
   # Re-attest mutable admission before touching trunk. This reduces wasted work;
@@ -154,14 +161,36 @@ train_land() {
   # Plain FF push is the atomic landing boundary. Never force or rebuild here.
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"
-  elif ! git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}"; then
-    train_warn "FF push rejected (trunk moved in race window); re-assemble"
-    TRAIN_LAND_PRE_CAS_DEFERRED=1
-    export TRAIN_LAND_PRE_CAS_DEFERRED
-    train_cleanup_deferred_members "${included_file}"
-    return 10
+  else
+    local push_rc=0 pushed_trunk=""
+    if [[ -n "${TRAIN_LAND_PUSH_CMD:-}" ]]; then
+      "${TRAIN_LAND_PUSH_CMD}" "${batch}" "${TRAIN_BASE_BRANCH}" || push_rc=$?
+    else
+      git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${TRAIN_BASE_BRANCH}" || push_rc=$?
+    fi
+    if [[ "${push_rc}" != "0" ]]; then
+      # A transport/client error can occur after the server accepted the update.
+      # Never roll back durable land intent until origin proves the batch absent.
+      if ! git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"; then
+        train_warn "push result ambiguous and origin unavailable; retaining durable land intent"
+        return 11
+      fi
+      pushed_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" || return 11
+      if [[ "${pushed_trunk}" == "${batch_sha}" ]]; then
+        train_warn "push client returned ${push_rc}, but origin confirms exact batch; continuing post-land reconciliation"
+      elif git -C "${TRAIN_REPO_ROOT}" merge-base --is-ancestor "${batch_sha}" "${pushed_trunk}"; then
+        train_warn "push client returned ${push_rc} and origin advanced beyond the accepted batch; retaining durable land intent"
+        return 11
+      else
+        train_warn "FF push rejected and origin proves the batch absent; re-assemble"
+        TRAIN_LAND_PRE_CAS_DEFERRED=1
+        export TRAIN_LAND_PRE_CAS_DEFERRED
+        train_cleanup_deferred_members "${included_file}"
+        return 10
+      fi
+    fi
   fi
-  TRAIN_LANDED_BATCH_SHA="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${batch}")"
+  TRAIN_LANDED_BATCH_SHA="${batch_sha}"
   export TRAIN_LANDED_BATCH_SHA
   git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
   [[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" == "${TRAIN_LANDED_BATCH_SHA}" ]] || return 1
