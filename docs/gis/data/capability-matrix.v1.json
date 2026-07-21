@@ -318,7 +318,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 5,
       "maturity": {
         "implemented": 1
       },
@@ -352,7 +352,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 3,
+      "provingTestCount": 4,
       "maturity": {
         "implemented": 1
       },
@@ -1438,7 +1438,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 28,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 2
       },
