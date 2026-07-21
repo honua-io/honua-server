@@ -87,7 +87,7 @@ train_finalize_landed_members() {
 # Recover a crash after the durable land intent was written. Returns 0 when all
 # members reconcile, 1 when the push never occurred, 2 on mismatch, 3 pending.
 train_restore_post_land() {
-  local state phase batch batch_sha trunk current remote_batch
+  local state phase batch batch_sha trunk current
   state="$(train_state_read 2>/dev/null || echo '')"
   [[ -n "${state}" ]] || return 1
   phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
@@ -99,10 +99,12 @@ train_restore_post_land() {
   jq -e '.active_batch.included_heads | type == "array" and length > 0 and
     all(.[]; (.number|type)=="number" and (.head|type)=="string" and (.head|test("^[0-9a-fA-F]{40}$"))) and
     ([.[].number] | unique | length) == length' <<<"${state}" >/dev/null || return 2
-  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" "${batch}" || return 2
+  # The staging ref is mutable bookkeeping and may be deleted or rewritten
+  # after the trunk CAS. Fetching trunk materializes batch_sha whenever the
+  # durable batch commit is still provably in trunk's history.
+  git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" || return 2
   current="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")" || return 2
-  remote_batch="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${batch}")" || return 2
-  [[ "${remote_batch}" == "${batch_sha}" ]] || return 2
+  git -C "${TRAIN_REPO_ROOT}" cat-file -e "${batch_sha}^{commit}" 2>/dev/null || return 2
   jq -r '.active_batch.included_heads[] | [.number,.head] | @tsv' <<<"${state}" >"${TRAIN_INCLUDED_FILE}"
   train_prepare_land_journals "${TRAIN_INCLUDED_FILE}"
   TRAIN_POST_LAND_BATCH="${batch}"

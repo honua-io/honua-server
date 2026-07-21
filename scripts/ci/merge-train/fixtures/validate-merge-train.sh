@@ -485,6 +485,8 @@ __land_info_descendant_closed() { printf '%s\tCLOSED\n' "${admitted_descendant}"
 export admitted_descendant
 export -f __land_info_descendant_closed
 export TRAIN_LAND_PR_INFO_FOR=__land_info_descendant_closed
+# The staging ref is cleanup-only after CAS and may already be deleted.
+git push -q origin :refs/heads/train/batch/descendant/1
 TRAIN_LAND_FINALIZED_FILE="${SCRATCH}/desc-finalized" TRAIN_LAND_ADVANCED_FILE="${SCRATCH}/desc-advanced" TRAIN_LAND_PENDING_FILE="${SCRATCH}/desc-pending"
 export TRAIN_LAND_FINALIZED_FILE TRAIN_LAND_ADVANCED_FILE TRAIN_LAND_PENDING_FILE
 train_restore_post_land; rc_descendant=$?
@@ -492,6 +494,9 @@ assert_eq "land restart descendant: recognized as already landed" "${rc_descenda
 git fetch -q origin trunk
 assert_eq "land restart descendant: observation does not move trunk" "$(git rev-parse origin/trunk)" "${descendant_sha}"
 assert_contains "land restart descendant: member bookkeeping reconciled" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" "708"
+git ls-remote --exit-code --heads origin refs/heads/train/batch/descendant/1 >/dev/null 2>&1 \
+  && bad "land restart descendant: deleted staging ref unexpectedly exists" \
+  || ok "land restart descendant: deleted staging ref is not required"
 unset TRAIN_LAND_PR_INFO_FOR TRAIN_STATE_BODY_OVERRIDE
 
 # A PR can advance after admission while the immutable batch is being pushed.
@@ -543,6 +548,9 @@ restart_sha="$(git rev-parse HEAD)"
 restart_base="${close_sha}"
 git push -q origin HEAD:refs/heads/train/batch/restart/1
 git push -q origin HEAD:trunk
+# A cleanup/reuse race may rewrite the mutable staging ref after the accepted
+# CAS. Durable batch_sha plus trunk ancestry remains the only recovery proof.
+git push -q --force origin "${restart_base}":refs/heads/train/batch/restart/1
 admitted_restart=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export TRAIN_STATE_ISSUE_OVERRIDE=1
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n'"{\"active_batch\":{\"branch\":\"train/batch/restart/1\",\"trunk_base\":\"${restart_base}\",\"included\":[705],\"included_heads\":[{\"number\":705,\"head\":\"${admitted_restart}\"}],\"batch_sha\":\"${restart_sha}\",\"phase\":\"land\"}}"$'\n```'
@@ -557,6 +565,8 @@ train_restore_post_land; restart_rc=$?
 assert_eq "post-land restart: durable land intent recovers" "${restart_rc}" "0"
 assert_contains "post-land restart: exact member finalized from durable SHA" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" $'705\t'"${admitted_restart}"
 assert_contains "post-land restart: exact CLOSED member is terminal" "$(cat "${TRAIN_LAND_FINALIZED_FILE}")" "CLOSED"
+assert_eq "post-land restart: rewritten staging ref is ignored" \
+  "$(git ls-remote origin refs/heads/train/batch/restart/1 | cut -f1)" "${restart_base}"
 git fetch -q origin trunk
 assert_eq "post-land restart: no post-CAS trunk movement" "$(git rev-parse origin/trunk)" "${restart_sha}"
 
