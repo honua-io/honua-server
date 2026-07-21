@@ -71,8 +71,11 @@ train_restore_retry_members() {
 # advance the durable phase without changing the validated batch identity.
 _train_resume_persist_request_phase() {
   local state="$1" kind="$2" request_phase="$3" body updated
-  updated="$(jq -c --arg phase "${kind}-retry-${request_phase}" \
-    '.active_batch.phase = $phase' <<<"${state}")" || return 1
+  updated="$(jq -c --arg phase "${kind}-retry-${request_phase}" --arg kind "${kind}" \
+    '.active_batch.phase = $phase
+     | if $kind == "timeout" and ($phase | endswith("-accepted")) then
+         .active_batch.timeout_reruns_total = ((.active_batch.timeout_reruns_total // 0) + 1)
+       else . end' <<<"${state}")" || return 1
   body="$(mktemp)"
   printf 'Machine-managed state for the optimistic batch merge train. Do not edit by hand.\n\n```json\n%s\n```\n' \
     "${updated}" >"${body}"
@@ -135,7 +138,11 @@ train_restore_retry_intent() {
       [[ "${send_rc}" == "0" || "${send_rc}" == "4" ]] || return 4
     fi
     _train_resume_persist_request_phase "${state}" "${kind}" accepted || return 4
-    state="$(jq -c --arg phase "${kind}-retry-accepted" '.active_batch.phase = $phase' <<<"${state}")"
+    state="$(jq -c --arg phase "${kind}-retry-accepted" --arg kind "${kind}" \
+      '.active_batch.phase = $phase
+       | if $kind == "timeout" then
+           .active_batch.timeout_reruns_total = ((.active_batch.timeout_reruns_total // 0) + 1)
+         else . end' <<<"${state}")"
   fi
 
   TRAIN_RERUN_KIND="${kind}"

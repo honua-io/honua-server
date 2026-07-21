@@ -85,6 +85,31 @@ train_wait_for_new_run_attempt 123 1 || fail "new attempt was not observed throu
 [[ "$(cat "${sequence_calls}")" == "4" ]] || fail "old completed attempt was accepted as retry evidence"
 pass "completed(old) to queued(new) to completed(new)"
 
+# Discovery can temporarily expose a concurrent push run, a non-dispatch run,
+# and the stale old head before the exact dispatched batch tip becomes visible.
+printf '0' >"${sequence_calls}"
+now_value=100
+sleep() { now_value=$((now_value + 1)); }
+saved_gh_definition="$(declare -f gh)"
+gh() {
+  local discovery_poll
+  discovery_poll=$(( $(cat "${sequence_calls}") + 1 ))
+  printf '%s' "${discovery_poll}" >"${sequence_calls}"
+  case "${discovery_poll}" in
+    1) printf '201\ttrain/batch/abc/2\tworkflow_dispatch\toldoldold\n' ;;
+    2) printf '202\ttrain/batch/abc/2\tpush\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n' ;;
+    *) printf '203\ttrain/batch/abc/2\tworkflow_dispatch\tcccccccccccccccccccccccccccccccccccccccc\n204\ttrain/batch/abc/2\tworkflow_dispatch\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n' ;;
+  esac
+}
+export TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS=10 TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS=1
+discovered="$(train_discover_dispatched_run train/batch/abc/2 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb '200')" \
+  || fail "exact dispatched batch run was not discovered"
+[[ "${discovered}" == "204" ]] || fail "discovery accepted stale head, wrong event, or concurrent run"
+unset TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS
+eval "${saved_gh_definition}"
+sleep() { :; }
+pass "smart-CI discovery requires exact workflow_dispatch head"
+
 # Cancellation after persisted intent is idempotent: resume does not issue a
 # second rerun and reconciles by observing the newer attempt.
 : >"${record}"
@@ -301,14 +326,15 @@ train_classify_retry_candidate 123 0 0 'Server Tests (OData Core)' || rc=$?
 [[ "${rc}" == "0" && "${TRAIN_RETRY_KIND}" == "flake" ]] || fail "main policy did not fall through to known flake"
 pass "main-loop classifier behavior"
 
-# End-to-end restarted main: source the production orchestrator, make selection
-# fatal if reached, and prove startup consumes retry intent first without any
-# workflow dispatch or duplicate rerun.
+# End-to-end restarted main: controller A already consumed one timeout retry,
+# then run B accepted its own retry and controller B restarted. Prove startup
+# restores cumulative telemetry while consuming B without dispatch or duplicate
+# rerun.
 export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
 train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
 export TRAIN_STATE_ISSUE_OVERRIDE=1
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"timeout_reruns_total":2,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_FETCHER=resume_fetcher
 train_select() { fail "restarted main incorrectly entered selection"; }
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
@@ -341,7 +367,8 @@ grep -Fqx 'gh pr merge 101 --merge' "${record}" || fail "resumed SUCCESS did not
 grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || fail "resumed SUCCESS did not remove the landing label"
 [[ "$(jq -r '.outcome' "${fixture_metrics}")" == "landed" ]] || fail "resumed SUCCESS did not emit landed metrics"
 [[ "$(jq -r '.counts.landed' "${fixture_metrics}")" == "1" ]] || fail "resumed SUCCESS metrics lost reconstructed membership"
-pass "end-to-end resumed SUCCESS lands exact members and emits metrics"
+[[ "$(jq -r '.counts.timeout_reruns' "${fixture_metrics}")" == "2" ]] || fail "controller B restart lost cumulative A-to-B timeout telemetry"
+pass "end-to-end resumed SUCCESS restores cross-controller timeout telemetry"
 
 # A resumed failed attempt must retain the original run id and trunk-base
 # context through timeout precedence and attribution. It must not dispatch a
@@ -387,6 +414,7 @@ pass "end-to-end resumed FAILURE preserves run/base context through attribution"
 # which gets a new budget and request identity; restarting B preserves its own
 # accepted request and never sends it twice.
 timeout_reruns=1
+timeout_reruns_total=1
 TRAIN_RERUN_KIND=timeout
 TRAIN_RERUN_BASE_ATTEMPT=7
 train_metric_set timeout_reruns 1
@@ -396,9 +424,10 @@ train_reset_rerun_state_for_fresh_run
   || fail "fresh attribution run inherited run A retry state"
 [[ ! -s "${TRAIN_RUN_ID_FILE}" ]] || fail "fresh run transition retained run A id"
 [[ "$(train_metric_get timeout_reruns 0)" == "1" ]] || fail "fresh run reset decremented cumulative retry telemetry"
-fresh_state="$(train_state_render train/batch/abc/2 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 101 smart-ci '' 0 0 null "${timeout_reruns}" "${TRAIN_RERUN_KIND}" null)"
+fresh_state="$(train_state_render train/batch/abc/2 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 101 smart-ci '' 0 0 null "${timeout_reruns}" "${TRAIN_RERUN_KIND}" null "${timeout_reruns_total}")"
 fresh_state="$(awk '/^```json/{on=1;next}/^```/{if(on)exit}on' <<<"${fresh_state}")"
 jq -e '.active_batch.run_id == null and .active_batch.timeout_reruns == 0
+  and .active_batch.timeout_reruns_total == 1
   and .active_batch.rerun_kind == null and .active_batch.rerun_base_attempt == null' \
   >/dev/null <<<"${fresh_state}" || fail "fresh run state persisted stale run A policy identity"
 
@@ -423,6 +452,7 @@ train_classify_retry_candidate 222 "${timeout_reruns}" 0 'Server Tests (OData Co
 [[ "$(grep -c '^request 222$' "${record}")" == "1" ]] || fail "fresh run B did not request exactly one retry"
 grep -Fq '"phase": "timeout-retry-accepted"' "${TRAIN_WORK}/state.md" || fail "fresh run B did not persist accepted state"
 [[ "$(train_metric_get timeout_reruns 0)" == "2" ]] || fail "run B acceptance did not increment cumulative retry telemetry"
+[[ "${timeout_reruns_total}" == "2" ]] || fail "run B acceptance did not persist cumulative retry telemetry"
 
 : >"${record}"
 export TRAIN_RERUN_RESUME_STATE_JSON='{"active_batch":{"run_id":222,"phase":"timeout-retry-accepted","rerun_kind":"timeout","rerun_base_attempt":1}}'

@@ -411,7 +411,7 @@ main() {
   # --- smart-ci (skipped on the all-green fast-path) -------------------------
   train_group smart-ci "compute shard subset for the batch's cumulative diff"
   train_step_begin smart-ci
-  local shard_descriptor gate fwdfix=0 flake_reruns=0 timeout_reruns=0
+  local shard_descriptor gate fwdfix=0 flake_reruns=0 timeout_reruns=0 timeout_reruns_total=0
   if [[ "${all_green}" == "1" ]]; then
     shard_descriptor='{"reason":"direct-merge-all-green","run_all":false,"shards":[]}'
     train_metric_set direct_merge 1
@@ -432,7 +432,7 @@ main() {
     # Restore the existing batch directly into the common CI-gate loop. The
     # startup helper already waited for attempt > baseline and validated the
     # Actions run, batch branch, and trunk CAS base.
-    local batch trunk_sha trunk_sha7 included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns
+    local batch trunk_sha trunk_sha7 included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns timeout_reruns_total
     batch="$(jq -r '.active_batch.branch' <<<"${resume_state}")"
     trunk_sha="$(jq -r '.active_batch.trunk_base' <<<"${resume_state}")"
     trunk_sha7="${trunk_sha:0:7}"
@@ -441,6 +441,7 @@ main() {
     fwdfix="$(jq -r '.active_batch.fwdfix_attempts // 0' <<<"${resume_state}")"
     flake_reruns="$(jq -r '.active_batch.flake_reruns // 0' <<<"${resume_state}")"
     timeout_reruns="$(jq -r '.active_batch.timeout_reruns // 0' <<<"${resume_state}")"
+    timeout_reruns_total="$(jq -r '.active_batch.timeout_reruns_total // .active_batch.timeout_reruns // 0' <<<"${resume_state}")"
     gate="$(jq -r '.resume_gate' <<<"${resume_state}")"
     shard_descriptor="$(jq -c '.resume_shard_descriptor' <<<"${resume_state}")"
     selected="$(jq -c '.resume_selected' <<<"${resume_state}")"
@@ -451,7 +452,7 @@ main() {
     }
     train_metric_set included "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
     train_metric_set flake_reruns "${flake_reruns}"
-    train_metric_set timeout_reruns "${timeout_reruns}"
+    train_metric_set timeout_reruns "${timeout_reruns_total}"
   fi
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
@@ -752,7 +753,7 @@ main() {
 # _write_state branch trunk_base included-csv phase run_id fwdfix flake [last_landed]
 _write_state() {
   local body="${TRAIN_WORK}/state.md"
-  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" "${TRAIN_RERUN_BASE_ATTEMPT:-null}" >"${body}"
+  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" "${TRAIN_RERUN_BASE_ATTEMPT:-null}" "${timeout_reruns_total:-0}" >"${body}"
   train_state_write "${body}"
 }
 
@@ -763,7 +764,10 @@ _persist_retry_intent() {
   TRAIN_RERUN_BASE_ATTEMPT="${base_attempt}"
   if [[ "${kind}" == "timeout" ]]; then
     timeout_reruns="${next_count}"
-    [[ "${request_phase}" == "accepted" ]] && train_metric_inc timeout_reruns
+    if [[ "${request_phase}" == "accepted" ]]; then
+      timeout_reruns_total=$(( ${timeout_reruns_total:-0} + 1 ))
+      train_metric_set timeout_reruns "${timeout_reruns_total}"
+    fi
     _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry-${request_phase}" "${run_id}" "${fwdfix}" "${flake_reruns}"
   else
     flake_reruns="${next_count}"

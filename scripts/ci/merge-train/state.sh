@@ -11,6 +11,7 @@
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
 #       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry-intent|flake-retry-intent|rerun-command-failed|classify-flake|autofix|attribute|land|done",
 #       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>, "timeout_reruns": <n>,
+#       "timeout_reruns_total": <n>,
 #       "rerun_kind": "timeout|flake|null", "rerun_base_attempt": <n|null>
 #     },
 #     "config": { "max_batch": <n>, "flake_signatures": "<regex>" },
@@ -22,11 +23,12 @@
 TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
 
 # train_state_render <branch> <trunk_base> <included-csv> <phase> <run_id> \
-#   <fwdfix> <flake_reruns> <last_landed> [timeout_reruns]: emit the state body.
+#   <fwdfix> <flake_reruns> <last_landed> [timeout_reruns] [rerun_kind]
+#   [rerun_base_attempt] [timeout_reruns_total]: emit the state body.
 train_state_render() {
   local branch="$1" trunk_base="$2" included_csv="$3" phase="$4" \
         run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8" timeout_reruns="${9:-0}" \
-        rerun_kind="${10:-}" rerun_base_attempt="${11:-null}"
+        rerun_kind="${10:-}" rerun_base_attempt="${11:-null}" timeout_reruns_total="${12:-${9:-0}}"
 
   local included_json
   if [[ -z "${included_csv}" ]]; then
@@ -48,6 +50,7 @@ train_state_render() {
     --argjson fwd "${fwdfix:-0}" \
     --argjson fr "${flake_reruns:-0}" \
     --argjson tr "${timeout_reruns:-0}" \
+    --argjson trt "${timeout_reruns_total:-0}" \
     --arg rk "${rerun_kind}" \
     --argjson rba "${rerun_base_attempt:-null}" \
     --argjson mb "${MAX_BATCH}" \
@@ -57,6 +60,7 @@ train_state_render() {
       active_batch: {
         branch: $branch, trunk_base: $tb, included: $inc, phase: $phase,
         run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr, timeout_reruns: $tr,
+        timeout_reruns_total: $trt,
         rerun_kind: (if ($rk|length) > 0 then $rk else null end),
         rerun_base_attempt: $rba
       },
