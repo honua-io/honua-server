@@ -1267,6 +1267,11 @@ app.UseGlobalExceptionHandling();
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
 
+// A configured deployment profile is a fail-closed HTTP surface allowlist backed by the
+// drift-gated feature catalog. With no profile configured this middleware is inert.
+Honua.Server.Features.Capabilities.DeploymentCapabilityProfileApplicationBuilderExtensions
+    .UseDeploymentCapabilityProfile(app);
+
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
 
