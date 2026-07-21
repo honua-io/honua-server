@@ -51,15 +51,15 @@ dry-run.
    the shard subset; (live) push the branch + `gh workflow run ci.yml`, poll,
    read the **CI Gate** job conclusion. The batch is a BRANCH, so its CI keys on
    `ci-<ref>` — a DISTINCT concurrency group from each member's `ci-<pr#>`, so
-   the batch run can never cancel-in-progress a member's PR run.
+   the batch run can never cancel-in-progress a member's PR run. Polling allows 110 minutes for the observed 42-55 minute shards, queueing, and one failed-job retry while remaining inside the controller's 120-minute cap.
 4. **forward-fix** — ONLY when the sole failure is the format-verify step:
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
    drift, compile/test failures) ESCALATES, never auto-patched.
-5. **classify-flake** (BEFORE attribute) — regex
+5. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
    `40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)`
    over failing-job logs. Match → a single `gh run rerun --failed` (cap 1),
-   never bisection. Reproduce twice → treat as real.
+   never bisection. Their existing optimistic merge-through policy remains separate from generic timeout handling.
 6. **attribute** — REVERSE of smart-CI routing: failing shard →
    `.paths[]` from ci-shards.json → which INCLUDED PR's diff touches those
    prefixes. 1 suspect → drop it; ≥2 → drop all; 0 → escalate the whole batch.

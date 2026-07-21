@@ -29,6 +29,8 @@ set -euo pipefail
 : "${TRAIN_REMOTE:=origin}"     # git remote.
 : "${TRAIN_FWDFIX_CAP:=2}"      # max forward-fix (format) attempts per batch.
 : "${TRAIN_FLAKE_RERUN_CAP:=1}" # max flake reruns per failing run.
+: "${TRAIN_TIMEOUT_RERUN_CAP:=1}" # max timeout-only failed-job reruns per run.
+: "${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:=6600}" # 110m inside controller's 120m cap.
 
 # Flake signature regex (classify-flake). A failing job whose log matches this
 # is treated as environmental and rerun once; reproducing twice => real. Beyond

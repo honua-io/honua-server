@@ -9,7 +9,8 @@
 # Phases (also the resume points written to the state issue before each
 # side-effecting step):
 #   select -> assemble -> smart-ci -> [forward-fix] -> [pre-existing-filter] ->
-#   [classify-flake] -> [autofix (Bedrock fix-agent + surgical re-verify)] ->
+#   [classify-timeout -> classify-flake] ->
+#   [autofix (Bedrock fix-agent + surgical re-verify)] ->
 #   [attribute -> rebuild | escalate] -> land -> done
 #
 # Roll-forward auto-fix loop (autonomous): the ci-gate eval no longer dead-ends a
@@ -40,6 +41,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/smart-ci.sh"
 # shellcheck source=forward-fix.sh
 . "${TRAIN_DIR}/forward-fix.sh"
+# shellcheck source=classify-timeout.sh
+. "${TRAIN_DIR}/classify-timeout.sh"
 # shellcheck source=classify-flake.sh
 . "${TRAIN_DIR}/classify-flake.sh"
 # shellcheck source=surgical.sh
@@ -363,7 +366,7 @@ main() {
   # --- smart-ci (skipped on the all-green fast-path) -------------------------
   train_group smart-ci "compute shard subset for the batch's cumulative diff"
   train_step_begin smart-ci
-  local shard_descriptor gate fwdfix=0 flake_reruns=0
+  local shard_descriptor gate fwdfix=0 flake_reruns=0 timeout_reruns=0
   if [[ "${all_green}" == "1" ]]; then
     shard_descriptor='{"reason":"direct-merge-all-green","run_all":false,"shards":[]}'
     train_metric_set direct_merge 1
@@ -388,7 +391,7 @@ main() {
 
   # Live-mode gate handling. Roll-forward pipeline (each step independently
   # valuable, evaluated in this order):
-  #   forward-fix(format) -> PRE-EXISTING FILTER -> classify-flake ->
+  #   forward-fix(format) -> PRE-EXISTING FILTER -> classify-timeout -> classify-flake ->
   #   [AUTOFIX (Bedrock fix-agent + surgical re-verify)] -> attribute/escalate.
   train_group ci-gate "evaluate CI Gate; forward-fix / pre-existing filter / flake / autofix / attribute"
   train_step_begin ci-gate
@@ -469,21 +472,45 @@ main() {
     # From here on, evaluate only the BATCH-INTRODUCED failing jobs.
     failing="${introduced}"
 
-    # --- classify-flake (on the batch-introduced failures) -------------------
+    # --- timeout retry (on batch-introduced failures) ------------------------
+    # Timeout/exit-124 failures get one failed-job-only rerun. A second timeout
+    # is real and deliberately bypasses known-flake merge-through.
     _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
+    local rc_ct=0
+    train_classify_timeout "${run_id}" "${timeout_reruns}" "${failing}" || rc_ct=$?
+    if [[ "${rc_ct}" == "0" ]]; then
+      timeout_reruns=$((timeout_reruns + 1))
+      train_metric_set timeout_reruns "${timeout_reruns}"
+      train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
+      if train_wait_for_run_completion "${run_id}"; then
+        gate="$(gh run view "${run_id}" --json jobs \
+          --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+      else
+        gate="TIMEOUT"
+      fi
+      continue
+    fi
+
+    # --- classify-flake (on the batch-introduced failures) -------------------
+    # A persistent generic timeout (rc_ct=2) skips this classifier, preventing
+    # a broader known-flake signature from merging it through.
     local rc_cf=0
-    train_classify_flake "${run_id}" "${flake_reruns}" || rc_cf=$?
+    if [[ "${rc_ct}" != "2" ]]; then
+      train_classify_flake "${run_id}" "${flake_reruns}" || rc_cf=$?
+    else
+      rc_cf=1
+    fi
     if [[ "${rc_cf}" == "0" ]]; then
       flake_reruns=$((flake_reruns + 1))
       train_metric_set flake_reruns "${flake_reruns}"
       train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
       # Re-poll the same run after rerun.
-      while :; do
-        local st; st="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
-        [[ "${st}" == "completed" ]] && break; sleep 30
-      done
-      gate="$(gh run view "${run_id}" --json jobs \
-        --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+      if train_wait_for_run_completion "${run_id}"; then
+        gate="$(gh run view "${run_id}" --json jobs \
+          --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+      else
+        gate="TIMEOUT"
+      fi
       continue
     elif [[ "${rc_cf}" == "2" ]]; then
       # Recognized flake persisted across the rerun => consistent environmental

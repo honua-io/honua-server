@@ -50,7 +50,7 @@ train_smart_ci_run() {
   # FAILURE and fail-closes every live batch.
   local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
-  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-3600}"
+  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS}"
   local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
   local pre_dispatch_runs baseline_rc=0 now timeout_at
 
@@ -96,25 +96,38 @@ train_smart_ci_run() {
   train_log "smart-ci run id: ${run_id}"
   echo "${run_id}" >"${TRAIN_RUN_ID_FILE:-/dev/null}"
 
-  # Poll until the CI Gate job completes.
-  timeout_at=$(( $(train_now) + poll_timeout ))
-  while :; do
-    local status conclusion
-    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
-    if [[ "${status}" == "completed" ]]; then break; fi
-    now="$(train_now)"
-    if [[ "${now}" -ge "${timeout_at}" ]]; then
-      train_err "CI run ${run_id} for ${batch} did not finish within ${poll_timeout}s"
-      echo "FAILURE"; return 0
-    fi
-    sleep "${poll_interval}"
-  done
+  # Poll until the CI Gate job completes. The 110-minute default accommodates
+  # the observed 42-55 minute shards plus runner queueing and one failed-job
+  # retry while remaining inside the workflow controller's 120-minute cap.
+  if ! train_wait_for_run_completion "${run_id}" "${poll_timeout}" "${poll_interval}"; then
+    train_err "CI run ${run_id} for ${batch} did not finish within ${poll_timeout}s"
+    echo "FAILURE"; return 0
+  fi
 
+  local conclusion
   conclusion="$(gh run view "${run_id}" --json jobs \
     --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' 2>/dev/null || echo "missing")"
   train_log "CI Gate conclusion: ${conclusion}"
   # Normalize to upper-case workflow vocabulary.
   printf '%s\n' "${conclusion}" | tr '[:lower:]' '[:upper:]'
+}
+
+# train_wait_for_run_completion <run-id> [timeout-seconds] [poll-seconds]
+# Shared by the initial batch and failed-job retries. Returns 1 on timeout so
+# callers fail closed rather than waiting past the controller budget.
+train_wait_for_run_completion() {
+  local run_id="$1"
+  local poll_timeout="${2:-${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS}}"
+  local poll_interval="${3:-${TRAIN_SMART_CI_POLL_SECONDS:-30}}"
+  local timeout_at now status
+  timeout_at=$(( $(train_now) + poll_timeout ))
+  while :; do
+    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
+    [[ "${status}" == "completed" ]] && return 0
+    now="$(train_now)"
+    [[ "${now}" -ge "${timeout_at}" ]] && return 1
+    sleep "${poll_interval}"
+  done
 }
 
 # train_failing_jobs <run-id>: emit the names of the failing jobs (live).
