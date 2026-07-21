@@ -318,7 +318,7 @@ scan_authorities() {
   # Dispatching the live-capable train is itself a merge authority regardless
   # of how train_apply is spelled or valued. Canonical locations are separately
   # allowlisted; every other executable source must be unable to wake this flow.
-  local live_dispatch='gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([^[:space:];]*/)?merge-train\.yml|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml'
+  local live_dispatch="gh[[:space:]]+workflow[[:space:]]+run[[:space:]]+([\"']?([^[:space:]\"']*/)?merge-train\.yml[\"']?|[\"']Merge[[:space:]]+Train[\"'])|gh[[:space:]]+api[^#;|&]*/actions/workflows/([^/[:space:]]*/)?merge-train\.yml/dispatches|createWorkflowDispatch[^)]*merge-train\.yml"
   local file rel source found=0 candidates reject_ansi
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -366,7 +366,12 @@ train_smart_ci_run() {
   git push "${TRAIN_REMOTE}" "${batch}:${batch}"
 }
 SH
-  printf 'gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=${mode}\n' >"${scratch}/scripts/ci/merge-train/recovery.sh"
+  cat >"${scratch}/scripts/ci/merge-train/recovery.sh" <<'SH'
+gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
+  -f train_apply=true -f max_batch="${MAX_BATCH}" -f recovery_key="${key}"
+gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches \
+  -f inputs[train_apply]=${mode}
+SH
   cat >"${scratch}/.github/workflows/read-only.yml" <<'YAML'
 jobs:
   inspect:
@@ -419,6 +424,10 @@ YAML
     'gh api --method POST repos/o/r/actions/workflows/merge-train.yml/dispatches -f inputs[train_apply]=true'
     'github.rest.actions.createWorkflowDispatch({workflow_id: "merge-train.yml", inputs: {train_apply: true}})'
     'gh workflow run merge-train.yml -f train_apply=${mode}'
+    'gh workflow run "merge-train.yml" -f train_apply=${mode}'
+    "gh workflow run 'merge-train.yml' -f train_apply=false"
+    'gh workflow run "Merge Train" -f train_apply=${mode}'
+    "gh workflow run 'Merge Train' -f train_apply=false"
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
   )
   for fixture in "${fixtures[@]}"; do
