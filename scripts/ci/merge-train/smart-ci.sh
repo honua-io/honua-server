@@ -33,6 +33,11 @@ train_smart_ci_shards() {
 train_smart_ci_run() {
   local batch="$1"
   local descriptor
+  if [[ "${batch}" != train/batch/* ]]; then
+    train_err "smart-ci refuses to push non-batch ref ${batch}"
+    echo "FAILURE"
+    return 0
+  fi
   descriptor="$(train_smart_ci_shards "${batch}")"
   train_log "smart-ci shard descriptor: ${descriptor}"
 

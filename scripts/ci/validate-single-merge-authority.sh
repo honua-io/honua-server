@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 is_allowlisted() {
   case "$1" in
-    scripts/ci/merge-train/land.sh|scripts/ci/merge-train/smart-ci.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/validate-single-merge-authority.sh)
+    scripts/ci/merge-train/land.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/validate-single-merge-authority.sh)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -19,7 +19,7 @@ is_safe_exclusion() {
   esac
 }
 
-normalized_source() {
+logical_shell_source() {
   # Remove shell comments only when # occurs outside quotes, collapse shell continuations, then
   # delimit real lines. This catches evasive wrapping without joining unrelated
   # commands later in the workflow.
@@ -39,9 +39,13 @@ normalized_source() {
     }
     { line = without_comment($0) }
     line ~ /^[[:space:]]*$/ { next }
-    line ~ /\\[[:space:]]*$/ { sub(/\\[[:space:]]*$/, "", line); printf "%s ", line; next }
-    { printf "%s ; ", line }
+    line ~ /\\[[:space:]]*$/ { sub(/\\[[:space:]]*$/, "", line); printf "%s", line; next }
+    { printf "%s\n", line }
   ' "$1"
+}
+
+normalized_source() {
+  logical_shell_source "$1" | awk 'NF { printf "%s ; ", $0 }'
 }
 
 # Canonicalize the command verb without evaluating source. Git and GitHub CLI
@@ -166,10 +170,10 @@ function_source() {
     }
     { declared = declaration($0) }
     declared == wanted && !found { found=1; depth=0 }
-    found {
+    found && !complete {
       print
       depth += brace_delta($0)
-      if (depth == 0) exit
+      if (depth == 0) complete=1
     }
   '
 }
@@ -177,7 +181,7 @@ function_source() {
 # Join only a syntactically complete shell function header with a following
 # brace-only line. This is lexical normalization; no source is evaluated.
 normalized_function_source() {
-  awk '
+  logical_shell_source "$1" | awk '
     function header(s) {
       sub(/^[[:space:]]*/, "", s)
       return s ~ /^(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(\([[:space:]]*\))?[[:space:]]*$/ &&
@@ -195,7 +199,7 @@ normalized_function_source() {
       previous = current
     }
     END { if (previous != "") print previous }
-  ' "$1"
+  '
 }
 
 # Prove the post-CAS finalizer and every same-file helper reachable from it are
@@ -242,6 +246,36 @@ scan_post_cas_call_graph() {
   return 0
 }
 
+# smart-ci may publish only an immutable train batch ref to the same remote ref.
+# Prove that narrow primitive structurally rather than allowlisting the file.
+scan_smart_ci_authority() {
+  local file="$1" body source canonical body_canonical non_push line
+  local -a pushes body_pushes
+  body="$(function_source "${file}" train_smart_ci_run)"
+  [[ -n "${body}" ]] || { echo "missing train_smart_ci_run" >&2; return 1; }
+  grep -Fq '[[ "${batch}" != train/batch/* ]]' <<<"${body}" || {
+    echo "smart-ci batch namespace guard missing" >&2; return 1;
+  }
+  source="$(normalized_source "${file}")"
+  canonical="$(canonical_cli_source <<<"${source}")"
+  body_canonical="$(canonical_cli_source <<<"${body}")"
+  mapfile -t pushes < <(grep -Ei '^git[[:space:]]+push([[:space:]]|$)' <<<"${canonical}" || true)
+  mapfile -t body_pushes < <(grep -Ei '^git[[:space:]]+push([[:space:]]|$)' <<<"${body_canonical}" || true)
+  [[ "${#pushes[@]}" == 2 && "${#body_pushes[@]}" == 2 ]] || {
+    echo "smart-ci must contain exactly two pushes inside train_smart_ci_run" >&2; return 1;
+  }
+  for line in "${pushes[@]}"; do
+    grep -Eq '^git[[:space:]]+push[[:space:]]+[^[:space:]]+[[:space:]]+\$\{batch\}:\$\{batch\}[[:space:]]*$' <<<"${line}" || {
+      echo "smart-ci push is not a batch self-ref push" >&2; return 1;
+    }
+  done
+  non_push="$(grep -Eiv '^git[[:space:]]+push([[:space:]]|$)' <<<"${canonical}" || true)"
+  source_has_forbidden_authority "${non_push}" 0 && {
+    echo "smart-ci contains another merge-capable primitive" >&2; return 1;
+  }
+  return 0
+}
+
 scan_authorities() {
   local root="$1" workflows
   workflows="${root}/.github/workflows"
@@ -266,6 +300,10 @@ scan_authorities() {
     rel="${file#${root}/}"
     is_safe_exclusion "${rel}" && continue
     is_allowlisted "${rel}" && continue
+    if [[ "${rel}" == "scripts/ci/merge-train/smart-ci.sh" ]]; then
+      scan_smart_ci_authority "${file}" || found=1
+      continue
+    fi
     source="$(normalized_source "${file}")"
     reject_ansi=0
     case "${rel}" in *.sh|*.bash|*.zsh|*.yml|*.yaml) reject_ansi=1 ;; esac
@@ -287,6 +325,14 @@ train_land_pr_info() { gh pr view "$1"; }
 train_finalize_landed_members() { train_land_pr_info "$1"; }
 train_land() { git push origin batch:trunk; }
 SH
+  cat >"${scratch}/scripts/ci/merge-train/smart-ci.sh" <<'SH'
+train_smart_ci_run() {
+  local batch="$1"
+  if [[ "${batch}" != train/batch/* ]]; then return 1; fi
+  train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
+  git push "${TRAIN_REMOTE}" "${batch}:${batch}"
+}
+SH
   cat >"${scratch}/.github/workflows/read-only.yml" <<'YAML'
 jobs:
   inspect:
@@ -296,6 +342,11 @@ jobs:
       - run: git push origin HEAD:refs/heads/automation/report-${GITHUB_RUN_ID}
 YAML
   scan_authorities "${scratch}" || { echo "safe fixture rejected" >&2; return 1; }
+
+  printf '\ngit push origin HEAD:trunk\n' >>"${scratch}/scripts/ci/merge-train/smart-ci.sh"
+  scan_authorities "${scratch}" >/dev/null 2>&1 \
+    && { echo "smart-ci trunk push escaped" >&2; return 1; }
+  sed -i '$d' "${scratch}/scripts/ci/merge-train/smart-ci.sh"
 
   local fixture n=0
   fixtures=(
@@ -336,6 +387,17 @@ YAML
     scan_authorities "${scratch}" >/dev/null 2>&1 \
       && { echo "forbidden fixture ${n} escaped" >&2; return 1; }
   done
+  n=$((n + 1))
+  cat >"${scratch}/.github/workflows/other.yml" <<'YAML'
+jobs:
+  bad:
+    steps:
+      - run: |
+          $\
+'\x67\x68' pr merge 1 --merge
+YAML
+  scan_authorities "${scratch}" >/dev/null 2>&1 \
+    && { echo "continued ANSI-C fixture escaped" >&2; return 1; }
   rm -f "${scratch}/.github/workflows/other.yml"
   cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
   function train_post_cas_writer { gh -R o/r pr merge 1 --merge; }
@@ -368,6 +430,19 @@ SH
     scan_authorities "${scratch}" >/dev/null 2>&1 \
       && { echo "post-CAS heredoc fixture escaped" >&2; return 1; }
   done
+  cat >"${scratch}/scripts/ci/merge-train/land.sh" <<'SH'
+train_finalize_landed_members() {
+  cat <\
+<EOF
+}
+EOF
+  hidden_writer
+}
+hidden_writer() { gh pr merge 1 --merge; }
+train_land() { git push origin batch:trunk; }
+SH
+  scan_authorities "${scratch}" >/dev/null 2>&1 \
+    && { echo "post-CAS continued heredoc fixture escaped" >&2; return 1; }
   for heredoc_fixture in \
     $'cat <<\\EOF\n}\nEOF' \
     $'cat <<$'"'"'EOF'"'"'\n}\nEOF'; do
@@ -380,7 +455,7 @@ SH
     scan_authorities "${scratch}" >/dev/null 2>&1 \
       && { echo "post-CAS escaped heredoc fixture escaped" >&2; return 1; }
   done
-  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 transitive, 5 heredoc"
+  echo "single-authority fixtures: ${n} forbidden, 1 safe, 1 scoped smart-ci, 1 transitive, 6 heredoc"
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then self_test; exit; fi
