@@ -303,7 +303,7 @@ train_refine_attribute_candidates() {
 # nonempty active phase fails closed rather than being overwritten by selection.
 # Returns 0=recovered, 1=no terminal recovery, 2=unknown/malformed/cleanup failure.
 train_recover_terminal_batch() {
-  local state phase branch trunk included included_count total last body pr reason state_rc=0
+  local state phase branch trunk included included_count total last body pr reason escalate=1 state_rc=0
   state="$(train_state_read 2>/dev/null)" || state_rc=$?
   [[ "${state_rc}" == "0" ]] || return 2
   [[ -n "${state}" ]] || return 1
@@ -324,6 +324,10 @@ train_recover_terminal_batch() {
     rerun-command-failed)
       reason="Failed-job rerun command failed before safe completion; manual CI correction required"
       ;;
+    trunk-moved-reassemble)
+      reason="Trunk moved before FF-CAS landing; release members for fresh reassembly"
+      escalate=0
+      ;;
     timeout-retry-requesting|timeout-retry-accepted|timeout-retry-intent|\
     flake-retry-requesting|flake-retry-accepted|flake-retry-intent)
       return 1
@@ -332,22 +336,29 @@ train_recover_terminal_batch() {
   esac
   jq -e '.active_batch.branch | type == "string" and startswith("train/batch/")' >/dev/null <<<"${state}" || return 2
   jq -e '.active_batch.trunk_base | type == "string" and test("^[0-9a-fA-F]{40}$")' >/dev/null <<<"${state}" || return 2
-  jq -e '.active_batch.run_id == null or (.active_batch.run_id | type == "number")' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.run_id == null or
+    ((.active_batch.run_id | type) == "number" and (.active_batch.run_id | floor) == .active_batch.run_id and .active_batch.run_id > 0)' >/dev/null <<<"${state}" || return 2
   jq -e '.active_batch.included | type == "array" and length > 0
     and all(.[]; type == "number" and floor == .) and (unique | length) == length' >/dev/null <<<"${state}" || return 2
+  jq -e '(.active_batch.timeout_reruns_total // 0) as $t
+    | ($t | type) == "number" and $t >= 0 and ($t | floor) == $t' >/dev/null <<<"${state}" || return 2
+  jq -e '.last_landed_trunk == null or
+    ((.last_landed_trunk | type) == "string" and (.last_landed_trunk | test("^[0-9a-fA-F]{40}$")))' >/dev/null <<<"${state}" || return 2
 
   trunk="$(jq -r '.active_batch.trunk_base' <<<"${state}")"
   included="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${state}")"
   total="$(jq -r '.active_batch.timeout_reruns_total // 0' <<<"${state}")"
   last="$(jq -r '.last_landed_trunk // "null"' <<<"${state}")"
+  body="$(mktemp)"
+  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
   for pr in $(tr ',' ' ' <<<"${included}"); do
-    train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}" || return 2
-    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" || return 2
+    if [[ "${escalate}" == "1" ]]; then
+      train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}" || { rm -f "${body}"; return 2; }
+    fi
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" || { rm -f "${body}"; return 2; }
     train_decision "TERMINAL RECOVERY #${pr}: ${reason}"
   done
 
-  body="$(mktemp)"
-  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
   train_state_write "${body}" || { rm -f "${body}"; return 2; }
   rm -f "${body}"
   train_notice "completed terminal ${phase} cleanup for batch members ${included}"
@@ -444,6 +455,7 @@ main() {
 
   if [[ -z "${included}" ]]; then
     train_annotate_warn "no PRs assembled cleanly; nothing to land"
+    _write_state "" "${trunk_sha}" "" "select" "" 0 0
     _emit_metrics "nothing-ready" "${trunk_sha}" "" ""
     _dashboard "${batch}" "${selected}" "${trunk_sha}" "" "all candidates skipped on conflict — nothing to land"
     return 0
@@ -798,6 +810,14 @@ main() {
   train_land "${batch}" "${trunk_sha}" "${TRAIN_INCLUDED_FILE}" || rc=$?
   if [[ "${rc}" == "10" ]]; then
     train_annotate_warn "land deferred: trunk moved; the next scheduled run re-assembles"
+    git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
+    local moved_trunk
+    moved_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
+    _write_state "${batch}" "${moved_trunk}" "${included}" "trunk-moved-reassemble" "$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null)" "${fwdfix}" "${flake_reruns}"
+    for pr in $(tr ',' ' ' <<<"${included}"); do
+      train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
+    done
+    _write_state "" "${moved_trunk}" "" "select" "" 0 0
     train_step_end land >/dev/null; train_endgroup
     _emit_metrics "trunk-moved-reassemble" "${trunk_sha}" "" "${shard_descriptor}"
     _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \

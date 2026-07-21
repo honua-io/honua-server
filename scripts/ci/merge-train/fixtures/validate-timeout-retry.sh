@@ -460,6 +460,29 @@ for terminal_phase in ci-incomplete rerun-command-failed; do
 done
 pass "known terminal active phases recover before selection"
 
+# Restart after an all-conflict normal exit sees the durable cleared select
+# state and may select again instead of failing on stale assemble.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[],"phase":"select","run_id":null},"last_landed_trunk":null}\n```'
+: >"${record}"
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "restart after all-conflict clear failed"
+grep -Fqx 'selection-entered' "${record}" || fail "restart after all-conflict clear did not select"
+pass "all-conflict cleared state restarts safely"
+
+# Restart after a crash anywhere in trunk-moved cleanup releases landing labels
+# without escalation, clears state, and reselects for fresh assembly.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/7","trunk_base":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","included":[101],"phase":"trunk-moved-reassemble","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns_total":0},"last_landed_trunk":null}\n```'
+: >"${record}"
+train_select() { printf 'selection-entered\n' >>"${record}"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+main || fail "restart after trunk-moved phase failed"
+grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || fail "trunk-moved restart did not release landing label"
+! grep -Fq -- "--add-label ${TRAIN_LABEL_ESCALATED}" "${record}" || fail "trunk-moved restart incorrectly escalated member"
+grep -Fq 'gh issue edit 1 --body-file' "${record}" || fail "trunk-moved restart did not clear state"
+grep -Fqx 'selection-entered' "${record}" || fail "trunk-moved restart did not reselect"
+pass "trunk-moved state restarts through release-only recovery"
+
 # Unknown nonempty active phases have no proven recovery contract and must stop
 # without overwriting state, touching labels, or entering selection.
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"forward-fix","run_id":123}}\n```'
@@ -470,6 +493,16 @@ rc=0
 main || rc=$?
 [[ "${rc}" == "1" && ! -s "${record}" ]] || fail "unknown active phase did not fail closed without mutation"
 pass "unknown active phase stops before overwrite or selection"
+
+# Validate every value needed to render cleared state before mutating labels.
+export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/9","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"ci-incomplete","run_id":123,"timeout_reruns_total":"bad"},"last_landed_trunk":"not-a-sha"}\n```'
+: >"${record}"
+train_select() { fail "malformed terminal state reached selection"; }
+unset TRAIN_CONTROLLER_DEADLINE_EPOCH
+rc=0
+main || rc=$?
+[[ "${rc}" == "1" && ! -s "${record}" ]] || fail "malformed terminal render inputs mutated labels or state"
+pass "malformed terminal render inputs fail before label mutation"
 
 export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/batch/abc/1","trunk_base":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","included":[101],"phase":"timeout-retry-accepted","run_id":123,"fwdfix_attempts":0,"flake_reruns":0,"timeout_reruns":1,"timeout_reruns_total":2,"rerun_kind":"timeout","rerun_base_attempt":1}}\n```'
 export TRAIN_RESUME_FETCHER=resume_fetcher
