@@ -132,6 +132,17 @@ public class SnowflakeFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_StacCandidateInWhere_UsesSnowflakeParameters()
+    {
+        var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(
+            BuildMapping(), new FeatureQuery { Where = "STAC_ID IN ('first', 'second')" }, ["STAC_ID"]);
+
+        Assert.Contains("\"STAC_ID\" IN (?, ?)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("->>", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(new object?[] { "first", "second" }, result.WhereParameters);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithSqlFilter_Throws()
     {
         // The shared ISqlFilterTranslator pipeline registers a PostgreSQL translator; its emitted

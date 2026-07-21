@@ -80,16 +80,6 @@ public class DatabricksFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelect_TranslatesTrimFunction_WithParameterizedComparison()
-    {
-        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { Where = "TRIM(owner) = 'acme'" });
-
-        Assert.Contains("trim(`owner`) = :f0", statement.Sql, StringComparison.Ordinal);
-        Assert.Single(statement.Parameters);
-        Assert.Equal("acme", statement.Parameters[0].Value);
-    }
-
-    [Fact]
     public void BuildSelect_WhereWithUnknownField_Throws()
     {
         // Unknown fields are a client validation error (ArgumentException -> HTTP 400),

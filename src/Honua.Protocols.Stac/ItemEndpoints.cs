@@ -6,7 +6,6 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -232,7 +231,6 @@ internal static class ItemEndpoints
         string itemId,
         HttpContext context,
         [FromServices] IFeatureReader featureReader,
-        [FromServices] IQueryProcessor queryProcessor,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         using var activity = StacTelemetry.StartActivity(
@@ -285,7 +283,6 @@ internal static class ItemEndpoints
                     resourceSrid,
                     resource,
                     itemId,
-                    queryProcessor,
                     cancellationToken).ConfigureAwait(false);
             }
             else
@@ -422,73 +419,25 @@ internal static class ItemEndpoints
         int layerSrid,
         MetadataV2Resource resource,
         string itemId,
-        IQueryProcessor queryProcessor,
         CancellationToken cancellationToken)
     {
-        var canonicalKeys = ImmutableArray.Create("stac_id", "item_id", "id");
-        foreach (var canonicalKey in canonicalKeys)
-        {
-            var field = resource.SchemaFields.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
-            if (field is null || !TryCreateItemIdLiteral(field.Type, itemId, out var literal))
-            {
-                continue;
-            }
-
-            var unifiedQuery = new UnifiedQuery
-            {
-                Filter = QueryFilter.FromExpression(new BinaryExpression(
-                    new PropertyReference(field.Name),
-                    BinaryOperator.Equal,
-                    literal)),
-                Limit = 2,
-                OutputCrs = new QueryCrs { Srid = Wgs84Srid }
-            };
-            var query = queryProcessor.ToFeatureQuery(unifiedQuery, resource) with
+        var candidates = await StacBoundItemQueryExecutor.QueryAsync(
+            featureReader,
+            storageLayerId,
+            resource,
+            new FeatureQuery
             {
                 SpatialReferenceSrid = layerSrid,
-                OutputSrid = Wgs84Srid,
-                Limit = 2
-            };
-            var result = await featureReader.QueryAsync(storageLayerId, query, cancellationToken);
-            foreach (var candidate in result.Features)
-            {
-                if (GetCanonicalItemMatchRank(candidate, itemId) is not null)
-                {
-                    return candidate;
-                }
-            }
+                OutputSrid = Wgs84Srid
+            },
+            [itemId],
+            cancellationToken).ConfigureAwait(false);
+        foreach (var candidate in candidates)
+        {
+            return candidate;
         }
 
         return null;
-    }
-
-    private static bool TryCreateItemIdLiteral(
-        MetadataV2FieldType fieldType,
-        string itemId,
-        out Literal literal)
-    {
-        switch (fieldType)
-        {
-            case MetadataV2FieldType.Integer
-                when int.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer):
-                literal = new Literal(integer, LiteralType.Number);
-                return true;
-            case MetadataV2FieldType.BigInteger
-                when long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bigInteger):
-                literal = new Literal(bigInteger, LiteralType.Number);
-                return true;
-            case MetadataV2FieldType.Double or MetadataV2FieldType.Float
-                when double.TryParse(itemId, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatingPoint):
-                literal = new Literal(floatingPoint, LiteralType.Number);
-                return true;
-            case MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Unknown:
-                literal = new Literal(itemId, LiteralType.Text);
-                return true;
-            default:
-                literal = null!;
-                return false;
-        }
     }
 
     private static async Task<Feature?> TryGetFeatureByObjectIdAsStacAsync(

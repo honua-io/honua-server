@@ -106,22 +106,6 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
         };
     }
 
-    protected override string TranslateFunction(FunctionCall function, FilterTranslationContext context)
-    {
-        if (!string.Equals(function.FunctionName, "TRIM", StringComparison.OrdinalIgnoreCase))
-        {
-            throw MySqlUnsupportedFeature.Create(
-                $"Function '{function.FunctionName}' is not supported by the MySQL/MariaDB provider.");
-        }
-
-        if (function.Arguments.Count != 1)
-        {
-            throw new ArgumentException("TRIM requires exactly one argument.", nameof(function));
-        }
-
-        return $"TRIM({TranslateExpression(function.Arguments[0], context)})";
-    }
-
     protected override string TranslateProperty(PropertyReference property, FilterTranslationContext context)
     {
         var field = context.TryGetField(property.PropertyName);

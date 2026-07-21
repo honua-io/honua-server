@@ -88,17 +88,6 @@ public class MySqlSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_TrimFunction_UsesMySqlTrimWithQuotedProperty()
-    {
-        var filter = new FunctionCall("trim", [new PropertyReference("name")]);
-
-        var result = _translator.Translate(filter, _resource);
-
-        Assert.Equal("TRIM(`name`)", result.Sql);
-        Assert.Empty(result.Parameters);
-    }
-
-    [Fact]
     public void Translate_IntersectsSpatialPredicate_UsesMbrAndStIntersects()
     {
         var filter = new SpatialPredicate(

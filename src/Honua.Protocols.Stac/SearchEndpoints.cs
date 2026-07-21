@@ -10,7 +10,6 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Filtering;
 using Honua.Infrastructure.Helpers;
@@ -21,7 +20,6 @@ using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Stac;
 
@@ -364,7 +362,6 @@ internal static class SearchEndpoints
             targets.Length);
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var queryProcessor = context.RequestServices.GetRequiredService<IQueryProcessor>();
         try
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
@@ -378,6 +375,7 @@ internal static class SearchEndpoints
                     break;
                 }
 
+                var isStorageBound = !string.IsNullOrEmpty(target.Publication.StorageBindingId);
                 var layerQueryResult = await TryBuildLayerQuery(
                     request,
                     target.Resource,
@@ -386,8 +384,7 @@ internal static class SearchEndpoints
                     filterProcessor,
                     defaultFilterLangIsText,
                     target.LayerIndex.ToString(CultureInfo.InvariantCulture),
-                    queryProcessor,
-                    isStorageBound: !string.IsNullOrEmpty(target.Publication.StorageBindingId),
+                    isStorageBound,
                     cancellationToken);
                 if (!layerQueryResult.IsSuccess)
                 {
@@ -408,6 +405,45 @@ internal static class SearchEndpoints
                     cancellationToken).ConfigureAwait(false);
                 var targetReader = readerResolution.Reader;
                 var storageLayerId = readerResolution.StorageLayerId;
+
+                if (isStorageBound && requestedItemIds is { Length: > 0 } boundItemIds)
+                {
+                    var matchedFeatures = await StacBoundItemQueryExecutor.QueryAsync(
+                        targetReader,
+                        storageLayerId,
+                        target.Resource,
+                        query,
+                        boundItemIds,
+                        cancellationToken).ConfigureAwait(false);
+                    totalMatched += matchedFeatures.Length;
+
+                    if (remainingSkip >= matchedFeatures.Length)
+                    {
+                        remainingSkip -= matchedFeatures.Length;
+                        continue;
+                    }
+
+                    var remaining = effectiveLimit - allItems.Count;
+                    if (remaining > 0)
+                    {
+                        allItems.AddRange(matchedFeatures
+                            .Skip(remainingSkip)
+                            .Take(remaining)
+                            .Select(f => ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(
+                                    f,
+                                    target.Resource,
+                                    target.Publication,
+                                    layerId,
+                                    baseUrl,
+                                    projection?.SelectedProperties,
+                                    geometrySrid: Wgs84Srid),
+                                projection)));
+                    }
+
+                    remainingSkip = 0;
+                    continue;
+                }
 
                 // A feature-reader/query failure must surface as a 500: it propagates to the outer
                 // catch, which records the exception on the search.work activity and rethrows so the
@@ -531,7 +567,6 @@ internal static class SearchEndpoints
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         string collectionId,
-        IQueryProcessor queryProcessor,
         bool isStorageBound,
         CancellationToken cancellationToken)
     {
@@ -621,15 +656,15 @@ internal static class SearchEndpoints
 
         if (requestedItemIds is { Length: > 0 } itemIds)
         {
-            var itemIdsFilter = isStorageBound
-                ? BuildBoundItemIdsSqlFilter(resource, itemIds, queryProcessor)
-                : BuildItemIdsSqlFilter(itemIds, includeObjectIdFallback: true);
-            query = query with
+            if (!isStorageBound)
             {
-                SqlFilter = SqlFragmentHelpers.CombineSqlFilters(
-                    query.SqlFilter,
-                    itemIdsFilter)
-            };
+                query = query with
+                {
+                    SqlFilter = SqlFragmentHelpers.CombineSqlFilters(
+                        query.SqlFilter,
+                        BuildItemIdsSqlFilter(itemIds, includeObjectIdFallback: true))
+                };
+            }
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
@@ -1454,141 +1489,6 @@ internal static class SearchEndpoints
         }
 
         return new SqlFragment($"({string.Join(" OR ", clauses)})", parameters);
-    }
-
-    private static SqlFragment BuildBoundItemIdsSqlFilter(
-        MetadataV2Resource resource,
-        ImmutableArray<string> itemIds,
-        IQueryProcessor queryProcessor)
-    {
-        FilterExpression? combined = null;
-        FilterExpression? higherPrecedenceFieldsAreAbsent = null;
-        var canonicalKeys = ImmutableArray.Create("stac_id", "item_id", "id");
-        foreach (var canonicalKey in canonicalKeys)
-        {
-            var field = resource.SchemaFields.FirstOrDefault(candidate =>
-                string.Equals(candidate.Name, canonicalKey, StringComparison.OrdinalIgnoreCase));
-            if (field is null)
-            {
-                continue;
-            }
-
-            var matches = BuildItemIdMatchExpression(field, itemIds);
-            if (matches is not null)
-            {
-                if (higherPrecedenceFieldsAreAbsent is not null)
-                {
-                    matches = new BinaryExpression(
-                        higherPrecedenceFieldsAreAbsent,
-                        BinaryOperator.And,
-                        matches);
-                }
-
-                combined = combined is null
-                    ? matches
-                    : new BinaryExpression(combined, BinaryOperator.Or, matches);
-            }
-
-            var fieldIsAbsent = BuildItemIdFieldAbsentExpression(field);
-            higherPrecedenceFieldsAreAbsent = higherPrecedenceFieldsAreAbsent is null
-                ? fieldIsAbsent
-                : new BinaryExpression(higherPrecedenceFieldsAreAbsent, BinaryOperator.And, fieldIsAbsent);
-        }
-
-        var primaryIdField = resource.FindPrimaryIdField();
-        if (primaryIdField is not null &&
-            !canonicalKeys.Any(key => string.Equals(key, primaryIdField.Name, StringComparison.OrdinalIgnoreCase)))
-        {
-            var primaryMatches = BuildItemIdMatchExpression(primaryIdField, itemIds);
-            if (primaryMatches is not null)
-            {
-                if (higherPrecedenceFieldsAreAbsent is not null)
-                {
-                    primaryMatches = new BinaryExpression(
-                        higherPrecedenceFieldsAreAbsent,
-                        BinaryOperator.And,
-                        primaryMatches);
-                }
-
-                combined = combined is null
-                    ? primaryMatches
-                    : new BinaryExpression(combined, BinaryOperator.Or, primaryMatches);
-            }
-        }
-
-        if (combined is null)
-        {
-            return new SqlFragment("1 = 0", []);
-        }
-
-        var translated = queryProcessor.ToFeatureQuery(
-            new UnifiedQuery { Filter = QueryFilter.FromExpression(combined) },
-            resource);
-        return translated.SqlFilter ?? new SqlFragment("1 = 0", []);
-    }
-
-    private static BinaryExpression? BuildItemIdMatchExpression(
-        MetadataV2Field field,
-        ImmutableArray<string> itemIds)
-    {
-        var literals = itemIds
-            .Select(itemId => TryCreateItemIdLiteral(field.Type, itemId, out var literal) ? literal : null)
-            .Where(static literal => literal is not null)
-            .Cast<FilterExpression>()
-            .ToArray();
-        if (literals.Length == 0)
-        {
-            return null;
-        }
-
-        var property = new PropertyReference(field.Name);
-        return literals.Length == 1
-            ? new BinaryExpression(property, BinaryOperator.Equal, literals[0])
-            : new BinaryExpression(property, BinaryOperator.In, new ValueList(literals));
-    }
-
-    private static FilterExpression BuildItemIdFieldAbsentExpression(MetadataV2Field field)
-    {
-        var property = new PropertyReference(field.Name);
-        var isNull = new UnaryExpression(UnaryOperator.IsNull, property);
-        if (field.Type != MetadataV2FieldType.String)
-        {
-            return isNull;
-        }
-
-        var isBlank = new BinaryExpression(
-            new FunctionCall("TRIM", [property]),
-            BinaryOperator.Equal,
-            new Literal(string.Empty, LiteralType.Text));
-        return new BinaryExpression(isNull, BinaryOperator.Or, isBlank);
-    }
-
-    private static bool TryCreateItemIdLiteral(
-        MetadataV2FieldType fieldType,
-        string itemId,
-        out Literal literal)
-    {
-        switch (fieldType)
-        {
-            case MetadataV2FieldType.Integer
-                when int.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer):
-                literal = new Literal(integer, LiteralType.Number);
-                return true;
-            case MetadataV2FieldType.BigInteger
-                when long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bigInteger):
-                literal = new Literal(bigInteger, LiteralType.Number);
-                return true;
-            case MetadataV2FieldType.Double or MetadataV2FieldType.Float
-                when double.TryParse(itemId, NumberStyles.Float, CultureInfo.InvariantCulture, out var floatingPoint):
-                literal = new Literal(floatingPoint, LiteralType.Number);
-                return true;
-            case MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Unknown:
-                literal = new Literal(itemId, LiteralType.Text);
-                return true;
-            default:
-                literal = null!;
-                return false;
-        }
     }
 
     private static bool TryNormalizePropertyName(string name, out string normalized)
