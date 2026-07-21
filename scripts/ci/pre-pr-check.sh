@@ -191,6 +191,17 @@ fi
 
 if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
     echo "    Mode: CI-SHELL-ONLY (committed + working tree vs ${BASE_REF})."
+    if [[ "${DRY_RUN}" == "1" ]]; then
+        changed_count="$(printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' | wc -l | tr -d ' ')"
+        echo ""
+        echo "📋 Selection summary"
+        echo "  - Mode: CI-SHELL-ONLY (${changed_count} changed file(s), all doc/CI-script-only)"
+        echo "  - Would run: check-instructions-sync, validate-shell-syntax (changed .sh only),"
+        echo "    validate-ci-router, merge-train fixtures — no restore/build/format/test."
+        echo ""
+        echo "🔎 Dry run complete — nothing was restored, built, formatted, or tested."
+        exit 0
+    fi
     echo "1. Checking canonical instructions..."
     bash scripts/ci/check-instructions-sync.sh
 
