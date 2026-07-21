@@ -421,10 +421,16 @@ internal sealed class PostgresElevationService : IElevationService
         command.AddParameter("@maxSampleCount", options.MaxSampleCount);
     }
 
-    private static bool IsRasterAlignmentFailure(PostgresException exception)
-        => exception.SqlState == PostgresErrorCodes.InternalError &&
-           (string.Equals(exception.Routine, "rt_raster_from_two_rasters", StringComparison.Ordinal) ||
-            exception.MessageText.Contains("do not have the same alignment", StringComparison.OrdinalIgnoreCase));
+    internal static bool IsRasterAlignmentFailure(PostgresException exception)
+    {
+        const string routine = "rt_raster_from_two_rasters";
+        const string alignmentInvariant = "The two rasters provided do not have the same alignment";
+
+        return exception.SqlState == PostgresErrorCodes.InternalError &&
+               exception.MessageText.Contains(alignmentInvariant, StringComparison.Ordinal) &&
+               (string.Equals(exception.Routine, routine, StringComparison.Ordinal) ||
+                exception.MessageText.StartsWith($"{routine}:", StringComparison.Ordinal));
+    }
 
     /// <summary>
     /// SQL fragment that resolves the effective sample count from explicit

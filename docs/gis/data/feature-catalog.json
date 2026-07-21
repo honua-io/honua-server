@@ -5454,6 +5454,7 @@
         "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests.GetElevationProfile_WithIntervalOnly_DerivesSampleCountFromLineLength",
         "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests.GetElevationProfile_WithInvalidWkt_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests.GetElevationProfile_WithLineOutsideCoverage_ReturnsAllNoDataSamples",
+        "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests.GetElevationProfile_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests.GetElevationProfile_WithNonLineStringGeometry_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests.GetElevationProfile_WithProjectedSrid_ReturnsValidGeodesicLength"
       ],
@@ -16274,6 +16275,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_DegeneratePlane_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_OverSurface_ReturnsIntersectionMetadata",
+        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithoutProLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "elevation-query-profile",

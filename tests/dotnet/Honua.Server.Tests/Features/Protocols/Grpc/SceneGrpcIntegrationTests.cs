@@ -1711,6 +1711,37 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /geospatial.v1.ElevationService/GetElevationProfile")]
+    public async Task GetElevationProfile_MisalignedMosaic_ThrowsFailedPrecondition()
+    {
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = true });
+        await SeedMixedResolutionMosaicAsync();
+
+        var line = new Proto.PolylineGeometry();
+        var path = new Proto.CoordinateSequence();
+        path.Coords.Add(new Proto.Coordinate { X = 0, Y = 0 });
+        path.Coords.Add(new Proto.Coordinate { X = 1000, Y = 0 });
+        line.Paths.Add(path);
+
+        var request = new Proto.GetElevationProfileRequest
+        {
+            LayerId = WebAppFixture.TestLayerId,
+            SampleCount = 8,
+            SpatialReference = new Proto.SpatialReference { Wkid = 3857, LatestWkid = 3857 },
+            Line = line,
+        };
+
+        var act = async () => await _elevationClient!.GetElevationProfileAsync(request, _headers);
+
+        var exception = (await act.Should().ThrowAsync<RpcException>()).Which;
+        exception.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        exception.Status.Detail.Should().Contain("pixel grids are not aligned");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.ElevationService/GetElevation")]
@@ -1806,5 +1837,34 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
                 Value: elevationMeters,
                 AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
                 CreatedAt: RasterIntegrationTestData.WestAcquisition,
+                Srid: 3857));
+
+    private Task SeedMixedResolutionMosaicAsync()
+        => RasterIntegrationTestData.ReplaceLayerRastersAsync(
+            _fixture,
+            WebAppFixture.TestLayerId,
+            new RasterSeed(
+                Name: "coarse-world-dem",
+                Width: 2,
+                Height: 2,
+                UpperLeftX: -WebMercatorExtent,
+                UpperLeftY: WebMercatorExtent,
+                ScaleX: WebMercatorExtent,
+                ScaleY: -WebMercatorExtent,
+                Value: 100,
+                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
+                CreatedAt: RasterIntegrationTestData.WestAcquisition,
+                Srid: 3857),
+            new RasterSeed(
+                Name: "fine-world-dem",
+                Width: 4,
+                Height: 4,
+                UpperLeftX: -WebMercatorExtent,
+                UpperLeftY: WebMercatorExtent,
+                ScaleX: WebMercatorExtent / 2,
+                ScaleY: -WebMercatorExtent / 2,
+                Value: 125,
+                AcquisitionDate: RasterIntegrationTestData.EastAcquisition,
+                CreatedAt: RasterIntegrationTestData.EastAcquisition,
                 Srid: 3857));
 }
