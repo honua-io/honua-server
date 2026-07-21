@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.SqlServer.Tests;
 
@@ -209,6 +212,33 @@ public class SqlServerFeatureQueryBuilderTests
 
         Assert.Contains("[shape].STIntersects(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
         Assert.Equal(new byte[] { 0x01, 0x02, 0x03 }, result.WhereParameters[0]);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_GeoServicesEwkb_BindsPlainWkb()
+    {
+        var mapping = BuildMapping();
+        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            new GeoServicesGeometry
+            {
+                Xmin = -1,
+                Ymin = -1,
+                Xmax = 1,
+                Ymax = 1,
+                SpatialReference = new GeoServicesSpatialReference { Wkid = 4326 }
+            },
+            srid: 4326);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        var boundWkb = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
+        var typeWord = BinaryPrimitives.ReadUInt32LittleEndian(boundWkb.AsSpan(1, sizeof(uint)));
+        Assert.Equal(0u, typeWord & 0x20000000u);
+        Assert.Equal(3u, typeWord);
     }
 
     [Fact]

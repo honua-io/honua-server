@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
@@ -10,6 +11,8 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.Infrastructure;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.MySql.Tests;
 
@@ -206,6 +209,32 @@ public class MySqlFeatureQueryBuilderTests
 
         Assert.Contains($"AND (`{fieldName}` = @p0)", result.Sql, StringComparison.Ordinal);
         Assert.Single(result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithGeoServicesEwkb_BindsPlainWkb()
+    {
+        var ewkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
+            new GeoServicesGeometry
+            {
+                Xmin = -122,
+                Ymin = 37,
+                Xmax = -121,
+                Ymax = 38,
+                SpatialReference = new GeoServicesSpatialReference { Wkid = 4326 }
+            },
+            srid: 4326);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var result = _builder.BuildSelectQuery(LayerId, query);
+
+        var boundWkb = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
+        var typeWord = BinaryPrimitives.ReadUInt32LittleEndian(boundWkb.AsSpan(1, sizeof(uint)));
+        Assert.Equal(0u, typeWord & 0x20000000u);
+        Assert.Equal(3u, typeWord);
     }
 
     [Fact]
