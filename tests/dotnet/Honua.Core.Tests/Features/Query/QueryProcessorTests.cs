@@ -191,4 +191,46 @@ public sealed class QueryProcessorTests
 
         featureQuery.IncludeNullGeometry.Should().BeTrue();
     }
+
+    [Fact]
+    public void OptimizeQuery_PagedQueryWithoutOrdering_UsesResourcePrimaryIdForProviderOrdering()
+    {
+        var resource = _resource with
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "feature_id",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ]
+        };
+        var query = new UnifiedQuery { Limit = 2 };
+
+        var optimized = _processor.OptimizeQuery(query, resource);
+        var providerQuery = _processor.ToFeatureQuery(optimized, resource);
+
+        providerQuery.OrderBy.Should().NotBeNull();
+        providerQuery.OrderBy.Value.Should().ContainSingle()
+            .Which.Should().Be(new OrderByClause("feature_id", ascending: true, MetadataV2FieldType.Integer));
+    }
+
+    [Fact]
+    public void OptimizeQuery_PagedQueryWithConventionalObjectId_PreservesObjectIdOrdering()
+    {
+        var query = new UnifiedQuery { Limit = 2 };
+
+        var optimized = _processor.OptimizeQuery(query, _resource);
+        var providerQuery = _processor.ToFeatureQuery(optimized, _resource);
+
+        providerQuery.OrderBy.Should().NotBeNull();
+        providerQuery.OrderBy.Value.Should().ContainSingle()
+            .Which.Field.Should().Be(FieldNames.ObjectId);
+        providerQuery.OrderBy.Value[0].Ascending.Should().BeTrue();
+    }
 }
