@@ -127,7 +127,7 @@ train_state_read() {
   fi
   # Extract the fenced ```json ... ``` block.
   json="$(printf '%s\n' "${body}" | awk '
-    /^```json/ { inblk=1; next }
+    /^```json[[:space:]]*$/ { inblk=1; next }
     /^```/     { if (inblk) { inblk=0 } ; next }
     inblk      { print }
   ')"
@@ -156,7 +156,7 @@ train_aggregate_block() {
     body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 1
   fi
   printf '%s\n' "${body}" | awk '
-    /^```json aggregate/ { inblk=1; next }
+    /^```json aggregate[[:space:]]*$/ { inblk=1; next }
     /^```/               { if (inblk) { inblk=0 }; next }
     inblk                { print }
   '
