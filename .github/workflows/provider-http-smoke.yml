@@ -1,0 +1,167 @@
+name: Provider HTTP-Stack Smoke (DuckDB/MySql/SqlServer + Oracle real-DB lane)
+
+# honua-server#2947: secondary-provider HTTP-stack GA proof. Runs the interface-level
+# smoke suite (Honua.ProviderSmoke.Tests) that boots a real ASP.NET Core host per
+# provider (DuckDB in-process, MySql + SQL Server via Testcontainers) and exercises the
+# read/query GA surface each documents support for — GeoServices FeatureServer, OGC API
+# Features, OData, and tiles — asserting real seeded-row correctness, not just 200s. Also
+# runs the Oracle real-database lane (Honua.Oracle.Tests, HONUA_TEST_ORACLE=1), which
+# proves the provider-layer code (connection, query build+execute, WKB/geometry decode)
+# against a live gvenzl/oracle-free instance for the first time; Oracle stays
+# experimental and is NOT part of the smoke suite itself.
+#
+# Deliberately a separate workflow rather than PR-gate wiring: every one of these lanes
+# needs Docker containers (MySql, SQL Server, Oracle) that are too slow/heavy for the PR
+# path. This lane runs nightly and on demand; the release train path should run it before
+# cutting a release that advertises these providers as GA.
+on:
+  schedule:
+    - cron: '30 6 * * *' # Nightly 6:30 UTC
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Which lane to run (default: all)'
+        type: choice
+        required: false
+        default: all
+        options:
+          - all
+          - provider-smoke
+          - oracle-real-db
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+concurrency:
+  group: provider-http-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider-smoke:
+    name: Provider Smoke Suite (DuckDB/MySql/SqlServer)
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.suite == 'all' || github.event.inputs.suite == 'provider-smoke'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.ProviderSmoke.Tests/Honua.ProviderSmoke.Tests.csproj
+
+      - name: Build
+        run: dotnet build tests/dotnet/Honua.ProviderSmoke.Tests/Honua.ProviderSmoke.Tests.csproj --no-restore --configuration Release
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Run provider-smoke suite (DuckDB in-process, MySql + SQL Server via Testcontainers)
+        run: |
+          dotnet test tests/dotnet/Honua.ProviderSmoke.Tests/Honua.ProviderSmoke.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --logger "trx;LogFileName=ProviderSmoke.trx" \
+            --logger "console;verbosity=normal" \
+            --results-directory ./tests/TestResults
+
+      - name: Surface pass/fail/skip counts in summary
+        if: always()
+        run: |
+          trx="./tests/TestResults/ProviderSmoke.trx"
+          if [[ -f "$trx" ]]; then
+            passed=$(grep -o 'outcome="Passed"' "$trx" | wc -l)
+            failed=$(grep -o 'outcome="Failed"' "$trx" | wc -l)
+            skipped=$(grep -o 'outcome="NotExecuted"' "$trx" | wc -l)
+            {
+              echo "### Provider Smoke Suite (DuckDB/MySql/SqlServer)"
+              echo "- Passed: ${passed}"
+              echo "- Failed: ${failed}"
+              echo "- Skipped: ${skipped}"
+              if [[ "${skipped}" -gt 0 ]]; then
+                echo "- Note: the 2 SQL Server OData/Tiles cases are expected skips — a real product routing gap tracked in honua-server#2962 (OData/Tiles bypass FeatureProviderQueryRouter for secondary providers), not a missing prerequisite."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Provider Smoke Suite: no TRX produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload provider-smoke test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: provider-http-smoke-${{ github.run_id }}
+          path: tests/TestResults/
+          retention-days: 14
+
+  oracle-real-db:
+    name: Oracle Real-Database Lane (experimental, promotion groundwork)
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.suite == 'all' || github.event.inputs.suite == 'oracle-real-db'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HONUA_TEST_ORACLE: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj
+
+      - name: Build
+        run: dotnet build tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj --no-restore --configuration Release
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Run Oracle real-database lane (gvenzl/oracle-free via Testcontainers)
+        run: |
+          dotnet test tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=Oracle" \
+            --logger "trx;LogFileName=OracleRealDb.trx" \
+            --logger "console;verbosity=normal" \
+            --results-directory ./tests/TestResults
+
+      - name: Surface pass/fail/skip counts in summary
+        if: always()
+        run: |
+          trx="./tests/TestResults/OracleRealDb.trx"
+          if [[ -f "$trx" ]]; then
+            passed=$(grep -o 'outcome="Passed"' "$trx" | wc -l)
+            failed=$(grep -o 'outcome="Failed"' "$trx" | wc -l)
+            skipped=$(grep -o 'outcome="NotExecuted"' "$trx" | wc -l)
+            {
+              echo "### Oracle Real-Database Lane"
+              echo "- Passed: ${passed}"
+              echo "- Failed: ${failed}"
+              echo "- Skipped: ${skipped}"
+              echo "- Oracle remains experimental; this lane is provider-layer promotion groundwork, not GA HTTP-stack coverage."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Oracle Real-Database Lane: no TRX produced" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Oracle real-db test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: oracle-real-db-${{ github.run_id }}
+          path: tests/TestResults/
+          retention-days: 14

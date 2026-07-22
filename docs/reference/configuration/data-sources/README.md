@@ -17,6 +17,20 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 
 Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
 
+### HTTP-Stack GA Proof
+
+DuckDB, MySQL/MariaDB, and SQL Server each have real HTTP-stack interface-level test
+coverage (`Honua.ProviderSmoke.Tests`, honua-server#2947): a provider-parameterized
+web-app fixture boots the actual ASP.NET Core host against the provider (DuckDB
+in-process, MySQL and SQL Server via Testcontainers) and asserts real seeded-row
+correctness — not just 200s — through the read/query GA surface each documents support
+for (GeoServices FeatureServer, OGC API Features, OData, and tiles where applicable; see
+each provider's page for exact coverage and known gaps). Runs nightly and on demand via
+[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml).
+Oracle, Redshift, Snowflake, and Databricks remain experimental and are not part of this
+suite; Oracle additionally gained a real-database provider-layer lane (see the
+[Oracle provider](oracle.md#integration) page) as promotion groundwork.
+
 ## Tested PostgreSQL configurations
 
 | Provider | Engine version | PostGIS version | CI status |
