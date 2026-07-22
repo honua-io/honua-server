@@ -9,8 +9,10 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -40,7 +42,22 @@ internal static partial class SamlEndpoints
 
         var group = endpoints.MapGroup("/saml")
             .WithTags("Identity", "SAML")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            // #2978: SAML SP authentication is an Enterprise entitlement (FeatureCatalog
+            // .SamlAuthenticationKey; ADR-0024 Identity Governance tier). Gated at the group
+            // so /metadata is covered too — an unlicensed deployment must not advertise an
+            // SSO surface it cannot serve.
+            .AddEndpointFilter((invocationContext, next) =>
+            {
+                var gate = LicenseGate.RequireEntitlement(
+                    invocationContext.HttpContext,
+                    FeatureCatalog.SamlAuthenticationKey,
+                    "SAML 2.0 authentication");
+
+                return gate is null
+                    ? next(invocationContext)
+                    : ValueTask.FromResult<object?>(gate);
+            });
 
         group.MapGet("/metadata", HandleMetadata).WithDisplayName("SAML SP Metadata");
         group.MapPost("/acs", HandleAssertionConsumerService).WithDisplayName("SAML Assertion Consumer Service");

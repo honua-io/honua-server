@@ -41,6 +41,10 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                // #2978: SCIM provisioning is an Enterprise entitlement; grant it so these
+                // tests keep exercising the SCIM machinery itself (the gate has its own tests
+                // in IdentityEntitlementGateTests).
+                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
                 builder.UseSetting("Scim:BearerToken", ScimToken);
             });
     }
