@@ -246,25 +246,31 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                             $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
                     }
 
-                    // Host/port match is a tamper check for managed (encrypted) connections, where the stored
-                    // host/port are authoritative and the connection string is assembled from them. For
-                    // secret-reference connections the resolved secret IS the source of truth (the stored
-                    // host/port are optional display metadata), so this match check does not apply.
-                    if (string.IsNullOrWhiteSpace(connection.SecretRef))
+                    // Host/port match is a tamper check: when the connection owner declared a host/port,
+                    // the resolved connection string must agree with it. This applies uniformly to managed
+                    // (encrypted) and secret-reference connections. For secret-reference connections the
+                    // declared host/port are optional display metadata (see
+                    // SecureConnectionEndpoints.CreateConnection, which substitutes a neutral placeholder
+                    // when the caller omits them): when the caller leaves them blank, no host/port
+                    // assertion was made, so the resolved secret is the uncontested source of truth and
+                    // the check is skipped for that field. When the caller DOES declare a host/port, that
+                    // declaration is a security assertion, and a disagreeing secret is tamper (honua-server#2949)
+                    // — same as for managed connections, where the check always applies because Host/Port
+                    // are required fields.
+                    if (!string.IsNullOrWhiteSpace(connection.Host) &&
+                        !string.IsNullOrWhiteSpace(builder.Host) &&
+                        !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
-                            throw new InvalidOperationException(
-                                $"Connection '{connection.Name}' resolved host does not match configured host.");
-                        }
+                        _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' resolved host does not match configured host.");
+                    }
 
-                        if (builder.Port != 0 && builder.Port != connection.Port)
-                        {
-                            _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
-                            throw new InvalidOperationException(
-                                $"Connection '{connection.Name}' resolved port does not match configured port.");
-                        }
+                    if (connection.Port != 0 && builder.Port != 0 && builder.Port != connection.Port)
+                    {
+                        _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' resolved port does not match configured port.");
                     }
                 }
                 catch (ArgumentException ex)
