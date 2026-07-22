@@ -312,7 +312,13 @@ train_recover_terminal_batch() {
   branch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
   included_count="$(jq -r '(.active_batch.included // []) | length' <<<"${state}" 2>/dev/null)" || return 2
   if [[ -z "${branch}" && "${included_count}" == "0" ]]; then
-    case "${phase}" in select|done|"") return 1 ;; *) return 2 ;; esac
+    # An empty "assemble" phase can only be the pre-assembly write (state is
+    # persisted BEFORE train_assemble runs, with no branch/included yet, purely
+    # local git ops with no GitHub side effects). A crash anywhere in that
+    # window — including "every selected PR conflicted" — leaves exactly this
+    # signature and has produced zero label/state mutations to undo, so it is
+    # always safe to treat as no-terminal-recovery-needed and let selection run.
+    case "${phase}" in select|done|assemble|"") return 1 ;; *) return 2 ;; esac
   fi
   case "${phase}" in
     timeout-retry-rejected|flake-retry-rejected)
@@ -810,10 +816,20 @@ main() {
   train_land "${batch}" "${trunk_sha}" "${TRAIN_INCLUDED_FILE}" || rc=$?
   if [[ "${rc}" == "10" ]]; then
     train_annotate_warn "land deferred: trunk moved; the next scheduled run re-assembles"
-    git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"
-    local moved_trunk
-    moved_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
-    _write_state "${batch}" "${moved_trunk}" "${included}" "trunk-moved-reassemble" "$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null)" "${fwdfix}" "${flake_reruns}"
+    # train_land's rc=10 is returned strictly BEFORE any push/merge (CAS
+    # precondition miss, or a rejected FF push) — zero side effects have
+    # happened yet, so it's safe to persist the recoverable phase immediately
+    # using the already-known (stale) trunk_sha. Do this BEFORE the refetch
+    # below: that fetch/rev-parse is only for an accurate informational trunk
+    # value and is itself fallible, and if it fails or the controller is
+    # cancelled here, state must already be at the recoverable
+    # "trunk-moved-reassemble" phase rather than stuck at "land" (which fails
+    # closed on restart).
+    _write_state "${batch}" "${trunk_sha}" "${included}" "trunk-moved-reassemble" "$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null)" "${fwdfix}" "${flake_reruns}"
+    local moved_trunk="${trunk_sha}"
+    if git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"; then
+      moved_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}" 2>/dev/null || echo "${trunk_sha}")"
+    fi
     for pr in $(tr ',' ' ' <<<"${included}"); do
       train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
     done
