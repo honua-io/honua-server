@@ -151,7 +151,6 @@ public sealed class OracleRealDatabaseIntegrationTests : IAsyncLifetime
         var mapping = BuildMapping();
         var dataAccess = CreateDataAccess();
 
-        var query = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, new FeatureQuery(), []);
         var countQuery = OracleFeatureQueryBuilder.BuildCountQuery(mapping, new FeatureQuery());
         var count = await dataAccess.ExecuteCountAsync(mapping, countQuery, dataConnection: null, CancellationToken.None);
 
