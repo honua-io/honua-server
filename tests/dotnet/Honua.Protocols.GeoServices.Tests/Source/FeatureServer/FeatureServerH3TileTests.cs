@@ -77,4 +77,18 @@ public sealed class FeatureServerH3TileTests : IClassFixture<WebAppFixture>
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /tiles/{layerId}/h3/{z}/{x}/{y}.mvt")]
+    public async Task H3Tile_NonExistentLayer_ReturnsRealNotFound()
+    {
+        // Regression test for honua-server#2945: /tiles is not an Esri protocol surface,
+        // so layer-not-found must be a real HTTP 404 + problem+json, not the GeoServices
+        // 200-envelope.
+        var response = await _fixture.Client.GetAsync("/tiles/999999/h3/5/16/11.mvt");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+    }
 }
