@@ -95,9 +95,12 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
         // and folding a side-effecting call into a LINQ predicate/counter is
         // less readable than the explicit loop, not more.
         var delivered = 0;
-        foreach (var sessionId in (_sessions.ActiveSessionIds).Where(sessionId => _sessions.TryEnqueue(sessionId, notification)))
+        foreach (var sessionId in _sessions.ActiveSessionIds)
         {
-            delivered++;
+            if (_sessions.TryEnqueue(sessionId, notification))
+            {
+                delivered++;
+            }
         }
 
         if (delivered > 0)

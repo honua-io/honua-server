@@ -1655,9 +1655,12 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         // JSON properties, reassigning `current` at each step and returning null the moment a
         // segment is missing. It is not a filter over `path` - every segment participates in
         // navigation, not selection.
-        foreach (var segment in (path).Where(segment => !current.TryGetProperty(segment, out current)))
+        foreach (var segment in path)
         {
-            return null;
+            if (!current.TryGetProperty(segment, out current))
+            {
+                return null;
+            }
         }
 
         return current.ValueKind == JsonValueKind.String ? current.GetString() : null;

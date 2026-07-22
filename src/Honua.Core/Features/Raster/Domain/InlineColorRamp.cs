@@ -482,17 +482,13 @@ public static class InlineColorRamp
         var found = false;
         // Not a simple filter: `array` (the TryGetProperty out-param) is captured for use
         // after the loop, so a `.Where(...)` filter can't thread it through cleanly.
-        foreach (var candidate in (new[]
+        foreach (var candidate in new[] { property, ToLowerFirst(property), property.ToLowerInvariant() })
         {
-            property,
-            ToLowerFirst(property),
-            property.ToLowerInvariant()
-        }
-
-        ).Where(candidate => element.TryGetProperty(candidate, out array)))
-        {
-            found = true;
-            break;
+            if (element.TryGetProperty(candidate, out array))
+            {
+                found = true;
+                break;
+            }
         }
 
         if (!found || array.ValueKind != JsonValueKind.Array || array.GetArrayLength() < 3)

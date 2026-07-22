@@ -295,9 +295,12 @@ internal static class ExpressionEvaluator
             {
                 // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
                 // allocation: "match" expressions are evaluated once per feature per style paint property.
-                foreach (var item in (label.Items).Where(item => MatchesLabel(inputStr, input, item)))
+                foreach (var item in label.Items)
                 {
-                    return Evaluate(array[i + 1], properties, zoom);
+                    if (MatchesLabel(inputStr, input, item))
+                    {
+                        return Evaluate(array[i + 1], properties, zoom);
+                    }
                 }
             }
             else if (MatchesLabel(inputStr, input, label))
@@ -316,9 +319,12 @@ internal static class ExpressionEvaluator
         {
             // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
             // allocation on this hot, recursively-invoked match-label path.
-            foreach (var item in (label.Items).Where(item => MatchesLabel(inputStr, inputObj, item)))
+            foreach (var item in label.Items)
             {
-                return true;
+                if (MatchesLabel(inputStr, inputObj, item))
+                {
+                    return true;
+                }
             }
 
             return false;
