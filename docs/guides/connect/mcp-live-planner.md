@@ -98,12 +98,20 @@ Bedrock needs `bedrock:InvokeModel` on the chosen model / inference profile.
 With the profile applied and credentials present, call the tool with a novel intent that is not
 in the fixture set:
 
-```bash
-BASE=http://localhost:8080
-curl -s -X POST "$BASE/mcp" -H "Content-Type: application/json" -H "X-API-Key: $HONUA_API_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-        "name":"honua_plan_analysis",
-        "arguments":{"intent":"Buffer the Maui flood-hazard layer by 500 m and select intersecting parcels."}}}'
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /mcp` with this body:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "honua_plan_analysis",
+    "arguments": {
+      "intent": "Buffer the Maui flood-hazard layer by 500 m and select intersecting parcels."
+    }
+  }
+}
 ```
 
 - **Live planner on:** the result's `structuredContent.engine` is `"live"` and `status` is

@@ -23,12 +23,7 @@ trusted ingress or disposable test boundary.
 
 1. Preflight against the running instance. The deploy API reports database compatibility, migration state, and coordinated-deploy readiness.
 
-```bash
-HOST=https://honua.example.com
-ADMIN_KEY=replace-with-admin-password
-curl -s -H "X-API-Key: $ADMIN_KEY" "$HOST/api/v1/admin/deploy/preflight?includeDiagnostics=true"
-curl -s -H "X-API-Key: $ADMIN_KEY" "$HOST/api/v1/admin/observability/migrations"
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true`; `GET /api/v1/admin/observability/migrations`.
 
 Proceed only when `readyForCoordinatedDeploy` is `true`, no unexpected migrations are pending, and backups are current.
 
@@ -132,10 +127,7 @@ Restore the database only when a destructive migration already ran or data was c
 
 ## Verify
 
-```bash
-curl -s "$HOST/healthz/ready" && \
-curl -s -H "X-API-Key: $ADMIN_KEY" "$HOST/api/v1/admin/deploy/preflight" | head -c 200
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /healthz/ready`; `GET /api/v1/admin/deploy/preflight`.
 
 Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: true` and no pending migrations. Rehearse rollback/canary behavior before production with `./scripts/scale/scale-test.sh --test rollback` and `--test canary`.
 

@@ -64,28 +64,13 @@ Misconfigured limits fail validation at startup.
 
 ## Examples
 
-```bash
-# Terrain-RGB metadata and a tile for MapLibre raster-dem
-curl "https://server.example.com/terrain/dem/tile.json"
-curl -o tile.png "https://server.example.com/terrain/dem/12/655/1586.png"
-```
+> Open `https://server.example.com/terrain/dem/tile.json`, `https://server.example.com/terrain/dem/12/655/1586.png` in a browser.
 
-```bash
-# Point elevation
-curl "https://server.example.com/elevation/dem/value?x=-122.4194&y=37.7749"
-```
+> Open `https://server.example.com/elevation/dem/value?x=-122.4194&y=37.7749` in a browser.
 
-```bash
-# Profile along a line, sampled every 50 m
-curl "https://server.example.com/elevation/dem/profile?line=LINESTRING(-122.5%2037.7,-122.3%2037.9)&interval=50"
-```
+> Open `https://server.example.com/elevation/dem/profile?line=LINESTRING(-122.5%2037.7,-122.3%2037.9)&interval=50` in a browser.
 
-```bash
-# Line-of-sight between two points (WGS 84; heights are meters above terrain)
-curl -X POST "https://server.example.com/elevation/dem/line-of-sight" \
-  -H "Content-Type: application/json" \
-  -d '{"observerLon":-122.42,"observerLat":37.77,"observerHeight":2,"targetLon":-122.40,"targetLat":37.79,"targetHeight":0}'
-```
+In the [API explorer](../openapi-and-explorer.md), run `POST /elevation/dem/line-of-sight` with `{"observerLon":-122.42,"observerLat":37.77,"observerHeight":2,"targetLon":-122.40,"targetLat":37.79,"targetHeight":0}`.
 
 ## Conformance
 

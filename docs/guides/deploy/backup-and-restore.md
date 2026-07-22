@@ -80,10 +80,7 @@ docker run --rm -v "$STORAGE_VOLUME":/data -v "$PWD":/backup:ro alpine \
 
 ## Verify
 
-```bash
-psql -h db.example.com -U honua -d honua -c "SELECT PostGIS_Version();" && \
-curl -s http://localhost:8080/healthz/ready
-```
+> Open `http://localhost:8080/healthz/ready` in a browser.
 
 Expected: a PostGIS version row, then `Ready`. Finish with a known feature query against a restored layer to confirm data integrity.
 

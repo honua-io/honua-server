@@ -10,24 +10,13 @@ Honua encodes registered single-band raster sources as Mapbox Terrain-RGB PNG ti
 
 ### 1. Import the DEM into a layer
 
-```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-LAYER_ID=1
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" \
-  -F "file=@dem.tif" \
-  -F "layerId=$LAYER_ID" \
-  -F "name=City DEM" \
-  "$HONUA_URL/api/v1/admin/import/raster"
-```
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/import/raster` with form values `file=dem.tif`, `layerId=1`, and `name=City DEM`.
 
 Terrain requires exactly one numeric elevation band and a consistent source CRS across the layer's rasters (see [Publish rasters](publish-rasters.md) for import options). Band values are treated as meters when no vertical unit is declared.
 
 ### 2. Fetch the terrain TileJSON
 
-```bash
-curl "$HONUA_URL/terrain/$LAYER_ID/tile.json"
-```
+Open `http://localhost:8080/terrain/{layerId}/tile.json` in a browser, substituting the layer id.
 
 `{datasetId}` accepts the numeric layer id or a layer collection name. The response is TileJSON 3.0 plus Honua `encoding`, `source`, and `noData` extensions; check `"supported": true` before wiring up clients.
 
@@ -47,27 +36,19 @@ Tiles use the standard formula `elevationMeters = -10000 + ((R * 256 * 256 + G *
 
 ### 4. Query elevation values
 
-```bash
-curl "$HONUA_URL/elevation/$LAYER_ID/value?x=-122.45&y=37.76"
-```
+Open `http://localhost:8080/elevation/{layerId}/value?x=-122.45&y=37.76` in a browser.
 
 Coordinates default to WGS 84; pass `srid` for projected input and `mosaicRule` (`newest`, `oldest`, `average`, `max`, `min`) to override the layer's mosaic default for the point lookup.
 
 ### 5. Sample an elevation profile
 
-```bash
-curl -G "$HONUA_URL/elevation/$LAYER_ID/profile" \
-  --data-urlencode "geometry=LINESTRING(-122.45 37.76, -122.40 37.80)" \
-  --data-urlencode "sampleCount=100"
-```
+Run `GET /elevation/{layerId}/profile` in the explorer with query values `geometry=LINESTRING(-122.45 37.76, -122.40 37.80)` and `sampleCount=100`.
 
 Returns ordered distance/elevation samples along the line (geodesic distances, PostGIS 3.4+ required). `sampleCount` defaults to 100, capped by `Limits:Elevation:MaxSampleCount`.
 
 ## Verify
 
-```bash
-curl -s -o tile.png -w "%{http_code} %{content_type}\n" "$HONUA_URL/terrain/$LAYER_ID/12/655/1583.png"
-```
+Open `http://localhost:8080/terrain/{layerId}/12/655/1583.png` in a browser. The response should be:
 
 ```text
 200 image/png

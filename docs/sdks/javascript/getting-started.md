@@ -4,7 +4,7 @@ Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate wi
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), Node.js 20 or newer, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 20**. The current release is **0.0.14-alpha** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. A companion [MCP server](https://github.com/honua-io/honua-sdk-js) package (`@honua/mcp-server`) exposes the same surface to AI agents (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)), and a `honua-migrate` codemod ports ArcGIS JS code (see [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md)).
+The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 20**. The current release is **0.0.14-alpha** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. A companion [MCP server](https://github.com/honua-io/honua-sdk-js) package (`@honua/mcp-server`) exposes the same surface to AI agents (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). ArcGIS code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md)).
 
 ## Steps
 
@@ -65,7 +65,7 @@ for (const f of features.slice(0, 5)) console.log(f.attributes);
 console.log(`Returned ${features.length} features`);
 ```
 
-A wrong or missing API key surfaces as an authentication error from the client — confirm `HONUA_API_KEY` is set and accepted (`curl -H "X-API-Key: $HONUA_API_KEY" http://localhost:8080/api/v1/admin/version`).
+A wrong or missing API key surfaces as an authentication error from the client. Confirm `HONUA_API_KEY` is set, then rerun the authenticated query above.
 
 ## Available surfaces
 
@@ -76,13 +76,13 @@ A wrong or missing API key surfaces as an authentication error from the client �
 | `@honua/sdk-js/honua` | `HonuaClient` plus native wrappers — `HonuaFeatureLayer`, `HonuaStacSearch`, `HonuaOgcFeatures`, `HonuaWms`, `HonuaOdataEntitySet`, … |
 | `@honua/sdk-js/contract` | Protocol-neutral `Dataset` / `Source` / `Query` / `Result` and source factories |
 | `@honua/sdk-js/esri-compat` | ArcGIS compatibility layer for gradual migration |
-| `@honua/sdk-js/migration` | `honua-migrate` scanner and codemod |
+| [`@honua/honua-migrate`](https://github.com/honua-io/honua-migrate) | Separate scanner, codemod, content, and reconciliation package |
 
 ## Troubleshoot
 
 | Symptom | Fix |
 |---|---|
-| Authentication error / 401 | `apiKey` unset or wrong; verify with `curl -H "X-API-Key: $KEY" .../api/v1/admin/version`. |
+| Authentication error / 401 | `apiKey` is unset or wrong; set it and rerun the authenticated SDK query above. |
 | `ERR_REQUIRE_ESM` / import errors | The SDK is ESM-only; use `import`, `"type": "module"`, and Node ≥ 20. |
 | `checkCompatibility()` reports unsupported | The server is older than the SDK's minimum supported version; align release channels per the [compatibility rules](../../concepts/ecosystem.md#sdk-to-server-compatibility). |
 | CORS errors in the browser | Add your page origin to the server's allowed origins (see the [quickstart](../../get-started/quickstart.md) CORS note). |

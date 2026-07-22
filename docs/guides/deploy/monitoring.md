@@ -24,9 +24,7 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 
 Instead of stitching the endpoints above and inventing your own "is the system healthy" verdict, call the one aggregated surface:
 
-```bash
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://localhost:8080/api/v1/operate/status
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/operate/status`.
 
 It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, an impaired dispatcher, or an exhausted SLO error budget ⇒ `degraded`; otherwise `healthy`.
 
@@ -47,12 +45,7 @@ When no target is set, `slo.configured` is `false` with an explicit reason rathe
 
 Provision an ops-reader credential so a status dashboard or copilot can read the ops posture without holding a key that could `POST /rollback`. Mint an admin API key scoped to the `ops:read` grant (distinct from `admin:read`, which can also read the broader admin surfaces):
 
-```bash
-# With a full-admin key, mint an ops-reader key:
-curl -s -X POST http://localhost:8080/api/v1/admin/api-keys \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H 'Content-Type: application/json' \
-  -d '{"name":"ops-dashboard","permissions":["ops:read"]}'
-```
+With a full-admin credential in the [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}`.
 
 The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
 
@@ -68,10 +61,7 @@ Observability__Prometheus__Path=/metrics
 
 2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the `X-API-Key` header. For OTLP export instead of scraping, set the standard `OTEL_*` variables (for example `OTEL_EXPORTER_OTLP_ENDPOINT`) and metrics/traces/logs flow to your collector.
 
-```bash
-HONUA_ADMIN_PASSWORD=replace-with-admin-password
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://localhost:8080/metrics | head -n 5
-```
+> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /metrics`.
 
 3. Load the pinned alert rules. The canonical PromQL ruleset is [`honua-core.yaml`](../../alerting/rules/honua-core.yaml); collector overlays for managed backends are at [`aws/collector-overlay.yaml`](../../alerting/aws/collector-overlay.yaml) and [`azure/collector-overlay.yaml`](../../alerting/azure/collector-overlay.yaml). On Amazon Managed Prometheus:
 
@@ -101,10 +91,7 @@ Prometheus scrapes `/metrics` with `basic_auth` (the API-key handler accepts the
 
 ## Verify
 
-```bash
-curl -s http://localhost:8080/healthz/live && echo && \
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://localhost:8080/monitoring/health/production | head -c 300
-```
+> Open `http://localhost:8080/healthz/live` in a browser and expect `Healthy`; then use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /monitoring/health/production`.
 
 Expected: `Healthy` followed by a JSON health snapshot with status fields.
 

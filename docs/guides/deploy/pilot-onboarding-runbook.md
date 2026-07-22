@@ -29,8 +29,9 @@ For a disposable fresh-stack smoke test only, clear volumes first:
 ```bash
 docker compose down -v
 docker compose up -d
-curl -fsS http://localhost:8080/healthz/ready
 ```
+
+Then open `http://localhost:8080/healthz/ready` in a browser and expect `Ready`.
 
 Do not use `docker compose down -v` against a pilot that contains customer data.
 
@@ -63,14 +64,14 @@ Use the environment id from `Metadata__Environment` for `METADATA_ENV`; if neith
 
 | Dependency | Check | Healthy result |
 |---|---|---|
-| Process liveness | `curl -fsS "$HONUA_URL/healthz/live"` | `Healthy` |
-| Readiness, migrations, database, configured cache | `curl -fsS "$HONUA_URL/healthz/ready"` | `Ready` |
+| Process liveness | Open `/healthz/live` at the deployment origin in a browser | `Healthy` |
+| Readiness, migrations, database, configured cache | Open `/healthz/ready` at the deployment origin in a browser | `Ready` |
 | PostGIS | `psql "$ConnectionStrings__DefaultConnection" -c "select postgis_full_version();"` | PostGIS version text |
 | Compose PostGIS | `docker compose exec postgres pg_isready -U honua_user -d honua_dev` | `accepting connections` |
 | Redis from Compose | `docker compose exec redis redis-cli ping` | `PONG` |
-| Honua cache/Redis view | `curl -fsS -H "X-API-Key: $HONUA_ADMIN_PASSWORD" "$HONUA_URL/api/v1/admin/cache/status"` | `isHealthy: true`; `isUsingFallback: false` when Redis is required |
-| Runtime config | `curl -fsS -H "X-API-Key: $HONUA_ADMIN_PASSWORD" "$HONUA_URL/api/v1/admin/config"` | Effective env-derived config is visible |
-| Performance and license health | `curl -fsS -H "X-API-Key: $HONUA_ADMIN_PASSWORD" "$HONUA_URL/healthz/metrics"` | JSON status is `healthy` |
+| Honua cache/Redis view | Run `GET /api/v1/admin/cache/status` in the authorized [API explorer](../../reference/openapi-and-explorer.md) | `isHealthy: true`; `isUsingFallback: false` when Redis is required |
+| Runtime config | Run `GET /api/v1/admin/config` in the authorized API explorer | Effective env-derived config is visible |
+| Performance and license health | Run `GET /healthz/metrics` in the authorized API explorer | JSON status is `healthy` |
 
 If `/healthz/ready` returns `503` and the body is `Not Ready`, use `/api/v1/admin/cache/status`, database logs, and server logs to identify whether the failing check is migrations, PostGIS, or cache/Redis.
 
@@ -89,10 +90,7 @@ Do not hand-edit `metadata_v2_current` for normal onboarding. If you restore a d
 
 Detect the active snapshot through the admin API:
 
-```bash
-curl -i -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$HONUA_URL/api/v1/admin/metadata/environments/$METADATA_ENV/inventory"
-```
+Run `GET /api/v1/admin/metadata/environments/{environment}/inventory` in the authorized [API explorer](../../reference/openapi-and-explorer.md), substituting the configured `Metadata__Environment` value.
 
 Expected: `200 OK` with `environment`, `revision`, `eTag`, and `entries`. A `404` with `Metadata v2 environment '<env>' does not have an active revision.` means no snapshot is active for that environment.
 
@@ -124,7 +122,7 @@ No rows means no active snapshot for that environment. A row in another environm
 
 ## Before handoff
 
-- `curl -fsS "$HONUA_URL/healthz/ready"` returns `Ready`.
+- `/healthz/ready` at the deployment origin returns `Ready` in a browser.
 - Redis `PING` returns `PONG` when jobs/workflows are in scope.
 - `/api/v1/admin/cache/status` is healthy and not using fallback when Redis is required.
 - The metadata inventory endpoint for `Metadata__Environment` returns `200 OK`.

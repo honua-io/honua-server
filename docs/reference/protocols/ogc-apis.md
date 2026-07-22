@@ -47,9 +47,7 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 
 CQL2 support covers logical/comparison/arithmetic operators, `LIKE`, `IN`, `BETWEEN`, all `S_*` spatial predicates (including `S_DWITHIN`/`S_BEYOND`), the full `T_*` temporal predicate set, `A_*` array predicates, and a string/numeric/datetime/`CASEI`/`ACCENTI` function set. Unsupported operators and functions return 400. Full operator tables: [archived coverage matrix](../../archive/specifications/ogc-api-features-coverage.md).
 
-```bash
-curl "https://server.example.com/ogc/features/collections/roads/items?filter=S_INTERSECTS(geometry,POINT(-122.4%2037.8))&limit=10"
-```
+> Open `https://server.example.com/ogc/features/collections/roads/items?filter=S_INTERSECTS(geometry,POINT(-122.4%2037.8))&limit=10` in a browser.
 
 ## OGC API Maps
 
@@ -63,9 +61,7 @@ curl "https://server.example.com/ogc/features/collections/roads/items?filter=S_I
 
 Key parameters: `bbox`, `bbox-crs`, `crs`, `width`/`height` (1–4096, default 256), `f` (`png`, `jpeg`, `tiff`), `transparent` (default true), `bgcolor` (`0xRRGGBB`), `datetime`, `quality`.
 
-```bash
-curl -o map.png "https://server.example.com/ogc/maps/collections/roads/map?bbox=-122.5,37.7,-122.3,37.9&width=800&height=600&f=png"
-```
+> Open `https://server.example.com/ogc/maps/collections/roads/map?bbox=-122.5,37.7,-122.3,37.9&width=800&height=600&f=png` in a browser.
 
 ## OGC API Tiles
 
@@ -80,9 +76,7 @@ curl -o map.png "https://server.example.com/ogc/maps/collections/roads/map?bbox=
 
 Custom tile matrix sets are merged in from the `TileMatrixSets` configuration section (validated for unique IDs, no reserved-ID collision, monotonic scale denominators, positive tile dimensions, and a valid SRID). Custom gridsets are advertised through the registry and served by `GetTile` as both PNG (raster) and MVT (vector): the vector-tile provider derives the tile envelope and target SRID from the gridset geometry and reprojects the stored geometry into the gridset CRS with `ST_Transform`. The `crs`/`subset-crs` request parameters accept the gridset's own CRS for custom gridsets (tiles are delivered in the gridset CRS). Built-in gridset output (WebMercatorQuad / WorldCRS84Quad) is byte-identical to before. The per-dataset / per-collection tileset-metadata documents (`/ogc/tiles/.../tiles/{tileMatrixSetId}` and the tileset lists) advertise custom gridsets as `vector` (#1916): each custom gridset is emitted with its own CRS/URI and full-coverage per-level tile-matrix limits derived from the gridset geometry, threaded through the `ITileMatrixSetRegistry`; the two built-ins keep the byte-identical static-descriptor path. Tile requests accept a vertical/elevation subset (`subset=Z(...)` / `elevation(...)` / `height(...)`): the value is parsed, validated, and recorded on the render descriptor — raster layers can honour the coordinate, vector layers record-but-do-not-render it (Zarr-slice render binding is deferred). Non-vertical or unknown subset axes (e.g. `E(0:1)`) still return 400.
 
-```bash
-curl -o tile.mvt "https://server.example.com/ogc/tiles/collections/roads/tiles/WebMercatorQuad/12/1586/2412"
-```
+> Open `https://server.example.com/ogc/tiles/collections/roads/tiles/WebMercatorQuad/12/1586/2412` in a browser.
 
 ## OGC API Coverages
 
@@ -95,9 +89,7 @@ curl -o tile.mvt "https://server.example.com/ogc/tiles/collections/roads/tiles/W
 
 Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `bbox-crs`, `crs` (output CRS), `properties` (band selection, order-preserving), and exactly one scaling control per request — `resolution`, `scale-factor`, or `scale-size` (max 8192 px per axis). `datetime` (RFC 3339 instant or interval) applies temporal subsetting to Zarr multidimensional coverages that declare an evenly-spaced time axis — an instant rounds to the nearest index, an interval is resolved by ceil/floor over the index range; coverages with no time axis, an irregular axis, or a conflicting `subset` over time return 400. `subset` and `scale-axes` are deferred and return 400.
 
-```bash
-curl -o clip.tif "https://server.example.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9&properties=band_1"
-```
+> Open `https://server.example.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9&properties=band_1` in a browser.
 
 ## OGC API Processes
 
@@ -111,10 +103,24 @@ curl -o clip.tif "https://server.example.com/ogc/coverages/collections/0/coverag
 
 V1 projects a single canonical process (`honua-geoprocessing`); plans are validated against the built-in 96-process catalog at submission. Synchronous execution returns 501; job endpoints require Redis-backed durable storage (503 otherwise).
 
-```bash
-curl -X POST "https://server.example.com/ogc/processes/processes/honua-geoprocessing/execution" \
-  -H "Prefer: respond-async" -H "Content-Type: application/json" \
-  -d '{"inputs":{"plan":{"planId":"buffer-demo","steps":[{"kind":"geoprocess","processId":"geometry.buffer","inputs":{"layerId":"0","distance":"100"}}]}},"response":"document"}'
+In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/honua-geoprocessing/execution` with `Prefer: respond-async` and this body:
+
+```json
+{
+  "inputs": {
+    "plan": {
+      "planId": "buffer-demo",
+      "steps": [
+        {
+          "kind": "geoprocess",
+          "processId": "geometry.buffer",
+          "inputs": { "layerId": "0", "distance": "100" }
+        }
+      ]
+    }
+  },
+  "response": "document"
+}
 ```
 
 ## OGC API Records

@@ -433,18 +433,7 @@ Comprehensive test coverage for all resilience patterns:
 
 ### Debug Commands
 
-```bash
-# Check circuit breaker status
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-     https://honua-server/monitoring/alerts
-
-# View connection pool metrics
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-     https://honua-server/monitoring/metrics/connection-pool
-
-# Check rate limiting status
-redis-cli --scan --pattern "honua:ratelimit:*" | head -10
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/alerts`; `GET https://honua-server/monitoring/metrics/connection-pool`.
 
 ## Performance Impact
 

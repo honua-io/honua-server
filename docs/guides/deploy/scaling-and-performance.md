@@ -74,10 +74,7 @@ Key knobs per profile/override: `MaxRetryAttempts`, `BaseDelayMs`, `BackoffExpon
 
 ## Verify
 
-```bash
-HONUA_ADMIN_PASSWORD=replace-with-admin-password
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://localhost:8080/monitoring/metrics/connection-pool
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /monitoring/metrics/connection-pool`.
 
 Expected: JSON with pool utilization well below 100% and zero (or near-zero) timeouts under normal load. Rehearse multi-instance behavior with the scale-test stack at [`docker/scale-test/compose.yml`](../../../docker/scale-test/compose.yml) (`./scripts/scale/scale-test.sh`).
 

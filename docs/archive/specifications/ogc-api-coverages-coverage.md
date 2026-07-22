@@ -58,26 +58,7 @@ Validation failures return the shared Honua problem response with `400 Bad Reque
 
 ## Examples
 
-```bash
-# Discover coverage collections.
-curl https://your-honua-server.com/ogc/coverages/collections
-
-# Inspect one collection and its selectable range fields.
-curl https://your-honua-server.com/ogc/coverages/collections/0
-curl https://your-honua-server.com/ogc/coverages/collections/0/schema
-
-# Retrieve a GeoTIFF clip in the default CRS84 bbox coordinate order.
-curl -o coverage.tif \
-  "https://your-honua-server.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9"
-
-# Select bands, reproject output, and request a fixed output size.
-curl -o coverage.tif \
-  "https://your-honua-server.com/ogc/coverages/collections/0/coverage?properties=band_3,band_1&crs=EPSG:3857&scale-size=Lon(512),Lat(512)"
-
-# Ask for PNG by HTTP negotiation.
-curl -H "Accept: image/png" -o coverage.png \
-  https://your-honua-server.com/ogc/coverages/collections/0/coverage
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://your-honua-server.com/ogc/coverages/collections`; `GET https://your-honua-server.com/ogc/coverages/collections/0`; `GET https://your-honua-server.com/ogc/coverages/collections/0/schema`; `GET https://your-honua-server.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9`; `GET https://your-honua-server.com/ogc/coverages/collections/0/coverage?properties=band_3,band_1&crs=EPSG:3857&scale-size=Lon(512),Lat(512)`; `GET https://your-honua-server.com/ogc/coverages/collections/0/coverage`.
 
 GDAL/QGIS-style clients should start from the landing page or collections resource, follow the
 collection `schema` and `coverage` links, and request `image/tiff`/GeoTIFF for georeferenced

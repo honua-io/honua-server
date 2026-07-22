@@ -1,128 +1,116 @@
 # Migrate from ArcGIS Server
 
-You'll inventory an ArcGIS Server or ArcGIS Online source, bulk-import its layers into PostGIS as published Honua services, verify parity, and cut traffic over.
+Use `honua-migrate` to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.
 
-**Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a healthy Redis-backed job queue for imports. Migrating a single service? Use the shorter [import from ArcGIS services](../publish/import-from-arcgis-services.md) guide instead.
+**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the [`honua-migrate`](https://github.com/honua-io/honua-migrate) CLI, and an ArcGIS service root ending in `FeatureServer` or `MapServer`.
 
-The migration workflow is deliberately staged: a read-only scan produces a deterministic inventory artifact you review before anything is imported, a batch run copies layers into PostGIS and auto-publishes them, and cutover only happens after you have compared the result against the source.
-
-## Steps
-
-### 1. Scan the source inventory
+Set the Honua connection once. The CLI reads these values without writing them to artifacts:
 
 ```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-SOURCE=https://services.arcgis.com/example/arcgis/rest/services/Parcels/FeatureServer
-curl -s -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d "{\"sourceKind\":\"arcgis-geoservices-rest\",\"sourceUrl\":\"$SOURCE\",\"timeoutSeconds\":30}" \
-  "$HONUA_URL/api/v1/admin/import/scan?export=json" -o parcels-inventory.json
+export HONUA_URL=https://honua.example.com
+export HONUA_API_KEY=your-admin-api-key
+export ARCGIS_SERVICE=https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer
 ```
 
-The scan is read-only and safe to rerun; `?export=json` writes an indented artifact you can commit to a migration repo. Run one scan per HTTPS service root ending in `FeatureServer` or `MapServer` (layer URLs are rejected); for an org-wide ArcGIS Online/Portal content inventory, use the `honua-migrate` CLI ([ArcGIS apps and SDKs](arcgis-apps-and-sdks.md)).
-
-For secured sources add a `credentials` object — `{"mode": "token", "accessTokenSecretReference": "env:ARCGIS_TOKEN"}` (modes: `token`, `oauth`, `basic`). Optionally set `"artifactSet": "all"` to also receive a generated migration manifest and parity-evidence planning artifact in one envelope.
-
-### 2. Review the compatibility report
+## 1. Assess with read-only discovery
 
 ```bash
-jq '{status: .scanCompleteness.status, overall: .overallCompatibility, summary: .summary}' parcels-inventory.json
+honua-migrate services arcgis discover "$ARCGIS_SERVICE" \
+  --output arcgis-discovery.json
 ```
 
-HTTP 200 only means the scanner returned an artifact — treat `scanCompleteness.status` and `overallCompatibility` as the actual result, then drill into per-item assessments in `resources`, `styles`, and `externalDependencies`. Every assessment carries a stable code:
+`discover` reads the source and emits a versioned, credential-free artifact. For a secured source, pass a server-side secret reference such as `--token-secret-ref env:ARCGIS_TOKEN`; the secret value must be available to Honua, and the reference is not retained in the artifact.
 
-| Code | Level | What to do |
-|---|---|---|
-| `COMPATIBLE` | compatible | Nothing — layer imports as-is. |
-| `MANUAL_REVIEW` | partial | Recreate the renderer in Honua after data import. |
-| `ARCGIS_EXTERNAL_SYMBOL` | partial | Mirror or replace external symbol assets. |
-| `ARCGIS_ATTACHMENTS` | partial | Plan a separate attachment migration. |
-| `ARCGIS_DOMAIN_TRUNCATED` | warning | Coded-value domain exceeded the capture cap; re-import it manually if needed. |
-| `ARCGIS_QUERY_CAPABILITY_MISSING` | incompatible | Layer does not advertise `Query`; export its data another way. |
-| `ARCGIS_UNSUPPORTED_GEOMETRY` / `ARCGIS_UNSUPPORTED_RENDERER` | incompatible | Normalize the geometry / rebuild the style manually. |
-| `ARCGIS_TOKEN_REQUIRED` / `ARCGIS_TOKEN_EXPIRED` / `ARCGIS_ACCESS_DENIED` | partial | Supply (or rotate) credentials and rerun the scan. |
+Review the discovered layers, fields, spatial references, relationships, styles, attachments, and unsupported capabilities before planning. The current command works on one service root at a time; organization-wide Portal content assessment remains a separate inventory workflow.
 
-Honua does not refresh ArcGIS tokens — an expired token surfaces as `authPosture.mode = "expired-token"`; rotate the referenced secret and rerun. Resolve or explicitly waive every non-compatible item before importing.
+## 2. Create and verify a plan
 
-### 3. Import in batches
+Create one plan per source layer:
 
 ```bash
-curl -s -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d "{
-    \"sourceKind\": \"arcgis-geoservices-rest\",
-    \"sourceUrl\": \"$SOURCE\",
-    \"layers\": [
-      {\"sourceResourceId\": \"parcels-0\", \"serviceUrl\": \"$SOURCE\", \"layerId\": 0, \"tableName\": \"parcels\", \"serviceName\": \"parcels\"},
-      {\"sourceResourceId\": \"zones-1\", \"serviceUrl\": \"$SOURCE\", \"layerId\": 1, \"tableName\": \"zones\", \"serviceName\": \"parcels\", \"dependsOn\": [\"parcels-0\"]}
-    ]
-  }" \
-  "$HONUA_URL/api/v1/admin/import/migrations"
+honua-migrate services arcgis plan "$ARCGIS_SERVICE" \
+  --layer-id 0 \
+  --table-name parcels \
+  --service-name parcels \
+  --target-srid 4326 \
+  --output parcels-plan.json
+
+honua-migrate plan verify parcels-plan.json
 ```
 
-Returns `202 Accepted` with a `batchId`. A batch footprint holds up to 500 layers; each layer becomes an ordered child import job (`dependsOn` controls sequencing) that copies features into PostGIS and auto-publishes the layer. To apply manifest relationship classes after all layers publish, pass `manifestBody` plus `"applyRelationships": true`. Batches are resumable and advanced by a leader-elected background service; secured sources should be imported per-layer via [`/import/geoservices/start`](../publish/import-from-arcgis-services.md) with secret-reference credentials instead.
+Planning is local and does not contact either server. The plan is a shared v1 migration contract with a canonical digest. Review table and service names, the target SRID, overwrite behavior, query filters, output fields, and auto-publish behavior before applying it. Existing output files are rejected unless you intentionally pass `--force`.
 
-### 4. Track the batch
+The current ArcGIS service command creates a single-layer plan. A multi-layer batch command is not exposed yet; keep multiple plans under the same change record and apply them in dependency order.
+
+## 3. Apply the reviewed plan
 
 ```bash
-BATCH_ID=paste-batchid-from-step-3
-curl -s -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/import/migrations/$BATCH_ID"
+honua-migrate services arcgis apply parcels-plan.json \
+  --yes \
+  --output parcels-apply.json
 ```
 
-The rolled-up status is `running`, `succeeded`, `failed`, `cancelled`, or `needs-review`, with per-child `status`, `jobId`, `publishedLayerId`, and `statusNote`. Individual child jobs can be inspected or cancelled via `GET/POST $HONUA_URL/api/v1/admin/import/geoservices/jobs/{jobId}[/cancel]`.
+`--yes` is required before the CLI resolves credentials, reads the plan, or contacts Honua. For a secured source, repeat the server-side token reference with `--token-secret-ref env:ARCGIS_TOKEN`. The command never retries the mutation automatically. Record the returned job ID from `parcels-apply.json`.
 
-### 5. Verify parity
+## 4. Monitor the job
 
 ```bash
-SERVICE_ID=parcels
-curl -s "$SOURCE/0/query?where=1%3D1&returnCountOnly=true&f=json"
-curl -s "$HONUA_URL/rest/services/$SERVICE_ID/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"
+export JOB_ID=the-job-id-from-apply
+
+honua-migrate services arcgis status "$JOB_ID" --output parcels-status.json
+honua-migrate services arcgis resume "$JOB_ID" \
+  --max-wait 600 \
+  --output parcels-terminal.json
+honua-migrate services arcgis list --output arcgis-jobs.json
 ```
 
-Compare feature counts per layer, then spot-check attribute queries and extents the same way — the requests are identical on both servers because Honua serves the same GeoServices REST surface ([parity reference](../../reference/compatibility/geoservices-parity.md)). For an automated per-layer fidelity comparison, use the `honua-migrate reconcile` command ([ArcGIS apps and SDKs](arcgis-apps-and-sdks.md)).
-
-### 6. Repoint clients
+`status`, `list`, and `resume` are read-only. `resume` only polls the existing job and never requeues it. Cancellation is a separate mutation and requires acknowledgement:
 
 ```bash
-curl -s "$HONUA_URL/rest/services/$SERVICE_ID/FeatureServer?f=json" | jq .layers
+honua-migrate services arcgis cancel "$JOB_ID" --yes
 ```
 
-Existing Esri clients keep their workflow and swap only the URL: desktop and SDK clients per [connect ArcGIS Pro](../connect/arcgis-pro.md), web apps per [ArcGIS apps and SDKs](arcgis-apps-and-sdks.md). Clients that sign in get tokens from Honua's `/sharing/rest/generateToken` endpoint automatically.
+## 5. Reconcile the result
 
-### 7. Work the cutover checklist
+Use the supported Honua data-plane CLI to inspect the published target:
 
-Before moving production traffic, record an explicit state (`pass`, `fail`, `unknown`, `not-applicable`) for each item, with evidence — a `pass` without a linked artifact, runbook, or signed approval does not count:
+```bash
+export HONUA_BASE_URL="$HONUA_URL"
+honua services
+honua layers parcels
+honua query parcels/0 --count
+honua query parcels/0 --limit 5 --format geojson
+```
+
+Compare those results with the source inventory and ArcGIS Pro or another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
+
+The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The ArcGIS service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated ArcGIS reconciliation remains deferred until that adapter is wired.
+
+## 6. Repoint clients
+
+Existing Esri clients keep their workflow and replace only the service URL. Desktop setup is covered in [connect ArcGIS Pro](../connect/arcgis-pro.md); web and SDK migrations are covered in [ArcGIS apps and SDKs](arcgis-apps-and-sdks.md). ArcGIS Pro and ArcGIS Maps SDK licensing remains an Esri client concern; Honua replaces the server, not client licensing.
+
+## Cutover checklist
+
+Record an explicit state (`pass`, `fail`, `unknown`, or `not-applicable`) and evidence for each item:
 
 | Item | Evidence required |
 |---|---|
-| Inventory confirmed | Source owner reviewed scan scope, auth posture, and completeness warnings. |
-| Manifest reviewed | Target resources, style actions, manual-review and unsupported items reviewed. |
-| Parity report reviewed | Per-layer count/schema/query checks from step 5 reviewed after the pilot. |
-| Known gaps accepted | Every `fail`/`unknown` item has an accepted remediation, waiver, or deferral. |
-| Rollback plan documented | See below. |
-| Traffic switch planned | DNS, load-balancer, client URL, and cache-warming changes scheduled. |
+| Inventory confirmed | Source owner reviewed discovery scope and authentication posture. |
+| Plans reviewed | Target names, filters, styles, unsupported items, and overwrite choices were approved. |
+| Jobs completed | Every apply job reached a terminal state and its artifact was retained. |
+| Parity reviewed | Counts, schemas, extents, samples, relationships, and metadata were compared. |
+| Known gaps accepted | Every failed or unknown check has a remediation, waiver, or deferral. |
+| Rollback prepared | Database restore point, traffic switchback, cache purge, escalation contact, and decision owner are documented. |
 
-A rollback plan must name: the database restore point and its retention window, the DNS/load-balancer steps that return traffic to the source, required CDN/tile/client cache purges, the escalation contact per dependent team, the point-of-no-return and post-cutover validation window, and the single decision owner who authorizes rollback. Honua does not execute the rollback — keep it in your own runbook. Run a pilot subset through steps 3–6 first, and only cut over once the latest parity evidence has no unaccepted failures.
-
-## Verify
-
-```bash
-curl -s "$HONUA_URL/rest/services?f=json" | jq .
-```
-
-Every migrated service should be listed, each layer's count probe from step 5 should match the source, and a repointed client should draw the layer and open its attribute table.
+Run a pilot subset first. Move production traffic only when the latest evidence has no unaccepted failures.
 
 ## Troubleshoot
 
-- **Scan returns 200 but `scanCompleteness.status` is `failed`** — check `overallCompatibility.code`: `ARCGIS_TOKEN_REQUIRED`/`ARCGIS_ACCESS_DENIED` mean you need (working) credentials; rerun after adding them.
-- **400 on `sourceUrl` or `serviceUrl`** — use the HTTPS service root ending in `FeatureServer`/`MapServer`; layer URLs, embedded credentials, and private/loopback addresses are rejected.
-- **503 `Distributed import coordination is unavailable`** — batch and queued imports need the Redis-backed job manager; restore Redis and retry.
-- **Batch ends `needs-review` or a child fails** — read the child's `statusNote`, fix the cause (source outage, table conflict, incompatible layer), and submit the remaining layers as a new batch; already-published children are not re-imported.
-- **Counts match but a client operation fails** — Honua's GeoServices parity is broad but not total; check the operation in the [parity reference](../../reference/compatibility/geoservices-parity.md) before debugging the client.
+- **The service URL is rejected** — use a credential-free HTTP(S) service root ending in `FeatureServer` or `MapServer`; layer URLs, URL userinfo, query strings, and fragments are rejected.
+- **The source needs a token** — configure the secret in the Honua environment and pass only its `env:VARIABLE_NAME` reference.
+- **Apply refuses to run** — verify the plan digest, ensure the output path does not already exist, and add `--yes` only after review.
+- **A job is still running** — use `resume` with a bounded `--max-wait`; it monitors the existing job without replaying the import.
+- **Counts match but a client operation fails** — check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md).
 
-More help: [troubleshooting](../deploy/troubleshooting.md).
-
-## Next steps
-
-- [ArcGIS apps and SDKs](arcgis-apps-and-sdks.md) — repoint web apps with the compat layer and codemod.
-- [Connect ArcGIS Pro](../connect/arcgis-pro.md) — desktop and Esri SDK clients against Honua.
-- [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md) — operation-level compatibility detail.
+More help: [deployment troubleshooting](../deploy/troubleshooting.md).

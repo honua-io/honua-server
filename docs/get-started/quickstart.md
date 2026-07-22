@@ -2,7 +2,7 @@
 
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
-**Prerequisites:** Docker with Compose v2, `git`, `curl`, and Python 3 (only used to serve one HTML file).
+**Prerequisites:** Docker with Compose v2, `git`, and Python 3.
 
 ## Steps
 
@@ -20,9 +20,7 @@ docker compose up -d
 
 3. Wait until the server reports ready.
 
-```bash
-curl http://localhost:8080/healthz/ready
-```
+Run `docker compose ps`, then open <http://localhost:8080/healthz/ready> in a browser. Continue when the page says `Ready`.
 
 4. Optional Console dashboard: once a compatible `honua-console` image is published, start the profiled Console service and open <http://localhost:5174/operate>. The same service also serves <http://localhost:5174/operate/health> and <http://localhost:5174/operate/copilot>. Console binds to the local server with the quickstart admin key, so admin-only Operate reads work without another deploy step.
 
@@ -47,37 +45,49 @@ cat > points.geojson <<'EOF'
 EOF
 ```
 
-6. Import it. Admin endpoints authenticate with the `X-API-Key` header carrying the admin password.
-
-```bash
-curl -s -H "X-API-Key: quickstart-admin-password" \
-  -F "file=@points.geojson" -F "TableName=quickstart_points" \
-  http://localhost:8080/api/v1/admin/import/upload
-```
+6. Import it. The file-upload operation does not yet have a high-level SDK wrapper. Open the local [API explorer](http://localhost:8080/docs), choose the admin `POST /api/v1/admin/import/upload` operation, authorize with `quickstart-admin-password`, attach `points.geojson`, set `TableName` to `quickstart_points`, and execute it. If the explorer is disabled, use the checked-in [admin OpenAPI document](../developer/api-specs/admin-api.json) to generate a client.
 
 7. Register the compose database as a connection (publishing reads tables through named connections).
 
 ```bash
-curl -s -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/json" \
-  -d '{"name":"local","host":"postgres","port":5432,"databaseName":"honua_dev","username":"honua_user","password":"honua_password","sslRequired":false,"sslMode":"Prefer"}' \
-  http://localhost:8080/api/v1/admin/connections
+python3 -m pip install honua-admin
+python3 - <<'PY'
+from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
+
+with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
+    connection = admin.create_connection(CreateSecureConnectionRequest(
+        name="local",
+        host="postgres",
+        port=5432,
+        database_name="honua_dev",
+        username="honua_user",
+        password="honua_password",
+        ssl_mode="Prefer",
+    ))
+    print(connection)
+PY
 ```
 
 8. Publish the imported table as a layer (imports land in the `honua_data` schema) and note the `layerId` in the response.
 
 ```bash
-curl -s -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/json" \
-  -d '{"schema":"honua_data","table":"quickstart_points","layerName":"quickstart-points","srid":4326}' \
-  http://localhost:8080/api/v1/admin/connections/local/layers
+python3 - <<'PY'
+from honua_admin import HonuaAdminClient, PublishLayerRequest
+
+with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
+    layer = admin.publish_layer("local", PublishLayerRequest(
+        schema="honua_data",
+        table="quickstart_points",
+        layer_name="quickstart-points",
+        srid=4326,
+    ))
+    print(layer)
+PY
 ```
 
 9. Allow anonymous reads on the `default` service so the browser can fetch tiles without a key.
 
-```bash
-curl -s -X PUT -H "X-API-Key: quickstart-admin-password" -H "Content-Type: application/json" \
-  -d '{"allowAnonymous":true}' \
-  http://localhost:8080/api/v1/admin/services/default/access-policy
-```
+This control-plane operation does not yet have a high-level client method. In the [API explorer](http://localhost:8080/docs), run `PUT /api/v1/admin/services/default/access-policy` with `{"allowAnonymous": true}`. The generated admin OpenAPI document is the contract when the explorer is not available.
 
 10. Save this as `map.html` (if your `layerId` from step 8 was not `1`, change the first line of the script), then serve it and open <http://localhost:3000/map.html>.
 
@@ -105,14 +115,14 @@ python3 -m http.server 3000
 ## Verify
 
 ```bash
-curl -s http://localhost:8080/tiles/1/tile.json
+npm install --global @honua/sdk-js
+export HONUA_BASE_URL=http://localhost:8080
+honua services
+honua layers default
+honua query default/1 --count
 ```
 
-```text
-{"tilejson":"3.0.0","name":"quickstart-points","scheme":"xyz","tiles":["http://localhost:8080/tiles/1/{z}/{x}/{y}.mvt"],…}
-```
-
-In the browser you should see three blue circles over San Francisco.
+Use the actual layer ID printed by step 8. The count should be `3`, and the browser map should show three blue circles over San Francisco.
 
 ## Troubleshoot
 

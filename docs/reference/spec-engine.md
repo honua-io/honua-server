@@ -50,20 +50,28 @@ All warnings and errors carry a stable `code`. Errors: `version-skew`, `dag-cycl
 
 ## Example
 
-```bash
-curl -N -X POST http://localhost:8080/v1/spec/apply \
-  -H "Accept: text/event-stream" -H "Content-Type: application/json" \
-  -d '{
-    "grammarVersion": "1.0.0",
-    "processFamilyVersion": "2026.4",
-    "nodes": [
-      { "id": "parks", "kind": "compute", "op": "source.layer",
-        "parameters": { "layerId": "42" } },
-      { "id": "buffered", "kind": "compute", "op": "compute.buffer",
-        "inputs": { "source": "@parks" },
-        "parameters": { "distanceMeters": "100" } }
-    ]
-  }'
+In the [API explorer](openapi-and-explorer.md), run `POST /v1/spec/apply` and select the event-stream response with this body:
+
+```json
+{
+  "grammarVersion": "1.0.0",
+  "processFamilyVersion": "2026.4",
+  "nodes": [
+    {
+      "id": "parks",
+      "kind": "compute",
+      "op": "source.layer",
+      "parameters": { "layerId": "42" }
+    },
+    {
+      "id": "buffered",
+      "kind": "compute",
+      "op": "compute.buffer",
+      "inputs": { "source": "@parks" },
+      "parameters": { "distanceMeters": "100" }
+    }
+  ]
+}
 ```
 
 ## Scope and limits (current stage)

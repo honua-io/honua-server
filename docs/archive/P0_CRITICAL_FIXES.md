@@ -136,17 +136,7 @@ Created comprehensive test suite to validate fixes:
 
 ## Verification Commands
 
-```bash
-# Build and test the fixes
-dotnet build src/Honua.Server/Honua.Server.csproj
-dotnet test tests/dotnet/Honua.Server.Tests/Features/Security/P0CriticalFixesValidationTests.cs
-
-# Verify authentication configuration
-dotnet run --project src/Honua.Server -- --test-auth-config
-
-# Monitor cache coordination
-curl https://localhost:5001/admin/diagnostics/cache
-```
+> Open `https://localhost:5001/admin/diagnostics/cache` in a browser.
 
 ## Next Steps
 

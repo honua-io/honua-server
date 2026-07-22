@@ -164,31 +164,16 @@ dotnet test tests/dotnet/Honua.Server.Tests/ --filter="Category=Security"
 ### Manual Testing
 
 #### 1. Authentication Bypass Test
-```bash
-# Should return 401 in production
-curl -i http://your-server/admin/health
-```
+> Open `http://your-server/admin/health` in a browser.
 
 #### 2. SQL Injection Test
-```bash
-# Should be safely handled or rejected
-curl "http://your-server/ogc/features/v1/collections/test/items?filter=name=''; DROP TABLE users; --'"
-```
+> Open `http://your-server/ogc/features/v1/collections/test/items?filter=name=` in a browser.
 
 #### 3. CORS Test
-```bash
-# Should not expose credentials to malicious origins
-curl -H "Origin: https://evil.com" \
-     -H "Access-Control-Request-Method: GET" \
-     -X OPTIONS \
-     http://your-server/api/data
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `OPTIONS https://evil.com`.
 
 #### 4. Information Disclosure Test
-```bash
-# Should return generic error in production
-curl -H "Authorization: Bearer invalid" http://your-server/admin/health
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET http://your-server/admin/health`.
 
 ## Rollback Plan
 

@@ -10,11 +10,7 @@ Pull a live SOC 2 / FedRAMP readiness snapshot, export auditor-facing reports, a
 
 ### 1. Read the compliance dashboard
 
-```bash
-BASE=http://localhost:8080
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$BASE/api/v1/admin/compliance/dashboard" | jq .data.summary
-```
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/compliance/dashboard`.
 
 The snapshot rolls per-control evidence up from server configuration, audit-log availability, and encryption posture; the summary shows per-status counts and the readiness percent across applicable controls.
 
@@ -32,38 +28,25 @@ Set an attestation only once it is true in your deployment (e.g. TLS terminates 
 
 ### 3. Export the evidence report
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$BASE/api/v1/admin/compliance/report?format=csv" -o honua-compliance.csv
-```
+Run `GET /api/v1/admin/compliance/report?format=csv` and save the explorer response as `honua-compliance.csv`.
 
 `format=pdf` (default) renders a self-contained auditor-facing PDF; `csv` is the evidence matrix. Exports are audit-logged as `compliance.report.export`.
 
 ### 4. Dry-run the residency policy
 
-```bash
-curl -X POST "$BASE/api/v1/admin/compliance/residency/evaluate" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"region":"us-east-1"}'
-```
+Run `POST /api/v1/admin/compliance/residency/evaluate` with `{"region":"us-east-1"}`.
 
 The policy lives under `Compliance__DataResidency__*` (`Enforced`, `PrimaryRegion`, `AllowedRegions__0..n`); the primary region is implicitly allowed. **This is a policy check, not enforcement**: no production egress path currently consults the residency provider, so `Enforced=true` flips the policy view and this dry-run verdict only. Once you wire your own egress guards to the policy, attest it with `Compliance__DependencyOverrides__DataResidencyAttested=true`.
 
 ### 5. Record a key-rotation event (posture only)
 
-```bash
-curl -X POST "$BASE/api/v1/admin/compliance/encryption/rotate-key" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD"
-```
+Run `POST /api/v1/admin/compliance/encryption/rotate-key`.
 
 This advances an auditor-facing key-version counter and writes an `encryption.key.rotate` audit event. **It does not re-encrypt data or rotate cipher material** — the connection registry's real key is `Security__ConnectionEncryption__MasterKey` and requires a redeploy. The version timeline is in-memory and resets on restart; the audit log keeps the durable history.
 
 ## Verify
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$BASE/api/v1/admin/compliance/dashboard" | jq '.data.summary'
-```
+Run `GET /api/v1/admin/compliance/dashboard` again.
 
 ```json
 { "implemented": 9, "partiallyImplemented": 4, "notImplemented": 0, "readinessPercent": 69 }

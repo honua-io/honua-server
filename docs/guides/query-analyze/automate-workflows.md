@@ -10,71 +10,76 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
 
 1. Browse the node registry to see what you can chain — every entry mirrors a geoprocessing catalog process:
 
-   ```bash
-   BASE=http://localhost:8080
-   KEY=my-admin-api-key
-   curl -s "$BASE/api/v1/console/workflow-node-registry" -H "X-API-Key: $KEY"
-   ```
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/console/workflow-node-registry`.
 
 2. Create a package with a two-step graph: buffer a geometry, then simplify the buffered result. The data edge's `targetPort` names the downstream input (`wkb`) that the upstream artifact fills; node `parameters` are strings:
 
-   ```bash
-   curl -s -X POST "$BASE/api/v1/console/workflow-packages" \
-     -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{
+   Run `POST /api/v1/console/workflow-packages` with this body:
+
+   ```json
+   {
      "name": "buffer-then-simplify",
      "graph": {
        "schemaVersion": "workflow-package.v1",
        "nodes": [
-         { "nodeId": "buffer", "nodeTypeId": "process:geometry.buffer",
-           "parameters": { "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA", "srid": "4326", "distance": "500" } },
-         { "nodeId": "simplify", "nodeTypeId": "process:geometry.simplify",
-           "parameters": { "srid": "4326", "tolerance": "10" } }
+         {
+           "nodeId": "buffer",
+           "nodeTypeId": "process:geometry.buffer",
+           "parameters": {
+             "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
+             "srid": "4326",
+             "distance": "500"
+           }
+         },
+         {
+           "nodeId": "simplify",
+           "nodeTypeId": "process:geometry.simplify",
+           "parameters": { "srid": "4326", "tolerance": "10" }
+         }
        ],
        "edges": [
-         { "sourceNodeId": "buffer", "targetNodeId": "simplify", "kind": "Data", "targetPort": "wkb" }
+         {
+           "sourceNodeId": "buffer",
+           "targetNodeId": "simplify",
+           "kind": "Data",
+           "targetPort": "wkb"
+         }
        ]
      }
-   }'
+   }
    ```
 
    Note the package id (`PKG` below) from the response.
 
 3. Snapshot the draft as an immutable version, then validate and dry-run it before publishing:
 
-   ```bash
-   PKG=the-package-id
-   curl -s -X POST "$BASE/api/v1/console/workflow-packages/$PKG/versions" -H "X-API-Key: $KEY"
-   curl -s -X POST "$BASE/api/v1/console/workflow-packages/$PKG/versions/1/validate" -H "X-API-Key: $KEY"
-   curl -s -X POST "$BASE/api/v1/console/workflow-packages/$PKG/versions/1/dry-run" -H "X-API-Key: $KEY"
-   ```
+   Run `POST /api/v1/console/workflow-packages/{packageId}/versions`, followed by the `/versions/1/validate` and `/versions/1/dry-run` operations.
 
 4. Publish version 1 to a schedule. Data-wired graphs must publish to the `Schedule` target so the orchestration engine can chain step outputs; the cron expression is 5-field, with an optional IANA time zone (default UTC):
 
-   ```bash
-   curl -s -X POST "$BASE/api/v1/console/workflow-packages/$PKG/versions/1/publish" \
-     -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-     -d '{ "target": "Schedule", "schedule": { "cronExpression": "0 6 * * *", "timeZone": "UTC" } }'
+   Run `POST /api/v1/console/workflow-packages/{packageId}/versions/1/publish` with this body:
+
+   ```json
+   {
+     "target": "Schedule",
+     "schedule": {
+       "cronExpression": "0 6 * * *",
+       "timeZone": "UTC"
+     }
+   }
    ```
 
    The scheduler evaluates cron triggers every 30 seconds and claims each fire-time so exactly one replica creates a run per occurrence. Failed steps retry per the engine's per-step retry policy with exponential backoff; see [operations](../deploy/backup-and-restore.md#workflow-orchestration) for run lifecycle, failure policies, and crash-safety details.
 
 5. Trigger a run on demand and watch it. The run id doubles as an operation id on the admin progress API:
 
-   ```bash
-   PUB=the-publication-id
-   curl -s -X POST "$BASE/api/v1/console/workflow-publications/$PUB/runs" \
-     -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{}'
-   RUN=the-workflowRunId-from-the-response
-   curl -s "$BASE/api/v1/admin/operations/$RUN" -H "X-API-Key: $KEY"
-   ```
+   Run `POST /api/v1/console/workflow-publications/{publicationId}/runs` with `{}`, then use the returned `workflowRunId` in `GET /api/v1/admin/operations/{runId}`.
 
-   `GET /api/v1/console/workflow-publications` lists publications; `GET /api/v1/admin/operations/active` lists in-flight runs; `POST /api/v1/admin/operations/$RUN/cancel` cancels a run (cascading to its child jobs).
+   `GET /api/v1/console/workflow-publications` lists publications; `GET /api/v1/admin/operations/active` lists in-flight runs; `POST /api/v1/admin/operations/{runId}/cancel` cancels a run (cascading to its child jobs).
 
 ## Verify
 
-```bash
-curl -s "$BASE/api/v1/admin/operations/$RUN" -H "X-API-Key: $KEY"
-```
+Run `GET /api/v1/admin/operations/{runId}` again in the explorer.
 
 Expected (trimmed): run progress that ends in a succeeded state with both steps terminal.
 

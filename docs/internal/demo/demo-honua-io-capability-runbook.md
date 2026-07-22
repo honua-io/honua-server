@@ -36,10 +36,7 @@ deployed to `honua-demo-demo-honua`:
 Health gate (Redis is required for a healthy server; STAC needs a current v2 snapshot —
 the seed below activates one):
 
-```bash
-curl -fsS https://demo.honua.io/healthz/live    # 200
-curl -fsS https://demo.honua.io/healthz/ready   # 200 (Redis up)
-```
+> Open `https://demo.honua.io/healthz/live`, `https://demo.honua.io/healthz/ready` in a browser.
 
 ---
 
@@ -98,14 +95,7 @@ two collections without duplicating features or publications.
 
 ### Verify (REQ-001)
 
-```bash
-curl -s https://demo.honua.io/stac/collections | jq '.collections | length'   # >= 2
-curl -s https://demo.honua.io/stac/collections | jq -r '.collections[].id'     # 90810, 90820
-curl -s -X POST https://demo.honua.io/stac/search \
-  -H 'content-type: application/json' \
-  -d '{"bbox":[-156.70,20.60,-156.30,20.96],"collections":["90810"]}' \
-  | jq '.features | length'   # > 0
-```
+Open `https://demo.honua.io/stac/collections` in a browser and confirm it contains at least two collections, including `90810` and `90820`. Then use the [API explorer workflow](../../reference/openapi-and-explorer.md) for `POST /stac/search` with `{"bbox":[-156.70,20.60,-156.30,20.96],"collections":["90810"]}` and confirm the response contains features.
 
 Acceptance: Imagery & Terrain Studio (`demo-imagery-terrain.html`) shows a live STAC
 catalog instead of the bundled sample lane.
@@ -214,24 +204,14 @@ OData/FeatureServer layer with CORS/If-Match/ETag already fixed (#1629/#1653).
 `terraform apply` (or update the Lambda env + `update-function-code`) and re-run the
 probes:
 
-```bash
-# REQ-004 streaming
-curl -s https://demo.honua.io/api/v1/streaming/features/capabilities \
-  | jq '{enabled, edition}'                       # {"enabled": true, "edition": "Pro"}
+Open these demo URLs in a browser and inspect the named fields:
 
-# REQ-003 geocoding
-curl -s 'https://demo.honua.io/rest/services/maui/GeocodeServer?f=json' \
-  | jq '.currentVersion'                          # present (no 404)
-curl -s 'https://demo.honua.io/rest/services/maui/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului' \
-  | jq '.candidates | length'                     # > 0
+- `/api/v1/streaming/features/capabilities` — `enabled: true`, `edition: "Pro"`.
+- `/rest/services/maui/GeocodeServer?f=json` — `currentVersion` is present.
+- `/rest/services/maui/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului` — `candidates` is non-empty.
+- `/api/v1/capabilities/manifest` — `license.edition` is `"Pro"`.
 
-# Edition / capability manifest
-curl -s https://demo.honua.io/api/v1/capabilities/manifest \
-  | jq '.license.edition'                          # "Pro"
-
-# REQ-005 editing — authenticated PATCH/POST to a writable layer should persist
-#   (round-trips on re-read). NFR-001: write creds stay server-side, never in client pages.
-```
+For REQ-005, make an authenticated edit with the generated admin client or API explorer and confirm it persists on re-read; keep write credentials server-side.
 
 Acceptance (#1688): Public Safety Ops connects a live incident feed; dispatch geocoding
 resolves live; Inspection & Editing persists an edit; the four probes pass from the

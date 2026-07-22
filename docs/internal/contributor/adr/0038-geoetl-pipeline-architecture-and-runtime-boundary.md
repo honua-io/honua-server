@@ -473,7 +473,7 @@ the dry run validates is what production would execute.
   ADR's correctness guarantee is conditional on F shipping the filter
   before the worker image registers a competing executor.
 - **YAML lives in the SDK.** Authors who want YAML must use the SDK or
-  `honua-cli`. Raw `curl` users send JSON. SDK teams own a
+  `honua-cli`. Generated OpenAPI clients send JSON. SDK teams own a
   YAML-to-JSON normalizer.
 - **Discriminated-union evolution.** Adding a new connector or
   transform requires a `schema_version` bump and a migration helper.

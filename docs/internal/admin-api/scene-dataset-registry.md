@@ -191,25 +191,22 @@ against `IHostEnvironment.ContentRootPath`.
 
 ## Example: register and resolve
 
-```bash
-# Create
-curl -sS -X POST https://server.honua.io/api/v1/admin/scenes \
-  -H "X-API-Key: $HONUA_ADMIN" -H "Content-Type: application/json" \
-  -d '{
-        "id": "downtown",
-        "name": "Downtown massing model",
-        "description": "Photogrammetry tileset, 2026 Q1.",
-        "assetRoot": "/var/lib/honua/scenes/downtown",
-        "extent": { "xMin": -122.4, "yMin": 37.7, "xMax": -122.3, "yMax": 37.8 },
-        "crs": "EPSG:4979",
-        "cachePolicy": { "maxAgeSeconds": 3600, "noStore": false },
-        "isPublic": true
-      }'
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/scenes` with this body:
 
-# Resolve the snippet block for embedding
-curl -sS -H "X-API-Key: $HONUA_ADMIN" \
-  https://server.honua.io/api/v1/admin/scenes/{datasetId}/resolve
+```json
+{
+  "id": "downtown",
+  "name": "Downtown massing model",
+  "description": "Photogrammetry tileset, 2026 Q1.",
+  "assetRoot": "/var/lib/honua/scenes/downtown",
+  "extent": { "xMin": -122.4, "yMin": 37.7, "xMax": -122.3, "yMax": 37.8 },
+  "crs": "EPSG:4979",
+  "cachePolicy": { "maxAgeSeconds": 3600, "noStore": false },
+  "isPublic": true
+}
 ```
+
+Then run `GET /api/v1/admin/scenes/{datasetId}/resolve` with the returned dataset id to obtain the embedding snippet.
 
 ## Admin UI handoff
 

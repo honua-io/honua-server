@@ -646,7 +646,7 @@ bus.
 - **YAML at the wire.** Server-side YAML parsing was rejected to keep the
   AOT trim surface lean. **Tradeoff**: SDK and `honua-cli` own
   YAML-to-JSON normalization. Authors who want YAML must use a Honua
-  client; raw `curl` users send JSON.
+  client; generated OpenAPI clients send JSON.
 
 ## Open questions resolved
 

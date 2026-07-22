@@ -128,19 +128,19 @@ All admin endpoints are gated by `X-API-Key: $HONUA_DEMO_API_KEY`.
 
 `POST /api/v1/admin/metadata/releases/operations`
 
-```bash
-curl -s -X POST "$BASE/api/v1/admin/metadata/releases/operations" \
-  -H "X-API-Key: $HONUA_DEMO_API_KEY" -H 'Content-Type: application/json' \
-  -d '{
-        "packageId": "demo-b-add-owner-email",
-        "targetEnvironment": "staging",
-        "resourceSemanticId": "maui-parcels",
-        "newFieldName": "owner_email",
-        "newFieldType": "String",
-        "dataPopulateWorkloadId": "populate-owner-email",
-        "reason": "Demo B: additive layer evolution",
-        "idempotencyKey": "demo-b-add-owner-email"
-      }' | jq .
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/metadata/releases/operations` with this body:
+
+```json
+{
+  "packageId": "demo-b-add-owner-email",
+  "targetEnvironment": "staging",
+  "resourceSemanticId": "maui-parcels",
+  "newFieldName": "owner_email",
+  "newFieldType": "String",
+  "dataPopulateWorkloadId": "populate-owner-email",
+  "reason": "Demo B: additive layer evolution",
+  "idempotencyKey": "demo-b-add-owner-email"
+}
 ```
 
 Returns a `201` with a `DeployOperationResponse` (`operationId`, `status:
@@ -151,10 +151,7 @@ then walks the additive stages.
 
 `GET /api/v1/admin/metadata/releases/{packageId}/operation` (reconciles on read)
 
-```bash
-curl -s "$BASE/api/v1/admin/metadata/releases/demo-b-add-owner-email/operation" \
-  -H "X-API-Key: $HONUA_DEMO_API_KEY" | jq '{status, currentPhase, stage: .metadataRelease.currentStage, rollback: .metadataRelease.rollbackPlan, evidence: .metadataRelease.evidenceRefs}'
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/metadata/releases/demo-b-add-owner-email/operation`.
 
 Poll until terminal. With fault injection armed the Smoke gate fails and the
 operation lands at:
@@ -190,14 +187,7 @@ governed create path). It never auto-mutates: re-submission is human-approved.
 
 Programmatic detect (what the harness asserts on) — the same JSON the tool reads:
 
-```bash
-curl -s "$BASE/api/v1/admin/metadata/releases/demo-b-add-owner-email/operation" \
-  -H "X-API-Key: $HONUA_DEMO_API_KEY" \
-  | jq '{detected: (.status=="RolledBack"),
-         health_gate_ran: ([.metadataRelease.evidenceRefs[].kind] | index("smoke") != null),
-         db_inclusive_revert: (.currentPhase | test("Reversible rollback complete")),
-         rollback_class: .metadataRelease.rollbackPlan.class}'
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/metadata/releases/demo-b-add-owner-email/operation`.
 
 ### 4. Disarm fault injection (clean up after the take)
 
