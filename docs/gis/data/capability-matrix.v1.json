@@ -937,9 +937,9 @@
       "category": "Identity",
       "edition": "Enterprise",
       "entryCount": 13,
-      "provingTestCount": 23,
+      "provingTestCount": 24,
       "maturity": {
-        "implemented": 13
+        "experimental": 13
       },
       "noSurface": null,
       "cite": [],

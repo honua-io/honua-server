@@ -2,6 +2,11 @@
 
 Encrypt every hop — browser to edge, edge to Honua, Honua to PostgreSQL — and optionally require mTLS client certificates on admin and native surfaces.
 
+> **Experimental.** Native mTLS / client-certificate authentication (`security.mtls`) is off
+> by default. `Authentication__ClientCertificates__Mode` alone has no effect — also set
+> `Capabilities__Experimental__security.mtls__Enabled=true` (or the global
+> `Capabilities__Experimental__Enabled=true` switch) to enable it.
+
 **Prerequisites:** A reverse proxy or load balancer you control (nginx, ALB, Application Gateway, ingress), and an admin API key for the trust-management endpoints.
 
 ## Steps
