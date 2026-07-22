@@ -5,14 +5,18 @@ using System.Net;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
@@ -879,5 +883,78 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
+    }
+
+    // honua-server#2945: GetTile proving tests above only assert content-type/length; none
+    // exercised actual rendered tile content. This binds a deterministic style to the
+    // seeded point layer and asserts a matching pixel appears in the WebMercatorQuad z=0
+    // tile (a single tile spanning the whole globe, so it always contains the seeded point),
+    // plus that the decoded tile has the expected pixel dimensions.
+    [IntegrationTest]
+    [Operation(Operations.Wmts)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
+    public async Task Wmts_GetTile_StyledSeededPoint_RendersPixelAtFeatureLocationWithCorrectDimensions()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var catalog = fixture.GetService<ILayerStyleCatalog>();
+            await catalog.SetMapLibreStyleAsync(WebAppFixture.TestLayerId, CircleStyleJson("#ff0000"));
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0");
+
+            var content = await response.Content.ReadAsByteArrayAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+            using var bitmap = SKBitmap.Decode(content);
+            bitmap.Should().NotBeNull();
+            bitmap!.Width.Should().Be(256);
+            bitmap.Height.Should().Be(256);
+
+            HasRedPixel(bitmap).Should().BeTrue(
+                "the styled point feature must be rendered at its seeded real-world location within the tile, not just produce a non-empty image");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static string CircleStyleJson(string hexColor) =>
+        $$"""
+        {
+          "version": 8,
+          "sources": {},
+          "layers": [
+            {
+              "id": "points",
+              "type": "circle",
+              "source": "features",
+              "paint": { "circle-color": "{{hexColor}}", "circle-radius": 12 }
+            }
+          ]
+        }
+        """;
+
+    private static bool HasRedPixel(SKBitmap bitmap)
+    {
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                if (pixel.Red > 150 && pixel.Green < 80 && pixel.Blue < 80)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

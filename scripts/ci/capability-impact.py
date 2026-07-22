@@ -296,13 +296,28 @@ def freshness_state(envelope: dict | None, now: dt.datetime, max_age_days: int =
     }
 
 
-def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | None, labels: list[str]) -> dict:
-    catalog = load_json(CATALOG)
-    keys = load_json(KEYS)
-    config = load_json(SHARDS)
+def compute_capability_selection(changed_files: list[str], catalog: dict, config: dict) -> dict:
+    """Map changed files to capabilities/proving tests/shards via the catalog crosswalk.
+
+    This is the single selection primitive shared by the hosted report-only
+    comparison (`build_report`, below) and the local scoped pre-pr-check
+    selector (the `select-local` CLI command). Both consumers read the same
+    entries/capabilities/tests/shards computation so there is exactly one
+    changed-file -> capability mapping in the repo (#2951).
+
+    ``testsByShard`` additionally groups the proving-test set by owning
+    shard so a caller can narrow a per-shard test filter without
+    re-implementing `shard_names_for_test` grouping itself.
+    """
     entries = affected_entries(changed_files, catalog["entries"])
     capabilities = sorted({entry["capability"] for entry in entries})
     tests = sorted({test for entry in entries for test in entry.get("proving_tests", [])})
+    tests_by_shard: dict[str, list[str]] = {}
+    for test in tests:
+        for shard_name in shard_names_for_test(test, config):
+            tests_by_shard.setdefault(shard_name, []).append(test)
+    for shard_name in tests_by_shard:
+        tests_by_shard[shard_name].sort()
     shards = sorted({name for test in tests for name in shard_names_for_test(test, config)})
     unmatched_source = sorted(
         path
@@ -312,6 +327,27 @@ def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | N
     run_all = bool(unmatched_source)
     if run_all:
         shards = sorted(item["name"] for item in config["shards"])
+        tests_by_shard = {}
+
+    return {
+        "runAll": run_all,
+        "reason": "unmapped_graph_source" if run_all else ("capability_match" if entries else "no_capability_match"),
+        "capabilities": capabilities,
+        "provingTestCount": len(tests),
+        "provingTests": tests,
+        "shards": shards,
+        "unmatchedSourceFiles": unmatched_source,
+        "testsByShard": tests_by_shard,
+    }
+
+
+def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | None, labels: list[str]) -> dict:
+    catalog = load_json(CATALOG)
+    keys = load_json(KEYS)
+    config = load_json(SHARDS)
+    selection = compute_capability_selection(changed_files, catalog, config)
+    capabilities = selection["capabilities"]
+    shards = selection["shards"]
 
     interop = [
         {"clientLane": row["clientLane"], "protocol": row["protocol"]}
@@ -341,13 +377,13 @@ def build_report(changed_files: list[str], legacy: dict, envelope_root: Path | N
         "capabilityLabels": sorted(label for label in labels if label.startswith("cap/")),
         "legacy": legacy,
         "capabilitySelection": {
-            "runAll": run_all,
-            "reason": "unmapped_graph_source" if run_all else ("capability_match" if entries else "no_capability_match"),
+            "runAll": selection["runAll"],
+            "reason": selection["reason"],
             "capabilities": capabilities,
-            "provingTestCount": len(tests),
+            "provingTestCount": selection["provingTestCount"],
             "shards": shards,
             "interopLanes": interop,
-            "unmatchedSourceFiles": unmatched_source,
+            "unmatchedSourceFiles": selection["unmatchedSourceFiles"],
         },
         "comparison": {
             "legacyShardCount": len(legacy_shards),
@@ -408,6 +444,13 @@ def main() -> int:
     select.add_argument("--envelopes", type=Path)
     select.add_argument("--labels-json", default="[]")
     select.add_argument("--markdown", type=Path)
+    select_local = subparsers.add_parser(
+        "select-local",
+        help="Local scoped selection (honua-server#2951): the same crosswalk as "
+        "`select`, without the ADR-0037 legacy comparison/freshness reporting that "
+        "only make sense for the hosted shadow job. Consumed by pre-pr-check.sh.",
+    )
+    select_local.add_argument("--changed-files", type=Path, required=True)
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -417,6 +460,16 @@ def main() -> int:
                 print(f"ERROR: {error}", file=sys.stderr)
             return 1
         print("Capability impact completeness: valid")
+        return 0
+
+    if args.command == "select-local":
+        changed_files = [
+            line.strip().replace("\\", "/") for line in args.changed_files.read_text().splitlines() if line.strip()
+        ]
+        catalog = load_json(CATALOG)
+        config = load_json(SHARDS)
+        selection = compute_capability_selection(changed_files, catalog, config)
+        print(json.dumps({"schemaVersion": 1, "changedFileCount": len(changed_files), **selection}, indent=2))
         return 0
 
     changed_files = [line.strip().replace("\\", "/") for line in args.changed_files.read_text().splitlines() if line.strip()]

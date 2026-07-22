@@ -73,6 +73,52 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
+    public async Task PostSunShadow_KnownInput_MatchesIndependentlyComputedNoaaSolarPosition()
+    {
+        // Regression for honua-server#2945: prior tests only asserted altitude/shadow
+        // length are "> 0". These expected values were computed independently (Python,
+        // NOAA solar position algorithm, not by reading the production implementation)
+        // for the fixed observer/timestamp below:
+        //   altitude ~= 28.13 deg, azimuth ~= 90.12 deg, shadow length = height / tan(altitude) ~= 46.76 m.
+        // Tolerances are wide enough to absorb small floating-point/formula-ordering
+        // differences between independent implementations of the same algorithm while
+        // still catching a materially wrong (e.g. sign-flipped, degrees/radians-confused,
+        // or no-op) calculation.
+        // maxShadowLengthMeters bounds the ray-march resolution: the reported length is
+        // quantized to maxShadowLengthMeters / sampleCount, so keep that step well inside
+        // the 1.5 m tolerance (200 / 256 ~= 0.78 m). A 20 km max with 256 samples steps at
+        // 78 m and can only ever report a multiple of it.
+        await SeedFullWorldRasterAsync(0);
+
+        var response = await _fixture.Client.PostAsJsonAsync(
+            "/elevation/0/sun-shadow",
+            new
+            {
+                observerLon = 0.0,
+                observerLat = 0.0,
+                observerHeight = 25.0,
+                timestamp = "2026-03-20T08:00:00Z",
+                maxShadowLengthMeters = 200.0,
+                sampleCount = 256
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        var solarPosition = root.GetProperty("solarPosition");
+        solarPosition.GetProperty("aboveHorizon").GetBoolean().Should().BeTrue();
+        solarPosition.GetProperty("altitudeDegrees").GetDouble().Should().BeApproximately(28.13, 0.1);
+        solarPosition.GetProperty("azimuthDegrees").GetDouble().Should().BeApproximately(90.12, 0.1);
+
+        root.GetProperty("shadowCast").GetBoolean().Should().BeTrue();
+        root.GetProperty("shadowLengthMeters").GetDouble().Should().BeApproximately(46.76, 1.5);
+        root.GetProperty("shadowAzimuthDegrees").GetDouble().Should().BeApproximately(270.12, 0.1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /elevation/{datasetId}/sun-shadow")]
     public async Task PostSunShadow_SunBelowHorizon_ReportsNoShadow()
     {
         await SeedFullWorldRasterAsync(0);

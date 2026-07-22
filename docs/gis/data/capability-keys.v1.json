@@ -379,14 +379,14 @@
       "key": "identity.saml",
       "displayName": "SAML 2.0 Authentication",
       "category": "Identity",
-      "edition": "Community",
-      "description": "SAML 2.0 service-provider metadata and assertion consumer endpoints."
+      "edition": "Enterprise",
+      "description": "SAML 2.0 service-provider metadata, assertion consumer, and single-logout endpoints."
     },
     {
       "key": "identity.scim",
       "displayName": "SCIM 2.0 Provisioning",
       "category": "Identity",
-      "edition": "Community",
+      "edition": "Enterprise",
       "description": "User/group provisioning through the SCIM 2.0 protocol surface."
     },
     {

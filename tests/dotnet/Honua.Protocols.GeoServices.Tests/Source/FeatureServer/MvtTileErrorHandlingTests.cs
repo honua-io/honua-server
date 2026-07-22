@@ -4,11 +4,13 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -128,23 +130,24 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
     }
 
     [Fact]
-    public async Task GetTile_NonExistentLayer_ReturnsGeoServicesNotFoundError()
+    public async Task GetTile_NonExistentLayer_ReturnsRealNotFoundWithProblemJson()
     {
         // Act
         var response = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");
 
         // Assert
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // honua-server#2945: /tiles is not an Esri protocol surface, so unlike
+        // /rest/services it must return a real HTTP 404 with an RFC 7807
+        // problem+json body rather than the GeoServices 200-envelope.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync();
-        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
 
-        error.Should().NotBeNull();
-        error!.Error.Code.Should().Be(404);
-        error.Error.Message.Should().Be("Not Found");
-        error.Error.Details.Should().NotBeNull();
-        error.Error.Details.Should().Contain(detail => detail.Contains("Layer 99999 not found"));
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+        problem.GetProperty("detail").GetString().Should().Contain("Layer 99999 not found");
     }
 
     [Fact]
@@ -154,40 +157,83 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");
 
         // Assert
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
-        // Should include correlation ID header for request tracing
+        // Should include correlation ID header for request tracing regardless of
+        // the response body format (added by the shared correlation-id middleware).
         response.Headers.Should().ContainKey("X-Correlation-ID");
         var correlationId = response.Headers.GetValues("X-Correlation-ID").First();
         correlationId.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
-    public async Task GetTile_ErrorResponseFormat_ConsistentWithOtherFeatureServerEndpoints()
+    public async Task GetTile_ErrorResponseFormat_DivergesFromGeoServicesRestByDesign()
     {
-        // Act - Get error from MVT endpoint
+        // honua-server#2945: the /tiles surface is a real HTTP-status protocol, not an
+        // Esri GeoServices surface, so its 404 must NOT match the GeoServices REST
+        // 200-envelope shape — this test locks in the intentional divergence (the
+        // opposite of the old "ConsistentWith..." assertion this replaces).
+
+        // Act - Get error from MVT endpoint (tiles surface)
         var mvtResponse = await _fixture.Client.GetAsync("/tiles/99999/1/0/0.mvt");
 
-        // Act - Get error from FeatureServer query endpoint for comparison
+        // Act - Get error from FeatureServer query endpoint (GeoServices REST surface)
         var queryResponse = await _fixture.Client.GetAsync("/rest/services/99999/FeatureServer/0/query");
 
-        // Assert - Both should return the same error response format
-        await mvtResponse.AssertGeoServicesErrorAsync(404);
+        // Assert - the tiles surface returns a real 404 problem+json response...
+        mvtResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        mvtResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        // ...while the GeoServices REST surface keeps its 200-wrapped error envelope.
         await queryResponse.AssertGeoServicesErrorAsync(404);
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-        var mvtContent = await mvtResponse.Content.ReadAsStringAsync();
-        var queryContent = await queryResponse.Content.ReadAsStringAsync();
+    [Fact]
+    public async Task GetTile_AnonymousOnAuthRequiredLayer_ReturnsRealUnauthorizedWithProblemJson()
+    {
+        // honua-server#2960 review: the ProblemJson opt-in must also govern
+        // authorization failures, not just layer-not-found — an unauthenticated
+        // request against a layer that requires authentication must get a real
+        // HTTP 401 problem+json response, not the GeoServices 200-envelope that
+        // path-based classification would otherwise apply to /tiles.
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
 
-        var mvtError = JsonSerializer.Deserialize<ApiErrorResponse>(mvtContent);
-        var queryError = JsonSerializer.Deserialize<ApiErrorResponse>(queryContent);
+        var response = await client.GetAsync(
+            $"/tiles/{ServiceRbacTestFixture.AlphaLayerId}/1/0/0.mvt");
 
-        // Both should use the same error response structure
-        mvtError.Should().NotBeNull();
-        queryError.Should().NotBeNull();
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
-        mvtError!.Error.Code.Should().Be(queryError!.Error.Code);
-        mvtError.Error.Should().BeEquivalentTo(queryError.Error, options =>
-            options.Excluding(e => e.Message).Excluding(e => e.Details)); // Message content may differ
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problem.GetProperty("title").GetString().Should().Be("Unauthorized");
+        problem.GetProperty("status").GetInt32().Should().Be(401);
+    }
+
+    [Fact]
+    public async Task GetTile_AuthenticatedWithoutRequiredRole_ReturnsRealForbiddenWithProblemJson()
+    {
+        // honua-server#2960 review: a role-denied (but authenticated) request
+        // must also bypass the GeoServices envelope on /tiles and get a real
+        // HTTP 403 problem+json response.
+        using var factory = ServiceRbacTestFixture.CreateFactory(
+            layerCatalogFactory: static () => new RbacTestLayerCatalog(
+                alphaLayerMetadata: new AccessPolicy { AllowedRoles = ["editor"] }));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var response = await client.GetAsync(
+            $"/tiles/{ServiceRbacTestFixture.AlphaLayerId}/1/0/0.mvt");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problem.GetProperty("title").GetString().Should().Be("Forbidden");
+        problem.GetProperty("status").GetInt32().Should().Be(403);
     }
 }

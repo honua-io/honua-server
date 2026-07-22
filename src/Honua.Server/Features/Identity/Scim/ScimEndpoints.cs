@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Identity.Scim.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -36,9 +38,29 @@ internal static partial class ScimEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // #2978: SCIM provisioning is an Enterprise entitlement (FeatureCatalog
+        // .ScimProvisioningKey; ADR-0024 Identity Governance tier, with OIDC
+        // multi-provider/claims-mapping). Applied to every /scim/v2 group
+        // (Users, Groups, and the RFC 7643 discovery documents) so an unlicensed deployment
+        // does not advertise a provisioning surface it cannot serve.
+        static ValueTask<object?> RequireScimEntitlement(
+            EndpointFilterInvocationContext invocationContext,
+            EndpointFilterDelegate next)
+        {
+            var gate = LicenseGate.RequireEntitlement(
+                invocationContext.HttpContext,
+                FeatureCatalog.ScimProvisioningKey,
+                "SCIM 2.0 provisioning");
+
+            return gate is null
+                ? next(invocationContext)
+                : ValueTask.FromResult<object?>(gate);
+        }
+
         var users = endpoints.MapGroup("/scim/v2/Users")
             .WithTags("Identity", "SCIM")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AddEndpointFilter(RequireScimEntitlement);
 
         users.MapGet("/", HandleListUsers).WithDisplayName("SCIM List Users");
         users.MapPost("/", HandleCreateUser).WithDisplayName("SCIM Create User");
@@ -49,7 +71,8 @@ internal static partial class ScimEndpoints
 
         var groups = endpoints.MapGroup("/scim/v2/Groups")
             .WithTags("Identity", "SCIM")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AddEndpointFilter(RequireScimEntitlement);
 
         groups.MapGet("/", HandleListGroups).WithDisplayName("SCIM List Groups");
         groups.MapPost("/", HandleCreateGroup).WithDisplayName("SCIM Create Group");
@@ -62,7 +85,8 @@ internal static partial class ScimEndpoints
         // optional features, resource types, and attribute schemas Honua supports.
         var discovery = endpoints.MapGroup("/scim/v2")
             .WithTags("Identity", "SCIM")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AddEndpointFilter(RequireScimEntitlement);
 
         discovery.MapGet("/ServiceProviderConfig", HandleServiceProviderConfig).WithDisplayName("SCIM ServiceProviderConfig");
         discovery.MapGet("/ResourceTypes", HandleResourceTypes).WithDisplayName("SCIM ResourceTypes");
