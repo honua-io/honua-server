@@ -291,11 +291,38 @@ local run scopes the build (affected-project solution filter), format check
 (changed `*.cs` only), unit-test projects (affected closure), and server-test
 shards (targeted subset) to the diff against `origin/trunk` instead of grinding
 the whole solution and every shard. The architecture tests still run on every
-invocation (cheap topology guard). Set `HONUA_PRE_PR_FULL=1` to force the full
-suite (recommended before a release or a large cross-cutting refactor);
-`HONUA_PRE_PR_BASE=<ref>` overrides the diff base, and `HONUA_PRE_PR_SKIP_AOT=1`
-skips the AOT publish. If the base ref is missing locally the script falls back
-to a full run so it never silently under-tests.
+invocation (cheap topology guard). Set `HONUA_PRE_PR_FULL=1` (or `--full`) to
+force the full suite (recommended before a release or a large cross-cutting
+refactor); `HONUA_PRE_PR_BASE=<ref>` (or `--base <ref>`) overrides the diff
+base, and `HONUA_PRE_PR_SKIP_AOT=1` skips the AOT publish. If the base ref is
+missing locally the script falls back to a full run so it never silently
+under-tests.
+
+**Capability-scoped narrowing layers on top, never replaces, this router**
+(honua-server#2951). `honua-server-targeted-tests.sh` still decides WHICH
+shards run — that has not changed. On top of that selection,
+`scripts/ci/capability-impact.py select-local` (the same route/proving-test/
+shard crosswalk `capability-impact-comparison.yml` validates in shadow mode)
+narrows a selected shard's `dotnet test --filter` down to just the proving
+tests `testsByShard` assigns to that shard, but ONLY when the crosswalk
+accounted for every changed file with zero ambiguity (not `runAll`, no
+`unmatchedSourceFiles`) AND its own shard list corroborates the shard ADR-0037
+selected. Any diff the crosswalk cannot confidently map — which today includes
+essentially all handler/service source edits, since `feature-catalog.json`'s
+`code_location` mostly resolves to the endpoint-registry file rather than the
+real handler — falls back to the shard's ADR-0037 filter unchanged, so this
+can only narrow further, never select fewer shards. A single widely-shared
+`code_location` (e.g. `EndpointRegistry.cs` itself) can still map a shard to
+thousands of proving tests; a narrowed filter over ~6,000 characters falls
+back to that shard's full ADR-0037 filter instead of risking an oversized
+`dotnet test --filter` argument on the Windows/Git Bash path. `--dry-run` (or
+`HONUA_PRE_PR_DRY_RUN=1`) prints the full
+resolved selection — build set, targeted shards, capability narrowing, format
+scope — without restoring, building, formatting, or testing anything. A set of
+cross-cutting paths (`Directory.Build.props`, `Directory.Packages.props`,
+`Honua.TestKit/**`, `.github/ci-shards.json`, the selector/catalog files
+themselves, `.github/workflows/**`) forces full mode outright, as does a
+failing `capability-impact.py validate`.
 
 ### Flaky-Test Quarantine
 
