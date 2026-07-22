@@ -411,6 +411,16 @@ declare -A NARROWED_SHARD_REASON=()
 CAPABILITY_RUN_ALL="$(jq -r 'if has("runAll") then .runAll else true end' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo true)"
 CAPABILITY_UNMATCHED_COUNT="$(jq -r '.unmatchedSourceFiles | length' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo 1)"
 CAPABILITY_PROVING_TEST_COUNT="$(jq -r '.provingTestCount // 0' <<< "${CAPABILITY_SELECTION_JSON}" 2>/dev/null || echo 0)"
+# Hard ceiling on a single shard's narrowed --filter argument, comfortably
+# under cmd.exe's ~8191-char command-line limit (this script explicitly
+# supports Windows/Git Bash) after accounting for the rest of the `dotnet
+# test` invocation. A shard whose narrowed clause would exceed this falls
+# back to its unmodified base filter instead of emitting an oversized
+# --filter (#2951 review: a single widely-referenced source file such as
+# src/Honua.Server/EndpointRegistry.cs can match 1,000+ catalog entries and
+# 4,000+ proving tests, producing a ~600KB filter that breaks `dotnet test`
+# on the Windows/Git Bash path).
+NARROW_FILTER_MAX_CHARS=6000
 if [[ "${FULL}" != "1" && "${CAPABILITY_RUN_ALL}" == "false" && "${CAPABILITY_UNMATCHED_COUNT}" == "0" && -n "${SELECTED_SHARDS//[[:space:]]/}" ]]; then
     mapfile -t changed_test_classes < <(
         printf '%s\n' "${PRE_PR_CHANGED_FILES}" | sed '/^$/d' | while IFS= read -r f; do
@@ -419,32 +429,43 @@ if [[ "${FULL}" != "1" && "${CAPABILITY_RUN_ALL}" == "false" && "${CAPABILITY_UN
             esac
         done | sort -u
     )
-    mapfile -t proving_test_fqns < <(jq -r '.provingTests[]?' <<< "${CAPABILITY_SELECTION_JSON}")
-    NARROW_CLAUSES=()
-    for t in "${proving_test_fqns[@]}"; do
-        [[ -n "${t}" ]] && NARROW_CLAUSES+=("FullyQualifiedName=${t}")
-    done
+    CHANGED_CLASS_CLAUSES=()
     for c in "${changed_test_classes[@]}"; do
-        [[ -n "${c}" ]] && NARROW_CLAUSES+=("FullyQualifiedName~${c}")
+        [[ -n "${c}" ]] && CHANGED_CLASS_CLAUSES+=("FullyQualifiedName~${c}")
     done
-    if [[ ${#NARROW_CLAUSES[@]} -gt 0 ]]; then
+
+    mapfile -t capability_shards < <(jq -r '.shards[]?' <<< "${CAPABILITY_SELECTION_JSON}")
+    while IFS= read -r shard_name; do
+        [[ -z "${shard_name}" ]] && continue
+        corroborated=""
+        for cs in "${capability_shards[@]}"; do
+            [[ "${cs}" == "${shard_name}" ]] && corroborated=1 && break
+        done
+        [[ -z "${corroborated}" ]] && continue
+
+        # Group by testsByShard (not the flat provingTests[] list) so a shard
+        # only narrows on the proving tests it actually owns, instead of every
+        # shard carrying the same combined clause for the whole diff.
+        mapfile -t shard_proving_tests < <(jq -r --arg n "${shard_name}" '.testsByShard[$n][]?' <<< "${CAPABILITY_SELECTION_JSON}")
+        NARROW_CLAUSES=("${CHANGED_CLASS_CLAUSES[@]}")
+        for t in "${shard_proving_tests[@]}"; do
+            [[ -n "${t}" ]] && NARROW_CLAUSES+=("FullyQualifiedName=${t}")
+        done
+        [[ ${#NARROW_CLAUSES[@]} -eq 0 ]] && continue
+
+        shard_base_filter="$(jq -r --arg n "${shard_name}" '.shards[] | select(.shard_name==$n) | .filter // ""' .github/ci-shards.json)"
+        [[ -z "${shard_base_filter}" ]] && continue
+
         NARROW_CLAUSE_EXPR="$(IFS='|'; echo "${NARROW_CLAUSES[*]}")"
-        mapfile -t capability_shards < <(jq -r '.shards[]?' <<< "${CAPABILITY_SELECTION_JSON}")
-        while IFS= read -r shard_name; do
-            [[ -z "${shard_name}" ]] && continue
-            corroborated=""
-            for cs in "${capability_shards[@]}"; do
-                [[ "${cs}" == "${shard_name}" ]] && corroborated=1 && break
-            done
-            if [[ -n "${corroborated}" ]]; then
-                shard_base_filter="$(jq -r --arg n "${shard_name}" '.shards[] | select(.shard_name==$n) | .filter // ""' .github/ci-shards.json)"
-                if [[ -n "${shard_base_filter}" ]]; then
-                    NARROWED_SHARD_FILTER["${shard_name}"]="(${shard_base_filter})&(${NARROW_CLAUSE_EXPR})"
-                    NARROWED_SHARD_REASON["${shard_name}"]="capability-narrowed (${CAPABILITY_PROVING_TEST_COUNT} proving tests, ${#changed_test_classes[@]} changed test classes)"
-                fi
-            fi
-        done <<< "${SELECTED_SHARDS}"
-    fi
+        candidate_filter="(${shard_base_filter})&(${NARROW_CLAUSE_EXPR})"
+        if [[ ${#candidate_filter} -gt ${NARROW_FILTER_MAX_CHARS} ]]; then
+            echo "    (capability narrowing skipped for ${shard_name}: narrowed filter would be ${#candidate_filter} chars, over the ${NARROW_FILTER_MAX_CHARS}-char cap — running the shard's full filter instead)"
+            continue
+        fi
+
+        NARROWED_SHARD_FILTER["${shard_name}"]="${candidate_filter}"
+        NARROWED_SHARD_REASON["${shard_name}"]="capability-narrowed (${#shard_proving_tests[@]} proving tests, ${#changed_test_classes[@]} changed test classes)"
+    done <<< "${SELECTED_SHARDS}"
 fi
 
 # Full committed diff — used to keep directly-edited test projects in the
