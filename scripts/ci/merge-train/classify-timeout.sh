@@ -36,12 +36,31 @@ train_send_failed_job_rerun() {
     return $?
   fi
   err="$(mktemp)"
-  gh run rerun "${run_id}" --failed 2>"${err}" || rc=$?
-  if [[ "${rc}" == "0" ]]; then rm -f "${err}"; return 0; fi
-  if grep -Eiq 'HTTP 409|already.*(queued|in progress|requested)|cannot rerun.*(queued|in progress|not completed)' "${err}"; then
-    train_warn "rerun API reported an already queued/in-progress request for run ${run_id}; reconciling asynchronously"
-    rm -f "${err}"; return 4
-  fi
+  # GitHub secondary rate limits surface on this non-idempotent call the same
+  # way train_side_effect documents for label/comment writes: 401 "Bad
+  # credentials", 403, or 429, even with a valid token and quota remaining.
+  # Retry those transient signatures with backoff BEFORE the terminal
+  # 401/403/404/422 classification below, or a mid-burst rate limit gets
+  # misread as a definitive rejection and escalates the whole batch.
+  local attempt=1 max="${TRAIN_SIDE_EFFECT_RETRIES:-4}" delay="${TRAIN_SIDE_EFFECT_BACKOFF:-5}"
+  while :; do
+    rc=0
+    gh run rerun "${run_id}" --failed 2>"${err}" || rc=$?
+    if [[ "${rc}" == "0" ]]; then rm -f "${err}"; return 0; fi
+    if grep -Eiq 'HTTP 409|already.*(queued|in progress|requested)|cannot rerun.*(queued|in progress|not completed)' "${err}"; then
+      train_warn "rerun API reported an already queued/in-progress request for run ${run_id}; reconciling asynchronously"
+      rm -f "${err}"; return 4
+    fi
+    if [[ "${attempt}" -lt "${max}" ]] && grep -qiE \
+      "Bad credentials|secondary rate limit|rate limit|submitted too quickly|retry your request|abuse detection|status code: 40[39]|status code: 429|HTTP 40[39]|HTTP 429" \
+      "${err}"; then
+      train_warn "transient GitHub API failure requesting rerun for run ${run_id} (attempt ${attempt}/${max}, rc=${rc}); backing off ${delay}s and retrying"
+      sleep "${delay}"
+      attempt=$(( attempt + 1 )); delay=$(( delay * 3 )); : > "${err}"
+      continue
+    fi
+    break
+  done
   if grep -Eiq 'HTTP (401|403|404|422)|status code: (401|403|404|422)' "${err}"; then
     train_err "rerun API definitively rejected run ${run_id}; manual correction is required"
     cat "${err}" >&2; rm -f "${err}"; return 5
@@ -62,8 +81,17 @@ train_request_failed_job_rerun() {
     local state_rc=0
     state="$(train_state_read 2>/dev/null)" || state_rc=$?
     if [[ "${state_rc}" != "0" ]]; then
-      train_err "could not read authoritative merge-train state before rerun"
-      return 3
+      if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
+        train_err "could not read authoritative merge-train state before rerun"
+        return 3
+      fi
+      # Dry-run/offline callers (shadow mode, the fixture harness invoking the
+      # classifier directly with no production state issue/plumbing) have no
+      # authoritative state to reconcile against and never issue the real,
+      # non-idempotent rerun request below; proceed with no persisted state
+      # instead of hard-failing, matching the TRAIN_APPLY-gated fallback the
+      # Actions-attempt lookup below already uses.
+      state=""
     fi
   fi
   if [[ -n "${state}" ]] && jq -e . >/dev/null 2>&1 <<<"${state}"; then
