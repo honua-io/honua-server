@@ -479,10 +479,11 @@ public sealed class QueryProcessor : IQueryProcessor
         var orderBy = query.OrderBy;
         if (orderBy?.IsDefaultOrEmpty != false)
         {
+            var primaryIdField = resource.FindPrimaryIdField();
             orderBy = ImmutableArray.Create(new OrderByClause(
-                FieldNames.ObjectId,
+                primaryIdField?.Name ?? FieldNames.ObjectId,
                 ascending: true,
-                MetadataV2FieldType.BigInteger));
+                primaryIdField?.Type ?? MetadataV2FieldType.BigInteger));
         }
 
         // Optimize field selection
