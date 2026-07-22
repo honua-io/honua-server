@@ -109,6 +109,20 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
 
     protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
     {
+        // Protocol-scoped geodesic routing (OData geo.intersects over Edm.Geography) asks for
+        // ellipsoidal intersects semantics so long edges and antimeridian-crossing geometries
+        // resolve correctly. DuckDB's spatial extension has no geography/ellipsoidal intersects
+        // equivalent to PostGIS's geography cast, so reject rather than silently downgrade to
+        // planar-in-degree ST_Intersects (see Honua.Postgres.Queries.Filters.
+        // PostgresSqlFilterTranslator.TranslateSpatial for the geography-backed implementation
+        // this provider does not have).
+        if (spatial.Geodesic)
+        {
+            throw Unsupported(
+                $"Geodesic spatial operator '{spatial.Operator}'; DuckDB has no geography-backed " +
+                "ellipsoidal intersects, so this would silently evaluate in planar degree space");
+        }
+
         var left = TranslateGeometryExpression(spatial.Left, context);
         var right = TranslateGeometryExpression(spatial.Right, context);
 

@@ -262,6 +262,22 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Translate_GeodesicIntersects_RejectsRatherThanSilentlyEvaluatingPlanar()
+    {
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("geom"),
+            GeometryLiteral(CreatePolygonWkb(-121.972, 37.028, -121.948, 37.052), 4326))
+        {
+            Geodesic = true
+        };
+
+        var exception = Assert.Throws<NotSupportedException>(() => _filterTranslator.Translate(filter, _resource));
+
+        Assert.Contains("Geodesic", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Translate_GeographicDistanceOnPolygonResource_RejectsPointOnlyFunction()
     {
         var polygonResource = _resource with
