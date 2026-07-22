@@ -216,7 +216,7 @@ public sealed class QueryProcessorTests
         var providerQuery = _processor.ToFeatureQuery(optimized, resource);
 
         providerQuery.OrderBy.Should().NotBeNull();
-        providerQuery.OrderBy.Value.Should().ContainSingle()
+        providerQuery.OrderBy!.Value.Should().ContainSingle()
             .Which.Should().Be(new OrderByClause("feature_id", ascending: true, MetadataV2FieldType.Integer));
     }
 
@@ -229,7 +229,7 @@ public sealed class QueryProcessorTests
         var providerQuery = _processor.ToFeatureQuery(optimized, _resource);
 
         providerQuery.OrderBy.Should().NotBeNull();
-        providerQuery.OrderBy.Value.Should().ContainSingle()
+        providerQuery.OrderBy!.Value.Should().ContainSingle()
             .Which.Field.Should().Be(FieldNames.ObjectId);
         providerQuery.OrderBy.Value[0].Ascending.Should().BeTrue();
     }
