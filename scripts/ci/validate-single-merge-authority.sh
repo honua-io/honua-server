@@ -271,7 +271,7 @@ scan_smart_ci_authority() {
   local -a pushes body_pushes
   body="$(function_source "${file}" train_smart_ci_run)"
   [[ -n "${body}" ]] || { echo "missing train_smart_ci_run" >&2; return 1; }
-  grep -Fq '[[ "${batch}" != train/batch/* ]]' <<<"${body}" || {
+  grep -Fq '[[ "${batch}" != train/batch/* && "${batch}" != train/attribute-probe/* ]]' <<<"${body}" || {
     echo "smart-ci batch namespace guard missing" >&2; return 1;
   }
   source="$(normalized_source "${file}")"
@@ -346,7 +346,7 @@ SH
   cat >"${scratch}/scripts/ci/merge-train/smart-ci.sh" <<'SH'
 train_smart_ci_run() {
   local batch="$1"
-  if [[ "${batch}" != train/batch/* ]]; then return 1; fi
+  if [[ "${batch}" != train/batch/* && "${batch}" != train/attribute-probe/* ]]; then return 1; fi
   train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
   git push "${TRAIN_REMOTE}" "${batch}:${batch}"
 }
