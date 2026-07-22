@@ -9,8 +9,10 @@
 #   {
 #     "active_batch": {
 #       "branch": "...", "trunk_base": "<sha>", "included": [<pr>...],
-#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-flake|autofix|attribute|land|done",
-#       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>
+#       "phase": "select|assemble|smart-ci|forward-fix|preexisting-filter|classify-timeout|timeout-retry-intent|flake-retry-intent|rerun-command-failed|classify-flake|autofix|attribute|land|done",
+#       "run_id": <id|null>, "fwdfix_attempts": <n>, "flake_reruns": <n>, "timeout_reruns": <n>,
+#       "timeout_reruns_total": <n>,
+#       "rerun_kind": "timeout|flake|null", "rerun_base_attempt": <n|null>
 #     },
 #     "config": { "max_batch": <n>, "flake_signatures": "<regex>" },
 #     "last_landed_trunk": "<sha|null>"
@@ -21,10 +23,12 @@
 TRAIN_STATE_TITLE="${TRAIN_STATE_TITLE:-Merge Train State}"
 
 # train_state_render <branch> <trunk_base> <included-csv> <phase> <run_id> \
-#   <fwdfix> <flake_reruns> <last_landed>: emit the fenced-JSON issue body.
+#   <fwdfix> <flake_reruns> <last_landed> [timeout_reruns] [rerun_kind]
+#   [rerun_base_attempt] [timeout_reruns_total]: emit the state body.
 train_state_render() {
   local branch="$1" trunk_base="$2" included_csv="$3" phase="$4" \
-        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8"
+        run_id="$5" fwdfix="$6" flake_reruns="$7" last_landed="$8" timeout_reruns="${9:-0}" \
+        rerun_kind="${10:-}" rerun_base_attempt="${11:-null}" timeout_reruns_total="${12:-${9:-0}}"
 
   local included_json
   if [[ -z "${included_csv}" ]]; then
@@ -45,13 +49,20 @@ train_state_render() {
     --argjson rid "${run_id_json}" \
     --argjson fwd "${fwdfix:-0}" \
     --argjson fr "${flake_reruns:-0}" \
+    --argjson tr "${timeout_reruns:-0}" \
+    --argjson trt "${timeout_reruns_total:-0}" \
+    --arg rk "${rerun_kind}" \
+    --argjson rba "${rerun_base_attempt:-null}" \
     --argjson mb "${MAX_BATCH}" \
     --arg flake "${TRAIN_FLAKE_REGEX}" \
     --argjson last "${last_json}" \
     '{
       active_batch: {
         branch: $branch, trunk_base: $tb, included: $inc, phase: $phase,
-        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr
+        run_id: $rid, fwdfix_attempts: $fwd, flake_reruns: $fr, timeout_reruns: $tr,
+        timeout_reruns_total: $trt,
+        rerun_kind: (if ($rk|length) > 0 then $rk else null end),
+        rerun_base_attempt: $rba
       },
       config: { max_batch: $mb, flake_signatures: $flake },
       last_landed_trunk: $last
@@ -60,23 +71,43 @@ train_state_render() {
   printf 'Machine-managed state for the optimistic batch merge train. Do not edit by hand.\n\n```json\n%s\n```\n' "${json}"
 }
 
-# train_state_issue_number: find the state issue number (or empty). READ-ONLY.
+# train_state_issue_number: emit the sole state issue number, or empty only
+# after a successful lookup proves none exists. API errors and duplicates fail.
 train_state_issue_number() {
   if [[ -n "${TRAIN_STATE_ISSUE_OVERRIDE:-}" ]]; then
     echo "${TRAIN_STATE_ISSUE_OVERRIDE}"; return 0
   fi
-  gh issue list --label "${TRAIN_LABEL_STATE}" --state open \
-    --json number --jq '.[0].number // empty' 2>/dev/null || echo ""
+  if [[ -n "${TRAIN_STATE_ISSUE_NUMBER:-}" ]]; then
+    local pinned
+    [[ "${TRAIN_STATE_ISSUE_NUMBER}" =~ ^[0-9]+$ ]] || return 2
+    pinned="$(gh issue view "${TRAIN_STATE_ISSUE_NUMBER}" --json number,state,labels \
+      --jq '.number as $n | select(.state=="OPEN" and any(.labels[]; .name=="'"${TRAIN_LABEL_STATE}"'")) | $n' \
+      2>/dev/null)" || return 1
+    [[ "${pinned}" == "${TRAIN_STATE_ISSUE_NUMBER}" ]] || { train_err "configured state issue #${TRAIN_STATE_ISSUE_NUMBER} is missing, closed, or lacks ${TRAIN_LABEL_STATE}"; return 2; }
+    printf '%s\n' "${pinned}"
+    return 0
+  fi
+  local rows count
+  rows="$(gh issue list --label "${TRAIN_LABEL_STATE}" --state open --limit 100 \
+    --json number --jq '.[].number' 2>/dev/null)" || return 1
+  count="$(printf '%s\n' "${rows}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  [[ "${count}" -le 1 ]] || { train_err "multiple open ${TRAIN_LABEL_STATE} issues found; refusing ambiguous state authority"; return 2; }
+  printf '%s\n' "${rows}" | sed '/^$/d'
 }
 
 # train_state_write <body-file>: create-or-update the state issue. Side-effecting.
 train_state_write() {
   local body_file="$1"
-  local num
-  num="$(train_state_issue_number)"
+  local num lookup_rc=0
+  num="$(train_state_issue_number)" || lookup_rc=$?
+  [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   if [[ -n "${num}" ]]; then
     train_side_effect gh issue edit "${num}" --body-file "${body_file}"
   else
+    if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
+      train_err "live state creation is disabled; configure the pre-provisioned TRAIN_STATE_ISSUE_NUMBER"
+      return 2
+    fi
     train_side_effect gh issue create --title "${TRAIN_STATE_TITLE}" \
       --label "${TRAIN_LABEL_STATE}" --body-file "${body_file}"
   fi
@@ -85,20 +116,23 @@ train_state_write() {
 # train_state_read: emit the parsed JSON block of the state issue (or empty).
 # READ-ONLY; used on startup to resume.
 train_state_read() {
-  local num body
-  num="$(train_state_issue_number)"
+  local num body json lookup_rc=0
+  num="$(train_state_issue_number)" || lookup_rc=$?
+  [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   [[ -z "${num}" ]] && return 0
   if [[ -n "${TRAIN_STATE_BODY_OVERRIDE:-}" ]]; then
     body="${TRAIN_STATE_BODY_OVERRIDE}"
   else
-    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null || echo "")"
+    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 1
   fi
   # Extract the fenced ```json ... ``` block.
-  printf '%s\n' "${body}" | awk '
+  json="$(printf '%s\n' "${body}" | awk '
     /^```json/ { inblk=1; next }
     /^```/     { if (inblk) { inblk=0 } ; next }
     inblk      { print }
-  '
+  ')"
+  [[ -n "${json}" ]] || return 2
+  printf '%s\n' "${json}"
 }
 
 # --- persistent over-time dashboard (the founder's "dashboard") ---------------
@@ -115,9 +149,11 @@ train_aggregate_block() {
   if [[ -n "${TRAIN_AGG_BODY_OVERRIDE:-}" ]]; then
     body="${TRAIN_AGG_BODY_OVERRIDE}"
   else
-    local num; num="$(train_state_issue_number)"
+    local num lookup_rc=0
+    num="$(train_state_issue_number)" || lookup_rc=$?
+    [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
     [[ -z "${num}" ]] && return 0
-    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null || echo "")"
+    body="$(gh issue view "${num}" --json body --jq '.body' 2>/dev/null)" || return 1
   fi
   printf '%s\n' "${body}" | awk '
     /^```json aggregate/ { inblk=1; next }
@@ -133,9 +169,10 @@ train_aggregate_merge() {
   local prev="${1:-}" ttl_sample="${2:-}"
   [[ -z "${prev}" ]] && prev='{}'
 
-  local landed_now flake_now esc_now batches_inc
+  local landed_now flake_now timeout_now esc_now batches_inc
   landed_now="$(train_metric_get landed 0)"
   flake_now="$(train_metric_get flake_reruns 0)"
+  timeout_now="$(train_metric_get timeout_reruns 0)"
   esc_now="$(train_metric_get escalated 0)"
   # A "batch" counts when at least one PR landed this run.
   batches_inc=0; [[ "${landed_now}" -gt 0 ]] && batches_inc=1
@@ -144,6 +181,7 @@ train_aggregate_merge() {
     --argjson prev "${prev}" \
     --argjson landed_now "${landed_now}" \
     --argjson flake_now "${flake_now}" \
+    --argjson timeout_now "${timeout_now}" \
     --argjson esc_now "${esc_now}" \
     --argjson batches_inc "${batches_inc}" \
     --arg ttl "${ttl_sample}" \
@@ -161,6 +199,7 @@ train_aggregate_merge() {
           batches:         (($t.batches // 0) + $batches_inc),
           prs_landed:      (($t.prs_landed // 0) + $landed_now),
           flake_reruns:    (($t.flake_reruns // 0) + $flake_now),
+          timeout_reruns:  (($t.timeout_reruns // 0) + $timeout_now),
           escalations:     (($t.escalations // 0) + $esc_now),
           runs:            (($t.runs // 0) + 1)
         },
@@ -173,10 +212,11 @@ train_aggregate_merge() {
 # human Markdown dashboard for the state issue (and Step Summary).
 train_aggregate_dashboard_md() {
   local agg="$1" trunk="$2" last="$3"
-  local batches prs flake esc runs median rate
+  local batches prs flake timeout esc runs median rate
   batches="$(jq -r '.totals.batches // 0' <<<"${agg}")"
   prs="$(jq -r '.totals.prs_landed // 0' <<<"${agg}")"
   flake="$(jq -r '.totals.flake_reruns // 0' <<<"${agg}")"
+  timeout="$(jq -r '.totals.timeout_reruns // 0' <<<"${agg}")"
   esc="$(jq -r '.totals.escalations // 0' <<<"${agg}")"
   runs="$(jq -r '.totals.runs // 0' <<<"${agg}")"
   median="$(jq -r '.median_time_to_land_seconds // "—"' <<<"${agg}")"
@@ -194,6 +234,7 @@ train_aggregate_dashboard_md() {
   printf '| Train runs | %s |\n' "${runs}"
   printf '| Median time-to-land | %s |\n' "$([[ "${median}" == "—" || "${median}" == "null" ]] && echo "—" || echo "${median}s")"
   printf '| Flake-rerun rate (reruns/batch) | %s |\n' "${rate}"
+  printf '| Timeout failed-job reruns | %s |\n' "${timeout}"
   printf '| Escalations | %s |\n' "${esc}"
   printf '| Current trunk SHA | `%s` |\n' "${trunk:-—}"
   printf '| Last-landed SHA | `%s` |\n' "${last:-—}"
