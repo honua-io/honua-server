@@ -165,11 +165,11 @@ public static class CapabilityKeyCatalog
         new("fieldops.forms", "Field Collection Forms", FeatureCatalog.Categories.FieldOps,
             HonuaEdition.Community, "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."),
 
-        // Identity
-        new("identity.saml", "SAML 2.0 Authentication", FeatureCatalog.Categories.Identity,
-            HonuaEdition.Community, "SAML 2.0 service-provider metadata and assertion consumer endpoints."),
-        new("identity.scim", "SCIM 2.0 Provisioning", FeatureCatalog.Categories.Identity,
-            HonuaEdition.Community, "User/group provisioning through the SCIM 2.0 protocol surface."),
+        // Identity: identity.saml and identity.scim moved to FeatureCatalog entitlements
+        // (both Enterprise, per ADR-0024's Identity Governance tier) in #2978 — they
+        // previously shipped here ungated, catalog drift from the ADR that let any
+        // SAML-speaking IdP bypass SSO tiering. They flow back into All via the
+        // FeatureCatalog union below.
 
         // Styling
         new("styling.ogc-api-styles", "OGC API Styles", FeatureCatalog.Categories.Styling,

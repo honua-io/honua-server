@@ -1032,9 +1032,9 @@
       "key": "identity.saml",
       "displayName": "SAML 2.0 Authentication",
       "category": "Identity",
-      "edition": "Community",
+      "edition": "Enterprise",
       "entryCount": 3,
-      "provingTestCount": 10,
+      "provingTestCount": 13,
       "maturity": {
         "implemented": 3
       },
@@ -1049,9 +1049,9 @@
       "key": "identity.scim",
       "displayName": "SCIM 2.0 Provisioning",
       "category": "Identity",
-      "edition": "Community",
+      "edition": "Enterprise",
       "entryCount": 17,
-      "provingTestCount": 22,
+      "provingTestCount": 25,
       "maturity": {
         "implemented": 17
       },

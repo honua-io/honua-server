@@ -51,7 +51,7 @@ A complete, production-capable feature server for a single-process deployment.
 | **Protocols** | All — GeoServices REST (FeatureServer, MapServer, ImageServer, GeometryService), OGC API (Features, Tiles, Maps), WMS 1.3, WMTS 1.0, OData v4, MVT, gRPC (unary) |
 | **Data** | PostGIS backend; GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase, GeoParquet import; public ArcGIS GeoServices REST layer import; GeoServer/ArcGIS migration inventory |
 | **Query** | Full Filter AST (CQL2, OData `$filter`, WHERE), spatial queries, statistics, pagination |
-| **Edits** | Full CRUD across GeoServices, OGC, and OData; attachments; related records |
+| **Edits** | Full CRUD via the open protocols — OGC API Features, WFS-T, OData, gRPC — plus attachments and related records. The Esri GeoServices FeatureServer *write dialect* (`applyEdits`/`addFeatures`/`updateFeatures`/`deleteFeatures`/`calculate`) is Pro (`editing.featureserver-edits`, #1591): a compatibility surface for deployed Esri clients, not the only edit path |
 | **SDKs** | JS SDK, Python SDK, .NET SDK — full query + edit capabilities |
 | **MCP Server** | AI-assisted discovery, query, statistics (REST transport) |
 | **Admin UI** | Connections, layer publishing, JSON-based style editing with Maputnik visual editing tracked as backlog, map preview, import wizard, spatial SQL playground (query editor with autocomplete, inline map preview, EXPLAIN visualization) |
