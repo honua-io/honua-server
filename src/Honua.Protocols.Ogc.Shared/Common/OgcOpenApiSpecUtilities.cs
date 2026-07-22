@@ -96,11 +96,15 @@ internal static class OgcOpenApiSpecUtilities
         if (_openApiCache.Count >= MaxCacheEntries)
         {
             // Remove one arbitrary entry rather than clearing the whole cache.
-            // Not rewritten as .Where(): this stops at the first successful TryRemove (a
-            // side-effecting removal), not a filter over the sequence.
-            foreach (var kvp in (_openApiCache).Where(kvp => _openApiCache.TryRemove(kvp)))
+            // This stops at the first successful TryRemove (a side-effecting removal), not a
+            // filter over the sequence.
+            // codeql[cs/linq/missed-where] -- the predicate mutates the cache and the loop exits after the first success.
+            foreach (var kvp in _openApiCache)
             {
-                break;
+                if (_openApiCache.TryRemove(kvp))
+                {
+                    break;
+                }
             }
         }
 

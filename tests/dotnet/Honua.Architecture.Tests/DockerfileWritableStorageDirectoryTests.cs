@@ -159,9 +159,14 @@ public sealed class DockerfileWritableStorageDirectoryTests
         // parameter) into the next, so this is a stateful traversal/fold with early exit, not
         // an expression `.Where(...)` could represent — the cs/linq/missed-where note does not
         // apply here.
-        foreach (var segment in (path).Where(segment => current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out current)))
+        // codeql[cs/linq/missed-where] -- the predicate binds state for the next iteration through an out variable.
+        foreach (var segment in path)
         {
-            return false;
+            if (current.ValueKind != JsonValueKind.Object ||
+                !current.TryGetProperty(segment, out current))
+            {
+                return false;
+            }
         }
 
         if (current.ValueKind != JsonValueKind.String)

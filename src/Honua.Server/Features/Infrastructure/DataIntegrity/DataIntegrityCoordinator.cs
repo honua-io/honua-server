@@ -492,11 +492,15 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // Remove expired entries whose locks are idle. Entries that are still
             // referenced (a legitimately long-running holder or queued waiters)
             // are left untouched and revisited on a later sweep.
-            // Not filtered via '.Where(...)': TryRemoveIdleEntry has the side effect of removing
-            // and disposing the lock entry, so it cannot be hoisted into a predicate.
             var removedCount = 0;
-            foreach (var key in (expiredKeys).Where(key => TryRemoveIdleEntry(key)))
+            // codeql[cs/linq/missed-where] -- TryRemoveIdleEntry mutates and disposes lock state.
+            foreach (var key in expiredKeys)
             {
+                if (!TryRemoveIdleEntry(key))
+                {
+                    continue;
+                }
+
                 _lockOwnership.TryRemove(key, out _);
                 removedCount++;
             }
@@ -506,11 +510,15 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // using the same ref-count guard.
             if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
-                // Not filtered via '.Where(...)': TryRemoveIdleEntry has the side effect of
-                // removing and disposing the lock entry, so it cannot be hoisted into a predicate.
                 var orphanedRemoved = 0;
-                foreach (var lockKey in (_globalLocks.Keys).Where(lockKey => !_lockOwnership.ContainsKey(lockKey) && TryRemoveIdleEntry(lockKey)))
+                // codeql[cs/linq/missed-where] -- TryRemoveIdleEntry mutates and disposes lock state.
+                foreach (var lockKey in _globalLocks.Keys)
                 {
+                    if (_lockOwnership.ContainsKey(lockKey) || !TryRemoveIdleEntry(lockKey))
+                    {
+                        continue;
+                    }
+
                     orphanedRemoved++;
                 }
 
