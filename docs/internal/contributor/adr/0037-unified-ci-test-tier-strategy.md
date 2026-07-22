@@ -303,15 +303,20 @@ under-tests.
 shards run — that has not changed. On top of that selection,
 `scripts/ci/capability-impact.py select-local` (the same route/proving-test/
 shard crosswalk `capability-impact-comparison.yml` validates in shadow mode)
-narrows a selected shard's `dotnet test --filter` down to just its proving
-tests, but ONLY when the crosswalk accounted for every changed file with zero
-ambiguity (not `runAll`, no `unmatchedSourceFiles`) AND its own shard list
-corroborates the shard ADR-0037 selected. Any diff the crosswalk cannot
-confidently map — which today includes essentially all handler/service source
-edits, since `feature-catalog.json`'s `code_location` mostly resolves to the
-endpoint-registry file rather than the real handler — falls back to the
-shard's ADR-0037 filter unchanged, so this can only narrow further, never
-select fewer shards. `--dry-run` (or `HONUA_PRE_PR_DRY_RUN=1`) prints the full
+narrows a selected shard's `dotnet test --filter` down to just the proving
+tests `testsByShard` assigns to that shard, but ONLY when the crosswalk
+accounted for every changed file with zero ambiguity (not `runAll`, no
+`unmatchedSourceFiles`) AND its own shard list corroborates the shard ADR-0037
+selected. Any diff the crosswalk cannot confidently map — which today includes
+essentially all handler/service source edits, since `feature-catalog.json`'s
+`code_location` mostly resolves to the endpoint-registry file rather than the
+real handler — falls back to the shard's ADR-0037 filter unchanged, so this
+can only narrow further, never select fewer shards. A single widely-shared
+`code_location` (e.g. `EndpointRegistry.cs` itself) can still map a shard to
+thousands of proving tests; a narrowed filter over ~6,000 characters falls
+back to that shard's full ADR-0037 filter instead of risking an oversized
+`dotnet test --filter` argument on the Windows/Git Bash path. `--dry-run` (or
+`HONUA_PRE_PR_DRY_RUN=1`) prints the full
 resolved selection — build set, targeted shards, capability narrowing, format
 scope — without restoring, building, formatting, or testing anything. A set of
 cross-cutting paths (`Directory.Build.props`, `Directory.Packages.props`,
