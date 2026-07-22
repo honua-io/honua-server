@@ -149,7 +149,7 @@ internal static class CollectionEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
@@ -213,7 +213,7 @@ internal static class CollectionEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
@@ -238,7 +238,7 @@ internal static class CollectionEndpoints
             return Task.FromResult(Results.Json(schema, StacJsonContext.Default.QueryablesSchema, MediaTypes.SchemaJson));
         }
         // Endpoint boundary: catch-all is intentional here, already logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacLog.OperationFailed(logger, ex);
             return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(
@@ -287,7 +287,7 @@ internal static class CollectionEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, already logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacLog.OperationFailed(logger, ex);
             return StandardErrorHelpers.CreateInternalServerError(

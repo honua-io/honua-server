@@ -106,9 +106,8 @@ internal static class LayerScopedWriteKey
         // Not converted to LINQ: the loop both mutates hasMeaningfulGrant and returns
         // early on the first admin grant, so a single Select/Where projection would
         // need to encode two different exit conditions.
-        foreach (var permission in permissions)
+        foreach (var trimmed in (permissions).Select(permission => permission?.Trim()))
         {
-            var trimmed = permission?.Trim();
             if (string.IsNullOrEmpty(trimmed))
             {
                 continue;
@@ -141,9 +140,8 @@ internal static class LayerScopedWriteKey
         var hasWriteGrant = false;
         // Not converted to LINQ: the loop both mutates hasWriteGrant and returns early
         // when an admin grant is found, so it can't collapse into a single Where/Any.
-        foreach (var permission in permissions)
+        foreach (var trimmed in (permissions).Select(permission => permission?.Trim()))
         {
-            var trimmed = permission?.Trim();
             if (string.IsNullOrEmpty(trimmed))
             {
                 continue;

@@ -13,6 +13,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 /// (the base class it wraps): this is a namespace-scoped FeatureServer alias kept for existing DI
 /// registrations/call sites in this protocol, not an accidental collision or duplicated implementation.
 /// </remarks>
+// codeql[cs/class-name-matches-base-class] -- the protocol adapter intentionally specializes the shared resolver under its canonical service name.
 internal sealed class SpatialReferenceResolver : Honua.Infrastructure.Services.SpatialReferenceResolver
 {
     public SpatialReferenceResolver(

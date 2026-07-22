@@ -81,6 +81,7 @@ internal static class ObservabilityAuditEndpoints
         context.Response.ContentType = isCef ? CefContentType : JsonLinesContentType;
         context.Response.Headers["X-Content-Type-Options"] = "nosniff";
 
+        // codeql[cs/local-not-disposed] -- disposal is performed by the configured await-using statement.
         var writer = new StreamWriter(context.Response.Body, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         await using (writer.ConfigureAwait(false))
         {

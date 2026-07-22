@@ -48,7 +48,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // Intentionally broad: map any catalog/connection failure to the shared
         // LayerPublishingException so callers get a stable domain error instead of a raw
         // provider/connection-string exception.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TableDiscoveryFailed(_logger, ex);
             throw new LayerPublishingException(

@@ -526,7 +526,9 @@ public sealed class OgcApiFeaturesImportServiceTests
             };
 
             return Task.FromResult(body == null
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 : new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
@@ -549,6 +551,7 @@ public sealed class OgcApiFeaturesImportServiceTests
 
             if (path == "/ogcapi/collections/roads")
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -572,6 +575,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                     ItemsRequests.Add(request.RequestUri!);
                 }
 
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -597,6 +601,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 });
             }
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
@@ -616,6 +621,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         {
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -649,6 +655,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 "  ]\n" +
                 "}";
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
@@ -664,6 +671,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         {
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -701,6 +709,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 }
                 """;
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
@@ -727,6 +736,7 @@ public sealed class OgcApiFeaturesImportServiceTests
 
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -743,6 +753,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 });
             }
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")

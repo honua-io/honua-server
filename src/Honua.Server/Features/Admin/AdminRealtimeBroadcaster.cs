@@ -101,7 +101,7 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
         }
         // Intentional catch-all: a broadcast-enqueue fault must never propagate
         // into the sampler that raised this event.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FlushEnqueueFailed(_logger, ex);
         }
@@ -139,7 +139,7 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
                 // Intentional catch-all: this is a per-item send inside the ops-health
                 // drain loop; fail-open, a backplane/transport fault drops this push
                 // and clients re-sync via history rather than aborting the loop.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     OpsHealthBroadcastFailed(_logger, ex);
                 }
@@ -179,7 +179,7 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
                 // Intentional catch-all: this is a per-item send inside the transitions
                 // drain loop; fail-open, clients reconcile via the deploy-operations
                 // list / operate-events APIs rather than aborting the loop.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     TransitionBroadcastFailed(_logger, ex);
                 }

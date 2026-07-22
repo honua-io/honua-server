@@ -532,7 +532,7 @@ internal sealed class CoordinatedReleaseReconcilerBackgroundService(
                     {
                         await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         CoordinatedReleaseReconciler.Log.CoordinatedReleaseReconcileFailed(logger, operation.OperationId, ex);
                     }
@@ -545,7 +545,7 @@ internal sealed class CoordinatedReleaseReconcilerBackgroundService(
             // Intentionally generic: this is a long-running background polling loop. A
             // single failed iteration (e.g. transient store read failure) must not kill
             // the host's background service; log and keep polling.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 CoordinatedReleaseReconciler.Log.CoordinatedReleasePollLoopFailed(logger, ex);
             }

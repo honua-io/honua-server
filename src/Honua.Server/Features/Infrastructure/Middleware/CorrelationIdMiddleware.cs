@@ -189,6 +189,7 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         // Not a pure filter: this stops at the first key name present in routeValues (even if its
         // value is blank) rather than searching subsequent aliases, so a '.Where(...)'/FirstOrDefault
         // rewrite would change behavior for a present-but-blank first match.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in keys)
         {
             if (routeValues.TryGetValue(key, out var routeValue) && routeValue != null)

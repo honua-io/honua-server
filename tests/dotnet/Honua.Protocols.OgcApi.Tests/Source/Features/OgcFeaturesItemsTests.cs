@@ -179,6 +179,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         // Not rewritten as .Where(...): the nested TryGetProperty pattern extracts
         // two optional values (properties, then name) and a Where/Select chain would
         // have to repeat the same lookups, reading less clearly than the nested if.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var feature in features)
         {
             if (feature.TryGetProperty("properties", out var properties) &&

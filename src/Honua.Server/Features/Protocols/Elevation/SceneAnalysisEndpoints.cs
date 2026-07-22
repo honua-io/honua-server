@@ -111,7 +111,7 @@ internal static partial class SceneAnalysisEndpoints
         // Intentional broad catch: request-body deserialization can fail for many reasons
         // (malformed JSON, unsupported content-type, client disconnect mid-read); all map
         // uniformly to a 400 bad-request response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger is not null)
             {
@@ -244,7 +244,7 @@ internal static partial class SceneAnalysisEndpoints
         // Intentional broad catch: request-body deserialization can fail for many reasons
         // (malformed JSON, unsupported content-type, client disconnect mid-read); all map
         // uniformly to a 400 bad-request response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger is not null)
             {

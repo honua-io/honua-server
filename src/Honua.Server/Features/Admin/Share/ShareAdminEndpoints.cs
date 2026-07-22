@@ -486,7 +486,7 @@ internal static class ShareAdminEndpoints
             // created job back to a terminal Failed state and marks the already-persisted run Failed
             // so it never lingers as a Queued run no worker will execute. Use CancellationToken.None
             // so this durable correction completes even if the client has disconnected.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                         jobStore,
@@ -952,13 +952,10 @@ internal static class ShareAdminEndpoints
         // Not a simple filter: the matched pair's value is assigned to the out parameter
         // and the loop returns immediately, so a LINQ Where/FirstOrDefault would not
         // simplify this TryGetValue-style lookup.
-        foreach (var pair in definition.DestinationConfig)
+        foreach (var pair in (definition.DestinationConfig).Where(pair => string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase))
-            {
-                value = pair.Value;
-                return true;
-            }
+            value = pair.Value;
+            return true;
         }
 
         value = string.Empty;

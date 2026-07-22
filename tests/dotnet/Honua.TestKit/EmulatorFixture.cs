@@ -44,9 +44,11 @@ public sealed class EmulatorFixture : IAsyncLifetime
             {
                 await StartContainersAsync();
                 SetEnvironmentVariables();
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = true;
             }
 
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             _sharedRefCount++;
         }
         finally
@@ -62,6 +64,7 @@ public sealed class EmulatorFixture : IAsyncLifetime
         {
             if (_sharedRefCount > 0)
             {
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedRefCount--;
             }
 
@@ -69,6 +72,7 @@ public sealed class EmulatorFixture : IAsyncLifetime
             {
                 await StopContainersAsync();
                 ClearEnvironmentVariables();
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = false;
             }
         }

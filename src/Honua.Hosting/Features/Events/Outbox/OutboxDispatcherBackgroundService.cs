@@ -153,7 +153,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         // Intentional: this is one pass of a recurring background dispatch loop; a DI
         // resolution failure must not kill the host — record the failure timestamp for the
         // readiness probe and let the next scheduled pass retry.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RepositoryResolutionFailed(_logger, ex);
             _lastClaimPollFailureAt = DateTimeOffset.UtcNow;
@@ -179,7 +179,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
                 cancellationToken).ConfigureAwait(false);
             _lastClaimPollSuccessAt = DateTimeOffset.UtcNow;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ClaimFailed(_logger, ex);
             _lastClaimPollFailureAt = DateTimeOffset.UtcNow;
@@ -224,7 +224,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
                 entry.EventPayload,
                 FeatureChangeEventsJsonContext.Default.FeatureChangeEventRequest);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Payload corruption is permanent — mark as failed and let the retry budget burn out
             // so the dead-letter health check surfaces the row for operator review.
@@ -268,7 +268,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             // can re-claim the row without us having to make a writable call during shutdown.
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DispatchFailed(_logger, entry.OutboxId, entry.RetryCount + 1, ex);
             var outcome = await SafeMarkFailedAsync(repository, entry.OutboxId, ownerNodeId, entry.RetryCount, BuildSafeError(ex), cancellationToken).ConfigureAwait(false);
@@ -329,7 +329,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         // Intentional: this is a best-effort terminal-state update for an already-failed
         // dispatch; a further failure here must not throw out of the dispatch loop — the
         // row remains claimed and a later pass or claim-recovery retries it.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.MarkFailedErrored(_logger, outboxId, ex);
             return MarkFailedOutcome.Errored;
@@ -373,7 +373,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         // Intentional: claim recovery is a periodic housekeeping step within the dispatch
         // loop; a failure must not stop dispatch of already-claimed rows — record the
         // failure timestamp and let the next scheduled recovery interval retry.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RecoveryFailed(_logger, ex);
             _lastRecoveryPollFailureAt = DateTimeOffset.UtcNow;
@@ -396,7 +396,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         // Intentional: backlog metrics are diagnostics, not the dispatch critical path; a
         // query failure must not stop the dispatcher — record the failure timestamp for
         // the readiness probe and let the next pass retry.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.BacklogQueryFailed(_logger, ex);
             _lastBacklogPollFailureAt = DateTimeOffset.UtcNow;

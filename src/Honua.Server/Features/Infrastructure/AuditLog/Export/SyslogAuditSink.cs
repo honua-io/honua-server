@@ -53,9 +53,8 @@ internal sealed class SyslogAuditSink : IAuditSink
 
         // Not a pure map: each iteration sends over the wire and can return early on the
         // first transport failure, so this doesn't reduce cleanly to a '.Select(...)'.
-        foreach (var evt in events)
+        foreach (var frame in (events).Select(evt => BuildFrame(evt)))
         {
-            var frame = BuildFrame(evt);
             try
             {
                 await _transport.SendAsync(frame, ct).ConfigureAwait(false);

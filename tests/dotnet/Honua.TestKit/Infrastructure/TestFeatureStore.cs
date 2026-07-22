@@ -491,7 +491,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                 createdCount++;
                 createResults.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: this in-memory store mirrors the real
                 // provider's batch-edit semantics, where one item's failure is recorded
@@ -515,7 +515,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                 updatedCount++;
                 updateResults.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: one item's failure is recorded per-item and
                 // does not abort the rest of the batch (unless RollbackOnFailure).
@@ -545,7 +545,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
                     deleteResults.Add(EditOperationResult.Failure($"Feature {featureId} not found", objectId: featureId));
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: one item's failure is recorded per-item and
                 // does not abort the rest of the batch (unless RollbackOnFailure).
@@ -594,12 +594,9 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         // predicate loses the null-state narrowing the compiler currently applies to
         // ExpectedStateToken (a `string?`) inside this `if` body, which would reintroduce
         // a nullable-assignment warning under this project's TreatWarningsAsErrors build.
-        foreach (var precondition in editBatch.Preconditions)
+        foreach (var precondition in (editBatch.Preconditions).Where(precondition => !string.IsNullOrEmpty(precondition.ExpectedStateToken)))
         {
-            if (!string.IsNullOrEmpty(precondition.ExpectedStateToken))
-            {
-                map[precondition.ObjectId] = precondition.ExpectedStateToken;
-            }
+            map[precondition.ObjectId] = precondition.ExpectedStateToken;
         }
 
         return map.Count == 0 ? null : map;
@@ -665,7 +662,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             createResults.Add(EditOperationResult.Success(created.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: mirrors the batch path above - one operation's
             // failure is recorded and reported, not rethrown, so ordered-batch processing
@@ -690,7 +687,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             updateResults.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: mirrors the batch path above - one operation's
             // failure is recorded and reported, not rethrown.
@@ -720,7 +717,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: mirrors the batch path above - one operation's
             // failure is recorded and reported, not rethrown.
@@ -814,9 +811,8 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         // each clause (multiple early `continue`s, branching parse logic, and progressively
         // narrowing the `filtered` sequence), so a LINQ projection here would obscure
         // control flow rather than clarify it.
-        foreach (var clause in clauses)
+        foreach (var trimmedClause in (clauses).Select(clause => clause.Trim()))
         {
-            var trimmedClause = clause.Trim();
             if (string.IsNullOrEmpty(trimmedClause))
             {
                 continue;
@@ -1040,6 +1036,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         // Not rewritten to `.Where(...)`: the loop needs both the field name and its
         // TryGetValue-resolved value together, which `Where` can't express without a
         // second (redundant) dictionary lookup per field.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var field in outFields)
         {
             if (feature.Attributes.TryGetValue(field, out var value))

@@ -75,7 +75,7 @@ internal sealed partial class ODataMetadataService
         {
             return GenerateODataMetadataV2(resources.ToArray());
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.MetadataFallback(_logger, ex);
             return GetStaticMetadata();

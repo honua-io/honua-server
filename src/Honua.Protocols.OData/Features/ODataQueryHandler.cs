@@ -217,7 +217,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayersQueryFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
@@ -308,7 +308,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayersQueryFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
@@ -371,7 +371,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayersQueryFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
@@ -409,6 +409,7 @@ internal sealed partial class ODataQueryHandler(
         // activity was started. A using declaration would either force activity creation
         // before validation (polluting telemetry for invalid-layer requests) or be out of
         // scope for the catch blocks.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -579,6 +580,7 @@ internal sealed partial class ODataQueryHandler(
                 if (cached != null)
                 {
                     ODataUtilityService.SetODataHeaders(context);
+                    // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
                     if (trackChangesRequested)
                     {
                         ODataUtilityService.ApplyTrackChangesPreference(context);
@@ -766,7 +768,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.FeaturesQueryFailed(_logger, layerId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);

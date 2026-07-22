@@ -261,7 +261,7 @@ internal static class ContentPublicationEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content publish endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.publish", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while publishing content.");
@@ -291,7 +291,7 @@ internal static class ContentPublicationEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content publication get endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.get", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while retrieving the content publication.");
@@ -328,7 +328,7 @@ internal static class ContentPublicationEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the publication version get endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.version", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while retrieving the version.");
@@ -371,7 +371,7 @@ internal static class ContentPublicationEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content republish endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.republish", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while republishing content.");
@@ -414,7 +414,7 @@ internal static class ContentPublicationEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content rollback endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.rollback", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while rolling back content.");
@@ -469,7 +469,7 @@ internal static class ContentPublicationEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the publication policy update endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "publications.policy", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while updating the policy.");

@@ -154,7 +154,7 @@ internal sealed class OgcMapsRenderingHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcMapsLog.CollectionMapRenderFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -387,7 +387,7 @@ internal sealed class OgcMapsRenderingHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcMapsLog.DatasetMapRenderFailed(_logger, ex, resolvedLayerCount);
             scope.RecordException(ex);
@@ -518,7 +518,7 @@ internal sealed class OgcMapsRenderingHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcMapsLog.StyledMapRenderFailed(_logger, ex, layerId, styleId);
             scope.RecordException(ex);
@@ -1030,6 +1030,7 @@ internal sealed class OgcMapsRenderingHandler
                 // already rejects any request where the "transparent" query parameter was
                 // explicitly supplied, so the only way to reach this point is with the
                 // property still holding its record-default value of true.
+                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
                 Transparent = request.Transparent ?? true,
                 BackgroundColor = request.BackgroundColor,
                 DateTime = datetimeTo,

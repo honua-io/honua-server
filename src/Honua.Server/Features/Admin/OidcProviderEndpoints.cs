@@ -108,7 +108,7 @@ internal static partial class OidcProviderEndpoints
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider listing endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OidcProviderLog.ListProvidersFailed(logger, ex);
             return TypedResults.Problem(
@@ -154,7 +154,7 @@ internal static partial class OidcProviderEndpoints
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider creation endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OidcProviderLog.CreateProviderFailed(logger, ex);
             return TypedResults.Problem(
@@ -184,7 +184,7 @@ internal static partial class OidcProviderEndpoints
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider retrieval endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OidcProviderLog.GetProviderFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -231,7 +231,7 @@ internal static partial class OidcProviderEndpoints
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider update endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OidcProviderLog.UpdateProviderFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -262,7 +262,7 @@ internal static partial class OidcProviderEndpoints
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider deletion endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OidcProviderLog.DeleteProviderFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -303,7 +303,7 @@ internal static partial class OidcProviderEndpoints
         // Intentional catch-all request-handling boundary: this is the OIDC
         // provider connectivity-test endpoint; the failure is logged and mapped
         // to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OidcProviderLog.TestProviderFailed(logger, id, ex);
             return TypedResults.Problem(

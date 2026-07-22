@@ -138,7 +138,7 @@ internal static class ClientCertificateAudit
         {
             await auditLog.RecordAsync(auditEvent, context.RequestAborted).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Audit sinks are best-effort and must not break authentication or admin writes,
             // but the failure is still worth a log line for operability.

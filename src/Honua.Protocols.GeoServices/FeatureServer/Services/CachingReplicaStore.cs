@@ -41,7 +41,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         }
         // Intentionally generic: cache write is best-effort after the authoritative
         // Postgres write already succeeded; any cache failure must not fail the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.CacheWriteFailed(_logger, replica.ReplicaId, ex);
         }
@@ -72,7 +72,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
             }
             // Intentionally generic: best-effort cache eviction after a lost compare-and-set
             // race; the caller already falls back to the authoritative store on retry.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.CacheRemoveFailed(_logger, replica.ReplicaId, ex);
             }
@@ -86,7 +86,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         }
         // Intentionally generic: cache write is best-effort after the authoritative
         // Postgres write already succeeded; any cache failure must not fail the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.CacheWriteFailed(_logger, replica.ReplicaId, ex);
         }
@@ -119,7 +119,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         }
         // Intentionally generic: cache backfill is best-effort; a cache outage must not
         // fail a read the authoritative store has already satisfied.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.CacheWriteFailed(_logger, replicaId, ex);
         }
@@ -164,7 +164,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         }
         // Intentionally generic: cache removal is best-effort after the authoritative
         // Postgres delete already succeeded; any cache failure must not fail the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.CacheRemoveFailed(_logger, replicaId, ex);
         }

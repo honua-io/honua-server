@@ -145,7 +145,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional: no ILogger is wired into this store (constructed by a factory
                 // outside this project); degradation is surfaced via _redisUnavailable /
@@ -234,7 +234,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             {
                 throw;
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentional: same no-logger rationale as AppendAsync above — degraded state
                 // is exposed via _redisUnavailable/IsUsingInMemoryFallback rather than logged here.
@@ -296,7 +296,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             {
                 throw;
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentional: same no-logger rationale as AppendAsync above — degraded state
                 // is exposed via _redisUnavailable/IsUsingInMemoryFallback rather than logged here.
@@ -475,7 +475,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
             _redisUnavailable = false;
             return true;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional: same no-logger rationale as AppendAsync above — a failed ping
             // just keeps _redisUnavailable set so the next call retries via EnsureRedisAvailableAsync.

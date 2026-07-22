@@ -330,12 +330,14 @@ public sealed class ExternalServiceDiscoveryServiceTests
             // contract, so these are not disposed here.
             if (!responses.TryGetValue(requestUrl, out var body))
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
                 {
                     Content = new StringContent("{}", Encoding.UTF8, "application/json")
                 });
             }
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")

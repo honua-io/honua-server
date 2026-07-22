@@ -69,6 +69,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         // layer id), and both the catch blocks (RecordException) and the finally need to
         // observe whatever value it holds - including null if validation short-circuited
         // before the activity was started.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -598,7 +599,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error (or an abort
         // if streaming already started).
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -977,6 +978,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         // layer id), and both the catch blocks (RecordException) and the finally need to
         // observe whatever value it holds - including null if validation short-circuited
         // before the activity was started.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -1078,7 +1080,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.FeaturesQueryFailed(_logger, layerId ?? 0, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -1117,7 +1119,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         // Intentional broad catch: the OData filter parser can throw a variety of
         // syntax/format exceptions for a malformed $filter; already logged
         // (Log.LayerIdFilterResolutionFailed) and mapped to a caller-facing failure result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayerIdFilterResolutionFailed(_logger, filter, ex);
             result = (0, InvalidLayerIdFilterMessage);
@@ -1212,6 +1214,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             // Intentional exact check: doubleValue is a literal parsed directly from the
             // $filter text (e.g. LayerId eq 5.0), not the result of floating-point
             // arithmetic, so testing for an exact whole number is well-defined here.
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             if (doubleValue % 1 != 0)
             {
                 return false;

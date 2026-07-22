@@ -143,7 +143,7 @@ public sealed class MigrationRunCheckpointStoreTests
             {
                 if (Directory.Exists(Path)) Directory.Delete(Path, recursive: true);
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentional broad catch: best-effort temp directory cleanup during test teardown.
             }

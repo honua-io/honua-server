@@ -29,7 +29,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     {
         // Second argument is always a generated relative filename (hex GUID + extension), never rooted,
         // so Path.Combine cannot silently drop the temp-path prefix here.
-        _dbPath = Path.Combine(Path.GetTempPath(), $"honua_test_{Guid.NewGuid():N}.duckdb");
+        _dbPath = Path.Join(Path.GetTempPath(), $"honua_test_{Guid.NewGuid():N}.duckdb");
         _connectionString = $"Data Source={_dbPath}";
 
         // Seed the database
@@ -101,9 +101,13 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
         // Intentional catch-all: best-effort deletion of the per-test scratch DuckDB
         // files; a failed cleanup (e.g. the file is still locked) must not fail teardown.
-        try { File.Delete(_dbPath); } catch { }
+        try { File.Delete(_dbPath); }
+        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException) { }
 
-        try { File.Delete(_dbPath + ".wal"); } catch { }
+        try { File.Delete(_dbPath + ".wal"); }
+        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException) { }
         return Task.CompletedTask;
     }
 

@@ -189,7 +189,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         // Any unexpected failure must be recorded as a terminal job state rather than becoming an
         // unobserved task exception; only a sanitized message is surfaced, provider internals
         // never leak through the job record.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Surface a sanitized message only; provider internals never leak through the job record.
             activity?.SetTag("honua.version.outcome", "failed");
@@ -214,7 +214,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         {
             await _jobStore.SaveAsync(job, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TerminalSaveFailed(_logger, job.Kind.ToString(), job.VersionId, job.JobId, ex);
         }

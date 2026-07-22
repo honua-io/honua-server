@@ -14,7 +14,7 @@ public sealed class FileSystemObjectStoreTriggerProbeTests : IDisposable
     {
         // The second Path.Combine argument is a literal prefix plus a GUID (never rooted), so
         // GetTempPath() is never dropped.
-        _root = Path.Combine(Path.GetTempPath(), "honua-objstore-" + Guid.NewGuid().ToString("N"));
+        _root = Path.Join(Path.GetTempPath(), "honua-objstore-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
     }
 
@@ -40,7 +40,7 @@ public sealed class FileSystemObjectStoreTriggerProbeTests : IDisposable
     {
         // This private helper is only called from this file with relative literal paths
         // (e.g. "in/a.csv"), so relativePath is never rooted and _root is never dropped.
-        var full = Path.Combine(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var full = Path.Join(_root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, "x");
         File.SetLastWriteTimeUtc(full, modified.UtcDateTime);

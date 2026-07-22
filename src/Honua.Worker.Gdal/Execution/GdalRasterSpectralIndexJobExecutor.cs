@@ -108,7 +108,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
         {
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
-            var outputPath = Path.Combine(workspace, "output.tif");
+            var outputPath = Path.Join(workspace, "output.tif");
             var firstInputPath = "";
             var args = new List<string>(roles.Count * 2 + 8);
             for (var i = 0; i < roles.Count; i++)
@@ -133,7 +133,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 // fixed band-role literals ("red", "nir", "green", "swir", "blue")
                 // assigned by TryBuildIndex's switch above (never user-supplied), so
                 // it can never be rooted and silently discard workspace.
-                var inputPath = Path.Combine(workspace, $"{roles[i]}.tif");
+                var inputPath = Path.Join(workspace, $"{roles[i]}.tif");
                 await File.WriteAllBytesAsync(inputPath, bytes, cancellationToken).ConfigureAwait(false);
                 if (i == 0)
                 {

@@ -127,7 +127,7 @@ internal static partial class TenantAdminEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the tenant listing endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TenantOperationFailed(logger, "list", ex);
             return TypedResults.Problem(
@@ -171,7 +171,7 @@ internal static partial class TenantAdminEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the tenant creation endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TenantOperationFailed(logger, "create", ex);
             return TypedResults.Problem(
@@ -199,7 +199,7 @@ internal static partial class TenantAdminEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the tenant retrieval endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TenantOperationFailed(logger, "get", ex);
             return TypedResults.Problem(
@@ -251,7 +251,7 @@ internal static partial class TenantAdminEndpoints
         // Intentional catch-all request-handling boundary: shared handler for the
         // suspend/resume/delete tenant lifecycle endpoints; logs and returns a
         // generic 500 problem response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TenantOperationFailed(logger, operation, ex);
             return TypedResults.Problem(
@@ -284,7 +284,7 @@ internal static partial class TenantAdminEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the tenant billing usage export endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.TenantOperationFailed(logger, "usage", ex);
             return TypedResults.Problem(

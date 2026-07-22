@@ -169,7 +169,7 @@ public sealed class RedisJobExecutionResilienceTests
     /// </summary>
     private static int ReserveLoopbackPort()
     {
-        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
         listener.Start();
         try
         {

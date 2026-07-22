@@ -120,7 +120,7 @@ internal static partial class TemporalHistorySlicesEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the temporal diff
         // endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "temporal.diff", ex);
             return CreateGenericProblem(context);
@@ -149,7 +149,7 @@ internal static partial class TemporalHistorySlicesEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the temporal timeline
         // endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "temporal.timeline", ex);
             return CreateGenericProblem(context);
@@ -180,7 +180,7 @@ internal static partial class TemporalHistorySlicesEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the temporal rollback
         // plan endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "temporal.rollback.plan", ex);
             return CreateGenericProblem(context);
@@ -219,7 +219,7 @@ internal static partial class TemporalHistorySlicesEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the temporal rollback
         // execution endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "temporal.rollback", ex);
             return CreateGenericProblem(context);

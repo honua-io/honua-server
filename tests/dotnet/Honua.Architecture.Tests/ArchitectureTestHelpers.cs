@@ -172,7 +172,7 @@ internal static class ArchitectureTestHelpers
             }
         }
 
-        return Path.Combine(segments);
+        return Path.Join(segments);
     }
 
     /// <summary>

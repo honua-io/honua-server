@@ -100,7 +100,7 @@ public sealed class GeoPackageExportWriterTests
 
     // False positive: the second segment is a generated relative filename, never absolute.
     private static string CreateTempGeoPackagePath()
-        => Path.Combine(Path.GetTempPath(), $"gpkg-export-{Guid.NewGuid():N}.gpkg");
+        => Path.Join(Path.GetTempPath(), $"gpkg-export-{Guid.NewGuid():N}.gpkg");
 
     private static Feature CreateFeature(long id, byte[] geometry)
         => Feature.Create(id, geometry, ImmutableDictionary<string, object?>.Empty);
