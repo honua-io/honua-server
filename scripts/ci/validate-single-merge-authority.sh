@@ -64,12 +64,30 @@ canonical_cli_source() {
       has_ansi = 0; ansi_command = 0
       for (i = 1; i <= NF; i++) {
         raw[i] = $i
+        token[i] = dequote($i)
+      }
+      # `command`/`env`/`exec`/etc. run their argument as the command verb
+      # unchanged, so an ANSI-C-quoted verb behind one of these wrappers (and
+      # any of their own leading -flags or env VAR=val assignments) is just as
+      # much "the command name" as a literal first token; skip past them to
+      # find the logically-first token before checking for an ANSI-C verb.
+      first_logical = 1
+      while (first_logical <= NF) {
+        w = tolower(token[first_logical])
+        gsub(/\\/, "", w); sub(/^.*\//, "", w); sub(/\.exe$/, "", w)
+        if (w ~ /^(command|builtin|env|exec|nohup|nice|setsid|stdbuf|time|sudo)$/) {
+          first_logical++
+          while (first_logical <= NF && (token[first_logical] ~ /^-/ || token[first_logical] ~ /^[A-Za-z_][A-Za-z0-9_]*=/)) first_logical++
+          continue
+        }
+        break
+      }
+      for (i = 1; i <= NF; i++) {
         if (raw[i] ~ /^[A-Za-z0-9_.\/\\-]*\$\047/ && raw[i] !~ /=/) {
           has_ansi = 1
-          if ((i == 1 && raw[i] !~ /=/) ||
+          if ((i == first_logical && raw[i] !~ /=/) ||
               (i > 1 && raw[i - 1] ~ /=/ && raw[i] !~ /=/)) ansi_command = 1
         }
-        token[i] = dequote($i)
       }
       recognized_cli = 0
       for (i = 1; i <= NF; i++) {
