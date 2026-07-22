@@ -1131,7 +1131,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_IsAnonymous_Returns200",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_NoOidcConfigured_ReturnsEmptyProviders",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_WithAzureAdConfigured_ReturnsSelectionMetadataOnly",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_WithMultipleProviders_ReturnsProviderKeysAndNames"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetAuthConfig_WithMultipleProviders_ReturnsProviderKeysAndNames",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
