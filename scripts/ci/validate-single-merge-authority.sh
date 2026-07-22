@@ -390,8 +390,12 @@ scan_authorities() {
   # A variable workflow selector cannot be proven non-authoritative statically.
   # Reject it everywhere except the explicit dispatch authority allowlist.
   # For JS calls, quoted and computed workflow_id keys are equivalent to the
-  # bare key and must not hide a dynamic selector.
-  local dynamic_dispatch="createWorkflowDispatch[^)]*(\[[[:space:]]*[\"']workflow_id[\"'][[:space:]]*\]|[\"']?workflow_id[\"']?)[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]"
+  # bare key and must not hide a dynamic selector. The REST dispatch endpoint's
+  # workflow_id path segment accepts either a filename or a numeric workflow
+  # ID (GitHub API docs), and gh api never resolves that ID to a name for us,
+  # so a numeric or interpolated segment is just as unprovable as a bare CLI
+  # variable and must be rejected the same way.
+  local dynamic_dispatch="createWorkflowDispatch[^)]*(\[[[:space:]]*[\"']workflow_id[\"'][[:space:]]*\]|[\"']?workflow_id[\"']?)[[:space:]]*:[[:space:]]*[$]?[A-Za-z_][A-Za-z0-9_]*|createWorkflowDispatch[^)]*[{,][[:space:]]*workflow_id[[:space:],}]|gh[[:space:]]+api[^#;|&]*/actions/workflows/([0-9]+|[^/[:space:]]*[$][^/[:space:]]*)/dispatches"
   local file rel source found=0 candidates reject_ansi
   if git -C "${root}" rev-parse --git-dir >/dev/null 2>&1; then
     candidates="$(git -C "${root}" ls-files | grep -E '\.(yml|yaml|sh|bash|zsh|ps1|js|mjs|cjs|ts|py)$')"
@@ -519,6 +523,8 @@ YAML
     'gh workflow run -R honua-io/honua-server $flow -f train_apply=true'
     'gh workflow run 123456 -f train_apply=true'
     'gh workflow run --repo honua-io/honua-server 123456 -f train_apply=true'
+    'gh api --method POST repos/o/r/actions/workflows/123456/dispatches -f inputs[train_apply]=true'
+    'gh api --method POST repos/o/r/actions/workflows/${flow_id}/dispatches -f inputs[train_apply]=true'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: "merge-train.yml",\n        ref: "trunk",\n        inputs: {\n          train_apply: mode\n        }\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        workflow_id: flow,\n        ref: "trunk"\n      })'
     $'github.rest.actions.createWorkflowDispatch({\n        owner,\n        repo,\n        "workflow_id": flow,\n        ref: "trunk"\n      })'
