@@ -5848,6 +5848,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OData_Features_ReturnsAllSeededFeatures",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OData_QueryFeatures_ShouldReturnODataFormat",
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientIntegrationTests.FeaturesQuery_ReturnsAllFeatures_ViaODataClient",
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientIntegrationTests.FeaturesResponse_HasAbsoluteContextUrl",
@@ -6299,6 +6300,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OgcFeatures_ItemsWithCql2Filter_ReturnsFilteredFeatures",
+        "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OgcFeatures_Items_ReturnsAllSeededFeatures",
+        "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.OgcFeatures_Items_ReturnsAllSeededFeatures",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.ContentNegotiation_VariousFormats_ReturnCorrectContentType",
@@ -7127,6 +7131,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.ProviderSmoke.Tests.DuckDbProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_WithCrs4326_ReturnsTile",
@@ -12285,6 +12290,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.Tiles_TileJson_ReturnsMetadata",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_FeatureServerProtocolDisabled_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetTileJson_NonExistentLayer_ReturnsRealNotFoundWithProblemJson",

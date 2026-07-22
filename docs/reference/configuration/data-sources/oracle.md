@@ -240,10 +240,28 @@ and versioning columns. No Oracle instance is required.
 
 ### Integration
 
-There is no live-Oracle integration suite in this slice — Oracle Free 23ai container
-images are large and Oracle licensing for CI is treated as a separate decision. Operators
-should run the read paths against a representative database before promoting the
-configuration.
+`OracleRealDatabaseIntegrationTests` (in `tests/dotnet/Honua.Oracle.Tests`) exercises
+connection open, query build+execute, and WKB/`SDO_GEOMETRY` decode against a real
+`gvenzl/oracle-free` instance via Testcontainers — promotion groundwork per
+honua-server#2947, not a change to Oracle's experimental status. It is **opt-in**: every
+test method is skipped unless `HONUA_TEST_ORACLE=1` is set, so the default
+`dotnet test tests/dotnet/Honua.Oracle.Tests` run (invoked unfiltered by the PR gate's
+fast-unit-only step) stays fast and never starts Docker.
+
+```bash
+# Requires Docker; pulls the gvenzl/oracle-free:23-faststart image (several GB —
+# NOT the "slim" variant, which excludes the Oracle Spatial component this lane
+# needs) and takes several
+# minutes to start.
+HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj \
+    --filter "Category=Oracle"
+```
+
+Runs nightly and on demand via
+[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml). Oracle
+is **not** wired into the `Honua.ProviderSmoke.Tests` HTTP-stack smoke suite and remains
+experimental — this lane proves the provider-layer code path only, not the full protocol
+stack.
 
 ## Limitations and Known Gaps
 
