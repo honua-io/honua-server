@@ -269,6 +269,33 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/config")]
+    public async Task AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200()
+    {
+        // #2958 regression guard: HandleGetAuthConfig resolves IClientCertificateTrustStore
+        // via [FromServices] to report trust-profile bootstrap hints. That store must stay
+        // registered even while security.mtls is gated off, or this anonymous admin auth
+        // bootstrap endpoint fails DI activation (500) instead of serving a clean 200 for
+        // every OIDC/bearer-only deployment that has never opted into the experimental
+        // capability (the production default) — the exact class of regression this PR
+        // exists to prevent, just against a different endpoint than #2945's.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.GetAsync("/api/v1/admin/auth/config");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
     public async Task StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated()
     {

@@ -13,15 +13,16 @@ internal static class ClientCertificateAuthenticationExtensions
     /// <summary>
     /// Registers native mTLS/client-certificate authentication ONLY when the
     /// <c>security.mtls</c> experimental capability is enabled (#2958). The options section
-    /// is always bound (unvalidated) so read-only consumers such as
-    /// <c>CapabilityManifestService</c> can still report the configured
-    /// <see cref="ClientCertificateAuthenticationOptions.Mode"/> without eagerly validating
-    /// or standing up the auth surface. While the capability is off the feature stays fully
-    /// dormant: no eager options validation, no authentication scheme, no DI-registered
-    /// validator/trust-store — an operator who has configured (or half-configured)
-    /// <c>Authentication:ClientCertificates:*</c> without opting into the experimental flag
-    /// never hits a startup validation failure or an interposed cert-RBAC check on an
-    /// otherwise-valid bearer-token admin request.
+    /// is always bound (unvalidated) and the read-only <see cref="IClientCertificateTrustStore"/>
+    /// is always registered so read-only consumers — <c>CapabilityManifestService</c> and the
+    /// anonymous admin auth bootstrap endpoint (<c>HandleGetAuthConfig</c>) — can still report
+    /// the configured <see cref="ClientCertificateAuthenticationOptions.Mode"/> and trust-profile
+    /// hints without eagerly validating or standing up the auth surface. While the capability is
+    /// off the enforcement surface stays fully dormant: no eager options validation, no
+    /// authentication scheme, no DI-registered validator/extractor — an operator who has
+    /// configured (or half-configured) <c>Authentication:ClientCertificates:*</c> without opting
+    /// into the experimental flag never hits a startup validation failure or an interposed
+    /// cert-RBAC check on an otherwise-valid bearer-token admin request.
     /// </summary>
     public static IServiceCollection AddHonuaClientCertificateAuthentication(
         this IServiceCollection services,
@@ -29,6 +30,14 @@ internal static class ClientCertificateAuthenticationExtensions
     {
         var optionsBuilder = services.AddOptions<ClientCertificateAuthenticationOptions>()
             .Bind(configuration.GetSection(ClientCertificateAuthenticationOptions.SectionName));
+
+        // Registered unconditionally (unlike the scheme/validator/enforcement below): the
+        // anonymous admin auth bootstrap endpoint (HandleGetAuthConfig) resolves this via
+        // [FromServices] to report trust-profile hints regardless of whether the experimental
+        // capability is opted in, so it must stay resolvable even while mTLS is gated off.
+        // The in-memory store only seeds itself from the (unvalidated) bound options and has
+        // no other side effects, so registering it does not stand up any auth surface.
+        services.TryAddSingleton<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>();
 
         if (!IsMtlsCapabilityEnabled(configuration))
         {
@@ -40,7 +49,6 @@ internal static class ClientCertificateAuthenticationExtensions
             IValidateOptions<ClientCertificateAuthenticationOptions>,
             ClientCertificateAuthenticationOptionsValidator>());
         services.TryAddSingleton<ClientCertificateExtractor>();
-        services.TryAddSingleton<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>();
         services.TryAddSingleton<IClientCertificateValidator, ClientCertificateValidator>();
         services.TryAddSingleton<ClientCertificateAuthenticationDependencies>();
 
