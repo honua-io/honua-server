@@ -198,6 +198,24 @@ public static class FeatureCatalog
     public const string OidcAuthenticationKey = "identity.oidc";
 
     /// <summary>
+    /// Entitlement key for SAML 2.0 service-provider authentication (#2978). Enterprise-only
+    /// per ADR-0024's Identity Governance tier ("Multi-provider OIDC configuration,
+    /// claim-to-role mapping, SAML bridge, SCIM user/group provisioning"); the Pro "no SSO
+    /// tax" position covers single-provider <see cref="OidcAuthenticationKey"/> only.
+    /// Previously shipped ungated (Community) in <c>CapabilityKeyCatalog.CommunityKeys</c> —
+    /// catalog drift from the ADR that let any SAML-speaking IdP bypass SSO tiering entirely.
+    /// </summary>
+    public const string SamlAuthenticationKey = "identity.saml";
+
+    /// <summary>
+    /// Entitlement key for SCIM 2.0 user/group provisioning (#2978). Enterprise-only per
+    /// ADR-0024's Identity Governance tier, alongside <see cref="OidcMultiProviderKey"/> and
+    /// <see cref="OidcClaimsMappingKey"/>. Previously shipped ungated (Community) — the same
+    /// catalog drift as <see cref="SamlAuthenticationKey"/>.
+    /// </summary>
+    public const string ScimProvisioningKey = "identity.scim";
+
+    /// <summary>
     /// Entitlement key for configuring multiple OIDC identity providers in one deployment.
     /// Enterprise-only identity governance; basic single-provider OIDC is separately gated
     /// by <see cref="OidcAuthenticationKey"/>.
@@ -305,6 +323,10 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Custom claim-to-role mapping and identity governance for OIDC providers."),
         new(MtlsClientCertificateKey, "mTLS Client-Certificate Authentication", Categories.Identity,
             HonuaEdition.Enterprise, "Native client-certificate (mTLS) authentication: trust profiles, issuer/chain validation with CRL/OCSP revocation, and certificate-to-principal mapping."),
+        new(SamlAuthenticationKey, "SAML 2.0 Authentication", Categories.Identity,
+            HonuaEdition.Enterprise, "SAML 2.0 service-provider metadata, assertion consumer, and single-logout endpoints."),
+        new(ScimProvisioningKey, "SCIM 2.0 Provisioning", Categories.Identity,
+            HonuaEdition.Enterprise, "User/group provisioning through the SCIM 2.0 protocol surface."),
 
         // Caching — Pro
         new("caching.output-cache", "Output Caching", Categories.Caching,
