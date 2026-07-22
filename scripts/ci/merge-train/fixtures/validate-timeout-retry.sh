@@ -16,8 +16,9 @@ record="$(mktemp)"
 fixture_included="$(mktemp)"
 fixture_metrics="$(mktemp)"
 history_repo="$(mktemp -d)"
+fetch_root="$(mktemp -d)"
 phase_log="$(mktemp)"
-trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}" "${phase_log}"; rm -rf "${history_repo}"' EXIT
+trap 'rm -f "${record}" "${sequence_calls:-}" "${fixture_included}" "${fixture_metrics}" "${phase_log}"; rm -rf "${history_repo}" "${fetch_root}"' EXIT
 side_effect_fails=0
 train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
@@ -312,6 +313,47 @@ resumed_json="$(train_restore_retry_intent)" || fail "production startup did not
 [[ "$(cat "${fixture_included}")" == $'101\t'"${fixture_member_sha}" ]] || fail "resume did not reconstruct the exact included member head"
 [[ ! -s "${record}" ]] || fail "resumed main path dispatched a batch or duplicate rerun"
 pass "restarted-main production resume path"
+
+# The production fetch path must refresh the remote-tracking batch ref rather
+# than leave a newer command-line fetch reachable only through FETCH_HEAD.
+git -C "${fetch_root}" init -q --bare remote.git
+git -C "${fetch_root}" init -q -b trunk source
+git -C "${fetch_root}/source" config user.email fixture@example.invalid
+git -C "${fetch_root}/source" config user.name fixture
+printf 'base\n' >"${fetch_root}/source/data"
+git -C "${fetch_root}/source" add data
+git -C "${fetch_root}/source" commit -q -m base
+git -C "${fetch_root}/source" remote add fixture "${fetch_root}/remote.git"
+git -C "${fetch_root}/source" push -q fixture trunk
+git -C "${fetch_root}/source" checkout -q -b train/batch/abc/1
+printf 'batch-v1\n' >>"${fetch_root}/source/data"
+git -C "${fetch_root}/source" commit -qam batch-v1
+git -C "${fetch_root}/source" push -q fixture train/batch/abc/1
+git -C "${fetch_root}" init -q checkout
+git -C "${fetch_root}/checkout" remote add fixture "${fetch_root}/remote.git"
+git -C "${fetch_root}/checkout" fetch -q fixture \
+  refs/heads/trunk:refs/remotes/fixture/trunk \
+  refs/heads/train/batch/abc/1:refs/remotes/fixture/train/batch/abc/1
+git -C "${fetch_root}/source" reset -q --hard trunk
+printf 'batch-v2\n' >>"${fetch_root}/source/data"
+git -C "${fetch_root}/source" commit -qam batch-v2
+git -C "${fetch_root}/source" push -q --force fixture train/batch/abc/1
+expected_fetch_sha="$(git -C "${fetch_root}/source" rev-parse HEAD)"
+saved_repo_root="${TRAIN_REPO_ROOT}"
+saved_remote="${TRAIN_REMOTE}"
+TRAIN_REPO_ROOT="${fetch_root}/checkout"
+TRAIN_REMOTE=fixture
+unset TRAIN_RESUME_FETCHER
+fetched_sha="$(_train_resume_fetch_batch train/batch/abc/1)" || fail "production batch fetch failed"
+[[ "${fetched_sha}" == "${expected_fetch_sha}" ]] || fail "production batch fetch returned a stale remote-tracking ref"
+[[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse fixture/train/batch/abc/1)" == "${expected_fetch_sha}" ]] \
+  || fail "production batch fetch did not refresh its remote-tracking destination"
+[[ "$(git -C "${TRAIN_REPO_ROOT}" rev-parse train/batch/abc/1)" == "${expected_fetch_sha}" ]] \
+  || fail "production batch fetch did not refresh the local batch branch"
+TRAIN_REPO_ROOT="${saved_repo_root}"
+TRAIN_REMOTE="${saved_remote}"
+export TRAIN_RESUME_FETCHER=resume_fetcher
+pass "production resume refreshes the remote-tracking batch ref"
 
 # Production resolver follows immutable first-parent history, ignores a later
 # generated-artifact commit, and returns the train merge's exact second parent.

@@ -95,6 +95,21 @@ _train_resume_run_identity() {
     --jq '[.head_branch, .head_sha, .run_attempt, .event, .path] | @tsv' 2>/dev/null
 }
 
+# _train_resume_fetch_batch <batch>: refresh the named base and batch refs into
+# their remote-tracking destinations, make the local batch branch match, and
+# emit the exact fetched batch SHA. Command-line fetch refspecs without an
+# explicit destination update FETCH_HEAD only, which is insufficient because
+# retry restoration validates TRAIN_REMOTE/<batch> below.
+_train_resume_fetch_batch() {
+  local batch="$1" batch_sha
+  git -C "${TRAIN_REPO_ROOT}" fetch "${TRAIN_REMOTE}" \
+    "+refs/heads/${TRAIN_BASE_BRANCH}:refs/remotes/${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}" \
+    "+refs/heads/${batch}:refs/remotes/${TRAIN_REMOTE}/${batch}" >/dev/null 2>&1 || return 1
+  batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${batch}" 2>/dev/null)" || return 1
+  git -C "${TRAIN_REPO_ROOT}" branch -f "${batch}" "${TRAIN_REMOTE}/${batch}" >/dev/null 2>&1 || return 1
+  printf '%s\n' "${batch_sha}"
+}
+
 # train_restore_retry_intent: emit state JSON augmented with gate/descriptor
 # and the exact reconstructed member snapshot.
 # Returns 1 when no retry intent exists, 2 for malformed/mismatched intent, and
@@ -129,9 +144,7 @@ train_restore_retry_intent() {
   if [[ -n "${TRAIN_RESUME_FETCHER:-}" ]]; then
     batch_sha="$("${TRAIN_RESUME_FETCHER}" "${batch}" "${trunk}")" || return 2
   else
-    git -C "${TRAIN_REPO_ROOT}" fetch "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}" "${batch}" >/dev/null 2>&1 || return 2
-    batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${batch}" 2>/dev/null)" || return 2
-    git -C "${TRAIN_REPO_ROOT}" branch -f "${batch}" "${TRAIN_REMOTE}/${batch}" >/dev/null 2>&1 || return 2
+    batch_sha="$(_train_resume_fetch_batch "${batch}")" || return 2
   fi
   [[ "${batch_sha}" =~ ^[0-9a-fA-F]{40}$ ]] || return 2
   _train_resume_is_ancestor "${trunk}" "${batch_sha}" || return 2
