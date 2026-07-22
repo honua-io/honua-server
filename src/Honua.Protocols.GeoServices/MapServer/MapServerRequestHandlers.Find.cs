@@ -374,7 +374,7 @@ internal static partial class MapServerEndpoints
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MapServerLog.FindFailed(logger, serviceId, ex.Message, ex);
             scope.RecordException(ex);

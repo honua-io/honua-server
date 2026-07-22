@@ -65,7 +65,7 @@ internal static class GeoServicesCloudTileCache
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Cache reads are opportunistic: a storage-backend failure must not fail the
             // tile request (caller falls back to regenerating the tile). Record the
@@ -117,7 +117,7 @@ internal static class GeoServicesCloudTileCache
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Tile cache writes are opportunistic; rendering has already succeeded, so a
             // storage-backend failure here must not fail the response. Record the

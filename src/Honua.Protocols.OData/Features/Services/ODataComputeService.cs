@@ -226,9 +226,11 @@ internal static partial class ODataComputeService
                 // Intentional exact-zero check: an epsilon comparison would treat a
                 // legitimate small scientific-notation divisor (e.g. 1e-10) as zero and
                 // silently drop the $compute expression's actual division/modulo result (#2828).
+                // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
                 case ODataComputeOperator.Divide when right != 0:
                     result = left / right;
                     break;
+                // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
                 case ODataComputeOperator.Modulo when right != 0:
                     result = left % right;
                     break;

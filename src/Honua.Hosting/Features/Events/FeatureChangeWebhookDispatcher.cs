@@ -226,7 +226,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
                 // Intentional: this is a long-running background dispatch loop; an unexpected
                 // fault from a single pass must not kill the host — log, back off, and let the
                 // outer while loop retry on the next poll interval.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     LogDispatcherLoopFailed(_logger, ex);
                     await Task.Delay(IdlePollInterval, stoppingToken).ConfigureAwait(false);
@@ -273,7 +273,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         // Intentional: cursor load is best-effort — a failure to read the persisted
         // delivery cursor falls back to the in-memory cursor rather than failing the
         // dispatcher's startup/poll cycle.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogCursorLoadFailed(_logger, ex);
             return false;
@@ -295,7 +295,7 @@ internal sealed partial class FeatureChangeWebhookDispatcher(
         // Intentional: cursor persistence is best-effort — a failure updates the in-memory
         // cursor and flags a re-sync for the next pass rather than failing delivery, since
         // the durable outbox row already records dispatch progress.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Volatile.Write(ref _deliveredCursor, cursor);
             _cursorSyncRequired = true;

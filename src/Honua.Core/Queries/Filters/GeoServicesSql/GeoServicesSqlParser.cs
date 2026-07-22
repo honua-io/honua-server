@@ -841,13 +841,10 @@ public sealed class GeoServicesSqlParser
         // called once per token during every filter parse, and a LINQ predicate here
         // would add a per-call delegate allocation on top of the existing `params`
         // array allocation for no readability gain.
-        foreach (var type in types)
+        foreach (var type in (types).Where(type => Check(type)))
         {
-            if (Check(type))
-            {
-                Advance();
-                return true;
-            }
+            Advance();
+            return true;
         }
 
         return false;

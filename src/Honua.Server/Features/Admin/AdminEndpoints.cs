@@ -205,7 +205,7 @@ internal static class AdminEndpoints
                 TableDiscoveryJsonContext.Default.TableDiscoveryResponse,
                 context.RequestAborted);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.

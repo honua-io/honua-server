@@ -457,9 +457,8 @@ internal static class SldToMapLibreConverter
                     // Not converted to .Select(...): the loop must bail out (return null for
                     // the whole compound filter) as soon as any operand fails to convert,
                     // rather than eagerly converting every operand first.
-                    foreach (var operand in and.Operands)
+                    foreach (var converted in (and.Operands).Select(operand => BuildFilterExpression(operand)))
                     {
-                        var converted = BuildFilterExpression(operand);
                         if (!converted.HasValue)
                         {
                             // Drop the entire compound filter rather than silently narrow the
@@ -485,9 +484,8 @@ internal static class SldToMapLibreConverter
                     // Not converted to .Select(...): the loop must bail out (return null for
                     // the whole compound filter) as soon as any operand fails to convert,
                     // rather than eagerly converting every operand first.
-                    foreach (var operand in or.Operands)
+                    foreach (var converted in (or.Operands).Select(operand => BuildFilterExpression(operand)))
                     {
-                        var converted = BuildFilterExpression(operand);
                         if (!converted.HasValue)
                         {
                             // Drop the entire compound filter rather than silently broaden the

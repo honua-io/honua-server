@@ -198,7 +198,7 @@ internal sealed class CapabilityManifestService(
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: best-effort environment snapshot lookup for the
             // capability manifest; any failure is reported as an unavailable environment
@@ -857,7 +857,7 @@ internal sealed class CapabilityManifestService(
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: per-backend loop probing capabilities; one
                 // backend's failure must not abort probing the remaining backends.

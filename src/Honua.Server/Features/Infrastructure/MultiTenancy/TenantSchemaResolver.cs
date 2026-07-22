@@ -81,9 +81,8 @@ internal sealed class TenantSchemaResolver : ITenantSchemaResolver
         // Not a pure map: each mapped character is appended directly into the StringBuilder
         // rather than collected into a new sequence, so a '.Select(...)' rewrite would only add
         // an intermediate allocation without changing behavior.
-        foreach (var ch in value)
+        foreach (var lower in (value).Select(ch => char.ToLowerInvariant(ch)))
         {
-            var lower = char.ToLowerInvariant(ch);
             var ok = (lower >= 'a' && lower <= 'z')
                 || (lower >= '0' && lower <= '9')
                 || lower == '_';

@@ -143,17 +143,9 @@ internal sealed class InMemoryContentHashArtifactCache : IContentHashArtifactCac
         // Kept as an imperative loop (not a further Where): TryRemove below is a mutating,
         // side-effecting call, not a pure predicate, so folding it into a LINQ filter would
         // make the removal implicit and harder to follow.
-        foreach (var kvp in expiredEntries)
+        foreach (var kvp in (expiredEntries).Where(kvp => _entries.TryRemove(kvp)))
         {
-            // Conditional TryRemove: atomically removes only when the slot
-            // still holds the exact CacheEntry we observed. Concurrent
-            // writers that replaced the slot with a fresh entry keep it
-            // untouched, because the record equality over a new byte[] and
-            // fresh CachedArtifactRef will not match the captured one.
-            if (_entries.TryRemove(kvp))
-            {
-                Interlocked.Add(ref _totalBytes, -kvp.Value.Bytes.LongLength);
-            }
+            Interlocked.Add(ref _totalBytes, -kvp.Value.Bytes.LongLength);
         }
     }
 

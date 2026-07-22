@@ -84,7 +84,7 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
         {
             target = await generationStore.GetAsync(id, generation, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyRebuildAdminLog.OperationFailed(logger, "rebuild.lookup-generation", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -121,7 +121,7 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status503ServiceUnavailable, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyRebuildAdminLog.OperationFailed(logger, "rebuild.submit", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -150,7 +150,7 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
             var checkpoints = await rebuildStore.ListCheckpointsAsync(id, generation, attempt, cancellationToken).ConfigureAwait(false);
             return Results.Json(ToDto(record, checkpoints), NetworkTopologyRebuildAdminJsonContext.Default.NetworkTopologyRebuildAttemptDto);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyRebuildAdminLog.OperationFailed(logger, "rebuild.get-attempt", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,

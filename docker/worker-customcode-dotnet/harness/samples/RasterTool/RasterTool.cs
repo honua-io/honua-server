@@ -48,6 +48,7 @@ public sealed class RasterTool : IGeoprocessingTool
         // One-time GDAL init. GdalBase.ConfigureAll() wires the bundled native GDAL +
         // PROJ data and registers all drivers (it calls Gdal.AllRegister internally).
         // Idempotent-guard so repeated tool invocations in one process do not re-register.
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         if (Interlocked.Exchange(ref _initialized, 1) == 0)
         {
             GdalBase.ConfigureAll();
@@ -89,7 +90,7 @@ public sealed class RasterTool : IGeoprocessingTool
         else
         {
             // False positive: "scene.tif" is a fixed relative literal, never absolute.
-            inputPath = Path.Combine(context.WorkDirectory, "scene.tif");
+            inputPath = Path.Join(context.WorkDirectory, "scene.tif");
             context.Log.Info("no input staged; synthesizing a 2-band scene with OSGeo.GDAL");
             SynthesizeScene(inputPath, size);
         }
@@ -130,7 +131,7 @@ public sealed class RasterTool : IGeoprocessingTool
 
         // False positive: outName was already validated by ArtifactNames.IsSimpleFileName
         // above, so it is never rooted/absolute.
-        var outPath = Path.Combine(context.WorkDirectory, outName);
+        var outPath = Path.Join(context.WorkDirectory, outName);
         var driver = Gdal.GetDriverByName("GTiff");
         using (var dst = driver.Create(outPath, width, height, 1, DataType.GDT_Float32,
                    ["COMPRESS=LZW"]))

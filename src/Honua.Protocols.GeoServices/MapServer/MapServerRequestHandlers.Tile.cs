@@ -192,7 +192,7 @@ internal static partial class MapServerEndpoints
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MapServerLog.TileFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer tile request failed.");

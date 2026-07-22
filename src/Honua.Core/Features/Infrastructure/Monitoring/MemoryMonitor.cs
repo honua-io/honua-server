@@ -73,8 +73,10 @@ public static class MemoryMonitor
         // from any hot/production path today), so forcing a full collect-drain-collect cycle to
         // get an accurate post-GC reading is intentional. Worth revisiting if this is ever wired
         // into a request path, where forcing a full GC would be a real cost.
+        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
         GC.Collect();
         GC.WaitForPendingFinalizers();
+        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
         GC.Collect();
 
         return GetMemoryUsage();

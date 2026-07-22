@@ -74,7 +74,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
             _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
             _clusterEnabled = true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort: degrade to single-node fan-out when Redis is unavailable.
             ObservationStreamLog.ClusterUnavailable(_logger, ex);
@@ -164,9 +164,8 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         // Not a candidate for .Select(...): each mapped frame is immediately fanned out via
         // the side-effecting BroadcastLocally/TryPublishCluster calls below rather than
         // collected, so this is a side-effecting loop, not a projection.
-        foreach (var observation in observations)
+        foreach (var frame in (observations).Select(observation => ObservationStreamFrame.FromObservation(observation)))
         {
-            var frame = ObservationStreamFrame.FromObservation(observation);
             BroadcastLocally(frame);
 
             if (_clusterEnabled && _subscriber is not null)
@@ -185,7 +184,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
                 ObservationStreamJsonContext.Default.ClusterBroadcastDto);
             _subscriber!.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: cluster fan-out is best-effort (single-node delivery
             // already happened via BroadcastLocally); log and continue rather than fail ingest.
@@ -211,7 +210,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
 
             BroadcastLocally(message.Frame);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: a malformed/incompatible cluster broadcast message must
             // not tear down the Redis subscriber callback; log and drop this message only.
@@ -264,7 +263,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
             {
                 _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Best-effort shutdown: Dispose() must not throw, so log and continue.
                 ObservationStreamLog.ClusterUnsubscribeFailed(_logger, ex);

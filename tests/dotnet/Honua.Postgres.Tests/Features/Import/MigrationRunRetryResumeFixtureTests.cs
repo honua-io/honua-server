@@ -104,7 +104,7 @@ public sealed class MigrationRunRetryResumeFixtureTests
     {
         // All segments below are fixed literals and can never be rooted, so Path.Combine cannot
         // drop earlier segments here (cs/path-combine false positive).
-        var path = Path.Combine(
+        var path = Path.Join(
             AppContext.BaseDirectory,
             "Features",
             "Import",

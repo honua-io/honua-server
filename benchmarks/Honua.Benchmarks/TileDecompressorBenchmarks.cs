@@ -70,7 +70,7 @@ public class TileDecompressorBenchmarks
         _rawTile = raw;
 
         _lzwTile = File.ReadAllBytes(
-            Path.Combine(AppContext.BaseDirectory, "Fixtures", "lzw-tile-128x128-uint8.bin"));
+            Path.Join(AppContext.BaseDirectory, "Fixtures", "lzw-tile-128x128-uint8.bin"));
         _lzwLayout = new TilePixelLayout(
             LzwTileWidth, 1, 8, TilePixelLayout.PredictorHorizontalDifferencing, IsLittleEndian: true);
 

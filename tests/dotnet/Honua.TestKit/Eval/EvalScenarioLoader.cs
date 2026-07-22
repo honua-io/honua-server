@@ -89,7 +89,7 @@ public static class EvalScenarioLoader
 
         // `root` is always the first argument here and `scenarioId` is a scenario
         // identifier (never an absolute path), so this combine can't drop `root`.
-        var candidate = Path.Combine(root, $"{scenarioId}.json");
+        var candidate = Path.Join(root, $"{scenarioId}.json");
         return File.Exists(candidate) ? candidate : null;
     }
 
@@ -116,7 +116,7 @@ public static class EvalScenarioLoader
 
         // ScenarioRootSegment is a fixed relative literal (with separators normalized),
         // so this combine can't drop solutionRoot.
-        var fromSolution = Path.Combine(solutionRoot, ScenarioRootSegment.Replace('/', Path.DirectorySeparatorChar));
+        var fromSolution = Path.Join(solutionRoot, ScenarioRootSegment.Replace('/', Path.DirectorySeparatorChar));
         return Directory.Exists(fromSolution) ? fromSolution : null;
     }
 
@@ -125,7 +125,7 @@ public static class EvalScenarioLoader
         // `marker` (e.g. "Honua.sln") is a fixed literal filename, never rooted, so this
         // combine can't drop directory.FullName.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, marker)))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, marker)))
         {
             directory = directory.Parent;
         }

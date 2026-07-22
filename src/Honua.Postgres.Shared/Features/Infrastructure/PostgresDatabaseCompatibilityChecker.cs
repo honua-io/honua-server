@@ -96,7 +96,7 @@ internal sealed partial class PostgresDatabaseCompatibilityChecker : IDatabaseCo
         // Intentionally generic: this is a startup compatibility probe; any failure (connectivity,
         // permissions, unexpected catalog shape) must be reported to the caller as an incompatible
         // result rather than crashing startup.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             const string errorMessage = "Database compatibility check failed.";
             LogCompatibilityCheckFailed(_logger, ex.Message, ex);

@@ -107,7 +107,7 @@ public sealed partial class MigrationRequestCountingHandler : DelegatingHandler
         {
             recorder.RecordSourceRequest(count: 1, bytesRead: bytesRead);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: metrics recording must never affect the live import
             // path — log and continue rather than let a recorder failure fault the response.

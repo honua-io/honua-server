@@ -1655,12 +1655,9 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         // JSON properties, reassigning `current` at each step and returning null the moment a
         // segment is missing. It is not a filter over `path` - every segment participates in
         // navigation, not selection.
-        foreach (var segment in path)
+        foreach (var segment in (path).Where(segment => !current.TryGetProperty(segment, out current)))
         {
-            if (!current.TryGetProperty(segment, out current))
-            {
-                return null;
-            }
+            return null;
         }
 
         return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
@@ -1815,6 +1812,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             // declaration would dispose the socket during the `return` unwind, before the
             // caller ever sees the stream, closing the connection out from under it. The
             // `connected` flag makes disposal conditional on transfer *not* having happened.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 

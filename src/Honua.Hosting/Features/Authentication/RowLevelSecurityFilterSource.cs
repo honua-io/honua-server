@@ -92,9 +92,8 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         // running accumulator across iterations, which does not reduce to a plain
         // filter+project.
         SqlFragment? combined = null;
-        foreach (var policy in policies)
+        foreach (var predicate in (policies).Select(policy => BuildPredicate(policy, principal, resource)))
         {
-            var predicate = BuildPredicate(policy, principal, resource);
             if (predicate is null)
             {
                 continue;
@@ -161,7 +160,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
 
             return names;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: metadata resolution is best-effort for service scoping;
             // "*"-service policies still apply via the wildcard lookup. Never fail the query.

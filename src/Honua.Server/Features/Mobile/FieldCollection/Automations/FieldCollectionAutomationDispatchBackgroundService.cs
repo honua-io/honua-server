@@ -83,7 +83,7 @@ internal sealed partial class FieldCollectionAutomationDispatchBackgroundService
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: per-attempt loop dispatching a field-collection
                 // automation action; a handler failure must not crash the background

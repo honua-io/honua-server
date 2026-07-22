@@ -174,7 +174,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
                     // Intentional catch-all: this filter predicate must be safe against malformed
                     // stored properties JSON on the hot per-event delivery path; any parse failure
                     // is treated as a non-match below rather than surfaced/thrown.
-                    catch
+                    catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                     {
                         // No logger here by design: this filter is a plain `new`-constructed,
                         // per-subscription value evaluated on the hot per-event delivery path

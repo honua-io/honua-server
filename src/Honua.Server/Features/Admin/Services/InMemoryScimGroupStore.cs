@@ -137,12 +137,9 @@ internal sealed class InMemoryScimGroupStore(InMemoryUserStore userStore) : ISci
             // Not a simple filter: members.RemoveAll(...) is itself the mutation being
             // conditioned on, so folding it into a LINQ Where predicate would hide a
             // side-effecting call inside what should read as a pure filter.
-            foreach (var userId in NormalizeMembers(change.Remove))
+            foreach (var userId in (NormalizeMembers(change.Remove)).Where(userId => members.RemoveAll(m => m.Equals(userId, StringComparison.OrdinalIgnoreCase)) > 0))
             {
-                if (members.RemoveAll(m => m.Equals(userId, StringComparison.OrdinalIgnoreCase)) > 0)
-                {
-                    _userStore.RemoveRole(userId, existing.DisplayName);
-                }
+                _userStore.RemoveRole(userId, existing.DisplayName);
             }
 
             foreach (var userId in NormalizeMembers(change.Add).Where(userId =>

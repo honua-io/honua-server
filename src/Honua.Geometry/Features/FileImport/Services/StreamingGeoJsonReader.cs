@@ -652,7 +652,7 @@ internal sealed class StreamingGeoJsonReader
                 _ => null
             };
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return null;
         }
@@ -765,9 +765,8 @@ internal sealed class StreamingGeoJsonReader
         // Not a simple map/select: this loop folds rings into shell/hole state and can
         // short-circuit with an early return on a degenerate exterior ring, so an
         // imperative loop is clearer than a LINQ chain here.
-        foreach (var ringCoords in coords.EnumerateArray())
+        foreach (var coordinates in (coords.EnumerateArray()).Select(ringCoords => ParseCoordinateArray(ringCoords)))
         {
-            var coordinates = ParseCoordinateArray(ringCoords);
             if (ringIndex == 0)
             {
                 if (coordinates.Length < 4)
@@ -909,7 +908,7 @@ internal sealed class StreamingGeoJsonReader
                 return srid;
             }
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Broad catch is intentional: this is a best-effort scan of a raw header byte window
             // for an optional, deprecated GeoJSON-2008 "crs" hint. Any failure here (e.g. encoding

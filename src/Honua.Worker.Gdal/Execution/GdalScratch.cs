@@ -35,7 +35,7 @@ internal static partial class GdalScratch
         // above to contain no path-separator characters and not be rooted, so it can
         // never make Path.Combine here silently discard root; the containment check
         // below is the actual escape guard.
-        var workspace = Path.GetFullPath(Path.Combine(root, operationId));
+        var workspace = Path.GetFullPath(Path.Join(root, operationId));
         var rootPrefix = Path.EndsInDirectorySeparator(root)
             ? root
             : root + Path.DirectorySeparatorChar;

@@ -495,7 +495,7 @@ internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager
         }
         // Intentional: caching is best-effort — a failure to store the result
         // must not fail the query that produced it, so it is logged and swallowed.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CacheLog.CachingFailed(_logger, cacheKey, ex, context.CorrelationId);
         }

@@ -105,7 +105,7 @@ public class Wfs20ComplianceValidationTests
 
             return errors.Count == 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this helper reports serialization/validation failures as
             // assertable errors via `out errors` rather than letting the test crash with a raw exception.

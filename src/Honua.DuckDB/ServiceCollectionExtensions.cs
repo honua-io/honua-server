@@ -222,7 +222,7 @@ internal static class ServiceCollectionExtensions
         // during startup wiring for one configured layer. Any failure (connection,
         // missing table, driver bug) is logged and degrades to an empty attribute set
         // rather than aborting startup for every other configured layer.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             DuckDbLog.AttributeDiscoveryFailed(logger, layerOpt.Id, layerOpt.Table, ex);
             return ([], new Dictionary<string, string>());

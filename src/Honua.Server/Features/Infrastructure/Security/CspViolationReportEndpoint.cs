@@ -118,7 +118,7 @@ public static class CspViolationReportEndpoint
         // Intentional broad catch: this is a best-effort CSP violation report ingestion endpoint (after
         // the more specific JsonException case above); any failure while processing the browser-supplied
         // report is logged, and the endpoint still returns 204 below to acknowledge receipt.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CspViolationReportLog.ViolationReportProcessingError(logger, ex.Message, clientInfo);
         }

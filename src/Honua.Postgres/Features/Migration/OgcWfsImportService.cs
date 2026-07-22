@@ -113,7 +113,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: this is the top-level source-scan boundary. Any failure
             // (network, malformed capabilities, etc.) must map to a sanitized failure result
@@ -205,7 +205,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentionally broad: this is the per-feature-type import boundary — one resource's
                 // failure is recorded as manual-review so the rest of the selected resources continue

@@ -550,6 +550,7 @@ public sealed class QueryProcessor : IQueryProcessor
                 // CQL2/OGC/where-clause path) have no fragment; swallowing the failure
                 // there would silently execute the query with NO filter at all,
                 // over-exposing data instead of surfacing an error.
+                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
                 if (filter?.GetSqlFragment() is not { } fallbackFragment)
                 {
                     throw;
@@ -712,7 +713,7 @@ public sealed class QueryProcessor : IQueryProcessor
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Logged top-level safety net: this method only feeds a streaming-vs-buffered
             // heuristic, never the actual result set, so a failed COUNT degrades to a

@@ -152,7 +152,7 @@ internal sealed class ProductionMetricsCollector : IDisposable
         // Intentional broad catch: this is a best-effort metrics lookup; a failure to read the
         // upload queue depth must not break the rest of metrics collection, so it is logged and a
         // zero depth is reported instead.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MonitoringLog.UploadQueueDepthRetrievalFailed(_logger, ex);
         }

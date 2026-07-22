@@ -639,6 +639,7 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
         // repeat the same property lookups, so an explicit loop with a single combined
         // condition stays clearer than the LINQ equivalent.
         var ids = new List<long>();
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var feature in featuresElement.EnumerateArray())
         {
             if (feature.TryGetProperty("attributes", out var attributes) &&

@@ -324,7 +324,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         // Intentionally generic: this is a background import job's top-level boundary; any
         // unhandled failure from the import pipeline must be recorded as a failed job rather
         // than crashing the host.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             stopwatch.Stop();
 

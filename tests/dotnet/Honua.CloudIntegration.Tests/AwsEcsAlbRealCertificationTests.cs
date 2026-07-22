@@ -274,7 +274,7 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         {
             await albClient.UpdateListenerRuleWeightsAsync(listenerRuleArn, baselineWeights, region);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort: if this restore does not take, the rule stays at whatever weight the last
             // successful mutation set — possibly canary=100 after a promote — so it can leave traffic
@@ -291,7 +291,7 @@ public sealed class AwsEcsAlbRealCertificationTests : IClassFixture<RealAwsCerti
         {
             await ecsClient.UpdateServiceTaskDefinitionAsync(cluster, service, originalTaskDefinition, region);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort: same-revision deploys never change the service task definition, so this is a
             // defensive no-op that must not mask the primary assertion outcome — but log it if it fails.

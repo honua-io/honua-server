@@ -54,7 +54,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             // Intentionally generic: this is a long-running background print-job
             // processing loop. A single job's failure must not kill the host's
             // background service; log and keep dequeuing the next job.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 PrintingToolsLog.JobFailed(_logger, job.JobId, ex.Message, ex);
             }
@@ -255,7 +255,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             // Intentional catch-all: this is a best-effort write of the failed-job
             // status after the job itself already failed; a second failure here
             // must not escape and crash the processing loop.
-            catch (Exception progressEx)
+            catch (Exception progressEx) when (progressEx is not OutOfMemoryException)
             {
                 PrintingToolsLog.JobProgressPersistFailed(_logger, job.JobId, ex.Message, progressEx);
             }
@@ -283,7 +283,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         // Intentional catch-all: this is a best-effort write of the cancelled-job
         // status after the caller has already been cancelled; a failure here
         // must not propagate out of the background processing loop.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             PrintingToolsLog.JobCancelPersistFailed(_logger, jobId, ex);
         }

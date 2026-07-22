@@ -104,14 +104,9 @@ internal static class McpBearerAuthenticationEndpointExtensions
     private static bool HasBearerCredential(HttpContext context)
     {
         var authorization = context.Request.Headers.Authorization;
-        foreach (var value in authorization)
+        foreach (var value in (authorization).Where(value => !string.IsNullOrEmpty(value) && value.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase) && value.Length > BearerPrefix.Length))
         {
-            if (!string.IsNullOrEmpty(value)
-                && value.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
-                && value.Length > BearerPrefix.Length)
-            {
-                return true;
-            }
+            return true;
         }
 
         return false;

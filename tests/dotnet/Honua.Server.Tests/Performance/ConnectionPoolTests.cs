@@ -95,7 +95,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
                     await cmd.ExecuteScalarAsync();
                     Interlocked.Increment(ref successCount);
                 }
-                catch
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     // Intentionally broad: this stress test counts any failure across many
                     // concurrent connection acquisitions/queries; the assertion below requires
@@ -136,7 +136,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
                 cmd.CommandText = "SELECT * FROM nonexistent_table_12345";
                 await cmd.ExecuteScalarAsync();
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentionally broad: the invalid SQL above can surface as any provider
                 // exception type; this test only cares that every iteration throws and that
@@ -186,8 +186,10 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Force GC to measure actual memory usage. Intentional: this test asserts on real
         // heap growth after sustained pool usage, so a deterministic full collection (twice,
         // around WaitForPendingFinalizers to catch finalizer-queued garbage) is required here.
+        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
         GC.Collect();
         GC.WaitForPendingFinalizers();
+        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
         GC.Collect();
         var afterMemory = GC.GetTotalMemory(forceFullCollection: true);
 

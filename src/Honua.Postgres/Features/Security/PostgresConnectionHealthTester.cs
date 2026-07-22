@@ -63,7 +63,7 @@ internal sealed class PostgresConnectionHealthTester : IConnectionHealthTester
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Connection health probe: any failure means "unhealthy", not an exception the caller
             // should handle — log for diagnostics and return the status instead.

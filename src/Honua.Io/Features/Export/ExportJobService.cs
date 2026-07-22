@@ -83,7 +83,7 @@ internal sealed class ExportJobService(
             // Intentionally generic: this is a rollback-of-a-rollback for the durable request
             // cache; the original failure is about to be rethrown regardless, so any exception
             // here must be logged and swallowed rather than replacing the original error.
-            catch (Exception cleanupEx)
+            catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
             {
                 ExportJobServiceLog.ProgressRollbackFailed(_logger, job.JobId, cleanupEx);
             }
@@ -207,7 +207,7 @@ internal sealed class ExportJobService(
             // "honua-export" is a compile-time relative literal and job.JobId is always the
             // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
             // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
-            var scratchDir = Path.Combine(Path.GetTempPath(), "honua-export", job.JobId);
+            var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", job.JobId);
             Directory.CreateDirectory(scratchDir);
             var shouldRequeue = false;
 
@@ -299,7 +299,7 @@ internal sealed class ExportJobService(
                 // already-determined "Failed" status after the export itself failed; the
                 // progress store is an external dependency and any failure here must be
                 // logged, not allowed to mask or replace the original export failure.
-                catch (Exception progressEx)
+                catch (Exception progressEx) when (progressEx is not OutOfMemoryException)
                 {
                     ExportJobServiceLog.FailedStatusPersistenceFailed(_logger, job.JobId, progressEx);
                 }
@@ -313,7 +313,7 @@ internal sealed class ExportJobService(
                 {
                     Directory.Delete(scratchDir, recursive: true);
                 }
-                catch (Exception cleanupEx)
+                catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
                 {
                     // Cleanup failure must not fail the export job itself; log and continue.
                     ExportJobServiceLog.ScratchDirCleanupFailed(_logger, job.JobId, scratchDir, cleanupEx);
@@ -367,14 +367,14 @@ internal sealed class ExportJobService(
         {
             case "csv":
                 {
-                    var csvPath = Path.Combine(scratchDir, $"{baseName}.csv");
+                    var csvPath = Path.Join(scratchDir, $"{baseName}.csv");
                     await using var stream = File.Create(csvPath);
                     await CsvExportWriter.WriteAsync(stream, features, job.Fields, cancellationToken).ConfigureAwait(false);
                     return csvPath;
                 }
             case "shapefile":
                 {
-                    var zipPath = Path.Combine(scratchDir, $"{baseName}.zip");
+                    var zipPath = Path.Join(scratchDir, $"{baseName}.zip");
                     await using var stream = File.Create(zipPath);
                     await ShapefileExportWriter.WriteAsync(
                         stream, features, job.Fields, job.GeometryType, srsWkt, logger, cancellationToken).ConfigureAwait(false);
@@ -382,7 +382,7 @@ internal sealed class ExportJobService(
                 }
             case "gpkg":
                 {
-                    var gpkgPath = Path.Combine(scratchDir, $"{baseName}.gpkg");
+                    var gpkgPath = Path.Join(scratchDir, $"{baseName}.gpkg");
                     await GeoPackageExportWriter.WriteAsync(
                         gpkgPath, features, job.Fields, job.GeometryType, job.OutputSrid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
                     return gpkgPath;
@@ -461,7 +461,7 @@ internal sealed class ExportJobService(
             // status for a job whose request metadata already went missing; the progress
             // store is an external dependency and any failure here must be logged rather
             // than thrown, since the caller is already cleaning up this job's state.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 ExportJobServiceLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
             }
@@ -573,7 +573,7 @@ internal sealed class ExportJobService(
         // exception types for a claim-key lookup; when the claim state cannot be determined,
         // fail closed (treat the job as still actively leased/not eligible for recovery)
         // rather than risk double-processing.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ExportJobServiceLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);
             return false;

@@ -31,7 +31,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     {
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
 
@@ -243,6 +243,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         }
 
         // FluentAssertions' NotBeNullOrWhiteSpace() is a null-safe extension method, not a dereference.
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         deltaLink.Should().NotBeNullOrWhiteSpace();
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
@@ -298,6 +299,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         }
 
         // FluentAssertions' NotBeNullOrWhiteSpace() is a null-safe extension method, not a dereference.
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         deltaLink.Should().NotBeNullOrWhiteSpace();
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);

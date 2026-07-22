@@ -478,7 +478,7 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
                     {
                         await reconciler.ReconcileMetadataReleaseAsync(operation.OperationId, stoppingToken).ConfigureAwait(false);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Intentional broad catch: per-item loop over active operations; one
                         // operation's reconcile failure must not abort the rest of the batch.
@@ -490,7 +490,7 @@ internal sealed class MetadataReleaseReconcilerBackgroundService(
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentionally generic: this is a long-running background polling loop.
                 // A single failed iteration must not kill the host's background service;

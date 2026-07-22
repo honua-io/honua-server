@@ -114,7 +114,7 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: the WMTS scan can fail in many ways (HTTP, DNS/socket,
             // XML/JSON parsing, URL validation). Any failure here means the whole export
@@ -268,7 +268,7 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
                     {
                         throw;
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Intentionally broad: one tile-set's export (many tile fetches + sink
                         // writes) must not abort the rest of the plan. Any failure is recorded as
@@ -403,7 +403,7 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
                     {
                         throw;
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Intentionally broad: a single tile fetch/write failure (HTTP, sink
                         // storage, decoding) must not abort the whole tile-set export; count it

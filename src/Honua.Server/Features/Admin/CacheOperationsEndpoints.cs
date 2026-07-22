@@ -376,7 +376,7 @@ internal static class CacheOperationsEndpoints
                 UptimeSeconds = uptimeSeconds
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: best-effort Redis server-info probe for the admin
             // diagnostics endpoint; any failure falls back to a minimal connected-state

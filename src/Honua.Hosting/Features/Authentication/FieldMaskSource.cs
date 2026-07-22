@@ -129,7 +129,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
 
             return names;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Metadata resolution is best-effort for service scoping; "*"-service
             // policies still apply via the wildcard lookup. Never fail the query.

@@ -50,7 +50,7 @@ internal sealed class GlobalExceptionMiddleware(
         {
             // Client disconnected; skip logging and response shaping.
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: this is the outermost
             // global exception middleware for the whole pipeline; any unhandled exception

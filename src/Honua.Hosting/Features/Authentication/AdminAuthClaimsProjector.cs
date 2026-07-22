@@ -68,14 +68,9 @@ internal static class AdminAuthClaimsProjector
 
         // Not converted to LINQ: each iteration mutates `claims` (the same list the predicate
         // queries), so a Where/Select projection over roleValues would read as pure but isn't.
-        foreach (var roleValue in roleValues)
+        foreach (var roleValue in (roleValues).Where(roleValue => !claims.Any(claim => claim.Type == ClaimTypes.Role && string.Equals(claim.Value, roleValue, StringComparison.OrdinalIgnoreCase))))
         {
-            if (!claims.Any(claim =>
-                    claim.Type == ClaimTypes.Role &&
-                    string.Equals(claim.Value, roleValue, StringComparison.OrdinalIgnoreCase)))
-            {
-                claims.Add(new Claim(ClaimTypes.Role, roleValue));
-            }
+            claims.Add(new Claim(ClaimTypes.Role, roleValue));
         }
 
         if (!claims.Any(static claim => claim.Type == "auth_type"))

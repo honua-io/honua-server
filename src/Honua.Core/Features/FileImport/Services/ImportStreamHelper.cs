@@ -28,7 +28,7 @@ internal static class ImportStreamHelper
         // fresh Guid.NewGuid(), so it can never be rooted/absolute; Path.Combine cannot silently
         // drop the temp directory here.
         var tempFile = new FileStream(
-            Path.Combine(Path.GetTempPath(), $"honua-import-{Guid.NewGuid():N}.tmp"),
+            Path.Join(Path.GetTempPath(), $"honua-import-{Guid.NewGuid():N}.tmp"),
             new FileStreamOptions
             {
                 Mode = FileMode.CreateNew,

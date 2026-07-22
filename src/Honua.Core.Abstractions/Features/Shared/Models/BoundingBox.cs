@@ -131,12 +131,9 @@ public readonly record struct BoundingBox
         var ranges = GetLongitudeRanges();
         var otherRanges = other.GetLongitudeRanges();
 
-        foreach (var range in ranges)
+        foreach (var range in (ranges).Where(range => otherRanges.Any(otherRange => range.Min <= otherRange.Max && range.Max >= otherRange.Min)))
         {
-            if (otherRanges.Any(otherRange => range.Min <= otherRange.Max && range.Max >= otherRange.Min))
-            {
-                return true;
-            }
+            return true;
         }
 
         return false;

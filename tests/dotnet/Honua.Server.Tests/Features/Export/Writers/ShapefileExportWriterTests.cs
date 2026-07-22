@@ -46,7 +46,7 @@ public sealed class ShapefileExportWriterTests
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
         // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
-        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        var extractedDir = Path.Join(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
         try
@@ -94,7 +94,7 @@ public sealed class ShapefileExportWriterTests
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
         // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
-        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        var extractedDir = Path.Join(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
         try
@@ -142,7 +142,7 @@ public sealed class ShapefileExportWriterTests
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
         // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
-        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        var extractedDir = Path.Join(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
         try
@@ -190,7 +190,7 @@ public sealed class ShapefileExportWriterTests
         result.WrittenCount.Should().Be(1);
         output.Position = 0;
         // Path.Combine args after the first are fixed literals / a GUID (never rooted), so GetTempPath() is never dropped.
-        var extractedDir = Path.Combine(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
+        var extractedDir = Path.Join(Path.GetTempPath(), "honua-shp-test", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(extractedDir);
 
         try

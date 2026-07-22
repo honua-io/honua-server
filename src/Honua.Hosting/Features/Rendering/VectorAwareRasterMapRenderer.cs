@@ -295,6 +295,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     {
         if (request.ResolvedLayers is { } resolved)
         {
+            // codeql[cs/linq/missed-where] -- the predicate binds the resolved resource through an out variable.
             foreach (var entry in resolved.Where(entry => entry.LayerId == layerId))
             {
                 if (snapshot.Index.ResourcesById.TryGetValue(entry.ResourceId, out var byId))

@@ -215,7 +215,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 // Intentional: Redis failures degrade gracefully to the in-memory fallback
                 // cache below (HandleRedisFailure logs and flips _isUsingFallback); this
                 // pattern repeats across the Redis-backed methods in this file.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     HandleRedisFailure(ex);
                     operationScope.WithTag("result", "error").WithTag("source", "redis");
@@ -310,7 +310,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
                     return;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     HandleRedisFailure(ex);
                 }
@@ -358,7 +358,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                         await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     HandleRedisFailure(ex);
                     // Queue the key so it is deleted from Redis when the connection is
@@ -429,7 +429,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 HandleRedisFailure(ex);
             }
@@ -458,7 +458,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                         cancellationToken).ConfigureAwait(false);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 HandleRedisFailure(ex);
             }
@@ -630,7 +630,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     operationScope.WithTag("result", "miss").WithTag("source", "redis");
                     return CacheEntryMetadata<T>.Miss();
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     HandleRedisFailure(ex);
                     operationScope.WithTag("result", "error").WithTag("source", "redis");
@@ -714,7 +714,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
         // Intentional: this is a health-probe boundary; a probe failure must resolve to a
         // health verdict (fallback-availability) rather than throw out of the health check.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
             return _options.EnableFallback;
@@ -814,7 +814,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             RedisCacheServiceLog.RedisConnectionRestored(_logger);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Debug level: this runs on every retry interval while Redis is down, so a
             // higher level would be noisy; HandleRedisFailure already logged the initial
@@ -947,7 +947,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 await RemoveIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HandleRedisFailure(ex);
         }
@@ -975,7 +975,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                 // Lock not acquired, but Redis is available
                 return new DistributedLock(lockKey, lockValue, db, isAcquired: false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Redis failed, handle as failure but don't switch to fallback for locks
                 RedisCacheServiceLog.DistributedLockFailed(_logger, GetCacheKeyFamily(key), LogValueRedactor.Hash(key), ex);
@@ -1077,7 +1077,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             // Intentional: the key index is a best-effort optimization for pattern-based
             // removal (RemoveByPatternAsync); a failure to add to it must not fail the
             // write that triggered it, so it is logged and dropped.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 RedisCacheIndexLog.RedisIndexTrackFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
                 return;
@@ -1107,7 +1107,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             // Intentional: the key index is a best-effort optimization for pattern-based
             // removal; a failure to remove a stale entry from it must not fail the
             // caller, so it is logged and dropped (the entry itself is still removed).
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 RedisCacheIndexLog.RedisIndexRemoveFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
                 return;
@@ -1270,7 +1270,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
                 return resolved;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // TTL lookup failed — disable near-expiry detection for this entry.
                 RedisCacheServiceLog.TtlLookupFailed(_logger, GetCacheKeyFamily(prefixedKey), LogValueRedactor.Hash(prefixedKey), ex);
@@ -1458,6 +1458,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             // than silently swallowing all exceptions we only ignore genuine Redis
             // failures here (best-effort release; the lock will expire anyway).
             // Non-Redis exceptions (e.g. programming errors) still propagate.
+            // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
             catch (RedisException)
             {
             }

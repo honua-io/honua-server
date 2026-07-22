@@ -39,7 +39,7 @@ internal sealed partial class OpsFindingsAutonomyEvaluationService(
             // Intentionally generic: this is a long-running background evaluation loop. A
             // single failed iteration (e.g. a transient lease/store failure) must not kill
             // the host's background service; log and keep polling on the next delay.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.EvaluationLoopFailed(logger, ex);
             }
