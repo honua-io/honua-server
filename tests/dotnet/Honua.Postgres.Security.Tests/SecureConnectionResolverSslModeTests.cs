@@ -119,6 +119,43 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Equal(resolvedConnectionString, resolved);
     }
 
+    [SecurityTest]
+    [Fact]
+    public async Task ResolveConnectionStringAsync_SecretReferenceWithApiPersistedHostPlaceholder_ResolvesWithoutTamperCheck()
+    {
+        // SecureConnectionEndpoints.CreateConnection persists Host as the neutral
+        // DataConnection.SecretReferenceMetadataPlaceholder — not an empty string — when the
+        // caller omits it for a secret-reference connection. The resolver must recognize that
+        // exact placeholder as "no host declared" the same way it recognizes string.Empty;
+        // comparing it against the resolved secret's real host would reject the documented/common
+        // case of every secret-reference connection created through the admin API without a
+        // declared host (honua-server#2949).
+        var connection = DataConnection.CreateWithSecretReference(
+            name: "production-analytics",
+            host: DataConnection.SecretReferenceMetadataPlaceholder,
+            port: 0,
+            databaseName: DataConnection.SecretReferenceMetadataPlaceholder,
+            username: DataConnection.SecretReferenceMetadataPlaceholder,
+            secretRef: "env:PROD_DB_CONNECTION",
+            secretType: "EnvironmentVariable",
+            createdBy: "test",
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+        const string resolvedConnectionString =
+            "Host=replica.example.com;Port=6432;Database=analytics;Username=app;Password=secret;SslMode=Require";
+
+        var resolver = new SecureConnectionResolver(
+            new StubRegistry(connection),
+            new StubEncryptionService("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require"),
+            new StubSecretResolver(resolvedConnectionString),
+            NullLogger<SecureConnectionResolver>.Instance);
+
+        var resolved = await resolver.ResolveConnectionStringAsync(connection.Name);
+
+        Assert.Equal(resolvedConnectionString, resolved);
+    }
+
     private sealed class StubRegistry(DataConnection connection) : ISecureConnectionRegistry
     {
         private readonly DataConnection _connection = connection;

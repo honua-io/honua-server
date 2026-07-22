@@ -250,14 +250,21 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                     // the resolved connection string must agree with it. This applies uniformly to managed
                     // (encrypted) and secret-reference connections. For secret-reference connections the
                     // declared host/port are optional display metadata (see
-                    // SecureConnectionEndpoints.CreateConnection, which substitutes a neutral placeholder
-                    // when the caller omits them): when the caller leaves them blank, no host/port
-                    // assertion was made, so the resolved secret is the uncontested source of truth and
-                    // the check is skipped for that field. When the caller DOES declare a host/port, that
-                    // declaration is a security assertion, and a disagreeing secret is tamper (honua-server#2949)
-                    // — same as for managed connections, where the check always applies because Host/Port
-                    // are required fields.
-                    if (!string.IsNullOrWhiteSpace(connection.Host) &&
+                    // SecureConnectionEndpoints.CreateConnection, which substitutes the neutral
+                    // DataConnection.SecretReferenceMetadataPlaceholder when the caller omits them): when
+                    // the caller leaves them blank — persisted as that same placeholder, not an empty
+                    // string — no host/port assertion was made, so the resolved secret is the uncontested
+                    // source of truth and the check is skipped for that field. Comparing the placeholder
+                    // itself against the resolved secret's real host would reject every secret-reference
+                    // connection created without a declared host (honua-server#2949). When the caller DOES
+                    // declare a real host/port, that declaration is a security assertion, and a disagreeing
+                    // secret is tamper — same as for managed connections, where the check always applies
+                    // because Host/Port are required fields.
+                    var hasDeclaredHost =
+                        !string.IsNullOrWhiteSpace(connection.Host) &&
+                        !string.Equals(connection.Host, DataConnection.SecretReferenceMetadataPlaceholder, StringComparison.Ordinal);
+
+                    if (hasDeclaredHost &&
                         !string.IsNullOrWhiteSpace(builder.Host) &&
                         !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
                     {
