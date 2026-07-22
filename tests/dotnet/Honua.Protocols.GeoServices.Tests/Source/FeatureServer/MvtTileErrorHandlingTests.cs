@@ -4,11 +4,13 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -185,5 +187,53 @@ public class MvtTileErrorHandlingTests : IClassFixture<WebAppFixture>
         // ...while the GeoServices REST surface keeps its 200-wrapped error envelope.
         await queryResponse.AssertGeoServicesErrorAsync(404);
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetTile_AnonymousOnAuthRequiredLayer_ReturnsRealUnauthorizedWithProblemJson()
+    {
+        // honua-server#2960 review: the ProblemJson opt-in must also govern
+        // authorization failures, not just layer-not-found — an unauthenticated
+        // request against a layer that requires authentication must get a real
+        // HTTP 401 problem+json response, not the GeoServices 200-envelope that
+        // path-based classification would otherwise apply to /tiles.
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/tiles/{ServiceRbacTestFixture.AlphaLayerId}/1/0/0.mvt");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problem.GetProperty("title").GetString().Should().Be("Unauthorized");
+        problem.GetProperty("status").GetInt32().Should().Be(401);
+    }
+
+    [Fact]
+    public async Task GetTile_AuthenticatedWithoutRequiredRole_ReturnsRealForbiddenWithProblemJson()
+    {
+        // honua-server#2960 review: a role-denied (but authenticated) request
+        // must also bypass the GeoServices envelope on /tiles and get a real
+        // HTTP 403 problem+json response.
+        using var factory = ServiceRbacTestFixture.CreateFactory(
+            layerCatalogFactory: static () => new RbacTestLayerCatalog(
+                alphaLayerMetadata: new AccessPolicy { AllowedRoles = ["editor"] }));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        var response = await client.GetAsync(
+            $"/tiles/{ServiceRbacTestFixture.AlphaLayerId}/1/0/0.mvt");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problem.GetProperty("title").GetString().Should().Be("Forbidden");
+        problem.GetProperty("status").GetInt32().Should().Be(403);
     }
 }

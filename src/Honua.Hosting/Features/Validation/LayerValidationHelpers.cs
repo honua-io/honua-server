@@ -123,10 +123,42 @@ internal static class LayerValidationHelpers
         var title = statusCode switch
         {
             StatusCodes.Status400BadRequest => "Bad Request",
+            StatusCodes.Status401Unauthorized => "Unauthorized",
+            StatusCodes.Status403Forbidden => "Forbidden",
             StatusCodes.Status404NotFound => "Not Found",
             _ => "Error"
         };
         return ProblemDetailsHelpers.CreateProblem(context, "about:blank", statusCode, title, message);
+    }
+
+    /// <summary>
+    /// Evaluates resource access and formats a denial as RFC 7807 problem+json with the
+    /// real 401/403 status, bypassing <see cref="AccessPolicyHelpers.RequireResourceAccessAsync(HttpContext, MetadataV2Resource, MetadataV2Service?, AccessScope, CancellationToken)"/>'s
+    /// use of <see cref="StandardErrorHelpers"/> (which the path-classified
+    /// <see cref="StandardErrorResponseFormatter"/> would otherwise wrap as a GeoServices
+    /// 200-envelope for <c>/tiles</c> paths). See <see cref="ValidationProtocol.ProblemJson"/>.
+    /// </summary>
+    private static async Task<IResult?> RequireResourceAccessAsProblemJsonAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AccessScope scope,
+        CancellationToken cancellationToken)
+    {
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            context,
+            resource,
+            service,
+            AccessPolicyHelpers.DefaultOperationForScope(scope),
+            cancellationToken).ConfigureAwait(false);
+        if (decision.IsAllowed)
+        {
+            return null;
+        }
+
+        return decision.RequiresAuthentication
+            ? CreateProblemJsonError(context, AccessPolicyHelpers.AuthRequiredMessage, StatusCodes.Status401Unauthorized)
+            : CreateProblemJsonError(context, AccessPolicyHelpers.AccessForbiddenMessage, StatusCodes.Status403Forbidden);
     }
 
     // ---- Metadata v2 validation. Resolves a (publication, resource, service) triple
@@ -170,8 +202,15 @@ internal static class LayerValidationHelpers
         // validator is the enforcement point for OData / OGC API Features / WFS /
         // tiles / STAC layer reads & mutations, so wiring it here re-routes those
         // adapters through the resolver consistently.
-        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, service, scope, effectiveToken).ConfigureAwait(false);
+        // /tiles' ProblemJson opt-in must also govern authorization failures, not just
+        // not-found: AccessPolicyHelpers.RequireResourceAccessAsync formats denials via
+        // StandardErrorHelpers, which the path-classified StandardErrorResponseFormatter
+        // would otherwise wrap as a GeoServices 200-envelope for /tiles (honua-server#2945
+        // review). Evaluate the decision directly and format it as problem+json here.
+        var accessError = protocol == ValidationProtocol.ProblemJson
+            ? await RequireResourceAccessAsProblemJsonAsync(context, resource, service, scope, effectiveToken).ConfigureAwait(false)
+            : await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, service, scope, effectiveToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
