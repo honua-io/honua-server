@@ -15,6 +15,7 @@ pass() { printf 'PASS: %s\n' "$1"; }
 record="$(mktemp)"
 fixture_included="$(mktemp)"
 fixture_metrics="$(mktemp)"
+export TRAIN_METRICS_OUT="${fixture_metrics}"
 history_repo="$(mktemp -d)"
 fetch_root="$(mktemp -d)"
 phase_log="$(mktemp)"
@@ -571,7 +572,6 @@ git() {
   esac
 }
 : >"${record}"
-export TRAIN_METRICS_OUT="${fixture_metrics}"
 unset TRAIN_CONTROLLER_DEADLINE_EPOCH
 now_value=100
 main || fail "restarted production main failed to consume retry intent"
