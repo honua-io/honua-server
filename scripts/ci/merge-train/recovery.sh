@@ -42,6 +42,24 @@ train_recovery_run_info() {
     --jq '[.workflowName,.status,.conclusion,.headBranch,.headSha]|@tsv'
 }
 
+# train_recovery_close_pr <pr> <admitted-sha>: exact-head final close for a PR
+# this recovery path has already re-validated (current head == admitted_sha,
+# state == OPEN). Gated on --match-head-commit so it can never merge a head
+# that moved since validation. land.sh's own normal path stays observation-only
+# (its post-CAS bookkeeping never calls gh pr merge); this is recovery-local
+# because it is the one path that explicitly needs an assertive close rather
+# than waiting on GitHub's automatic merge detection.
+train_recovery_close_pr() {
+  local pr="$1" admitted_sha="$2"
+  if [[ -n "${TRAIN_RECOVERY_PR_MERGE_CMD:-}" ]]; then
+    "${TRAIN_RECOVERY_PR_MERGE_CMD}" "${pr}" "${admitted_sha}"
+  elif [[ "${TRAIN_APPLY}" != "1" ]]; then
+    train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
+  else
+    gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
+  fi
+}
+
 train_recovery_state_json() {
   [[ -n "${TRAIN_RECOVERY_STATE_JSON:-}" ]] && printf '%s\n' "${TRAIN_RECOVERY_STATE_JSON}" || train_state_read
 }
@@ -145,7 +163,7 @@ train_recovery_finalize() {
     info="$(train_recovery_pr_info "${pr}" 2>/dev/null || true)"
     IFS=${HONUA_TAB} read -r sha state labels <<<"${info}"
     if [[ "${state}" == OPEN && "${sha}" == "${validated}" ]]; then
-      if ! train_land_close_pr "${pr}" "${validated}"; then
+      if ! train_recovery_close_pr "${pr}" "${validated}"; then
         train_warn "recovery did not close #${pr}: exact-head final close was refused"
       fi
     elif [[ "${state}" == OPEN && "${sha}" != "${validated}" ]]; then

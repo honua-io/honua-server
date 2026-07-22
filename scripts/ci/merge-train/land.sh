@@ -139,23 +139,6 @@ train_restore_post_land() {
   return 0
 }
 
-# train_land_close_pr <pr> <admitted-sha>: canonical exact-head final close,
-# gated on --match-head-commit so it can never merge a PR whose head has moved
-# past the exact SHA the batch validated. Used by callers that need to close a
-# specific already-known-good PR directly (e.g. the green-rerun recovery path
-# in recovery.sh); train_land()'s own normal path stays observation-only via
-# train_finalize_landed_members below.
-train_land_close_pr() {
-  local pr="$1" admitted_sha="$2"
-  if [[ -n "${TRAIN_LAND_PR_MERGE_CMD:-}" ]]; then
-    "${TRAIN_LAND_PR_MERGE_CMD}" "${pr}" "${admitted_sha}"
-  elif [[ "${TRAIN_APPLY}" != "1" ]]; then
-    train_side_effect gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
-  else
-    gh pr merge "${pr}" --merge --match-head-commit "${admitted_sha}"
-  fi
-}
-
 # train_land <batch-branch> <trunk-sha-at-assembly> <included-file>
 # Returns 0 once the exact batch lands, 10 when trunk CAS/FF rejects before any
 # landing, and 1 on a pre-push error. Post-push finalization never replays trunk.

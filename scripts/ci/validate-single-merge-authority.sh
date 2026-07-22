@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 is_allowlisted() {
   case "$1" in
-    scripts/ci/merge-train/land.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/validate-single-merge-authority.sh)
+    scripts/ci/merge-train/land.sh|scripts/ci/merge-train/recovery.sh|scripts/ci/merge-train/fixtures/validate-merge-train.sh|scripts/ci/validate-single-merge-authority.sh)
       return 0 ;;
     *) return 1 ;;
   esac
