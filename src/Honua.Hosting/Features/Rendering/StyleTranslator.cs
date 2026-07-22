@@ -108,7 +108,7 @@ internal static class StyleTranslator
             return false;
         }
 
-        return expressions.Values.Any(ContainsZoomExpression);
+        return expressions.Values.Any(expression => ContainsZoomExpression(expression));
     }
 
     private static bool ContainsZoomExpression(MapLibreExpression? expression)
@@ -126,7 +126,7 @@ internal static class StyleTranslator
             return true;
         }
 
-        return items.Any(ContainsZoomExpression);
+        return items.Any(item => ContainsZoomExpression(item));
     }
 
     /// <summary>
