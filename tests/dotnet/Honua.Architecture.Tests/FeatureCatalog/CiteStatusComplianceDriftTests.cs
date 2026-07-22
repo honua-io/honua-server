@@ -58,6 +58,16 @@ public sealed partial class CiteStatusComplianceDriftTests
         RegexOptions.IgnoreCase)]
     private static partial Regex ProseAggregatePattern();
 
+    // Catches every "<passed>/<total>" fraction in the summary prose, not just the
+    // full-suite aggregate ProseAggregatePattern anchors on. The protocol-scoped
+    // *-openapi.json files restate their own suite's count ahead of the aggregate
+    // (e.g. "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is
+    // 952/952") -- AssertSuiteRows only checks the structured suites[] entries,
+    // so without this a stale leading count in the prose would slip past the gate
+    // even though suites[] and cite-status.md still agree.
+    [GeneratedRegex(@"\b(\d+)\s*/\s*(\d+)\b")]
+    private static partial Regex ProseFractionPattern();
+
     [ArchitectureTest]
     public void EveryVendorExtension_AgreesWithCiteStatusPerSuiteTotals()
     {
@@ -107,6 +117,8 @@ public sealed partial class CiteStatusComplianceDriftTests
             {
                 AssertSuiteRows(displayPath, suitesElement, canonical);
             }
+
+            AssertEveryProseFractionIsKnown(displayPath, extension, canonicalTotalPassed, hasSuites ? suitesElement : null);
         }
     }
 
@@ -228,6 +240,50 @@ public sealed partial class CiteStatusComplianceDriftTests
                 $"{displayPath}'s x-honua-cite-compliance.summary claims {suiteCount} conformance suites, but " +
                 $"{CiteStatusRelativePath}'s 'Current Per-Protocol Status' table has {canonicalSuiteCount} rows -- " +
                 $"update the summary prose in {displayPath} to match {CiteStatusRelativePath}.");
+        }
+    }
+
+    /// <summary>
+    /// Validates every "&lt;passed&gt;/&lt;total&gt;" fraction mentioned anywhere in the
+    /// extension's summary prose -- not just the full-suite aggregate
+    /// <see cref="ProseAggregatePattern"/> anchors on. The protocol-scoped
+    /// *-openapi.json files restate their own suite's count ahead of the aggregate
+    /// (e.g. "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is
+    /// 952/952"); <see cref="AssertSuiteRows"/> only checks the structured
+    /// suites[] entries, so a stale leading count in the prose would otherwise
+    /// slip past this gate even when suites[] and cite-status.md still agree.
+    /// Each fraction found must equal either the canonical full-suite aggregate
+    /// or one of this file's own suites[] (passed, total) pairs.
+    /// </summary>
+    private static void AssertEveryProseFractionIsKnown(
+        string displayPath,
+        JsonElement extension,
+        int canonicalTotalPassed,
+        JsonElement? suitesElement)
+    {
+        var summary = extension.TryGetProperty("summary", out var summaryElement)
+            ? summaryElement.GetString() ?? string.Empty
+            : string.Empty;
+
+        (int Passed, int Total)[] knownSuiteTotals = suitesElement is null
+            ? []
+            : [.. suitesElement.Value.EnumerateArray()
+                .Select(suite => (Passed: suite.GetProperty("passed").GetInt32(), Total: suite.GetProperty("total").GetInt32()))];
+
+        foreach (Match fraction in ProseFractionPattern().Matches(summary))
+        {
+            var passed = int.Parse(fraction.Groups[1].Value, CultureInfo.InvariantCulture);
+            var total = int.Parse(fraction.Groups[2].Value, CultureInfo.InvariantCulture);
+
+            var isCanonicalAggregate = passed == canonicalTotalPassed && total == canonicalTotalPassed;
+            var isKnownSuiteTotal = knownSuiteTotals.Any(suite => suite.Passed == passed && suite.Total == total);
+
+            (isCanonicalAggregate || isKnownSuiteTotal).Should().BeTrue(
+                $"{displayPath}'s x-honua-cite-compliance.summary mentions \"{passed}/{total}\", which matches " +
+                $"neither the canonical full-suite aggregate ({canonicalTotalPassed}/{canonicalTotalPassed}) nor " +
+                $"any per-suite total in {displayPath}'s own suites[] array -- the summary prose has drifted from " +
+                $"{CiteStatusRelativePath} (or {displayPath}'s own suites[] entries). Update the summary in " +
+                $"{displayPath} to match.");
         }
     }
 
