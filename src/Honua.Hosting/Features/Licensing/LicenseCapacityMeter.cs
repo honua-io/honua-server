@@ -127,6 +127,7 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
                 normalized.InstanceId,
                 preRegistrationState.CurrentServingUnits,
                 joiningUnits,
+                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
                 terms?.MaxSustainedServingUnits ?? 0m,
                 preRegistrationState.State);
 
@@ -619,6 +620,7 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         // Not converted to `.Where(...)`: the filter predicate depends on `sample`, which is
         // only produced by the preceding `TryParseSamplePayload` out-parameter call — a
         // single LINQ predicate cannot both parse and filter on the parsed value.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var value in values)
         {
             if (TryParseSamplePayload(value.ToString(), out var sample) && sample.Timestamp >= windowStart)

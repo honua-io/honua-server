@@ -262,7 +262,7 @@ public class NetworkTopologyEditAdminEndpointsTests : IAsyncLifetime
         var datasetId = await RegisterDatasetAsync("noidem");
         var draft = await AllocateDraftAsync(datasetId);
 
-        var message = new HttpRequestMessage(
+        using var message = new HttpRequestMessage(
             HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{draft.Generation}/edits")
         {
             Content = JsonContent.Create(new { AddEdges = new[] { EdgeDto("e1") } }, options: _jsonOptions),
@@ -280,7 +280,7 @@ public class NetworkTopologyEditAdminEndpointsTests : IAsyncLifetime
         var datasetId = await RegisterDatasetAsync("noifmatch");
         var draft = await AllocateDraftAsync(datasetId);
 
-        var message = new HttpRequestMessage(
+        using var message = new HttpRequestMessage(
             HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{draft.Generation}/edits")
         {
             Content = JsonContent.Create(new { AddEdges = new[] { EdgeDto("e1") } }, options: _jsonOptions),

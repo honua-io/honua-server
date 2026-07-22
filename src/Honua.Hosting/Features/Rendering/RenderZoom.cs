@@ -86,6 +86,7 @@ internal sealed class RenderZoom
     /// </remarks>
     public static RenderZoom FromScaleDenominator(double scaleDenominator)
     {
+        // codeql[cs/simplifiable-boolean-expression] -- the written form preserves NaN or nullable-boolean semantics.
         if (!(scaleDenominator > 0) || !double.IsFinite(scaleDenominator))
         {
             return NotDerivable("the scale denominator is not a positive, finite number");
@@ -117,6 +118,7 @@ internal sealed class RenderZoom
 
         var spanX = CoordinateTransformer.GetEffectiveWidth(extent) / MercatorWorldSpanMeters;
         var spanY = extent.Height / MercatorWorldSpanMeters;
+        // codeql[cs/simplifiable-boolean-expression] -- the written form preserves NaN or nullable-boolean semantics.
         if (!(spanX > 0) || !(spanY > 0))
         {
             return NotDerivable("the render extent is empty or degenerate");

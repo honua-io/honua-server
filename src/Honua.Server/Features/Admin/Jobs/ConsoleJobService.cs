@@ -477,7 +477,7 @@ internal sealed partial class ConsoleJobService(
             // registered terminal callbacks (best-effort and kind-guarded per the
             // remarks above); one callback's failure must not stop the remaining
             // callbacks from reconciling their stores.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 TerminalCallbackFailed(logger, job.OperationId, ex);
             }

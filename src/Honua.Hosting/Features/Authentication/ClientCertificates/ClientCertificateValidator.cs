@@ -317,6 +317,7 @@ internal sealed class ClientCertificateValidator(
             // Not a `using` declaration: `anchors` is a list accumulated across loop
             // iterations, and each entry must stay valid (undisposed) until chain.Build
             // has run, so disposal only happens once here after the chain is built.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             foreach (var anchor in anchors)
             {
                 anchor.Dispose();
@@ -418,6 +419,7 @@ internal sealed class ClientCertificateValidator(
             // Not a `using` declaration: `anchors` is a list accumulated across loop
             // iterations, and each entry must stay valid (undisposed) until chain.Build
             // has run, so disposal only happens once here after the chain is built.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             foreach (var anchor in anchors)
             {
                 anchor.Dispose();

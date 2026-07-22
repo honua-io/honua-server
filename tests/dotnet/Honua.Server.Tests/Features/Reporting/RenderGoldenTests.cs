@@ -85,7 +85,7 @@ public sealed class RenderGoldenTests
     {
         // relativeName is always "<literal from Cases()> + \".md\"/\".html\"" (never rooted),
         // so GoldenDirectory() is never dropped.
-        var goldenPath = Path.Combine(GoldenDirectory(), relativeName);
+        var goldenPath = Path.Join(GoldenDirectory(), relativeName);
         if (Environment.GetEnvironmentVariable(UpdateEnvVar) == "1")
         {
             Directory.CreateDirectory(GoldenDirectory());
@@ -105,8 +105,8 @@ public sealed class RenderGoldenTests
         // bin/Debug/net10.0 -> repo-relative Features/Reporting/Goldens
         // All later Path.Combine args below are fixed relative literals ("..", "Features", etc.),
         // never rooted, so the earlier absolute segment is never dropped.
-        var projectDir = Path.GetFullPath(Path.Combine(binDir, "..", "..", ".."));
-        return Path.Combine(projectDir, "Features", "Reporting", "Goldens");
+        var projectDir = Path.GetFullPath(Path.Join(binDir, "..", "..", ".."));
+        return Path.Join(projectDir, "Features", "Reporting", "Goldens");
     }
 
     private static string Normalize(string value) => value.Replace("\r\n", "\n", StringComparison.Ordinal);

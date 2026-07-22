@@ -1371,7 +1371,7 @@ internal sealed class StacOpsDashboardService(HttpClient httpClient)
         {
             return System.Text.Encoding.UTF8.GetString(payload);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional catch-all: any non-UTF8/invalid byte sequence should render as a
             // placeholder for the request ledger rather than throw out of the demo UI.

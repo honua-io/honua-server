@@ -165,7 +165,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         // instead of the operator-designated secure database would silently read/write the wrong
         // store and defeat the security control, so every failure maps to the same sanitized
         // ServiceUnavailableException.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _logSecureConnectionResolutionFailed(_logger, _namedConnectionToUse, ex);
 
@@ -282,7 +282,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
         // Intentionally generic: this is a connection-health probe, so any failure means
         // "unhealthy" rather than an exception the caller should handle.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _logConnectionHealthTestFailure(_logger, _namedConnectionToUse, ex);
             return false;
@@ -303,7 +303,7 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
         // Intentionally generic: best-effort discovery; log and degrade to "no available
         // connections" rather than failing the caller over a resolver-side listing error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _logRetrieveConnectionsFailure(_logger, ex);
             return Array.Empty<string>();

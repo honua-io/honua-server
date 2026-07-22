@@ -81,7 +81,7 @@ internal sealed class McpJobProgressBridge
             }
             // Intentionally generic: this is a fire-and-forget background poll; it must never
             // crash the host, so record the failure and stop.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 McpLog.ResourceReadFailed(_logger, "jobs", jobId, ex);
             }
@@ -119,7 +119,7 @@ internal sealed class McpJobProgressBridge
             }
             // Intentionally generic: the job vanished or the read failed; stop tracking rather
             // than spinning. The client can still read honua://jobs/{id} directly.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 McpLog.ProgressBridgeJobReadFailed(_logger, sessionId, jobId, ex);
                 McpLog.ProgressBridgeStopped(_logger, sessionId, jobId, "job-unreadable");

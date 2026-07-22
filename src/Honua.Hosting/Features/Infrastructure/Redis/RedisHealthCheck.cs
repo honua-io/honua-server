@@ -72,7 +72,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
 
             return HealthCheckResult.Healthy("Redis available", data);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: this is the health-check boundary itself; any failure must be
             // reported as Unhealthy rather than escape and crash the health-check middleware.
@@ -125,7 +125,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 }).ToArray();
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: diagnostics enumeration must not fail the whole health check;
             // surface the failure both in the returned data and the log.

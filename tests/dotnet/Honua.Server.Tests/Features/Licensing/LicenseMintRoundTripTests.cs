@@ -315,7 +315,7 @@ public sealed class LicenseMintRoundTripTests
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var licensePath = Path.Join(tempDirectory.FullName, "license.honua-license.json");
         await File.WriteAllBytesAsync(licensePath, envelopeJson);
 
         var options = new LicenseOptions

@@ -126,7 +126,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: any source-read failure must become a Failed job
             // result rather than crash the worker; the full exception is logged and

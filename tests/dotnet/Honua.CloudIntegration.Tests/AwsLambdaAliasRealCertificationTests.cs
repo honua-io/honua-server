@@ -115,7 +115,7 @@ public sealed class AwsLambdaAliasRealCertificationTests : IClassFixture<RealAws
                     // dedicated cert function's alias mutated — restore both the version AND the weights.
                     await client.UpdateAliasAsync(function, alias, original.FunctionVersion!, originalWeights, region);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Best-effort: the flip preserved the original version AND weights, so even a failed
                     // restore leaves the alias serving the original traffic split unchanged. Log it so a

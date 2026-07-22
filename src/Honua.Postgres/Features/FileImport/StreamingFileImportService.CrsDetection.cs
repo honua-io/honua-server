@@ -43,7 +43,7 @@ internal sealed partial class StreamingFileImportService
                 _ => null
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: best-effort CRS auto-detection — on failure, log and return null
             // so the caller falls back to an explicit source SRID or the format's default rather than

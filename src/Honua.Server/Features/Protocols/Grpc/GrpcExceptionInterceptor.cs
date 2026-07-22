@@ -29,7 +29,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         }
         // Intentional broad catch: this is the gRPC request-handling boundary; every unhandled
         // exception from the RPC continuation is logged and mapped to an RpcException status below.
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw CreateMappedRpcException(exception, context);
         }
@@ -50,7 +50,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         }
         // Intentional broad catch: this is the gRPC request-handling boundary; every unhandled
         // exception from the RPC continuation is logged and mapped to an RpcException status below.
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw CreateMappedRpcException(exception, context);
         }
@@ -72,7 +72,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         }
         // Intentional broad catch: this is the gRPC request-handling boundary; every unhandled
         // exception from the RPC continuation is logged and mapped to an RpcException status below.
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw CreateMappedRpcException(exception, context);
         }
@@ -94,7 +94,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         }
         // Intentional broad catch: this is the gRPC request-handling boundary; every unhandled
         // exception from the RPC continuation is logged and mapped to an RpcException status below.
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             throw CreateMappedRpcException(exception, context);
         }

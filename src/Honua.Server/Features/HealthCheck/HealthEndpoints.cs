@@ -134,7 +134,7 @@ internal static class HealthEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the performance
         // metrics endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HealthEndpointsLog.PerformanceMetricsFailed(loggerFactory.CreateLogger("Honua.HealthCheck"), ex);
 
@@ -193,7 +193,7 @@ internal static class HealthEndpoints
         // score (the response's Status field independently reports readiness, so a fallback
         // score of 0 here does not mislead about overall health), but the failure is now logged
         // so it is diagnosable.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HealthEndpointsLog.PerformanceScoreCalculationFailed(logger, ex);
             return 0;

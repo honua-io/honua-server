@@ -93,6 +93,7 @@ public sealed class ReconcileForwarderTests
         {
             LastRequest = request;
             // Ownership transfers to the HttpClient pipeline/caller, which disposes it after reading the response.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }

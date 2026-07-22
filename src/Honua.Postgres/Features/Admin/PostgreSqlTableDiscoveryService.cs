@@ -320,7 +320,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Row count is an approximate hint (pg_class.reltuples), not correctness-critical; log and
             // return null so callers degrade gracefully instead of failing table discovery.
@@ -391,7 +391,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort column introspection: on failure, log and return whatever columns were read
             // so far (possibly empty) rather than failing the caller's table discovery entirely.

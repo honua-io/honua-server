@@ -282,7 +282,7 @@ internal sealed partial class GeoservicesImportService
             Log.ImportCancelled(_logger, request.TableName);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Top-level import failure: roll back, log, and map to a sanitized failure result via
             // BuildImportFailureMessage rather than leaking the raw exception to the caller.

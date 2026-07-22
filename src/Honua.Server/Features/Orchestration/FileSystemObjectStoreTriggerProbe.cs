@@ -55,7 +55,7 @@ internal sealed class FileSystemObjectStoreTriggerProbe : IObjectStoreTriggerPro
             // the store. Compare against the root plus a trailing separator (not a bare prefix)
             // so a sibling directory that merely shares the root's string prefix (e.g. "/data/store1"
             // vs "/data/store12") is not mistaken for containment.
-            var combined = Path.GetFullPath(Path.Combine(root, config.Prefix));
+            var combined = Path.GetFullPath(Path.Join(root, config.Prefix));
             var normalizedRoot = Path.GetFullPath(root);
             var rootWithSeparator = normalizedRoot.EndsWith(Path.DirectorySeparatorChar)
                 ? normalizedRoot

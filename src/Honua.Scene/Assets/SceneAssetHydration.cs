@@ -66,7 +66,7 @@ internal static class SceneAssetHydration
     {
         // Safe: MarkerFileName is a hardcoded constant (".honua-hydration"), never
         // externally supplied, so this combine can never be rooted.
-        var markerPath = Path.Combine(localAssetRoot, MarkerFileName);
+        var markerPath = Path.Join(localAssetRoot, MarkerFileName);
         try
         {
             if (!File.Exists(markerPath))
@@ -99,7 +99,7 @@ internal static class SceneAssetHydration
     {
         // Safe: MarkerFileName is a hardcoded constant (".honua-hydration"), never
         // externally supplied, so this combine can never be rooted.
-        var markerPath = Path.Combine(directory, MarkerFileName);
+        var markerPath = Path.Join(directory, MarkerFileName);
         await File.WriteAllTextAsync(markerPath, token, Encoding.UTF8, cancellationToken)
             .ConfigureAwait(false);
     }

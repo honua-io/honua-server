@@ -174,7 +174,7 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
         // Intentional catch-all: this is a health-check probe boundary; any failure reaching
         // the target service (network, protocol, or unexpected error) must be reported as a
         // degraded health result rather than throwing out of the health-check pipeline.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HttpClientHealthCheckLog.Failed(_logger, _serviceType, ex);
 
@@ -204,7 +204,7 @@ internal sealed class HttpClientHealthCheck : IHealthCheck
         // Intentional catch-all: circuit-breaker state introspection is a best-effort
         // diagnostic add-on to the health check; if it cannot be determined, continue with
         // the health check itself rather than failing the probe.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HttpClientHealthCheckLog.CircuitBreakerStateCheckFailed(_logger, _serviceType, ex);
             return null;

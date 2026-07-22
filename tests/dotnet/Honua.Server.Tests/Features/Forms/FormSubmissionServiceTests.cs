@@ -604,7 +604,7 @@ public sealed class FormSubmissionServiceTests
             ? new byte[length]
             : Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
         // Ownership transfers to the returned FormFile, which the caller uses/disposes as needed.
-        var stream = new MemoryStream(bytes);
+        using var stream = new MemoryStream(bytes);
         var file = new FormFile(stream, 0, stream.Length, partName, fileName)
         {
             Headers = new HeaderDictionary()

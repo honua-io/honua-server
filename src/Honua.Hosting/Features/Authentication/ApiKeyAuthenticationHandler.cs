@@ -90,7 +90,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         {
             configuredPassword = await ResolveAdminPasswordAsync(Context.RequestAborted);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: secret resolution can fan out to heterogeneous cloud SDKs (AWS
             // Secrets Manager, Azure Key Vault, etc.) with provider-specific exception types;

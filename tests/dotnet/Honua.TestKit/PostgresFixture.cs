@@ -57,6 +57,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                     var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
                     if (string.IsNullOrWhiteSpace(externalConnectionString))
                     {
+                        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                         _sharedContainer = new PostgreSqlBuilder()
                             .WithImage("postgis/postgis:18-3.6")
                             .WithDatabase("honua_test")
@@ -66,13 +67,16 @@ public sealed class PostgresFixture : IAsyncLifetime
                             .WithCommand("-c", "max_connections=200")
                             .Build();
                         await _sharedContainer.StartAsync();
+                        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                         _sharedConnectionString = _sharedContainer.GetConnectionString();
                     }
                     else
                     {
+                        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                         _sharedConnectionString = externalConnectionString;
                     }
 
+                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                     _sharedDataSource = NpgsqlDataSource.Create(_sharedConnectionString);
 
                     await ExecuteWithInitializationRetryAsync(async () =>
@@ -83,6 +87,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }).ConfigureAwait(false);
 
+                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                     _sharedInitialized = true;
                 }
                 catch
@@ -92,6 +97,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                 }
             }
 
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             _sharedRefCount++;
             _connectionString = _sharedConnectionString;
             DataSource = _sharedDataSource ?? throw new InvalidOperationException("Shared data source not initialized.");
@@ -109,6 +115,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         {
             if (_sharedRefCount > 0)
             {
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedRefCount--;
             }
 

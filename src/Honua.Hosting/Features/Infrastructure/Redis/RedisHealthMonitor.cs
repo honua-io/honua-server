@@ -124,7 +124,7 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
             RecordSuccess();
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: connectivity probes must never throw to the caller;
             // RecordFailure() logs via Log.RedisConnectionFailed.
@@ -149,14 +149,14 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
                 // timer-callback crash risk documented above.
                 await TestConnectivityAsync().ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.HealthCheckFailed(_logger, ex);
             }
         }
         // Intentional: outermost guard for the async void timer callback above — catches
         // anything the inner try/catch missed (including bugs in the disposed check itself).
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.UnhandledTimerException(_logger, nameof(PerformHealthCheck), ex);
         }

@@ -372,7 +372,7 @@ internal static class WmtsRequestHandlers
                 "WMTS request includes an option the configured feature provider does not support.",
                 StatusCodes.Status400BadRequest);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost WMTS request-dispatch boundary. Already
             // logged (with exception) and mapped to a WMTS ServiceExceptionReport.
@@ -1817,7 +1817,7 @@ internal static class WmtsRequestHandlers
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: a per-layer temporal resolution failure must degrade to no
             // TIME dimension rather than fail the whole capabilities document (see doc comment above).

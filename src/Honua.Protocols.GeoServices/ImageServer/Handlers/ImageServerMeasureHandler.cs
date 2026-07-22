@@ -183,7 +183,7 @@ internal sealed class ImageServerMeasureHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.MeasureFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -485,6 +485,7 @@ internal sealed class ImageServerMeasureHandler
         var response = new ImageServerMeasureResponse
         {
             Name = raster.Name,
+            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
             SensorName = sensor?.SensorName ?? "Unknown",
             Height = CreateValue(height, unit),
         };

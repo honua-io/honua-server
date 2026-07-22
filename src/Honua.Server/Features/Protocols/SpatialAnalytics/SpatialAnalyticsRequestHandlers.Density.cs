@@ -217,7 +217,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // Intentional catch-all request-handling boundary: this is the density
         // spatial-analytics query endpoint; the failure is logged and mapped to
         // a generic reader-failure response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger != null)
             {

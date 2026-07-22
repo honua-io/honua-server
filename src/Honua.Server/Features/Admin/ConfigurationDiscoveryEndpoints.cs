@@ -65,7 +65,7 @@ internal static class ConfigurationDiscoveryEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the configuration
         // discovery endpoint; the failure is logged and mapped to a generic admin problem below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.EndpointFailed(logger, "discover", ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -90,7 +90,7 @@ internal static class ConfigurationDiscoveryEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the configuration
         // metadata endpoint; the failure is logged and mapped to a generic admin problem below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.EndpointFailed(logger, "metadata", ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -117,7 +117,7 @@ internal static class ConfigurationDiscoveryEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the auto-documentation
         // endpoint; the failure is logged and mapped to a generic admin problem below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.EndpointFailed(logger, "auto-documentation", ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -142,7 +142,7 @@ internal static class ConfigurationDiscoveryEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the secrets validation
         // endpoint; the failure is logged and mapped to a generic admin problem below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.EndpointFailed(logger, "secrets/validate", ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -167,7 +167,7 @@ internal static class ConfigurationDiscoveryEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the configuration audit
         // endpoint; the failure is logged and mapped to a generic admin problem below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.EndpointFailed(logger, "audit", ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -194,7 +194,7 @@ internal static class ConfigurationDiscoveryEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the configuration
         // summary endpoint; the failure is logged and mapped to a generic admin problem below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.EndpointFailed(logger, "summary", ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(

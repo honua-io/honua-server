@@ -133,7 +133,7 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
                 {
                     break;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Intentionally generic: this is a long-running background evaluation
                     // loop. A single failed iteration must not kill the host's background

@@ -77,6 +77,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         Exception? lastException = null;
         foreach (var address in addresses)
         {
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
             var connected = false;
             try
@@ -954,6 +955,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         // preserve that fallback-through-null behavior across two nested sequences.
         foreach (var localName in new[] { "DefaultCRS", "DefaultSRS", "SRS", "OtherCRS", "OtherSRS" })
         {
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var value in ChildValues(featureType, localName))
             {
                 if (ParseOgcCrsSrid(value) is { } srid)
@@ -1089,6 +1091,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             // Not a simple filter: ParseOgcCrsSrid can return null for an unparseable CRS
             // entry, so the loop must keep scanning past it; a LINQ Select/FirstOrDefault
             // would stop at the first non-matching Where result instead of skipping it.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var crs in collection.Crs)
             {
                 if (ParseOgcCrsSrid(crs) is { } srid)
@@ -1659,11 +1662,10 @@ internal sealed partial class ExternalServiceDiscoveryService(
         // Not a simple map: each candidate name's matching child value must be looked up,
         // blank-checked, and trimmed, with the search continuing past blank values, so a
         // LINQ Select/FirstOrDefault would not preserve this fallback-through-blank search.
-        foreach (var localName in localNames)
-        {
-            var value = element.Elements()
+        foreach (var value in (localNames).Select(localName => element.Elements()
                 .FirstOrDefault(child => child.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
-                ?.Value;
+                ?.Value))
+        {
             if (!string.IsNullOrWhiteSpace(value))
             {
                 return value.Trim();

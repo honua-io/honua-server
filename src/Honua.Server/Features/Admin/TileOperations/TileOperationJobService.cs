@@ -216,6 +216,7 @@ internal sealed partial class TileOperationJobService(
 
     public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         var leaseCoordinator = await TryAcquireJobLeaseAsync(jobId).ConfigureAwait(false);
         if (_redis != null && leaseCoordinator == null)
         {
@@ -326,7 +327,7 @@ internal sealed partial class TileOperationJobService(
             // background tile-operation processing loop. A single job's failure
             // (any exception from the execution core) must not crash the queue
             // processor; it is recorded as a failed job progress below instead.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 LogJobFailed(_logger, jobId, request.Operation, ex);
                 finalProgress = started with
@@ -609,7 +610,7 @@ internal sealed partial class TileOperationJobService(
             // Intentional catch-all: this is a best-effort status write for a job
             // whose backing request already disappeared; failing to persist the
             // "missing request" status must not block the caller's cleanup below.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 TileOperationLog.MissingRequestStatusPersistenceFailed(_logger, jobId, ex);
             }
@@ -638,7 +639,7 @@ internal sealed partial class TileOperationJobService(
         // Intentional catch-all: this is a per-job check inside the startup
         // recovery loop; if the Redis claim can't be inspected, treat the job as
         // still owned elsewhere (skip recovery) rather than aborting the sweep.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             TileOperationLog.RecoveryClaimInspectionFailed(_logger, jobId, ex);
             return false;

@@ -294,7 +294,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 // Intentionally generic: this is a per-row best-effort geocode call during a bulk
                 // CSV import; a provider blow-up marks this row as not geocoded (surfaced as a
                 // per-row issue) instead of failing the whole import.
-                catch (Exception)
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     return null;
                 }

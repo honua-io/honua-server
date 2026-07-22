@@ -330,7 +330,7 @@ public sealed class EditProcessor : IEditProcessor
         // Intentional top-level boundary: this validation entry point must never throw into the
         // caller. Any unexpected failure is logged with full detail and reported through the
         // normal validation-failure result (sanitized message only) rather than propagating.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             EditLog.ValidateTransactionFailed(_logger, transaction.TransactionId, resource.Metadata.Id, ex);
@@ -654,12 +654,11 @@ public sealed class EditProcessor : IEditProcessor
 
         if (editRequest.Operations is { IsDefaultOrEmpty: false } operations)
         {
-            foreach (var operation in operations.Where(o =>
+            foreach (var feature in (operations.Where(o =>
                 o.Type == EditOperationType.Update &&
                 o.Feature?.ObjectId is not null &&
-                o.Feature?.Constraints?.ExpectedStateToken is { Length: > 0 }))
+                o.Feature?.Constraints?.ExpectedStateToken is { Length: > 0 })).Select(operation => operation.Feature!.Value))
             {
-                var feature = operation.Feature!.Value;
                 Register(ref byObjectId, feature.ObjectId!.Value, feature.Constraints!.Value.ExpectedStateToken!);
             }
         }

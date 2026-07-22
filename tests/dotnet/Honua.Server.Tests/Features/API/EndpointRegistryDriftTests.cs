@@ -419,9 +419,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         // Not a straightforward .Select(...) candidate: this is a yield-return iterator with a
         // nested scan loop and mutable cursor state (methodStart/methodEnd/index) per source file,
         // not a simple per-element map.
-        foreach (var sourceFile in sourceFiles)
+        foreach (var lines in (sourceFiles).Select(sourceFile => File.ReadAllLines(sourceFile)))
         {
-            var lines = File.ReadAllLines(sourceFile);
             for (var index = 0; index < lines.Length; index++)
             {
                 if (!_integrationTestAttributeRegex.IsMatch(lines[index]))
@@ -554,12 +553,13 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         // on the first match, it does not map each element of the outer sequence to an output.
         foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
         {
+            // codeql[cs/linq/missed-select] -- the directory cursor is reassigned while walking parents.
             var directory = new DirectoryInfo(start);
             while (directory is not null)
             {
                 // "tests", "dotnet", "Honua.Server.Tests" are fixed relative literals (never rooted),
                 // so Path.Combine cannot drop directory.FullName here.
-                var candidate = Path.Combine(directory.FullName, "tests", "dotnet", "Honua.Server.Tests");
+                var candidate = Path.Join(directory.FullName, "tests", "dotnet", "Honua.Server.Tests");
                 if (Directory.Exists(candidate))
                 {
                     return candidate;

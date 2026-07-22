@@ -33,7 +33,7 @@ internal sealed class GeoprocessingExecutorOptions
     // Second segment is a fixed relative literal, so it can never be
     // rooted and silently discard Path.GetTempPath().
     public string OutputRootDirectory { get; set; } =
-        Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs");
+        Path.Join(Path.GetTempPath(), "honua-geoprocessing-outputs");
 
     /// <summary>
     /// Root directory that the <c>import.dataset</c> executor accepts as the staging area
@@ -45,7 +45,7 @@ internal sealed class GeoprocessingExecutorOptions
     // Second segment is a fixed relative literal, so it can never be
     // rooted and silently discard Path.GetTempPath().
     public string ImportStagingDirectory { get; set; } =
-        Path.Combine(Path.GetTempPath(), "honua-import-staging");
+        Path.Join(Path.GetTempPath(), "honua-import-staging");
 
     /// <summary>
     /// Retention TTL applied to durable geoprocessing result packages produced

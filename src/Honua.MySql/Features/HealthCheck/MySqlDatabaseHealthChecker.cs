@@ -45,7 +45,7 @@ internal sealed partial class MySqlDatabaseHealthChecker(
         // Intentionally generic: a health check must never throw regardless of the
         // underlying failure (connection, timeout, driver bug); any failure here means
         // "unhealthy", logged for diagnosis.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.HealthCheckFailed(_logger, ex);
             return false;

@@ -295,12 +295,9 @@ internal static class ExpressionEvaluator
             {
                 // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
                 // allocation: "match" expressions are evaluated once per feature per style paint property.
-                foreach (var item in label.Items)
+                foreach (var item in (label.Items).Where(item => MatchesLabel(inputStr, input, item)))
                 {
-                    if (MatchesLabel(inputStr, input, item))
-                    {
-                        return Evaluate(array[i + 1], properties, zoom);
-                    }
+                    return Evaluate(array[i + 1], properties, zoom);
                 }
             }
             else if (MatchesLabel(inputStr, input, label))
@@ -319,12 +316,9 @@ internal static class ExpressionEvaluator
         {
             // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
             // allocation on this hot, recursively-invoked match-label path.
-            foreach (var item in label.Items)
+            foreach (var item in (label.Items).Where(item => MatchesLabel(inputStr, inputObj, item)))
             {
-                if (MatchesLabel(inputStr, inputObj, item))
-                {
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -533,11 +527,13 @@ internal static class ExpressionEvaluator
         var difference = upper - lower;
         var progress = input - lower;
 
+        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
         if (difference == 0.0)
         {
             return 0.0;
         }
 
+        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
         if (@base == 1.0)
         {
             return progress / difference;

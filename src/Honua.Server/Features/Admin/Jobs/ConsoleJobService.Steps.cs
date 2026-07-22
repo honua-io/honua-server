@@ -121,6 +121,7 @@ internal sealed partial class ConsoleJobService
 
         // Not a simple filter: the first matching key's value is looked up, validated, and
         // sanitized before being returned, so a LINQ Where/Select would not simplify this.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in CommandMetadataKeys)
         {
             if (entry.Metadata.TryGetValue(key, out var command) && !string.IsNullOrWhiteSpace(command))

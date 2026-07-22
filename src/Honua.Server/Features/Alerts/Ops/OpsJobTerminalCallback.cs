@@ -72,7 +72,7 @@ internal sealed partial class OpsJobTerminalCallback : IJobTerminalCallback
         }
         // Intentional catch-all: best-effort notification. A failed notification
         // must not block the job terminal transition that raised it.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogNotifyFailed(_logger, job.OperationId, ex);
         }

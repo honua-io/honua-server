@@ -108,12 +108,9 @@ internal static class StyleTranslator
             return false;
         }
 
-        foreach (var expression in expressions.Values)
+        foreach (var expression in (expressions.Values).Where(expression => ContainsZoomExpression(expression)))
         {
-            if (ContainsZoomExpression(expression))
-            {
-                return true;
-            }
+            return true;
         }
 
         return false;
@@ -134,12 +131,9 @@ internal static class StyleTranslator
             return true;
         }
 
-        foreach (var item in items)
+        foreach (var item in (items).Where(item => ContainsZoomExpression(item)))
         {
-            if (ContainsZoomExpression(item))
-            {
-                return true;
-            }
+            return true;
         }
 
         return false;
@@ -182,12 +176,9 @@ internal static class StyleTranslator
             return true;
         }
 
-        foreach (var styleLayer in styleLayers)
+        foreach (var styleLayer in (styleLayers).Where(styleLayer => IsLayerInZoomRange(styleLayer, level)))
         {
-            if (IsLayerInZoomRange(styleLayer, level))
-            {
-                return true;
-            }
+            return true;
         }
 
         return false;

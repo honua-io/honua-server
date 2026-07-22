@@ -34,6 +34,7 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
     // Not a `using` field: this token source's lifetime spans the host's StartAsync/StopAsync
     // pair (IHostedService lifecycle), not a single method scope, so it is disposed explicitly
     // in StopAsync's finally block rather than via a using declaration.
+    // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
     private CancellationTokenSource? _stoppingCts;
 
     public PluginBackgroundServiceHost(
@@ -115,7 +116,7 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
         {
             // Normal shutdown.
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Failure isolation: a faulting background service is logged and disabled, never
             // propagated to the host (which would tear down the process).
@@ -142,7 +143,7 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
         {
             throw;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Auditing a background-service lifecycle transition must never crash the host.
         }

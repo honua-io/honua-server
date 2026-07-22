@@ -137,7 +137,7 @@ internal sealed partial class AwsSnsAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: the AWS SDK surfaces a wide range of exception
             // types for transport, throttling, and auth failures. The exception is

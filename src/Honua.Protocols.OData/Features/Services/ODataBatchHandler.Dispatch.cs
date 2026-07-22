@@ -144,7 +144,7 @@ internal sealed partial class ODataBatchHandler
         }
         // Intentional broad catch: a single batch sub-request must not abort the whole batch;
         // already logged (Log.BatchSingleRequestFailed) and mapped to a per-request error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.BatchSingleRequestFailed(_logger, request.Id, ex);
             // Use safe error message to avoid leaking internal details
