@@ -71,8 +71,29 @@ public sealed class InMemorySecureConnectionRegistry : ISecureConnectionRegistry
         => Task.FromResult(_byId.TryGetValue(connectionId, out var connection) ? connection : null);
 
     /// <inheritdoc />
-    public Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
-        => GetConnectionAsync(connectionId);
+    /// <remarks>
+    /// Metadata V2 connection ids are not required to be GUIDs (test graphs and metadata
+    /// commonly use names like <c>conn-1</c>), so — matching
+    /// <c>PostgresSecureConnectionRegistry.GetConnectionAsync(string, CancellationToken)</c> —
+    /// a non-GUID id falls back to a name lookup instead of returning null. Without this,
+    /// <c>FeatureProviderQueryRouter</c> cannot resolve an in-memory-registered connection by
+    /// its metadata id/name, so secondary-provider publications either fail as missing or
+    /// route without their <see cref="DataConnection"/>.
+    /// </remarks>
+    public async Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId))
+        {
+            return null;
+        }
+
+        if (Guid.TryParse(connectionId, out var id))
+        {
+            return await GetConnectionAsync(id, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await GetConnectionByNameAsync(connectionId, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public Task<DataConnection?> GetConnectionByNameAsync(string connectionName, CancellationToken cancellationToken = default)
