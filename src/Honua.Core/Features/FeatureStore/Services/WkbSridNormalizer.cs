@@ -36,6 +36,63 @@ internal static class WkbSridNormalizer
         return changed ? output.ToArray() : wkb;
     }
 
+    /// <summary>
+    /// Reports whether the outermost geometry declares a Z and/or M ordinate, via either the
+    /// PostGIS-style EWKB high-bit flags or the ISO SQL/MM type-code offset. Callers that bind
+    /// into a provider WKB constructor with no Z/M-flavor translation of its own (MySQL's
+    /// canonical-2D <c>ST_GeomFromWKB</c>, SQL Server's ISO/OGC-flavored <c>STGeomFromWKB</c>)
+    /// should reject dimensioned input here instead of binding a payload the engine cannot parse
+    /// the way <see cref="RemoveEmbeddedSrid"/> emits it (SRID stripped, dimension flags
+    /// otherwise byte-preserved as-is). Malformed input reports <see langword="false"/> so the
+    /// database parser stays responsible for the resulting error.
+    /// </summary>
+    public static bool HasZOrMOrdinates(byte[] wkb)
+    {
+        ArgumentNullException.ThrowIfNull(wkb);
+
+        var offset = 0;
+        if (!TryReadByteOrderRaw(wkb, ref offset, out var littleEndian) ||
+            !TryReadUInt32Raw(wkb, ref offset, littleEndian, out var rawType))
+        {
+            return false;
+        }
+
+        if (!TryResolveType(rawType, out _, out var ordinateCount))
+        {
+            return false;
+        }
+
+        return ordinateCount > 2;
+    }
+
+    private static bool TryReadByteOrderRaw(byte[] input, ref int offset, out bool littleEndian)
+    {
+        if (offset >= input.Length || input[offset] is not (0 or 1))
+        {
+            littleEndian = false;
+            return false;
+        }
+
+        littleEndian = input[offset++] == 1;
+        return true;
+    }
+
+    private static bool TryReadUInt32Raw(byte[] input, ref int offset, bool littleEndian, out uint value)
+    {
+        if (input.Length - offset < sizeof(uint))
+        {
+            value = 0;
+            return false;
+        }
+
+        var bytes = input.AsSpan(offset, sizeof(uint));
+        value = littleEndian
+            ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
+            : BinaryPrimitives.ReadUInt32BigEndian(bytes);
+        offset += sizeof(uint);
+        return true;
+    }
+
     private static bool TryCopyGeometry(
         byte[] input,
         ref int offset,

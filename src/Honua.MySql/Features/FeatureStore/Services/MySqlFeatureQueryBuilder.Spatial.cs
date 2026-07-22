@@ -88,6 +88,19 @@ internal sealed partial class MySqlFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        // MySQL/MariaDB's GIS types are 2D-only: ST_GeomFromWKB has no Z/M-flavor translation and
+        // documents canonical X/Y WKB. WkbSridNormalizer preserves whatever dimension flags the
+        // input carries byte-for-byte (it only strips the SRID word), so a Z/M-dimensioned filter
+        // would otherwise bind a type word MySQL cannot parse. Reject explicitly instead of
+        // silently dropping the extra ordinates (the pre-#2965 behavior) or binding malformed WKB.
+        if (WkbSridNormalizer.HasZOrMOrdinates(filter.Geometry))
+        {
+            throw MySqlUnsupportedFeature.Create(
+                "Z/M-dimensioned spatial filter geometries are not supported by the MySQL/MariaDB " +
+                "provider. MySQL/MariaDB GIS types are 2D-only; pre-flatten the filter geometry to " +
+                "X/Y before querying.");
+        }
+
         var wkbParam = $"@p{paramIndex++}";
         parameters.Add(WkbSridNormalizer.RemoveEmbeddedSrid(filter.Geometry));
 

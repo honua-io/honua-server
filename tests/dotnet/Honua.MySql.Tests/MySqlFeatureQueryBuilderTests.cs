@@ -212,7 +212,7 @@ public class MySqlFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_WithGeoServicesEwkb_BindsPlainWkb()
     {
-        var ewkb = CreateEwkbPointZm();
+        var ewkb = CreateEwkbPointXy();
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
@@ -223,8 +223,33 @@ public class MySqlFeatureQueryBuilderTests
         var boundWkb = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
         var typeWord = BinaryPrimitives.ReadUInt32LittleEndian(boundWkb.AsSpan(1, sizeof(uint)));
         Assert.Equal(0u, typeWord & 0x20000000u);
-        Assert.Equal(0xC0000001u, typeWord);
+        Assert.Equal(1u, typeWord);
         Assert.Equal(ewkb.AsSpan(9).ToArray(), boundWkb.AsSpan(5).ToArray());
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithZmDimensionedEwkb_RejectsRatherThanBindingUnparseableWkb()
+    {
+        var ewkb = CreateEwkbPointZm();
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.Create(ewkb, SpatialRelationship.Intersects, srid: 4326)
+        };
+
+        var exception = Assert.Throws<NotSupportedException>(() => _builder.BuildSelectQuery(LayerId, query));
+
+        Assert.Contains("2D-only", exception.Message, StringComparison.Ordinal);
+    }
+
+    private static byte[] CreateEwkbPointXy()
+    {
+        var ewkb = new byte[1 + sizeof(uint) + sizeof(uint) + (2 * sizeof(double))];
+        ewkb[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(1), 0x20000001u);
+        BinaryPrimitives.WriteUInt32LittleEndian(ewkb.AsSpan(5), 4326u);
+        BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(9), -122.25);
+        BinaryPrimitives.WriteDoubleLittleEndian(ewkb.AsSpan(17), 37.75);
+        return ewkb;
     }
 
     private static byte[] CreateEwkbPointZm()

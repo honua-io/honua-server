@@ -213,7 +213,7 @@ public class SqlServerFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildSelectQuery_GeoServicesEwkb_BindsPlainWkb()
+    public void BuildSelectQuery_GeoServicesEwkb_BindsIsoFlavoredPlainWkbWithZmPreserved()
     {
         var mapping = BuildMapping();
         var ewkb = CreateEwkbPointZm();
@@ -226,8 +226,12 @@ public class SqlServerFeatureQueryBuilderTests
 
         var boundWkb = Assert.IsType<byte[]>(Assert.Single(result.WhereParameters));
         var typeWord = BinaryPrimitives.ReadUInt32LittleEndian(boundWkb.AsSpan(1, sizeof(uint)));
+        // The bound WKB must carry no embedded SRID (no high SRID bit, and no separate SRID
+        // word) and must be in the ISO/OGC type-code flavor STGeomFromWKB expects for Z/M
+        // (3001 = PointZM), not Honua's canonical PostGIS-style EWKB high-bit flavor
+        // (0xC0000001) the input carried. See SqlServerGeographyWinding.NormalizeToPlainWkb.
         Assert.Equal(0u, typeWord & 0x20000000u);
-        Assert.Equal(0xC0000001u, typeWord);
+        Assert.Equal(3001u, typeWord);
         Assert.Equal(ewkb.AsSpan(9).ToArray(), boundWkb.AsSpan(5).ToArray());
     }
 
