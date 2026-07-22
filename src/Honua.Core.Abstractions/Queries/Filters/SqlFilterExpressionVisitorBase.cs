@@ -74,7 +74,10 @@ public abstract class SqlFilterExpressionVisitorBase
         _parameters.Clear();
 
         var sql = TranslateExpression(filter, context);
-        return new SqlFragment(sql, _parameters);
+        // The scoped translator can translate more than one independent fragment in a
+        // request (for example enforced and caller filters). Snapshot the parameters so
+        // resetting this visitor for the next translation cannot mutate an earlier result.
+        return new SqlFragment(sql, _parameters.ToArray());
     }
 
     /// <summary>

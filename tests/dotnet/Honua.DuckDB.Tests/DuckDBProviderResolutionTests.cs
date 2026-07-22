@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Queries.Filters;
+using Honua.DuckDB.Queries.Filters;
 using Honua.DuckDB.Features.HealthCheck;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +55,17 @@ public sealed class DuckDBProviderResolutionTests
         Assert.NotNull(second);
         // Scoped instances across different scopes must be different objects.
         Assert.NotSame(first, second);
+    }
+
+    [Fact]
+    public void AddDuckDBServices_RegistersSqlFilterTranslator()
+    {
+        using var provider = BuildDuckDbServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var translator = scope.ServiceProvider.GetRequiredService<ISqlFilterTranslator>();
+
+        Assert.IsType<DuckDbSqlFilterTranslator>(translator);
     }
 
     private static ServiceProvider BuildDuckDbServiceProvider()
