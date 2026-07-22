@@ -42,11 +42,22 @@ jobs:
         with:
           script: |
             const { evaluateCodexEvidence, isCodex } = require('./scripts/ci/review-gate-evidence');
-            const prNumber = Number(
+            // workflow_run only carries pull_requests for same-repo PRs; GitHub
+            // leaves it empty for fork PRs. Fall back to a head-SHA search (same
+            // pattern as ci-failure-triage.yml) so fork PRs still get re-attested
+            // when PR Gate completes, instead of failing before publishing status.
+            let prNumber = Number(
               context.payload.pull_request?.number ||
               context.payload.workflow_run?.pull_requests?.[0]?.number ||
               '${{ github.event.inputs.pr }}'
             );
+            if (!prNumber && context.payload.workflow_run) {
+              const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...context.repo, commit_sha: context.payload.workflow_run.head_sha,
+              });
+              const openPr = assocPrs.find(p => p.state === 'open');
+              if (openPr) prNumber = openPr.number;
+            }
             if (!prNumber) {
               core.setFailed('Event does not identify a pull request.');
               return;
