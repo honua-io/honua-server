@@ -318,7 +318,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 5,
+      "provingTestCount": 7,
       "maturity": {
         "implemented": 1
       },
