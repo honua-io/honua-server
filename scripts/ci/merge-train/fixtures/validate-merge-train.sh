@@ -460,6 +460,13 @@ assert_eq "state: included persisted" "$(jq -rc '.active_batch.included' <<<"${s
 assert_eq "state: max_batch in config" "$(jq -r '.config.max_batch' <<<"${sj}")" "${MAX_BATCH:-3}"
 assert_eq "state: last_landed_trunk" "$(jq -r '.last_landed_trunk' <<<"${sj}")" "cafef00d"
 
+aggregate='{"totals":{"batches":1,"prs_landed":1}}'
+state_dashboard="$(printf '%s\n\n```json aggregate\n%s\n```\n' "${body}" "${aggregate}")"
+parsed_state="$(TRAIN_STATE_ISSUE_OVERRIDE=2044 TRAIN_STATE_BODY_OVERRIDE="${state_dashboard}" train_state_read)"
+assert_eq "state: reader ignores aggregate JSON fence" "$(jq -r '.active_batch.phase' <<<"${parsed_state}")" "smart-ci"
+assert_eq "state: aggregate reader selects aggregate fence" \
+  "$(TRAIN_STATE_ISSUE_OVERRIDE=2044 TRAIN_AGG_BODY_OVERRIDE="${state_dashboard}" train_aggregate_block | jq -r '.totals.prs_landed')" "1"
+
 echo
 echo "== select: CI-Gate classification + ordering + hold/draft filters =="
 export TRAIN_PR_LIST_JSON='[
