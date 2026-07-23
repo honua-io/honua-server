@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -111,10 +112,12 @@ internal sealed class ImageServerMetadataHandler
             // than this request's own host-level deadline, which would otherwise hang
             // the whole metadata response instead of just omitting statistics (#2991).
             var rasterIds = rasters.Select(r => r.Id).ToArray();
+            var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
-                    layerId, rasterIds, mergeStrategy),
+                    schemaName, layerId, rasterIds, mergeStrategy),
+                schemaName,
                 (services, ct) =>
                 {
                     var rasterStore = services.GetRequiredService<IRasterStore>();

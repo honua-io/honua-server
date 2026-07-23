@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -61,10 +62,12 @@ internal sealed class ImageServerRasterMetadataHandler
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
                 resolved.Resource, mosaicRule: null);
+            var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
-                    layerId, rasterIds, mergeStrategy),
+                    schemaName, layerId, rasterIds, mergeStrategy),
+                schemaName,
                 (services, ct) =>
                 {
                     var rasterStore = services.GetRequiredService<IRasterStore>();

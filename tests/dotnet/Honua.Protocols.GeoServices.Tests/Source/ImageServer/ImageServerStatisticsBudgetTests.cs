@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Middleware;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -32,6 +34,7 @@ public sealed class ImageServerStatisticsBudgetTests
         var result = await ImageServerStatisticsBudget.ResolveAsync(
             services.GetRequiredService<IServiceScopeFactory>(),
             $"test:{Guid.NewGuid()}",
+            schemaName: null,
             (_, _) => Task.FromResult(Sample),
             onBudgetExceeded: () => budgetExceeded = true,
             budget: TimeSpan.FromSeconds(5),
@@ -57,6 +60,7 @@ public sealed class ImageServerStatisticsBudgetTests
         var result = await ImageServerStatisticsBudget.ResolveAsync(
             services.GetRequiredService<IServiceScopeFactory>(),
             $"test:{Guid.NewGuid()}",
+            schemaName: null,
             (provider, ct) =>
             {
                 operationToken = ct;
@@ -97,6 +101,7 @@ public sealed class ImageServerStatisticsBudgetTests
         var act = () => ImageServerStatisticsBudget.ResolveAsync(
             services.GetRequiredService<IServiceScopeFactory>(),
             $"test:{Guid.NewGuid()}",
+            schemaName: null,
             (provider, _) =>
             {
                 scopeStarted.SetResult(provider.GetRequiredService<ScopeLifetime>());
@@ -136,6 +141,7 @@ public sealed class ImageServerStatisticsBudgetTests
         Task<RasterStatistics[]> Resolve() => ImageServerStatisticsBudget.ResolveAsync(
             scopeFactory,
             operationKey,
+            schemaName: null,
             (provider, _) =>
             {
                 Interlocked.Increment(ref operationCount);
@@ -158,6 +164,39 @@ public sealed class ImageServerStatisticsBudgetTests
         backfill.SetResult(Sample);
         (await backfill.Task).Should().BeSameAs(Sample);
         await (await scopeStarted.Task).Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_OwnedScopeRestoresSchemaAndPartitionsKey()
+    {
+        const string schemaName = "tenant_alpha";
+        using var services = new ServiceCollection()
+            .AddScoped<SchemaContext>()
+            .AddScoped<ISchemaContext>(provider => provider.GetRequiredService<SchemaContext>())
+            .BuildServiceProvider();
+
+        string? observedSchema = null;
+        var key = ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+            schemaName, 7, [101, 102], RasterMergeStrategy.Newest);
+        var otherTenantKey = ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+            "tenant_beta", 7, [101, 102], RasterMergeStrategy.Newest);
+
+        var result = await ImageServerStatisticsBudget.ResolveAsync(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            key,
+            schemaName,
+            (provider, _) =>
+            {
+                observedSchema = provider.GetRequiredService<ISchemaContext>().CurrentSchema;
+                return Task.FromResult(Sample);
+            },
+            onBudgetExceeded: () => { },
+            budget: TimeSpan.FromSeconds(5),
+            CancellationToken.None);
+
+        result.Should().BeSameAs(Sample);
+        observedSchema.Should().Be(schemaName);
+        key.Should().NotBe(otherTenantKey);
     }
 
     [UnitTest]

@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
@@ -52,10 +53,13 @@ internal static class ImageServerStatisticsBudget
     public static Task<T[]> ResolveAsync<T>(
         IServiceScopeFactory scopeFactory,
         string operationKey,
+        string? schemaName,
         Func<IServiceProvider, CancellationToken, Task<T[]>> operation,
         Action onBudgetExceeded,
         CancellationToken requestAborted)
-        => ResolveAsync(scopeFactory, operationKey, operation, onBudgetExceeded, Timeout, requestAborted);
+        => ResolveAsync(
+            scopeFactory, operationKey, schemaName, operation,
+            onBudgetExceeded, Timeout, requestAborted);
 
     /// <summary>
     /// Runs non-persisted work, such as histogram scans, within the response budget.
@@ -77,6 +81,7 @@ internal static class ImageServerStatisticsBudget
     internal static async Task<T[]> ResolveAsync<T>(
         IServiceScopeFactory scopeFactory,
         string operationKey,
+        string? schemaName,
         Func<IServiceProvider, CancellationToken, Task<T[]>> operation,
         Action onBudgetExceeded,
         TimeSpan budget,
@@ -96,7 +101,7 @@ internal static class ImageServerStatisticsBudget
         // every duplicate caller holding a scope and connection while queued. Only the
         // dictionary winner starts work; all other callers wait on the same task.
         var candidate = new Lazy<Task<T[]>>(
-            () => RunInOwnedScopeAsync(scopeFactory, operation),
+            () => RunInOwnedScopeAsync(scopeFactory, schemaName, operation),
             LazyThreadSafetyMode.ExecutionAndPublication);
         var shared = PersistedBackfills<T>.ByKey.GetOrAdd(operationKey, candidate);
         var operationTask = shared.Value;
@@ -128,10 +133,16 @@ internal static class ImageServerStatisticsBudget
     }
 
     internal static string CreateStatisticsOperationKey(
+        string? schemaName,
         int layerId,
         IEnumerable<long> rasterIds,
         RasterMergeStrategy mergeStrategy)
-        => $"image-statistics:{layerId}:{(int)mergeStrategy}:{string.Join(",", rasterIds)}";
+    {
+        var schemaKey = schemaName is null
+            ? "<default>"
+            : schemaName.Replace("|", "||", StringComparison.Ordinal);
+        return $"image-statistics:{schemaKey}|{layerId}|{(int)mergeStrategy}|{string.Join(",", rasterIds)}";
+    }
 
     /// <summary>Test seam for the cancellable, non-persisted operation policy.</summary>
     internal static async Task<T[]> ResolveCancellableAsync<T>(
@@ -165,10 +176,34 @@ internal static class ImageServerStatisticsBudget
 
     private static async Task<T[]> RunInOwnedScopeAsync<T>(
         IServiceScopeFactory scopeFactory,
+        string? schemaName,
         Func<IServiceProvider, CancellationToken, Task<T[]>> operation)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        return await operation(scope.ServiceProvider, CancellationToken.None).ConfigureAwait(false);
+        var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
+        if (schemaName is not null && schemaContext is null)
+        {
+            throw new InvalidOperationException(
+                $"The owned statistics scope cannot restore schema context '{schemaName}'.");
+        }
+
+        var previousSchema = schemaContext?.CurrentSchema;
+        try
+        {
+            if (schemaContext is not null)
+            {
+                schemaContext.CurrentSchema = schemaName;
+            }
+
+            return await operation(scope.ServiceProvider, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (schemaContext is not null)
+            {
+                schemaContext.CurrentSchema = previousSchema;
+            }
+        }
     }
 
     private static void ObserveBackgroundFault<T>(Task<T[]> operationTask)
