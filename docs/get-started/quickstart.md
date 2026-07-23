@@ -45,7 +45,7 @@ cat > points.geojson <<'EOF'
 EOF
 ```
 
-6. Import it. The file-upload operation does not yet have a high-level SDK or CLI wrapper. Open the local [API explorer](http://localhost:8080/docs), choose the admin `POST /api/v1/admin/import/upload` operation, authorize with `quickstart-admin-password`, attach `points.geojson`, set `TableName` to `quickstart_points`, and execute it. If the explorer is disabled, enable `Server:ServeApiDocs` for this local quickstart or use Honua Console's **Import data** workflow; the checked-in admin OpenAPI document does not currently include the multipart upload operation.
+6. Import it. The file-upload operation does not yet have a high-level SDK or CLI wrapper. Open the local [API explorer](http://localhost:8080/docs), choose the admin `POST /api/v1/admin/import/upload` operation, authorize with `quickstart-admin-password`, attach `points.geojson`, set `TableName` to `quickstart_points`, and execute it. If the explorer is disabled, use Honua Console's **Import data** workflow at `/operate/data/new?source=file`.
 
 7. Register the compose database as a connection (publishing reads tables through named connections).
 

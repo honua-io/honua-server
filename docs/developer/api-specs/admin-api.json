@@ -1791,6 +1791,127 @@
         }
       }
     },
+    "/import/upload": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Upload and Import a Geospatial File",
+        "description": "Streams one supported geospatial file into PostgreSQL. Small imports complete synchronously; large imports return a durable background job when shared file storage and the job service are configured.",
+        "operationId": "uploadImportFile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "TableName"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "One supported geospatial file."
+                  },
+                  "TableName": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_]+$",
+                    "description": "Destination table name."
+                  },
+                  "TargetSchema": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_]+$",
+                    "description": "Optional destination schema."
+                  },
+                  "SourceSrid": {
+                    "type": "integer",
+                    "format": "int32",
+                    "description": "Source EPSG code when the file does not embed one."
+                  },
+                  "TargetSrid": {
+                    "type": "integer",
+                    "format": "int32",
+                    "default": 4326,
+                    "description": "Destination EPSG code."
+                  },
+                  "OverwriteExisting": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "ForceBackground": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "TrackProgress": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "UploadId": {
+                    "type": "string",
+                    "description": "Optional caller-supplied upload operation identifier."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "description": "Import failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/scan": {
       "post": {
         "tags": [
