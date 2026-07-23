@@ -49,7 +49,11 @@ internal sealed class ImageServerRasterMetadataHandler
     public Task<IResult> GetStatisticsAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "statistics", async resolved =>
         {
-            var statistics = await ResolveStatisticsAsync(layerId, resolved, cancellationToken);
+            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+                ct => ResolveStatisticsAsync(layerId, resolved, ct),
+                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
+                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+                cancellationToken);
             var entries = new StatisticsEntry[statistics.Length];
             for (var i = 0; i < statistics.Length; i++)
             {

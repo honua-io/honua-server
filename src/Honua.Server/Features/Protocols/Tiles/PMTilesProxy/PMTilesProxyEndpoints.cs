@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -78,6 +79,20 @@ internal static class PMTilesProxyEndpoints
                 // Underlying object disappeared between metadata lookup and range
                 // read. Match the no-Range GET fallback below by surfacing 404.
                 return TypedResults.NotFound();
+
+            case PMTilesRangeOutcome.TooLarge:
+                // A no-Range GET against an artifact above the safe direct-stream
+                // budget: streaming it whole would silently fail once this response
+                // crosses the host's own payload ceiling (#2991) instead of a clean,
+                // bounded error. Real PMTiles readers always fetch via byte ranges, so
+                // only a "give me the whole file" caller (health checks, curl) hits
+                // this path; point it at Range requests instead of attempting (and
+                // failing) the full transfer.
+                return StandardErrorHelpers.CreatePayloadTooLarge(
+                    context,
+                    $"Artifact '{artifactId}' is {rangeResult.TotalSize:N0} bytes, which exceeds the " +
+                    $"{PMTilesProxyService.MaxDirectFullStreamBytes:N0}-byte limit for a full, non-ranged download. " +
+                    "Request a byte range instead (this endpoint advertises Accept-Ranges: bytes).");
 
             case PMTilesRangeOutcome.Partial:
                 response.Headers[HeaderNames.ContentRange] = $"bytes {rangeResult.Start}-{rangeResult.End}/{rangeResult.TotalSize}";

@@ -105,14 +105,21 @@ internal sealed class ImageServerMetadataHandler
                 .BuildAsync(layerId, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Get raster statistics for the layer mosaic.
-            var statistics = rasters.Length == 1
-                ? await _rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: cancellationToken)
-                : await _rasterStore.GetMosaicStatisticsAsync(
-                    layerId,
-                    rasters.Select(r => r.Id).ToArray(),
-                    mergeStrategy,
-                    cancellationToken: cancellationToken);
+            // Get raster statistics for the layer mosaic. Bounded: a cold-cache backfill
+            // over a large mosaic (many rasters, high resolution) can take far longer
+            // than this request's own host-level deadline, which would otherwise hang
+            // the whole metadata response instead of just omitting statistics (#2991).
+            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+                ct => rasters.Length == 1
+                    ? _rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: ct)
+                    : _rasterStore.GetMosaicStatisticsAsync(
+                        layerId,
+                        rasters.Select(r => r.Id).ToArray(),
+                        mergeStrategy,
+                        cancellationToken: ct),
+                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
+                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+                cancellationToken);
 
             // Get raster extent
             var extent = aggregateExtent;
