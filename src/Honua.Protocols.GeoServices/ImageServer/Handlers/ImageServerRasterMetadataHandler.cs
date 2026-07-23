@@ -93,22 +93,17 @@ internal sealed class ImageServerRasterMetadataHandler
             // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
             // risk as statistics (#2991) — degrade to an empty histogram set rather than
             // hang past the host's own request/function deadline.
-            var histograms = await ImageServerStatisticsBudget.ResolveAsync(
-                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-                (services, ct) =>
-                {
-                    var rasterStore = services.GetRequiredService<IRasterStore>();
-                    return rasters.Length == 1
-                        ? rasterStore.GetHistogramsAsync(
-                            layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
-                        : rasterStore.GetMosaicHistogramsAsync(
-                            layerId,
-                            rasters.Select(r => r.Id).ToArray(),
-                            ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null),
-                            bands: null,
-                            DefaultBinCount,
-                            cancellationToken: ct);
-                },
+            var histograms = await ImageServerStatisticsBudget.ResolveCancellableAsync(
+                ct => rasters.Length == 1
+                    ? _rasterStore.GetHistogramsAsync(
+                        layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
+                    : _rasterStore.GetMosaicHistogramsAsync(
+                        layerId,
+                        rasters.Select(r => r.Id).ToArray(),
+                        ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null),
+                        bands: null,
+                        DefaultBinCount,
+                        cancellationToken: ct),
                 onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
                     _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
                 cancellationToken);

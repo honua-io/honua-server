@@ -114,6 +114,30 @@ public sealed class ImageServerStatisticsBudgetTests
         await scopeLifetime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [UnitTest]
+    public async Task ResolveCancellableAsync_OperationExceedsBudget_CancelsNonPersistedWork()
+    {
+        var budgetExceeded = false;
+        var cancellationObserved = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var result = await ImageServerStatisticsBudget.ResolveCancellableAsync<RasterStatistics>(
+            async ct =>
+            {
+                using var registration = ct.Register(
+                    () => cancellationObserved.TrySetResult(true));
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return Sample;
+            },
+            onBudgetExceeded: () => budgetExceeded = true,
+            budget: TimeSpan.FromMilliseconds(50),
+            CancellationToken.None);
+
+        result.Should().BeEmpty();
+        budgetExceeded.Should().BeTrue();
+        (await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+    }
+
     private sealed class ScopeLifetime : IDisposable
     {
         public ScopeLifetime()

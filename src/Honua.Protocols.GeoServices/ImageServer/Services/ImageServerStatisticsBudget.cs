@@ -50,6 +50,18 @@ internal static class ImageServerStatisticsBudget
         => ResolveAsync(scopeFactory, operation, onBudgetExceeded, Timeout, requestAborted);
 
     /// <summary>
+    /// Runs non-persisted work, such as histogram scans, within the response budget.
+    /// Unlike the persisted statistics overload, exceeding the budget cancels the
+    /// operation because allowing fresh SQL to outlive the response provides no cache
+    /// benefit and would multiply database work on retries.
+    /// </summary>
+    public static Task<T[]> ResolveCancellableAsync<T>(
+        Func<CancellationToken, Task<T[]>> operation,
+        Action onBudgetExceeded,
+        CancellationToken requestAborted)
+        => ResolveCancellableAsync(operation, onBudgetExceeded, Timeout, requestAborted);
+
+    /// <summary>
     /// Test seam: identical to the public <c>ResolveAsync</c> overload
     /// but with an explicit budget, so tests can exercise the timeout/fallback path in
     /// milliseconds instead of waiting out the real <see cref="Timeout"/>.
@@ -83,6 +95,36 @@ internal static class ImageServerStatisticsBudget
         }
         catch (OperationCanceledException) when (requestAborted.IsCancellationRequested)
         {
+            ObserveBackgroundFault(operationTask);
+            throw;
+        }
+    }
+
+    /// <summary>Test seam for the cancellable, non-persisted operation policy.</summary>
+    internal static async Task<T[]> ResolveCancellableAsync<T>(
+        Func<CancellationToken, Task<T[]>> operation,
+        Action onBudgetExceeded,
+        TimeSpan budget,
+        CancellationToken requestAborted)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        using var operationCts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+        var operationTask = operation(operationCts.Token);
+        try
+        {
+            return await operationTask.WaitAsync(budget, requestAborted).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            await operationCts.CancelAsync().ConfigureAwait(false);
+            ObserveBackgroundFault(operationTask);
+            onBudgetExceeded();
+            return [];
+        }
+        catch (OperationCanceledException) when (requestAborted.IsCancellationRequested)
+        {
+            await operationCts.CancelAsync().ConfigureAwait(false);
             ObserveBackgroundFault(operationTask);
             throw;
         }
