@@ -1,5 +1,18 @@
 # Oracle provider
 
+## Protocol routing
+
+OData collection queries, counts, and streaming responses resolve this provider per layer from the
+Metadata v2 storage binding. Providers without native streaming use the same routed reader through
+a bounded, materialized page; Honua never falls back to the primary provider for that layer.
+This provider is read-only, so OData create/update/delete requests (including `$batch` mutations)
+return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
+
+OGC API Tiles per-collection provider routing remains the follow-up slice of
+[issue #2962](https://github.com/honua-io/honua-server/issues/2962). Until that lands, do not treat
+secondary-provider OGC tile reachability as supported.
+
+
 Honua exposes standard Oracle Spatial (`SDO_GEOMETRY`) tables as read-only feature layers
 through the shared `IFeatureDataProvider` seam. Oracle is the dominant enterprise-geodatabase
 backend and the most-requested connect-in-place target after PostGIS / SQL Server / MySQL.
@@ -240,10 +253,28 @@ and versioning columns. No Oracle instance is required.
 
 ### Integration
 
-There is no live-Oracle integration suite in this slice — Oracle Free 23ai container
-images are large and Oracle licensing for CI is treated as a separate decision. Operators
-should run the read paths against a representative database before promoting the
-configuration.
+`OracleRealDatabaseIntegrationTests` (in `tests/dotnet/Honua.Oracle.Tests`) exercises
+connection open, query build+execute, and WKB/`SDO_GEOMETRY` decode against a real
+`gvenzl/oracle-free` instance via Testcontainers — promotion groundwork per
+honua-server#2947, not a change to Oracle's experimental status. It is **opt-in**: every
+test method is skipped unless `HONUA_TEST_ORACLE=1` is set, so the default
+`dotnet test tests/dotnet/Honua.Oracle.Tests` run (invoked unfiltered by the PR gate's
+fast-unit-only step) stays fast and never starts Docker.
+
+```bash
+# Requires Docker; pulls the gvenzl/oracle-free:23-faststart image (several GB —
+# NOT the "slim" variant, which excludes the Oracle Spatial component this lane
+# needs) and takes several
+# minutes to start.
+HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Oracle.Tests/Honua.Oracle.Tests.csproj \
+    --filter "Category=Oracle"
+```
+
+Runs nightly and on demand via
+[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml). Oracle
+is **not** wired into the `Honua.ProviderSmoke.Tests` HTTP-stack smoke suite and remains
+experimental — this lane proves the provider-layer code path only, not the full protocol
+stack.
 
 ## Limitations and Known Gaps
 

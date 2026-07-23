@@ -23,6 +23,38 @@ train_smart_ci_shards() {
     | "${TRAIN_TARGETED_SCRIPT}" --stdin --config "${TRAIN_SHARDS_CONFIG}"
 }
 
+# train_discover_dispatched_run <batch> <expected-head> <baseline-run-ids> <expected-title>
+# Poll until Actions exposes a new workflow_dispatch run for the exact batch tip
+# that was pushed. Branch-only discovery is unsafe because an older push or a
+# concurrent actor can create a newer run on the same branch.
+train_discover_dispatched_run() {
+  local batch="$1" expected_head="$2" pre_dispatch_runs="$3" expected_title="$4"
+  local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
+  local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
+  local timeout_at now rows run_id run_branch run_event run_head run_title
+  timeout_at=$(( $(train_now) + discovery_timeout ))
+
+  while :; do
+    rows="$(gh run list --workflow ci.yml --branch "${batch}" \
+      --json databaseId,headBranch,event,headSha,displayTitle \
+      --jq '.[] | [.databaseId, .headBranch, .event, .headSha, .displayTitle] | @tsv' \
+      2>/dev/null || echo "")"
+    while IFS=$'\t' read -r run_id run_branch run_event run_head run_title; do
+      [[ -n "${run_id}" ]] || continue
+      if [[ "${run_branch}" == "${batch}" && "${run_event}" == "workflow_dispatch" \
+        && "${run_head}" == "${expected_head}" && "${run_title}" == "${expected_title}" ]] \
+        && ! grep -qx "${run_id}" <<<"${pre_dispatch_runs}"; then
+        printf '%s\n' "${run_id}"
+        return 0
+      fi
+    done <<<"${rows}"
+
+    now="$(train_now)"
+    [[ "${now}" -ge "${timeout_at}" ]] && return 1
+    sleep "${discovery_interval}"
+  done
+}
+
 # train_smart_ci_run <batch-branch>: live-mode push + dispatch + poll. In
 # dry-run, logs the would-run actions and returns the shard descriptor only.
 # Emits the CI Gate conclusion on stdout in live mode (SUCCESS/FAILURE/...),
@@ -33,12 +65,23 @@ train_smart_ci_shards() {
 train_smart_ci_run() {
   local batch="$1"
   local descriptor
+  # train/batch/* is the real batch namespace; train/attribute-probe/* is the
+  # disposable bisection namespace train_attribute_probe_gate mints (via
+  # TRAIN_BATCH_BRANCH) to isolate a suspect subset's CI result. Both are
+  # scratch refs this codebase itself creates through train_assemble and are
+  # never pushed toward trunk (only land.sh does that); anything else is
+  # refused.
+  if [[ "${batch}" != train/batch/* && "${batch}" != train/attribute-probe/* ]]; then
+    train_err "smart-ci refuses to push non-batch ref ${batch}"
+    echo "FAILURE"
+    return 0
+  fi
   descriptor="$(train_smart_ci_shards "${batch}")"
   train_log "smart-ci shard descriptor: ${descriptor}"
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
-    train_side_effect gh workflow run ci.yml --ref "${batch}"
+    train_side_effect gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce=merge-train:dry-run
     echo "DRYRUN"
     return 0
   fi
@@ -50,9 +93,9 @@ train_smart_ci_run() {
   # FAILURE and fail-closes every live batch.
   local discovery_timeout="${TRAIN_SMART_CI_DISCOVERY_TIMEOUT_SECONDS:-300}"
   local discovery_interval="${TRAIN_SMART_CI_DISCOVERY_POLL_SECONDS:-10}"
-  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:-3600}"
+  local poll_timeout="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS}"
   local poll_interval="${TRAIN_SMART_CI_POLL_SECONDS:-30}"
-  local pre_dispatch_runs baseline_rc=0 now timeout_at
+  local pre_dispatch_runs baseline_rc=0 expected_head dispatch_nonce dispatch_identity expected_title
 
   # Snapshot the baseline before dispatch. If the query fails, an empty baseline
   # would let any stale run masquerade as newly dispatched, so fail closed.
@@ -68,53 +111,85 @@ train_smart_ci_run() {
     return 0
   fi
 
+  expected_head="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${batch}")" || {
+    train_err "could not resolve exact batch tip for ${batch}; refusing smart-CI dispatch"
+    echo "FAILURE"
+    return 0
+  }
+  dispatch_nonce="$(printf '%s:%s:%s:%s:%s' "${GITHUB_RUN_ID:-local}" "${GITHUB_RUN_ATTEMPT:-0}" \
+    "$(date -u +%s%N)" "${RANDOM}" "$$" | sha256sum | cut -c1-32)"
+  dispatch_identity="merge-train:${dispatch_nonce}"
+  expected_title="CI ${dispatch_identity}"
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
-  gh workflow run ci.yml --ref "${batch}" 1>&2
+  gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce="${dispatch_identity}" 1>&2
 
-  # Find the dispatched run id (most recent ci.yml run on this ref).
-  local run_id="" found_new_run=0
-  timeout_at=$(( $(train_now) + discovery_timeout ))
-  while :; do
-    run_id="$(gh run list --workflow ci.yml --branch "${batch}" \
-      --json databaseId,headBranch,event \
-      --jq '[.[] | select(.headBranch=="'"${batch}"'")][0].databaseId' 2>/dev/null || echo "")"
-    if [[ -n "${run_id}" && "${run_id}" != "null" ]]; then
-      if ! grep -qx "${run_id}" <<<"${pre_dispatch_runs}" ; then
-        found_new_run=1
-        break
-      fi
-    fi
-    now="$(train_now)"
-    [[ "${now}" -ge "${timeout_at}" ]] && break
-    sleep "${discovery_interval}"
-  done
-
-  if [[ "${found_new_run}" != "1" ]]; then
+  local run_id=""
+  run_id="$(train_discover_dispatched_run "${batch}" "${expected_head}" "${pre_dispatch_runs}" "${expected_title}" || echo "")"
+  if [[ -z "${run_id}" ]]; then
     train_err "could not locate a newly dispatched ci.yml run for ${batch} within ${discovery_timeout}s; live mode requires MERGE_TRAIN_TOKEN for batch-branch CI dispatch"
     echo "FAILURE"; return 0
   fi
   train_log "smart-ci run id: ${run_id}"
   echo "${run_id}" >"${TRAIN_RUN_ID_FILE:-/dev/null}"
 
-  # Poll until the CI Gate job completes.
-  timeout_at=$(( $(train_now) + poll_timeout ))
-  while :; do
-    local status conclusion
-    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
-    if [[ "${status}" == "completed" ]]; then break; fi
-    now="$(train_now)"
-    if [[ "${now}" -ge "${timeout_at}" ]]; then
-      train_err "CI run ${run_id} for ${batch} did not finish within ${poll_timeout}s"
-      echo "FAILURE"; return 0
-    fi
-    sleep "${poll_interval}"
-  done
+  # Poll until the CI Gate job completes. The 110-minute default accommodates
+  # the observed 42-55 minute shards plus runner queueing and one failed-job
+  # retry while remaining inside the workflow controller's 120-minute cap.
+  if ! train_wait_for_run_completion "${run_id}" "${poll_timeout}" "${poll_interval}"; then
+    train_err "CI run ${run_id} for ${batch} did not finish within ${poll_timeout}s"
+    echo "FAILURE"; return 0
+  fi
 
+  local conclusion
   conclusion="$(gh run view "${run_id}" --json jobs \
     --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' 2>/dev/null || echo "missing")"
   train_log "CI Gate conclusion: ${conclusion}"
   # Normalize to upper-case workflow vocabulary.
   printf '%s\n' "${conclusion}" | tr '[:lower:]' '[:upper:]'
+}
+
+# train_wait_for_run_completion <run-id> [ignored-budget] [poll-seconds]
+# Shared by the initial batch and failed-job retries. Every invocation uses the
+# one controller deadline initialized before selection; the optional second
+# argument remains only for compatibility with offline fixtures and can never
+# extend that deadline. Returns 1 on exhaustion so callers fail closed.
+train_wait_for_run_completion() {
+  local run_id="$1"
+  local poll_interval="${3:-${TRAIN_SMART_CI_POLL_SECONDS:-30}}"
+  local now status
+  while :; do
+    status="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
+    [[ "${status}" == "completed" ]] && return 0
+    train_init_controller_deadline || return 1
+    now="$(train_now)"
+    [[ "${now}" -ge "${TRAIN_CONTROLLER_DEADLINE_EPOCH}" ]] && return 1
+    sleep "${poll_interval}"
+  done
+}
+
+# train_run_attempt_status <run-id>: emit "<attempt>\t<status>".
+train_run_attempt_status() {
+  gh run view "$1" --json attempt,status --jq '[.attempt, .status] | @tsv' 2>/dev/null
+}
+
+# train_wait_for_new_run_attempt <run-id> <previous-attempt>
+# A rerun keeps the same run id. GitHub may continue returning the old attempt
+# as completed for several polls after accepting `rerun --failed`; that is not
+# retry evidence. Ignore it until attempt strictly increases, then require the
+# newer attempt itself to become completed, all under the shared deadline.
+train_wait_for_new_run_attempt() {
+  local run_id="$1" previous_attempt="$2" row attempt status now
+  train_init_controller_deadline || return 1
+  while :; do
+    row="$(train_run_attempt_status "${run_id}" || echo $'0\t')"
+    IFS=$'\t' read -r attempt status <<<"${row}"
+    if [[ "${attempt}" =~ ^[0-9]+$ ]] && [[ "${attempt}" -gt "${previous_attempt}" ]]; then
+      [[ "${status}" == "completed" ]] && return 0
+    fi
+    now="$(train_now)"
+    [[ "${now}" -ge "${TRAIN_CONTROLLER_DEADLINE_EPOCH}" ]] && return 1
+    sleep "${TRAIN_SMART_CI_POLL_SECONDS:-30}"
+  done
 }
 
 # train_failing_jobs <run-id>: emit the names of the failing jobs (live).

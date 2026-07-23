@@ -201,7 +201,7 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         // Intentional: a background refresh callback is best-effort — any failure
         // (provider error, bug in the callback, etc.) must not crash the refresh
         // loop; it is logged and backed off instead.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SetRetryBackoff(item.Key);
             Interlocked.Increment(ref _failureCount);

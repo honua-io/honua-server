@@ -23,11 +23,15 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
         // Request-scoped schema mode covers per-test schema headers and tenant schema routing (#346).
         _schemaHeadersEnabled = RequestScopedSchemaConfiguration.IsEnabled(configuration);
         _connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
-        // Preserve the configured default schema so named secure connections
-        // get the same search_path embedded in their Options parameter as the
-        // default data source. Without this, background/service callers (where
-        // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL
-        // default search_path and miss schema-qualified tables.
+        // Preserve the configured default schema so named secure connections get the
+        // same search_path wiring as the default data source built in
+        // ServiceCollectionExtensions.AddPostgreSqlServices — both call
+        // PostgresDataSourceFactory.Create with this value, so the schema is applied via
+        // the same RDS-Proxy-safe mechanism (physical-connection initializer SET, or the
+        // libpq `options` startup parameter under multiplexing/schema-header modes —
+        // honua-server#1638). Without this, background/service callers (where
+        // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
+        // search_path and miss schema-qualified tables (honua-server#2949).
         _defaultSchema = configuration["Database:Schema"];
     }
 

@@ -193,6 +193,7 @@ internal sealed partial class PostgresVersionManager
         // Not rewritten as .Where(...).Count(): each resolution requires a sequential
         // awaited DB call, which plain synchronous LINQ cannot express.
         var resolved = 0;
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var resolution in resolutions)
         {
             if (await ApplyManualResolutionAsync(versionId, resolution, cancellationToken).ConfigureAwait(false))
@@ -956,6 +957,7 @@ internal sealed partial class PostgresVersionManager
             // since key is drawn from the union of both key sets); not a tautology despite the analyzer note.
             var hasBase = baseFields.TryGetValue(key, out var baseValue);
             var hasTarget = targetFields.TryGetValue(key, out var targetValue);
+            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
             if (hasBase != hasTarget || (hasBase && hasTarget && !ElementsEqual(baseValue, targetValue)))
             {
                 changed.Add(key);

@@ -1,0 +1,129 @@
+name: Review Gate Attestation
+
+on:
+  pull_request_target:
+    branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled, closed]
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    workflows: ["PR Gate"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to re-attest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  attest:
+    name: Publish SHA-bound Codex review attestation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Attest current PR head
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { evaluateCodexEvidence, isCodex } = require('./scripts/ci/review-gate-evidence');
+            // workflow_run only carries pull_requests for same-repo PRs; GitHub
+            // leaves it empty for fork PRs. Fall back to a head-SHA search (same
+            // pattern as ci-failure-triage.yml) so fork PRs still get re-attested
+            // when PR Gate completes, instead of failing before publishing status.
+            let prNumber = Number(
+              context.payload.pull_request?.number ||
+              context.payload.workflow_run?.pull_requests?.[0]?.number ||
+              '${{ github.event.inputs.pr }}'
+            );
+            if (!prNumber && context.payload.workflow_run) {
+              const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...context.repo, commit_sha: context.payload.workflow_run.head_sha,
+              });
+              const openPr = assocPrs.find(p => p.state === 'open');
+              if (openPr) prNumber = openPr.number;
+            }
+            if (!prNumber) {
+              core.setFailed('Event does not identify a pull request.');
+              return;
+            }
+
+            const result = await github.graphql(`
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    state isDraft headRefOid
+                    labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
+                    reviews(first: 100) {
+                      nodes { author { login } body submittedAt updatedAt state commit { oid } }
+                      pageInfo { hasNextPage }
+                    }
+                    reviewThreads(first: 100) {
+                      nodes {
+                        isResolved
+                        comments(first: 100) {
+                          nodes { author { login } commit { oid } }
+                          pageInfo { hasNextPage }
+                        }
+                      }
+                      pageInfo { hasNextPage }
+                    }
+                  }
+                }
+              }`, { ...context.repo, number: prNumber });
+
+            const pr = result.repository.pullRequest;
+            if (!pr) {
+              core.setFailed(`PR #${prNumber} not found.`);
+              return;
+            }
+            const head = pr.headRefOid;
+            const labels = new Set(pr.labels.nodes.map(label => label.name));
+            const reasons = [];
+            if (pr.state !== 'OPEN') reasons.push('pull request is not open');
+            if (pr.isDraft) reasons.push('pull request is draft');
+            for (const label of ['hold', 'train:hold', 'train:escalated']) {
+              if (labels.has(label)) reasons.push(`blocked by ${label}`);
+            }
+            if (pr.labels.pageInfo.hasNextPage || pr.reviews.pageInfo.hasNextPage ||
+                pr.reviewThreads.pageInfo.hasNextPage ||
+                pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage)) {
+              reasons.push('bounded review query truncated');
+            }
+
+            const unresolved = pr.reviewThreads.nodes.filter(thread =>
+              !thread.isResolved && thread.comments.nodes.some(comment =>
+                isCodex(comment.author?.login) && comment.commit?.oid === head));
+            if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
+
+            const { exactReview } = evaluateCodexEvidence({
+              reviews: pr.reviews.nodes, unresolvedCount: unresolved.length, head,
+            });
+
+            if (!exactReview) {
+              reasons.push('no commit-bound exact-head Codex review');
+            }
+            const state = reasons.length === 0 ? 'success' : 'failure';
+            const description = reasons.length === 0
+              ? 'Codex reviewed this exact head'
+              : reasons.join('; ').slice(0, 140);
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha: head, state, context: 'Review Gate', description,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
+            });
+            if (state !== 'success') core.setFailed(description);

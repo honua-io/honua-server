@@ -405,13 +405,10 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
         // early return on first case-insensitive match, falling through to a "not found"
         // result otherwise — a .Where()/FirstOrDefault() pair would need an extra
         // existence check to distinguish "found with null value" from "not found".
-        foreach (var pair in feature.Attributes)
+        foreach (var pair in (feature.Attributes).Where(pair => string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                value = pair.Value;
-                return true;
-            }
+            value = pair.Value;
+            return true;
         }
 
         value = null;

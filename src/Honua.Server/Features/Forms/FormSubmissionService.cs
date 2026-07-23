@@ -272,7 +272,7 @@ internal sealed class FormSubmissionService
         // Intentional catch-all request-handling boundary: this is the form
         // submission-create endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
             // Transient server error: delete the idempotency claim so the same key can re-execute.
@@ -830,7 +830,7 @@ internal sealed class FormSubmissionService
             // Intentional catch-all: this is a per-attachment loop where one
             // attachment's upload failure must not abort the rest of the batch;
             // the failure is recorded as a "failed" outcome for this item instead.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FormSubmissionLog.AttachmentUploadFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId, descriptor.FieldId ?? string.Empty);
                 outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "failed", null, "Attachment could not be persisted.", cancellationToken)

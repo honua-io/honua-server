@@ -1,4 +1,5 @@
 name: Merge Train
+run-name: Merge Train [${{ inputs.recovery_key || 'ordinary' }}]
 
 # Optimistic batch merge train (Phase 1). DRY-RUN BY DEFAULT.
 #
@@ -47,6 +48,11 @@ on:
         default: false
       autofix_model:
         description: 'Bedrock model id for the AI fix-agent (code edits). Default a Sonnet-class model; override per your account entitlement.'
+        type: string
+        required: false
+        default: ''
+      recovery_key:
+        description: 'Internal idempotency key for durable recovery dispatches.'
         type: string
         required: false
         default: ''
@@ -250,17 +256,12 @@ jobs:
             echo "::warning::MERGE_TRAIN_TOKEN not set; a GITHUB_TOKEN dispatch won't trigger the next run. Self-chain skipped (schedule remains)."
             exit 0
           fi
-          # Selectable = open, not draft, not CONFLICTING, and not held/escalated.
-          # This is a rough "is there work?" gate; train.sh's own select step remains
-          # the authority on what actually batches.
-          ready="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open \
-            --json number,isDraft,mergeable,labels \
-            --jq '[.[] | select(.isDraft == false)
-                       | select((.mergeable // "MERGEABLE") != "CONFLICTING")
-                       | select([.labels[].name] | (index("train:hold") or index("train:escalated")) | not)]
-                  | length')"
-          echo "Selectable PRs remaining after this run: ${ready:-0}"
-          if [[ "${ready:-0}" -gt 0 ]]; then
+          # Use the exact selector predicate, including live Codex re-attestation,
+          # so an all-inadmissible queue cannot spin the live self-chain.
+          export TRAIN_APPLY=1 MAX_BATCH=1 TRAIN_REPO_ROOT="${GITHUB_WORKSPACE}"
+          source scripts/ci/merge-train/lib.sh
+          source scripts/ci/merge-train/select.sh
+          if train_has_selectable_pr; then
             echo "Dispatching the next train run (continuous drain; concurrency-guarded, single-instance)."
             gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
               -f train_apply=true -f use_llm=true -f use_autofix=true -f max_batch=10

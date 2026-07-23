@@ -104,7 +104,7 @@ internal sealed partial class AzureEventGridAlertDeliverySink : IAlertDeliverySi
         // Intentionally generic: catches transport/serialization failures beyond the
         // specific RequestFailedException statuses handled above. Logged and converted
         // to a non-throwing AlertDeliveryResult so one sink failure never blocks others.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DeliveryFailed(_logger, ex);
             return new AlertDeliveryResult

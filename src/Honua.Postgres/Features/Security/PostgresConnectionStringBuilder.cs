@@ -88,7 +88,7 @@ internal sealed class PostgresConnectionStringBuilder : IDatabaseConnectionStrin
                    !string.IsNullOrWhiteSpace(builder.Database) &&
                    !string.IsNullOrWhiteSpace(builder.Username);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentionally generic: a malformed connection string (unparseable by
             // NpgsqlConnectionStringBuilder) is exactly what this method exists to reject; no logger

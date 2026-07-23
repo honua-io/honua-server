@@ -159,17 +159,17 @@ public sealed class DeployHealthProbeTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             // Ownership of the response transfers to the caller, which disposes it via its
             // own `using var response = ...` (HttpDeployHealthProbe.cs).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             => Task.FromResult(new HttpResponseMessage(status));
     }
-
     private sealed class FixedBodyHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             // Ownership of the response transfers to the caller, which disposes it via its
             // own `using var response = ...` (HttpDeployHealthProbe.cs).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
     }
-
     private sealed class ThrowingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -183,6 +183,7 @@ public sealed class DeployHealthProbeTests
             onSend();
             // Ownership of the response transfers to the caller, which disposes it via its
             // own `using var response = ...` (HttpDeployHealthProbe.cs).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }

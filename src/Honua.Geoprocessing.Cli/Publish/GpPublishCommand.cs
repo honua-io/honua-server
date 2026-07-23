@@ -46,7 +46,7 @@ internal sealed record GpPublishOptions
 
     /// <summary>Fixture root holding <c>&lt;id&gt;/workflow.json</c>. Defaults to <c>samples/gp</c>.</summary>
     // Both segments are compile-time literals, so Path.Combine cannot drop either here.
-    public string FixtureRoot { get; init; } = Path.Combine("samples", "gp");
+    public string FixtureRoot { get; init; } = Path.Join("samples", "gp");
 }
 
 /// <summary>

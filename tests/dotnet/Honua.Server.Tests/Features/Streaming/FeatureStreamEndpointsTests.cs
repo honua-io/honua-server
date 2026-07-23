@@ -334,6 +334,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
         deliveredSubscriptions.Should().Contain("sub-a").And.Contain("sub-b");
         // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         deliveredEventId.Should().NotBeNull();
 
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
@@ -996,7 +997,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     await heartbeatTask.ConfigureAwait(false);
                 }
-                catch (Exception)
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     // Intentional: heartbeat loop errors during teardown are not relevant to the
                     // test outcome above, and the loop can fail with any exception type once

@@ -2,25 +2,27 @@
 
 ## Status
 
-Proposed. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
-land, dry-run-by-default workflow) lands with this ADR. It ships DISABLED for
-live action: every automatic trigger runs in dry-run, and only an explicit
-`workflow_dispatch` with `train_apply=true` (and a `MERGE_TRAIN_TOKEN`) lands a
-batch. A human flips it live later. Phases 2/3 are tracked as roadmap below.
+Accepted. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
+land, and a dry-run-by-default workflow) is active. Automatic triggers remain
+dry-run-only; an explicit `workflow_dispatch` with `train_apply=true` and a
+`MERGE_TRAIN_TOKEN` is the only path that lands a batch. Ordinary clean PRs may
+also land through the separate serial `pr-merge-train.yml` workflow.
 
 ## Context
 
-honua-server merges one PR at a time. GitHub's native merge queue was disabled
+At the time of this decision, honua-server merged one PR at a time. GitHub's native merge queue was disabled
 (2026-06-18, ruleset 17808547) after batch sizes of ~5 caused runner
 starvation, ejected the front PR, reformed the group, and spiralled into zombie
-runs (see `docs/internal/contributor/lean-merge-queue-runbook.md`). The lean
+runs. The lean
 `Merge Queue Gate` job replaced the full matrix on `merge_group`, but the queue
 itself is off, so throughput is gated by serial human merges.
 
-The single required PR check is **CI Gate** (`ci.yml`), an aggregator over the
-full heavy matrix that already validated each PR on its own `pull_request` run
-BEFORE it would ever land. Re-running that matrix per batch is what melted the
-runners. The opportunity: assemble several already-green PRs into one batch
+At the time, the single required PR check was **CI Gate** (`ci.yml`), an
+aggregator over the full heavy matrix that validated each PR on its own
+`pull_request` run before it could land. Re-running that matrix per batch is
+what melted the runners. Branch protection now requires the separate `PR Gate`;
+the batch train remains the cumulative-validation path. The opportunity was to
+assemble several already-green PRs into one batch
 branch, run only the **smart-CI shard subset** that the batch's cumulative diff
 actually touches (via the existing ADR-0037 `honua-server-targeted-tests.sh` +
 `.github/ci-shards.json`), and fast-forward trunk once — catching only the
@@ -51,15 +53,15 @@ dry-run.
    the shard subset; (live) push the branch + `gh workflow run ci.yml`, poll,
    read the **CI Gate** job conclusion. The batch is a BRANCH, so its CI keys on
    `ci-<ref>` — a DISTINCT concurrency group from each member's `ci-<pr#>`, so
-   the batch run can never cancel-in-progress a member's PR run.
+   the batch run can never cancel-in-progress a member's PR run. Polling allows 110 minutes for the observed 42-55 minute shards, queueing, and one failed-job retry while remaining inside the controller's 120-minute cap.
 4. **forward-fix** — ONLY when the sole failure is the format-verify step:
    `dotnet format Honua.sln` → commit `style: dotnet format (train forward-fix)`
    → re-run. Cap 2. Everything else (proof-ledger / OpenAPI / feature-catalog
    drift, compile/test failures) ESCALATES, never auto-patched.
-5. **classify-flake** (BEFORE attribute) — regex
+5. **classify-timeout / classify-flake** (BEFORE attribute) - generic timeout or exit-124 failures receive one failed-job-only rerun. A repeated timeout is a real failure and is never eligible for optimistic merge-through. Other recognized environmental failures use the regex
    `40P01|deadlock detected|ryuk|Testcontainers.*(timed out|connection refused)`
    over failing-job logs. Match → a single `gh run rerun --failed` (cap 1),
-   never bisection. Reproduce twice → treat as real.
+   never bisection. Their existing optimistic merge-through policy remains separate from generic timeout handling.
 6. **attribute** — REVERSE of smart-CI routing: failing shard →
    `.paths[]` from ci-shards.json → which INCLUDED PR's diff touches those
    prefixes. 1 suspect → drop it; ≥2 → drop all; 0 → escalate the whole batch.
@@ -74,6 +76,11 @@ dry-run.
    per-PR labels `train:landing`/`train:escalated`/`train:hold` carry transient
    state.
 
+### Controller deadline and timeout precedence
+
+The controller initializes one absolute 6,600-second CI deadline for the whole run. Initial batch polling and any failed-job retry share it; retry never resets the clock. The 120-minute workflow cap therefore retains 10 minutes for fail-closed state, metrics, and summary persistence.
+
+Generic timeout or exit-124 evidence has strict precedence over known-flake matching. It receives one `gh run rerun --failed`; failure to request that rerun stops the controller, and a repeated timeout is a real failure even when the same log also matches a known environmental-flake regex. Persistent generic timeouts are never merged through. A failed-job rerun records and persists the current Actions attempt before the side effect. Polling then ignores the old completed attempt until GitHub exposes a strictly newer attempt and that attempt completes. Persisted retry intent is idempotent across cancellation: resume waits for the newer attempt and never issues a duplicate rerun. On controller startup, retry intent is restored before selection or assembly; the stored run, batch branch, trunk base, members, counters, kind, and attempt baseline must all match. A valid intent resumes the existing CI gate and landing path without dispatching a batch, while any mismatch fails closed.
 ### Dry-run contract (the safety bar)
 
 `TRAIN_APPLY` (default 0) gates every state-mutating action through a single

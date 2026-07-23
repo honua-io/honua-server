@@ -87,7 +87,7 @@ public sealed class HonuaTelemetryTests
         // Intentional: this helper's sole purpose is to hand back a real thrown exception
         // (with a populated stack trace) for the recorder under test; it must catch whatever
         // type is thrown, not swallow it.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return ex;
         }

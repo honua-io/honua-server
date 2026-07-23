@@ -97,7 +97,7 @@ internal static partial class AttachmentHandler
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var featureId = featureIds.Count > 0 ? featureIds[0] : 0;
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
@@ -136,7 +136,7 @@ internal static partial class AttachmentHandler
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogQueryAttachmentsError(logger, layerId, featureId, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to query attachments");
@@ -245,7 +245,7 @@ internal static partial class AttachmentHandler
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var safeFileName = FileUploadSecurity.SanitizeFileName(file.FileName);
             LogAddAttachmentError(logger, layerId, featureId, safeFileName, ex);
@@ -377,7 +377,7 @@ internal static partial class AttachmentHandler
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogUpdateAttachmentError(logger, layerId, featureId, attachmentId, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to update attachment");
@@ -428,7 +428,7 @@ internal static partial class AttachmentHandler
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogDeleteAttachmentsError(logger, layerId, featureId, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to delete attachments");
@@ -482,7 +482,7 @@ internal static partial class AttachmentHandler
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogDownloadAttachmentError(logger, layerId, featureId, attachmentId, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to download attachment");

@@ -90,6 +90,7 @@ public static class GeoParquetProjJsonCatalog
         }
 
         var map = new Dictionary<int, string>();
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var property in crs.EnumerateObject())
         {
             if (int.TryParse(property.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))

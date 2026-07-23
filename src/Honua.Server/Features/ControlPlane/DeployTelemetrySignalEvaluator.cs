@@ -172,7 +172,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
             var instantaneous = Evaluate(policy, readings);
             return ApplyBreachDebounce(operation, instantaneous);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: a telemetry-backend failure must not fail the deploy
             // evaluation outright; it is mapped to a bounded wait-for-more-telemetry decision

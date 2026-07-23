@@ -392,7 +392,7 @@ internal static partial class OperationsProgressEndpoints
         {
             await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: best-effort job-queue cleanup after a cancel. A
             // failure here must not fail the cancel request; the stale-claim reconciler

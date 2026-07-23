@@ -1,4 +1,5 @@
 name: CI
+run-name: "CI ${{ inputs.merge_train_nonce }}"
 
 on:
   schedule:
@@ -56,11 +57,15 @@ on:
   # heavy job is `if:`-gated to `pull_request`/schedule and SKIPS on
   # merge_group; the PR-time aggregator `CI Gate` likewise does not run on
   # merge_group. The merge-queue REQUIRED check must be `Merge Queue Gate`,
-  # NOT `CI Gate`. See docs/internal/contributor/lean-merge-queue-runbook.md.
+  # NOT `CI Gate`. See docs/internal/ci/gate-model.md.
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
     inputs:
+      merge_train_nonce:
+        description: 'Opaque merge-train dispatch identity used to correlate the exact Actions run'
+        required: false
+        default: ''
       sdk_ref:
         description: 'honua-sdk-js git ref for MCP tests (overrides MCP_SDK_REF env)'
         required: false
@@ -583,6 +588,7 @@ jobs:
         run: |
           scripts/ci/validate-ci-router.sh
           scripts/ci/merge-train/fixtures/validate-mode.sh
+          bash scripts/ci/validate-single-merge-authority.sh
 
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh

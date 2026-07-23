@@ -27,7 +27,7 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
     {
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
 
@@ -169,6 +169,7 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
             // Intentionally asserted on a possibly-null value: FluentAssertions'
             // Should()/NotBe() are null-safe, and the null-state feature (Virtual
             // City) is exactly the case this test is verifying is included above.
+            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
             state.Should().NotBe("California");
         }
     }

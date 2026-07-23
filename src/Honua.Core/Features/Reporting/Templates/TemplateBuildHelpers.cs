@@ -93,12 +93,9 @@ internal static class TemplateBuildHelpers
         // Not a simple filter: the Contains check reads `combined` as it grows, so a
         // `.Where(...)` filter evaluated against the list being appended to would be
         // fragile/unclear here; the explicit loop makes the incremental dedupe obvious.
-        foreach (var item in package.Provenance.Assumptions)
+        foreach (var item in (package.Provenance.Assumptions).Where(item => !combined.Contains(item, StringComparer.Ordinal)))
         {
-            if (!combined.Contains(item, StringComparer.Ordinal))
-            {
-                combined.Add(item);
-            }
+            combined.Add(item);
         }
 
         var rows = new List<IReadOnlyList<string>>(Math.Min(combined.Count, maxRows));
@@ -162,6 +159,7 @@ internal static class TemplateBuildHelpers
     {
         // Not a simple filter: TryGetValue's out-param is the value being returned, so
         // `.Where(...)` can't express this without duplicating the TryGetValue call.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var artifact in package.Artifacts)
         {
             if (artifact.Metadata.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))

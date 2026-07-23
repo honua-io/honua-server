@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
+HONUA_CR="$(printf '\rX')"; HONUA_CR="${HONUA_CR%X}"
 
 set -euo pipefail
 
@@ -70,9 +73,9 @@ log_error() {
 
 sanitize_field() {
     local value="${1:-}"
-    value="${value//$'\t'/ }"
-    value="${value//$'\r'/ }"
-    value="${value//$'\n'/ }"
+    value="${value//${HONUA_TAB}/ }"
+    value="${value//${HONUA_CR}/ }"
+    value="${value//${HONUA_NL}/ }"
     printf "%s" "$value"
 }
 

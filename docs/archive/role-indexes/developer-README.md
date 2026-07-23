@@ -30,7 +30,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [SDK Compatibility Matrix](../../concepts/ecosystem.md) — Server/SDK version support
 - [SDK Standards Coverage](../../internal/developer/SDK_STANDARDS_COVERAGE.md) — Server-owned SDK coverage by language and protocol
 - [SDK Metadata Format](../../internal/developer/SDK_COMPATIBILITY_METADATA.md) — Compatibility metadata schema
-- [Mobile SDK Roadmap](../../internal/developer/mobile-sdk-roadmap.md) — Read / write / edit / sync / offline-cache cycle plan for `honua-mobile-sdk` (MAUI, iOS + Android)
+- [honua-mobile](https://github.com/honua-io/honua-mobile) — active home for MAUI, iOS, Android, and offline field workflows
 - [MCP Server](../../guides/connect/ai-agents-mcp.md) — SDK-hosted discovery/query MCP package plus the server-owned operator surface for AI agents
 - [AI Builder SDK Contract](../../internal/developer/ai-builder-sdk-contract.md) — Workflow, resource, fixture case, and capability-state reference that maps honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder sample
 - [AI Builder Contract Fixtures](../../internal/developer/ai-builder-contract-fixtures.md) — Deterministic spatial-query and operations-dashboard app-builder fixtures for SDK, Portal, and MCP replay

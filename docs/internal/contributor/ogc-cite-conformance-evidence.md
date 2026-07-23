@@ -39,21 +39,11 @@ suite/profile is removed from the public claim.
 
 ## All-Pass Suite Set
 
-The public all-pass suite set is:
-
-| Suite | Profile | Total | Passed | Failed | Skipped | CantTell | Status |
-|---|---:|---:|---:|---:|---:|---:|---|
-| OGC API Features 1.0 | `default` | 137 | 137 | 0 | 0 | 0 | Passing |
-| OGC API Tiles 1.0 | `default` | 16 | 16 | 0 | 0 | 0 | Passing |
-| GeoPackage 1.2 | `applicable` | 31 | 31 | 0 | 0 | 0 | Passing |
-| GML 3.2 | `applicable` | 17 | 17 | 0 | 0 | 0 | Passing |
-| KML 2.2 | `applicable` | 42 | 42 | 0 | 0 | 0 | Passing |
-| WFS 1.0 | `basic` | 162 | 162 | 0 | 0 | 0 | Passing |
-| WFS 1.1 | `basic` | 39 | 39 | 0 | 0 | 0 | Passing |
-| WFS 2.0 | `basic` | 167 | 167 | 0 | 0 | 0 | Passing |
-| WCS 2.0 | `core` | 82 | 82 | 0 | 0 | 0 | Passing |
-| WMS 1.3 | `default` | 199 | 199 | 0 | 0 | 0 | Passing |
-| WMTS 1.0 | `default` | 60 | 60 | 0 | 0 | 0 | Passing |
+The canonical per-suite pass/total numbers live in
+[`docs/cite-status.md`](../../cite-status.md) — see that page for the
+current table; do not restate the numbers here. This page's job is the
+evidence-run narrative (workflow links, artifact contents, refresh steps)
+around whatever `cite-status.md` currently reports.
 
 ## Suite Scope Notes
 

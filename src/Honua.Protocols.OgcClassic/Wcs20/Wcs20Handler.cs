@@ -157,7 +157,7 @@ internal sealed class Wcs20Handler
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: this is the outermost WCS request-handling
             // boundary. Every failure is logged, recorded on telemetry, and mapped to
@@ -838,6 +838,7 @@ internal sealed class Wcs20Handler
 
         var srids = new HashSet<int>();
         var uris = new List<string>();
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var seed in seeds)
         {
             if (await _crsRegistry.IsSridSupportedAsync(seed, cancellationToken).ConfigureAwait(false))

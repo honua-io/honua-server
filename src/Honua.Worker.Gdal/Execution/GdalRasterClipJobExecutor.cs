@@ -125,9 +125,9 @@ internal sealed partial class GdalRasterClipJobExecutor(
         {
             // All three second segments are fixed relative literal filenames, so
             // they can never be rooted and silently discard workspace.
-            var inputPath = Path.Combine(workspace, "input.tif");
-            var cutlinePath = Path.Combine(workspace, "cutline.geojson");
-            var outputPath = Path.Combine(workspace, "output.tif");
+            var inputPath = Path.Join(workspace, "input.tif");
+            var cutlinePath = Path.Join(workspace, "cutline.geojson");
+            var outputPath = Path.Join(workspace, "output.tif");
 
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a

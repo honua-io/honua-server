@@ -115,7 +115,7 @@ public sealed class PortalOAuth2Options
 
     /// <summary>
     /// Optional JWT access-token format and RFC 7662 introspection options
-    /// (ADR-0054, #1890). Off by default: the opaque, cache-backed token path is
+    /// (ADR-0068, #1890). Off by default: the opaque, cache-backed token path is
     /// unchanged unless an operator opts in.
     /// </summary>
     public PortalOAuthJwtOptions Jwt { get; set; } = new();
@@ -129,7 +129,7 @@ public sealed class PortalOAuth2Options
 
 /// <summary>
 /// Optional JWT access-token format and RFC 7662 introspection options
-/// (ADR-0054, #1890). The default opaque, cache-backed portal-token path is
+/// (ADR-0068, #1890). The default opaque, cache-backed portal-token path is
 /// unchanged; JWT issuance is strictly opt-in and additive.
 /// </summary>
 public sealed class PortalOAuthJwtOptions

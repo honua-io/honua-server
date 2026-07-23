@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Step 2: assemble — the git heart. Build the batch branch by merging each
 # selected PR head onto a fresh branch off origin/<base>. Transactional
 # detect-and-skip: a merge that conflicts is `git merge --abort`ed so it leaves
@@ -69,7 +70,7 @@ train_assemble() {
         train_warn "SKIPPED_CONFLICT #${pr} (conflict vs batch; aborted clean)"
       else
         # Not a conflict — a merge/setup error. Fail loud, do NOT mask as conflict.
-        train_warn "MERGE ERROR (not a conflict) #${pr}: ${merge_err##*$'\n'}"
+        train_warn "MERGE ERROR (not a conflict) #${pr}: ${merge_err##*${HONUA_NL}}"
         return 3
       fi
     fi

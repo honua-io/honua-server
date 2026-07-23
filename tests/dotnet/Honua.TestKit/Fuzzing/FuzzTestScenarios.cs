@@ -56,7 +56,7 @@ public static class FuzzTestScenarios
                     IsValidResponse = IsValidFuzzResponse(response)
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
                 // exception type is a possible (and recordable) outcome, not just expected ones.
@@ -117,7 +117,7 @@ public static class FuzzTestScenarios
                     IsValidResponse = IsValidFuzzResponse(response)
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
                 // exception type is a possible (and recordable) outcome, not just expected ones.
@@ -183,7 +183,7 @@ public static class FuzzTestScenarios
                     IsValidResponse = IsValidFuzzResponse(response)
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
                 // exception type is a possible (and recordable) outcome, not just expected ones.
@@ -260,7 +260,7 @@ public static class FuzzTestScenarios
                     IsValidResponse = IsValidFuzzResponse(response)
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: fuzzing feeds malformed/adversarial input, so any
                 // exception type is a possible (and recordable) outcome, not just expected ones.

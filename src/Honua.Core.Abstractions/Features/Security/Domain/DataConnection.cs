@@ -12,6 +12,17 @@ namespace Honua.Core.Features.Security.Domain;
 public class DataConnection
 {
     /// <summary>
+    /// Neutral display value <see cref="Host"/>/<see cref="DatabaseName"/>/<see cref="Username"/>
+    /// are persisted with when a secret-reference connection's creator omits them: the resolved
+    /// secret holds the full connection string and is the declared source of truth for those
+    /// fields, so there is no real value to display or assert against. Callers that treat a
+    /// non-empty <see cref="Host"/>/<see cref="Port"/> as a security assertion (for example a
+    /// resolved-secret tamper check) must treat this placeholder the same as an empty/undeclared
+    /// value rather than comparing it against the resolved secret's real host (honua-server#2949).
+    /// </summary>
+    public const string SecretReferenceMetadataPlaceholder = "(from secret reference)";
+
+    /// <summary>
     /// Unique identifier for the connection.
     /// </summary>
     public string Id { get; set; } = string.Empty;

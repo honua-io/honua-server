@@ -105,7 +105,7 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
                     return jobId;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.JobDequeueFailed(Logger, ex);
                 // Continue trying in fallback mode
@@ -150,7 +150,7 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
 
             return redisLength + fallbackLength;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: queue-length is a best-effort diagnostic; fall back to the
             // known in-memory count rather than let the failure propagate.
@@ -176,7 +176,7 @@ internal sealed partial class RedisJobQueue : RedisServiceBase, IRedisJobQueue
 
             return redisProcessing + fallbackInFlight;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: processing-count is a best-effort diagnostic; fall back to the
             // known in-memory count rather than let the failure propagate.

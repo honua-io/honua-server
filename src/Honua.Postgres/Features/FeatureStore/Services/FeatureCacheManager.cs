@@ -310,7 +310,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: this is a best-effort catalog probe. On failure, log and assume
             // "no layer catalog" rather than failing the caller — callers treat false as "fall back to

@@ -86,7 +86,7 @@ public sealed class EntrypointLoader
         {
             return (IGeoprocessingTool)Activator.CreateInstance(type)!;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: constructor activation can throw any user-authored
             // exception type (including TargetInvocationException) and every failure must
@@ -99,7 +99,7 @@ public sealed class EntrypointLoader
     {
         // False positive: every caller validates assemblyName via IsSimpleAssemblyName
         // (see Load, above) before reaching here, so it is never rooted/escaping.
-        var path = Path.Combine(buildOutputDirectory, assemblyName + ".dll");
+        var path = Path.Join(buildOutputDirectory, assemblyName + ".dll");
         if (!File.Exists(path))
         {
             throw new EntrypointException($"built assembly not found: {path}");
@@ -144,7 +144,7 @@ public sealed class EntrypointLoader
             {
                 // False positive: the IsSimpleAssemblyName guard immediately above rejects
                 // any rooted/escaping name before it reaches this combine.
-                var candidate = Path.Combine(_probeDirectory, name + ".dll");
+                var candidate = Path.Join(_probeDirectory, name + ".dll");
                 if (File.Exists(candidate))
                 {
                     return LoadFromAssemblyPath(candidate);

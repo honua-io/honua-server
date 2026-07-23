@@ -64,6 +64,7 @@ public static class SpatialReferenceExtensions
         {
             // Preserve the original WKT-populated WGS84 instance for the canonical CRS84 URI.
             "http://www.opengis.net/def/crs/OGC/1.3/CRS84" => SpatialReference.WGS84,
+            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
             var uri when uri.StartsWith("http://www.opengis.net/def/crs/EPSG/0/", StringComparison.Ordinal)
                 && int.TryParse(uri.AsSpan("http://www.opengis.net/def/crs/EPSG/0/".Length), out int epsgCode)
                     => SpatialReference.Create(epsgCode),

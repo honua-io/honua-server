@@ -130,7 +130,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -165,7 +165,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -191,7 +191,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -226,7 +226,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -252,7 +252,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -278,7 +278,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -321,7 +321,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -347,7 +347,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -373,7 +373,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -413,7 +413,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");
@@ -468,7 +468,7 @@ internal static partial class EnhancedPerformanceEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for this
         // monitoring endpoint; the failure is logged and mapped to a generic 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");

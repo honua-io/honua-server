@@ -100,7 +100,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: the data was already committed and published. If reconciliation
             // itself errors out we do not fail the import — we record the gate as unavailable and let

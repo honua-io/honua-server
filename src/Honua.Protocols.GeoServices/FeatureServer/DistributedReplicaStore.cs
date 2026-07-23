@@ -87,7 +87,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         // Intentional catch-all: IDistributedCache implementations can throw a wide range of
         // provider-specific exceptions (network, serialization, timeout); all are logged and
         // translated to the single ServiceUnavailableException contract callers expect.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.WriteReplicaFailed(_logger, replica.ReplicaId, ex);
             throw new ServiceUnavailableException(
@@ -185,7 +185,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
             }
             // Intentional catch-all: a distributed cache read failure degrades to a cache miss
             // (logged) rather than surfacing a provider-specific exception to the caller.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.ReadReplicaFailed(_logger, replicaId, ex);
                 return null;
@@ -251,7 +251,7 @@ internal sealed partial class DistributedReplicaStore : IReplicaStore
         }
         // Intentional catch-all: a distributed cache removal failure degrades to "not removed"
         // (logged) rather than surfacing a provider-specific exception to the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RemoveReplicaFailed(_logger, replicaId, ex);
             return false;

@@ -97,7 +97,7 @@ internal sealed class WebhookFieldCollectionActionHandler : IFieldCollectionActi
         // Intentional catch-all: this is a single automation webhook delivery
         // attempt; any transport/serialization failure is reported as a
         // retryable action failure rather than propagating out of the handler.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return FieldCollectionActionResult.Failure(
                 ex is HttpRequestException ? "Webhook delivery failed." : "Webhook delivery could not be completed.",

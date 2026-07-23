@@ -143,6 +143,7 @@ internal sealed partial class ODataBatchHandler
                 // re-run the lookup inside the loop or project through an intermediate tuple -
                 // neither is clearer than the explicit loop.
                 var addedErrors = new HashSet<string>(StringComparer.Ordinal);
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var request in groupRequests)
                 {
                     if (dependencyOrder.ErrorsById.TryGetValue(request.Id, out var error) &&

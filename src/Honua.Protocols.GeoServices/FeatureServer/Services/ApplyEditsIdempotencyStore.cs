@@ -144,7 +144,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
             // exceptions here; best-effort — a lookup failure simply means the retry is
             // re-applied rather than deduped.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
                 return null;
@@ -173,7 +173,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         // Intentionally generic: the configured IDistributedCache implementation can throw a
         // wide range of provider-specific exceptions; best-effort — a lookup failure simply
         // means the retry is re-applied rather than deduped.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
             return null;
@@ -202,7 +202,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             }
             // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
             // exceptions here; fail-open rather than blocking the edit request.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
                 return true; // fail-open: let the request proceed; worst case is a duplicate on Redis failure
@@ -239,7 +239,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
             // exceptions here; best-effort — failing to record the response must not fail an
             // already-applied edit.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
             }
@@ -264,7 +264,7 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         // Intentionally generic: the configured IDistributedCache implementation can throw a
         // wide range of provider-specific exceptions; best-effort — failing to record the
         // response must not fail an already-applied edit.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
         }

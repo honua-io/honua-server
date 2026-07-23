@@ -191,6 +191,13 @@ ADR gives the registry, and the manifest lever the Console release gate
 > client-certificate enforcement still self-gates on
 > `Authentication:ClientCertificates:Mode` (default `Disabled`).
 
+> **Update (#2958).** **mTLS client-certificate validation** (`security.mtls`) was DEMOTED
+> back from `Implemented` to `experimental` (release-safety follow-up): the always-on
+> client-certificate scheme/RBAC layer could 403 a fully valid bearer-token admin request
+> (#2945). It is back in the registry-flag experimental roster (a); the scheme
+> registration, `Admin`/`OpsRead` policy scheme lists, and enforcement middleware are now
+> also conditioned on `Capabilities:Experimental:security.mtls:Enabled`.
+
 > **Update (#2428).** **Realtime feature streams** (`realtime.feature-streams`,
 > `/api/v1/streaming/features` + `/api/v1/admin/(operations/)streaming/*`) — the
 > WebSocket/SSE feature-change streams with subscription filters and durable

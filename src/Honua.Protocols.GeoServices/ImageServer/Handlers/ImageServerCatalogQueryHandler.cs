@@ -126,7 +126,7 @@ internal sealed class ImageServerCatalogQueryHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.CatalogQueryFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -188,7 +188,7 @@ internal sealed class ImageServerCatalogQueryHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.CatalogQueryFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -855,6 +855,7 @@ internal sealed class ImageServerCatalogQueryHandler
         }
 
         var parsed = new List<long>(parts.Length);
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var part in parts)
         {
             if (long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))

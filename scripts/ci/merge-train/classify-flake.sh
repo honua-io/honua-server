@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Step 5: classify-flake — run BEFORE attribute. Scan the failing jobs' logs for
-# the flake signature regex (40P01 / deadlock detected / ryuk / Testcontainers
-# timeouts/connection-refused). On a match, do a SINGLE `gh run rerun <id>
-# --failed` (cap TRAIN_FLAKE_RERUN_CAP, default 1) — never a bisection. If the
-# same signature reproduces on the rerun, treat it as a REAL failure and fall
-# through to attribute.
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
+# Step 5: classify-flake runs after generic timeout classification. Scan the
+# failing jobs' logs for known environmental signatures and rerun failed jobs
+# once. Persistent known-environment signatures retain the optimistic
+# merge-through policy; generic timeout/exit-124 failures never reach this path.
 
 # train_run_logs_match_flake <run-id>: fetch the failed jobs' logs and test them
 # against the flake regex. Returns 0 (flake) / 1 (not). Test override:
@@ -54,7 +53,7 @@ train_failing_job_logs() {
     return 0
   fi
   for jid in ${jids}; do
-    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"$'\n'
+    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"${HONUA_NL}
   done
   printf '%s' "${out}" | tail -c 12000
 }

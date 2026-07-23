@@ -32,9 +32,8 @@ internal static class PluginDependencyResolver
         // Not a candidate for .Select(r => r.Manifest): this loop validates and throws per
         // registration rather than projecting a new sequence, so a LINQ projection would not
         // improve clarity here.
-        foreach (var registration in registrations)
+        foreach (var manifest in (registrations).Select(registration => registration.Manifest))
         {
-            var manifest = registration.Manifest;
 
             if (manifest.MinimumServerVersion is { } minServer && serverVersion < minServer)
             {

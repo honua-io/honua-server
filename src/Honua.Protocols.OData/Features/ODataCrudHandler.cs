@@ -85,7 +85,6 @@ internal sealed class ODataCrudHandler(
         {
             return layerValidation.ErrorResult!;
         }
-
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureQuery, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -167,7 +166,6 @@ internal sealed class ODataCrudHandler(
         {
             return layerValidation.ErrorResult!;
         }
-
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
         var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
         if (!result.IsSuccess)
@@ -225,7 +223,6 @@ internal sealed class ODataCrudHandler(
         {
             return layerValidation.ErrorResult!;
         }
-
         return ODataUtilityService.CreateODataError(
             context,
             "ResourceNotFound",
@@ -322,6 +319,12 @@ internal sealed class ODataCrudHandler(
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
+        }
+        var providerWriteError = await RejectUnsupportedProviderWriteAsync(
+            context, resolvedLayerId.Value, layerValidation, effectiveToken).ConfigureAwait(false);
+        if (providerWriteError is not null)
+        {
+            return providerWriteError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -537,6 +540,12 @@ internal sealed class ODataCrudHandler(
         {
             return layerValidation.ErrorResult!;
         }
+        var providerWriteError = await RejectUnsupportedProviderWriteAsync(
+            context, layerId, layerValidation, effectiveToken).ConfigureAwait(false);
+        if (providerWriteError is not null)
+        {
+            return providerWriteError;
+        }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
@@ -660,6 +669,12 @@ internal sealed class ODataCrudHandler(
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
+        }
+        var providerWriteError = await RejectUnsupportedProviderWriteAsync(
+            context, layerId, layerValidation, effectiveToken).ConfigureAwait(false);
+        if (providerWriteError is not null)
+        {
+            return providerWriteError;
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -868,6 +883,51 @@ internal sealed class ODataCrudHandler(
 
     private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
         => layerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
+
+    private static async Task<IResult?> RejectUnsupportedProviderWriteAsync(
+        HttpContext context,
+        int layerId,
+        LayerValidationHelpers.MetadataV2ValidationResult layerValidation,
+        CancellationToken cancellationToken)
+    {
+        var resolver = context.RequestServices.GetService<ODataFeatureProviderResolver>();
+        if (resolver is null)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "InternalServerError",
+                "Feature provider routing is not configured.",
+                StatusCodes.Status500InternalServerError);
+        }
+
+        var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+            layerValidation.Snapshot!,
+            layerValidation.Publication,
+            layerValidation.Resource!);
+        if (!storageLayerId.HasValue)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "InternalServerError",
+                $"Layer {layerId} storage binding is not configured.",
+                StatusCodes.Status500InternalServerError);
+        }
+
+        var support = await resolver.CheckWriteSupportAsync(
+            layerValidation.Snapshot!,
+            layerValidation.Service,
+            layerValidation.Resource!,
+            layerValidation.Publication,
+            storageLayerId.Value,
+            cancellationToken).ConfigureAwait(false);
+        return support.Supported
+            ? null
+            : ODataUtilityService.CreateODataError(
+                context,
+                "ProviderWriteNotSupported",
+                support.ErrorMessage!,
+                StatusCodes.Status501NotImplemented);
+    }
 
     private static bool TryExtractObjectId(object? payload, out long objectId)
     {

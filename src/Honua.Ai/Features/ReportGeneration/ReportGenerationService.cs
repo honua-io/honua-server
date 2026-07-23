@@ -301,7 +301,7 @@ public sealed class ReportGenerationService : IReportGenerationService
         // Intentionally generic: this is a provider-boundary call to the Bedrock SDK, which
         // surfaces transport/auth/throttling failures beyond the specific types already handled
         // above; map any remaining failure to a generic proposal error instead of crashing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GenerationProviderLog.ProviderRequestFailed(_logger, providerId, ex);
             return ErrorProposal("Bedrock request failed.");

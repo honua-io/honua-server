@@ -199,7 +199,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         // Intentional: this is best-effort cleanup of an orphaned object after a lost quota
         // lease; the lease-lost exception is thrown below regardless, so a cleanup failure
         // must not mask or replace it — log and continue.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CloudBackedTemporaryFileLog.SharedStorageCleanupAfterLeaseLossFailed(
                 _logger,
@@ -279,7 +279,7 @@ internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, I
         // Intentional: this is a read-path boundary over a heterogeneous cloud storage SDK
         // (AWS/Azure/GCS); any provider-specific failure resolves to "file not found" rather
         // than leaking provider internals to the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var provider = _cloudFileStorage.Provider;
             CloudBackedTemporaryFileLog.SharedStorageReadFailed(_logger, fileId, provider, ex);

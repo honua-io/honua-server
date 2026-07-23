@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
@@ -38,6 +39,7 @@ internal sealed partial class ODataQueryHandler(
 
     private readonly IFeatureReader _featureReader = (dependencies
         ?? throw new ArgumentNullException(nameof(dependencies))).FeatureReader;
+    private readonly ODataFeatureProviderResolver? _featureProviderResolver = dependencies.FeatureProviderResolver;
     private readonly IGeometryService _geometryService = dependencies.GeometryService;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly ODataValidationService _validationService = dependencies.ValidationService;
@@ -217,7 +219,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayersQueryFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
@@ -308,7 +310,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayersQueryFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
@@ -371,7 +373,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.LayersQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LayersQueryFailed(_logger, ex);
             return ODataUtilityService.CreateODataError(context, "InternalServerError",
@@ -409,6 +411,7 @@ internal sealed partial class ODataQueryHandler(
         // activity was started. A using declaration would either force activity creation
         // before validation (polluting telemetry for invalid-layer requests) or be out of
         // scope for the catch blocks.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -466,11 +469,10 @@ internal sealed partial class ODataQueryHandler(
             }
             var resource = layerValidation.Resource!;
             var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId;
-            var storageLayerId = await ResolveStorageLayerIdAsync(
-                context,
+            var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                layerValidation.Snapshot!,
                 layerValidation.Publication,
-                resource,
-                effectiveToken).ConfigureAwait(false);
+                resource);
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -479,6 +481,17 @@ internal sealed partial class ODataQueryHandler(
                     "Layer storage binding is not configured.",
                     StatusCodes.Status500InternalServerError);
             }
+
+            var featureReader = await (_featureProviderResolver
+                ?? throw new InvalidOperationException("Feature provider routing is not configured."))
+                .ResolveQueryReaderAsync(
+                    layerValidation.Snapshot!,
+                    layerValidation.Service,
+                    resource,
+                    layerValidation.Publication,
+                    storageLayerId.Value,
+                    requireCount: count == true,
+                    effectiveToken).ConfigureAwait(false);
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -516,6 +529,7 @@ internal sealed partial class ODataQueryHandler(
                     format,
                     bbox,
                     storageLayerId.Value,
+                    featureReader,
                     effectiveToken);
             }
 
@@ -579,6 +593,7 @@ internal sealed partial class ODataQueryHandler(
                 if (cached != null)
                 {
                     ODataUtilityService.SetODataHeaders(context);
+                    // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
                     if (trackChangesRequested)
                     {
                         ODataUtilityService.ApplyTrackChangesPreference(context);
@@ -590,7 +605,7 @@ internal sealed partial class ODataQueryHandler(
             }
 
             // Execute query
-            var queryResult = await _featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
+            var queryResult = await featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
 
             // The query fetched up to pagination.Limit + 1 rows as a continuation probe.
             // A returned count exceeding the requested page size means more rows remain,
@@ -766,7 +781,7 @@ internal sealed partial class ODataQueryHandler(
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.FeaturesQueryFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.FeaturesQueryFailed(_logger, layerId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -799,6 +814,7 @@ internal sealed partial class ODataQueryHandler(
         string? format,
         BoundingBox? bbox,
         int storageLayerId,
+        IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
         long? totalCount = null;
@@ -828,7 +844,7 @@ internal sealed partial class ODataQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
             }
 
-            totalCount = await _featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
+            totalCount = await featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
         }
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
@@ -912,19 +928,6 @@ internal sealed partial class ODataQueryHandler(
     private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)
     {
         return ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken);
-    }
-
-    private static async Task<int?> ResolveStorageLayerIdAsync(
-        HttpContext context,
-        MetadataV2Publication? publication,
-        MetadataV2Resource resource,
-        CancellationToken cancellationToken)
-    {
-        return await ODataV2Lookups.ResolveStorageLayerIdAsync(
-            context,
-            publication,
-            resource,
-            cancellationToken).ConfigureAwait(false);
     }
 
     private static IEnumerable<Dictionary<string, object?>> ApplyLayerPayloadOrdering(

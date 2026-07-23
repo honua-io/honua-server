@@ -207,7 +207,7 @@ public class AdoNetDatabaseSession : IDatabaseSession
                     await _transaction.RollbackAsync().ConfigureAwait(false);
                 }
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // best-effort rollback on dispose; do not mask the original exception
             }

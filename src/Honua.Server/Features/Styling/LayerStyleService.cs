@@ -232,7 +232,7 @@ internal sealed class LayerStyleService : ILayerStyleService
         // Intentional broad catch: this is a best-effort sync to the independent style catalog after
         // the primary style write already succeeded; a sync failure here must not fail the caller's
         // overall style update, so it is logged and swallowed.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LayerStyleLog.StyleCatalogSyncFailed(_logger, storageLayerId, ex);
         }

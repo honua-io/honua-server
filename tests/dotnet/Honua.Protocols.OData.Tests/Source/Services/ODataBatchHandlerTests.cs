@@ -77,7 +77,11 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(CreateContext("admin"), request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(
+            CreateContext(featureReader, featureWriter, "admin"),
+            request,
+            "https://example.test",
+            CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var createResponse = response.Responses[0];
@@ -132,7 +136,11 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(CreateContext("admin"), request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(
+            CreateContext(featureReader, featureWriter, "admin"),
+            request,
+            "https://example.test",
+            CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var updateResponse = response.Responses[0];
@@ -171,12 +179,19 @@ public sealed class ODataBatchHandlerTests
             Substitute.For<ILogger>());
     }
 
-    private static DefaultHttpContext CreateContext(params string[] roles)
+    private static DefaultHttpContext CreateContext(
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        params string[] roles)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
         services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider());
+        services.AddSingleton(new ODataFeatureProviderResolver(
+            featureReader,
+            featureWriter,
+            providerQueryRouter: null));
 
         var context = new DefaultHttpContext
         {

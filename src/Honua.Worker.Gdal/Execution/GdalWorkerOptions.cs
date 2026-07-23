@@ -30,7 +30,7 @@ internal sealed class GdalWorkerOptions
     /// </summary>
     // Second segment is a fixed relative literal, so it can never be rooted and
     // silently discard Path.GetTempPath().
-    public string ScratchRoot { get; set; } = Path.Combine(Path.GetTempPath(), "honua-gdal-worker");
+    public string ScratchRoot { get; set; } = Path.Join(Path.GetTempPath(), "honua-gdal-worker");
 
     /// <summary>
     /// Maximum wall-clock duration for a single GDAL tool invocation before the

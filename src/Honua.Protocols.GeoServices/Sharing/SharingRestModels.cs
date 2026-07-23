@@ -90,7 +90,7 @@ internal sealed record OAuth2ErrorResponse
 }
 
 /// <summary>
-/// RFC 7662 token introspection response (ADR-0054, #1890). An inactive token
+/// RFC 7662 token introspection response (ADR-0068, #1890). An inactive token
 /// returns only <c>active=false</c> (RFC 7662 §2.2); the remaining fields are
 /// present only for an active token.
 /// </summary>

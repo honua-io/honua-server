@@ -107,12 +107,9 @@ internal static class AnalysisPlanGraphValidator
             // Not a .Where(...) candidate: the condition (--inDegree[next]) has the
             // side effect of decrementing in-degree, which Kahn's algorithm requires
             // for every edge regardless of the branch taken.
-            foreach (var next in edges[current])
+            foreach (var next in (edges[current]).Where(next => --inDegree[next] == 0))
             {
-                if (--inDegree[next] == 0)
-                {
-                    ready.Enqueue(next);
-                }
+                ready.Enqueue(next);
             }
         }
 
@@ -172,12 +169,9 @@ internal static class AnalysisPlanGraphValidator
             ordered.Add(byId[current]);
             // Not a .Where(...) candidate: see the topological-sort loop above — the
             // condition decrements shared in-degree state as a side effect.
-            foreach (var next in edges[current])
+            foreach (var next in (edges[current]).Where(next => --inDegree[next] == 0))
             {
-                if (--inDegree[next] == 0)
-                {
-                    ready.Add(next);
-                }
+                ready.Add(next);
             }
         }
 

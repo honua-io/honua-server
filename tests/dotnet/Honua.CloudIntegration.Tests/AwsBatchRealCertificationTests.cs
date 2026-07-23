@@ -120,7 +120,7 @@ public sealed class AwsBatchRealCertificationTests : IClassFixture<RealAwsCertif
                         JobDefinition = registeredArn
                     });
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Best-effort: a deregister failure here would leave only an INACTIVE-able
                     // revision under the unique honua-certrun-* prefix, never live infrastructure.

@@ -113,9 +113,9 @@ internal sealed partial class GdalVectorConvertJobExecutor(
             // which are always fixed literals drawn from the SupportedFormats
             // allowlist above (never user-supplied), so neither can be rooted and
             // silently discard workspace.
-            var inputPath = Path.Combine(workspace, "input" + sourceExtension);
+            var inputPath = Path.Join(workspace, "input" + sourceExtension);
             var outputName = "output" + targetMeta.Extension;
-            var outputPath = Path.Combine(workspace, outputName);
+            var outputPath = Path.Join(workspace, outputName);
 
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 

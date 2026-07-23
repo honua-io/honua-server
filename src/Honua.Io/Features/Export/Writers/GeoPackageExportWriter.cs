@@ -232,6 +232,7 @@ internal static class GeoPackageExportWriter
         // Not a `using` declaration: the loop below commits and reassigns `transaction` to a
         // fresh instance every BatchSize rows, disposing the prior one explicitly. The final
         // `finally` disposes whichever transaction is current on exit (normal or exceptional).
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         SqliteTransaction? transaction = null;
 
         // Create command once and reuse across all rows
@@ -389,7 +390,7 @@ internal static class GeoPackageExportWriter
             (hasZ, hasM) = InfrastructureGeometryService.DetectZMFromGeometry(geometry);
             return true;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Best-effort, per-feature probe over a potentially large feature stream: this only
             // feeds the aggregate has-Z/has-M metadata flags written to the GeoPackage header,

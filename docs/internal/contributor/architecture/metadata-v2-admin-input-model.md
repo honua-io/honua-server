@@ -551,4 +551,4 @@ click to navigate to the resource page.
   vocabulary specification (to be written)
 - [metadata-v2-admin-ui-information-model.md](metadata-v2-admin-ui-information-model.md)
   — workflow / navigation / labels
-- [metadata-v2-cutover-plan.md](metadata-v2-cutover-plan.md) — v1→v2 cutover plan
+- [ADR-0040](../adr/0040-metadata-v2-canonical-graph.md) — canonical Metadata v2 graph decision

@@ -439,7 +439,7 @@ internal static class PortalOAuthRoutes
     /// <summary>The token endpoint ArcGIS clients exchange the code at.</summary>
     public const string TokenPath = "/sharing/rest/oauth2/token";
 
-    /// <summary>The RFC 7662 token introspection endpoint (ADR-0054, #1890).</summary>
+    /// <summary>The RFC 7662 token introspection endpoint (ADR-0068, #1890).</summary>
     public const string IntrospectPath = "/sharing/rest/oauth2/introspect";
 
     /// <summary>The RFC 7009 per-token revocation endpoint (#2155).</summary>

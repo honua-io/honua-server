@@ -7,7 +7,7 @@ triggered by GitHub events, none needing a live session:
 
 | Workflow | Trigger | Job |
 |---|---|---|
-| `pr-merge-train.yml` | `push` to trunk, `check_suite` completed, 15-min backstop cron | Merges the oldest **CLEAN** PR (squash); else freshens every **BEHIND** PR. One mechanical action per trigger, re-triggers itself. |
+| `merge-train.yml` | 15-minute schedule or explicit live dispatch | Sole merge authority: exact-head admission, batch assembly/CI, and compare-and-swap landing. |
 | `auto-rerun-flaky.yml` | `workflow_run` (CI) completed, `run_attempt == 1` | Gives a PR's CI exactly **one** retry when only known-flaky shards failed (40P01 deadlock, Testcontainers/Docker). Never reruns a real gate. |
 | `ci-failure-triage.yml` | `workflow_run` (CI) completed, `conclusion == failure` | The missing piece (#2021): **AI triage of genuinely-real failures** + autonomous rerun-orchestration backstop. Does *not* merge — that stays in the train. |
 

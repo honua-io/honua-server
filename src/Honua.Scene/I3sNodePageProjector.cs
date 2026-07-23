@@ -121,6 +121,7 @@ public static class I3sNodePageProjector
         // (unresolved child ids are skipped) and projects (childIndex) in one lookup;
         // splitting into Where+Select would require a second, redundant dictionary lookup.
         var children = new List<int>(entry.ChildIds.Count);
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var childId in entry.ChildIds)
         {
             if (indexById.TryGetValue(childId, out var childIndex))

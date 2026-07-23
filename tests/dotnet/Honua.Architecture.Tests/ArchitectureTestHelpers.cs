@@ -65,7 +65,11 @@ internal static class ArchitectureTestHelpers
             "Honua.Server.Tests.dll",
             "Honua.Protocols.*.Tests.dll",
             "Honua.Ai.Tests.dll",
-            "Honua.Worker.Gdal.Tests.dll"
+            "Honua.Worker.Gdal.Tests.dll",
+            // honua-server#2947: provider-http-smoke suite. Named Honua.ProviderSmoke.Tests
+            // (not Honua.Protocols.*.Tests) since it spans multiple protocol families
+            // against multiple provider fixtures, so it needs its own explicit glob entry.
+            "Honua.ProviderSmoke.Tests.dll"
         };
 
         var assemblies = new List<Assembly>();
@@ -172,7 +176,7 @@ internal static class ArchitectureTestHelpers
             }
         }
 
-        return Path.Combine(segments);
+        return Path.Join(segments);
     }
 
     /// <summary>

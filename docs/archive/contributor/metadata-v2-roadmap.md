@@ -14,7 +14,7 @@ Goal: align contributors on the Metadata v2 model before implementation starts.
 Inputs:
 
 - [#1035](https://github.com/honua-io/honua-server/issues/1035) epic principle
-- [ADR-0023](../adr/0023-metadata-architecture.md) metadata resource model
+- [ADR-0023](../../internal/contributor/adr/0023-metadata-architecture.md) metadata resource model
 - [Backlog index](metadata-v2-backlog.md)
 
 Exit signals:
@@ -105,7 +105,7 @@ Purpose:
   Metadata, Publish, Access, Validation, and Readiness.
 - Keep raw schema terminology in advanced diagnostics only.
 - Provide the screens and states listed in the
-  [admin UI information model](metadata-v2-admin-ui-information-model.md).
+  [admin UI information model](../../internal/contributor/architecture/metadata-v2-admin-ui-information-model.md).
 
 ## Milestone 7: Migration and Diagnostics
 

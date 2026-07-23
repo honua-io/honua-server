@@ -145,7 +145,7 @@ internal sealed class ImageServerComputeTiePointsHandler
         }
         // Intentionally generic: this is a top-level protocol request handler; any unexpected
         // failure must map to a generic 500 rather than crash the host or leak internals.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ComputeTiePointsFailed(_logger, ex, layerId);
             scope.RecordException(ex);
