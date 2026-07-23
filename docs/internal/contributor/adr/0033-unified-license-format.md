@@ -16,7 +16,7 @@ Honua now needs to ship through three issuance tracks at once:
 2. **AWS Marketplace** — SaaS Contract / Subscription deployments. AWS Marketplace Entitlement Service exposes `GetEntitlements`, and AWS License Manager exposes asymmetric-signed seller-issued tokens that customers can verify locally with the ISV-owned KMS public key.
 3. **Azure Marketplace** — SaaS Fulfillment v2. The lifecycle is split between API-callback flows the publisher backend drives (`Resolve` and `Activate`, server-to-server from the browser landing-page surfaces) and webhook flows Microsoft drives (`ChangePlan`, `ChangeQuantity`, `Reinstate`, `Suspend`, `Unsubscribe`, `Renew`). Microsoft holds subscription state; **there is no portable token** for the customer side. Webhook handlers must respond within 10 seconds.
 
-Without a single contract, every consumer of license state — runtime gates (ADR-0024 § "License Key Enforcement"), admin UI (`honua-server-admin#23`), telemetry, marketplace offerings (#390), and entitlement operations (#645) — bifurcates per cloud. The bifurcation is not optional given Azure's lack of portable tokens: any design that consumed AWS seller-issued tokens directly would still need a separate path for Azure.
+Without a single contract, every consumer of license state — runtime gates (ADR-0024 § "License Key Enforcement"), the `honua-console` licensing workspace, telemetry, marketplace offerings (#390), and entitlement operations (#645) — bifurcates per cloud. The bifurcation is not optional given Azure's lack of portable tokens: any design that consumed AWS seller-issued tokens directly would still need a separate path for Azure.
 
 The "two tracks, one shape" pattern is industry-standard (HashiCorp Enterprise, Elastic) and the only architecture that keeps the runtime hot path single-pathed across BYOL + AWS + Azure.
 
@@ -199,7 +199,7 @@ This contract is a coordination ticket whose code deliverables exceed a single P
 10. Key-rotation runbook + smoke test.
 11. Per-marketplace operations runbook.
 
-Cross-repo follow-ups (NOT this ticket): BYOL portal integration to call the mint API (separate repo); admin UI marketplace surfaces (`honua-server-admin#23`).
+Cross-repo follow-ups (NOT this ticket): BYOL portal integration to call the mint API (separate repo); admin UI marketplace surfaces in `honua-console`.
 
 ## Consequences
 
@@ -258,4 +258,4 @@ Cross-repo follow-ups (NOT this ticket): BYOL portal integration to call the min
 - Issue #390: Honua Cloud — AWS & Azure Marketplace SaaS offerings (consumer)
 - Issue #645: Commercial entitlement operations — issuance, activation, marketplace sync, metering (consumer)
 - Issue #804: this ADR
-- `honua-io/honua-server-admin#23`: license + edition workspace (consumer; resumes scoped to BYOL-only after this ADR lands)
+- `honua-io/honua-console`: license + edition workspace consumer

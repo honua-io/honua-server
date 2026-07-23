@@ -10,9 +10,9 @@ Accepted
 multi-source spatial extract-transform-load pipelines for Honua. The
 strategy spike `#682` (`docs/archive/contributor/geoetl-spike.md`) settled the
 positioning question: pipeline-as-code for the API-first audience, not a
-desktop workbench, and not a Spark-scale lakehouse engine. The roadmap
-(`docs/contributor/geoetl-roadmap.md`) decomposes the epic into
-reviewable child tickets.
+desktop workbench, and not a Spark-scale lakehouse engine. The completed epic
+was decomposed into reviewable child tickets; this ADR retains the binding
+architecture after that planning work closed.
 
 This ADR captures the architectural decisions that bind every GeoETL
 child ticket. They cannot be re-litigated per child ticket without
@@ -528,6 +528,4 @@ in place, so the decision history stays auditable.
 - ADR-0029 — Geoprocess canonical model mappings.
 - ADR-0031 — Durable job orchestration substrate.
 - ADR-0034 — GDAL/OGR honua driver delivery strategy.
-- `docs/contributor/geoetl-roadmap.md` — companion roadmap and child
-  ticket decomposition.
 - `docs/archive/contributor/geoetl-spike.md` — strategy spike from `#682` (archived).

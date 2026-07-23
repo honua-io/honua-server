@@ -4,8 +4,7 @@
 > evolution with reversible rollback" beat that the ops-champion runbook
 > `demo-b-ops-runbook.md` lists as the closing moment). It documents the exact
 > endpoints/commands the L3 E2E harness calls. The harness owns the *assertions*;
-> this document + `scripts/demo-b-safe-rollback.sh` own the *capability and the
-> sequence*.
+> this document owns the runnable sequence.
 >
 > **The beat:** a metadata/layer change is deployed → a post-publish health check
 > fails (deterministically injected) → everything rolls back safely (metadata
@@ -13,16 +12,16 @@
 > the DevOps AI detects the failed health check, diagnoses it, and proposes a
 > human-approved resolve.
 
-## What is real (shipped on the feature branches)
+## What is real (shipped on trunk)
 
 | Piece | Where | Status |
 |---|---|---|
-| Additive metadata-release lifecycle (Preflight → Backup → ScriptMigration → ETL → MetadataApply → Smoke → Complete) | honua-server `Features/ControlPlane/MetadataReleaseReconciler.cs` (#1738/#1739) | Real (draft PR) |
+| Additive metadata-release lifecycle (Preflight → Backup → ScriptMigration → ETL → MetadataApply → Smoke → Complete) | honua-server `Features/ControlPlane/MetadataReleaseReconciler.cs` (#1738/#1739) | Shipped (#1739) |
 | Health gate = post-publish **Smoke** check via the canonical query pipeline | `MetadataReleaseStageActions.cs` (`MetadataReleaseSmokeChecker`) | Real |
 | Smoke failure → **rollback**: reactivate prior Metadata v2 revision **+ run the reversible down-script (drop-added-column)** | `MetadataReleaseReconciler.ExecuteRollbackAsync` + `MetadataReleaseScriptExecutor.ApplyInverseAsync` | Real (metadata + DB-inclusive) |
-| Deterministic **fault injection** for the Smoke gate (demo only, fenced to non-prod) | `MetadataReleaseFaultInjectionOptions` + `MetadataReleaseSmokeChecker` | Real (this PR) |
+| Deterministic **fault injection** for the Smoke gate (demo only, fenced to non-prod) | `MetadataReleaseFaultInjectionOptions` + `MetadataReleaseSmokeChecker` | Shipped |
 | Durable op storage (required) | Redis-backed `RedisWorkflowOperationStore` | Real |
-| AI **detect** seam: read the rolled-back operation + smoke evidence | honua-devops `inspect_metadata_release` tool + `DeployOperationReader` metadata-release readers | Real (this PR, honua-devops) |
+| AI **detect** seam: read the rolled-back operation + smoke evidence | honua-devops `inspect_metadata_release` tool + `DeployOperationReader` metadata-release readers | Shipped in `honua-devops` |
 | AI **diagnose + propose resolve** (human-approved) | honua-devops `GuidedFixPlanner` / `triage_support_ticket` / `auto_remediation_plan` | Real (plan-mode, pr-first) |
 
 **Snapshot-required (data-affecting, non-reversible) rollback is deferred** — the

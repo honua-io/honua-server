@@ -10,8 +10,8 @@ through this registry directly: a successful `POST /api/v1/admin/scenes/generate
 auto-registers the produced tileset, so manual `POST /api/v1/admin/scenes`
 calls are only needed for already-hosted (externally produced) scenes.
 
-This document covers the **server/API slice only**. Visual admin UI work is a
-separate `honua-server-admin` ticket and is intentionally out of scope here.
+This document covers the **server/API slice only**. Visual admin UI work belongs
+in the active `honua-console` repository and is intentionally out of scope here.
 
 ## Endpoint surface
 
@@ -213,8 +213,8 @@ curl -sS -H "X-API-Key: $HONUA_ADMIN" \
 
 ## Admin UI handoff
 
-This ticket only delivers the server/API slice. Building the `honua-server-admin`
-visual UI on top of this contract — list/detail/edit/delete forms, snippet
+The server owns this API slice. Building the `honua-console` visual UI on top
+of this contract — list/detail/edit/delete forms, snippet
 copy buttons, edition-gate badges — is tracked separately and intentionally
 deferred. The shapes documented above are the durable contract the UI work
 will bind to.

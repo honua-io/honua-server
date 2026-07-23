@@ -46,7 +46,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
 
-    // Optional JWT access-token format (ADR-0054, #1890): when enabled the issued
+    // Optional JWT access-token format (ADR-0068, #1890): when enabled the issued
     // access_token is a signed JWT whose jti is the cache reference, so revocation
     // and the single request-path validator are preserved. Off by default — the
     // opaque path below is byte-for-byte unchanged.

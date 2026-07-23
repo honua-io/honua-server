@@ -298,7 +298,7 @@ public sealed class AdminEndpointTests : IAsyncLifetime
     public async Task GetAdminUiAssets_NotServedByServer()
     {
         // The in-tree Blazor admin UI was removed; admin UI now lives in the
-        // sibling honua-server-admin repo and is deployed separately. Verify
+        // separate honua-console repo and is deployed separately. Verify
         // the server returns 404 for the /admin/* prefix to catch any
         // accidental re-introduction of the hosted shell.
         using var shellResponse = await _fixture.Client.GetAsync("/admin/index.html");

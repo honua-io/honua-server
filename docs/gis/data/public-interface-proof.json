@@ -1697,7 +1697,7 @@
         },
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus OAuth2 RFC 7662 introspection integration tests (opt-in JWT + introspection, ADR-0054)",
+          "proofMechanism": "EndpointRegistry coverage plus OAuth2 RFC 7662 introspection integration tests (opt-in JWT + introspection, ADR-0068)",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",

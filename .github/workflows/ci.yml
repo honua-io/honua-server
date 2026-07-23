@@ -57,7 +57,7 @@ on:
   # heavy job is `if:`-gated to `pull_request`/schedule and SKIPS on
   # merge_group; the PR-time aggregator `CI Gate` likewise does not run on
   # merge_group. The merge-queue REQUIRED check must be `Merge Queue Gate`,
-  # NOT `CI Gate`. See docs/internal/contributor/lean-merge-queue-runbook.md.
+  # NOT `CI Gate`. See docs/internal/ci/gate-model.md.
   merge_group:
     types: [checks_requested]
   workflow_dispatch:

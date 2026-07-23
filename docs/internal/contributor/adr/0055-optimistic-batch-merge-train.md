@@ -2,25 +2,27 @@
 
 ## Status
 
-Proposed. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
-land, dry-run-by-default workflow) lands with this ADR. It ships DISABLED for
-live action: every automatic trigger runs in dry-run, and only an explicit
-`workflow_dispatch` with `train_apply=true` (and a `MERGE_TRAIN_TOKEN`) lands a
-batch. A human flips it live later. Phases 2/3 are tracked as roadmap below.
+Accepted. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
+land, and a dry-run-by-default workflow) is active. Automatic triggers remain
+dry-run-only; an explicit `workflow_dispatch` with `train_apply=true` and a
+`MERGE_TRAIN_TOKEN` is the only path that lands a batch. Ordinary clean PRs may
+also land through the separate serial `pr-merge-train.yml` workflow.
 
 ## Context
 
-honua-server merges one PR at a time. GitHub's native merge queue was disabled
+At the time of this decision, honua-server merged one PR at a time. GitHub's native merge queue was disabled
 (2026-06-18, ruleset 17808547) after batch sizes of ~5 caused runner
 starvation, ejected the front PR, reformed the group, and spiralled into zombie
-runs (see `docs/internal/contributor/lean-merge-queue-runbook.md`). The lean
+runs. The lean
 `Merge Queue Gate` job replaced the full matrix on `merge_group`, but the queue
 itself is off, so throughput is gated by serial human merges.
 
-The single required PR check is **CI Gate** (`ci.yml`), an aggregator over the
-full heavy matrix that already validated each PR on its own `pull_request` run
-BEFORE it would ever land. Re-running that matrix per batch is what melted the
-runners. The opportunity: assemble several already-green PRs into one batch
+At the time, the single required PR check was **CI Gate** (`ci.yml`), an
+aggregator over the full heavy matrix that validated each PR on its own
+`pull_request` run before it could land. Re-running that matrix per batch is
+what melted the runners. Branch protection now requires the separate `PR Gate`;
+the batch train remains the cumulative-validation path. The opportunity was to
+assemble several already-green PRs into one batch
 branch, run only the **smart-CI shard subset** that the batch's cumulative diff
 actually touches (via the existing ADR-0037 `honua-server-targeted-tests.sh` +
 `.github/ci-shards.json`), and fast-forward trunk once — catching only the

@@ -12,10 +12,10 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0004](0004-proxy-rate-limiting.md) | Proxy-Based Rate Limiting | Accepted | 2025-12 |
 | [0005](0005-dbup-migrations.md) | DbUp for Database Migrations | Accepted | 2025-12 |
 | [0006](0006-openfreemap-default-basemap.md) | OpenFreeMap as Default Basemap | Accepted | 2025-12 |
-| [0007](0007-embedded-maputnik.md) | Embedded Maputnik Style Editor | Accepted; tracked in honua-server-admin#80 | 2025-12 |
+| [0007](0007-embedded-maputnik.md) | Embedded Maputnik Style Editor | Accepted; UI integration owned by `honua-console` | 2025-12 |
 | [0008](0008-env-var-configuration.md) | Environment Variables as Primary Config | Accepted | 2025-12 |
 | [0009](0009-shared-filter-ast.md) | Shared Filter AST for Multi-Protocol Support | Accepted | 2025-12 |
-| [0010](0010-admin-ui-architecture.md) | Admin UI Architecture (Blazor WASM) | Accepted | 2025-12 |
+| [0010](0010-admin-ui-architecture.md) | Admin UI Architecture (Blazor WASM) | Superseded | 2025-12 |
 | [0011](0011-testing-strategy.md) | Testing Strategy and API Surface Coverage | Accepted | 2025-12 |
 | [0012](0012-clean-architecture-implementation.md) | Clean Architecture Implementation | Accepted | 2025-12 |
 | [0013](0013-minimal-apis-vs-controllers.md) | Minimal APIs vs Controllers Decision | Accepted | 2025-12 |
@@ -45,7 +45,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0037](0037-unified-ci-test-tier-strategy.md) | Unified CI Test Tier Strategy | Accepted | 2026-04 |
 | [0038](0038-geoetl-pipeline-architecture-and-runtime-boundary.md) | GeoETL Pipeline Architecture and Runtime Boundary | Accepted | 2026-05 |
 | [0039](0039-cloud-optimized-hdf-netcdf-reader-strategy.md) | Cloud-Optimized HDF5 / NetCDF4 Reader Strategy | Accepted | 2026-05 |
-| [0040](0040-metadata-v2-canonical-graph.md) | Metadata v2 Canonical Graph Design | Accepted (cutover in progress) | 2026-05 |
+| [0040](0040-metadata-v2-canonical-graph.md) | Metadata v2 Canonical Graph Design | Accepted | 2026-05 |
 | [0041](0041-core-abstractions-extraction.md) | Honua.Core.Abstractions Extraction (Modularization Phase 0+1) | Accepted | 2026-05 |
 | [0042](0042-per-protocol-test-project-split.md) | Per-Protocol Test Project Split (Modularization Phase 2) | Proposed | 2026-05 |
 | [0043](0043-modularization-ci-rework.md) | Modularization CI Rework (Modularization Phase 3) | Proposed | 2026-05 |
@@ -53,13 +53,16 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0045](0045-defer-migration-sequence-collision-renumbering.md) | Defer Renumbering of Colliding Migration Sequence Numbers | Accepted | 2026-05 |
 | [0046](0046-audit-c3-database-session-progressive-migration.md) | Audit C3 — Progressive `IDatabaseSession` Migration With Coexistence | Accepted | 2026-05 |
 | [0047](0047-module-dependency-policy.md) | Module Dependency Policy | Accepted | 2026-05 |
+| [0048](0048-ogc-api-styles-and-cross-repo-style-coherence.md) | OGC API – Styles and Cross-Repo Style Coherence | Accepted | 2026-06 |
 | [0049](0049-single-auth-identity-token-foundation.md) | Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2 | Accepted | 2026-06 |
+| [0050](0050-routing-engine-choice-and-naserver-compat.md) | Routing Engine Choice and NAServer Compatibility | Accepted | 2026-06 |
 | [0051](0051-branch-versioning-storage-model.md) | Branch-Versioning Storage Model (Overlay/Moment Over the Live Base Table) | Accepted | 2026-06 |
 | [0052](0052-kubernetes-closed-loop-promotion-via-argo-rollouts.md) | Kubernetes Closed-Loop Promotion via Argo Rollouts | Accepted | 2026-06 |
-| [0054](0054-evidence-based-feature-catalog.md) | Evidence-Based Feature Catalog (Generated, Drift-Gated Capability Map) | Proposed | 2026-06 |
-| [0057](0057-geoprocessing-capability-boundaries.md) | Geoprocessing Capability Boundaries (Server-Canonical Engine, Thin SDKs, Cloud-Delegated ML) | Accepted | 2026-06 |
+| [0053](0053-oauth2-client-credentials-grant.md) | OAuth2 Client-Credentials Grant for Service-to-Service Named Clients | Accepted | 2026-06 |
+| [0054](0054-evidence-based-feature-catalog.md) | Evidence-Based Feature Catalog (Generated, Drift-Gated Capability Map) | Accepted | 2026-06 |
 | [0055](0055-optimistic-batch-merge-train.md) | Optimistic Batch Merge Train | Accepted | 2026-06 |
 | [0056](0056-mcp-redesign-unified-governed-surface.md) | MCP Redesign — Unified, Client-Agnostic, Governed Surface (Sequencing Plan) | Proposed | 2026-06 |
+| [0057](0057-geoprocessing-capability-boundaries.md) | Geoprocessing Capability Boundaries (Server-Canonical Engine, Thin SDKs, Cloud-Delegated ML) | Accepted | 2026-06 |
 | [0058](0058-unified-capability-registry-single-source-of-truth.md) | Unified Capability Registry as Single Source of Truth for MCP, Spec Conformance, and Studio AI | Accepted | 2026-07 |
 | [0059](0059-first-release-scope-and-fix-forward-operate-model.md) | First-Release Scope and Fix-Forward Operate Model | Accepted | 2026-07 |
 | [0060](0060-two-plane-operability-architecture.md) | Two-Plane Operability Architecture — Substrate-Neutral Executors Over a Unified Catalog | Proposed | 2026-07 |
@@ -70,6 +73,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0065](0065-imageserver-photogrammetric-analytics.md) | ImageServer Photogrammetric Tie-Point and 3D Measurement Analytics | Accepted | 2026-07 |
 | [0066](0066-mcp-evidence-vs-intelligence-boundary.md) | Evidence-vs-Intelligence Boundary for the Open MCP Surface (Rename to `McpDataAccessSurface`) | Accepted | 2026-07 |
 | [0067](0067-plugin-data-store-and-output-format-extension-points.md) | Plugin Data-Store and Output-Format Extension Points | Accepted | 2026-07 |
+| [0068](0068-optional-jwt-access-tokens-and-introspection.md) | Optional JWT Access Tokens and RFC 7662 Introspection | Accepted | 2026-06 |
 
 ## Template
 

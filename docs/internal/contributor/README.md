@@ -52,7 +52,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 ## Roadmaps
 
-- [GeoETL Roadmap](geoetl-roadmap.md) — pipeline architecture, child-ticket decomposition, and runtime boundary for `#361`
+- [ADR-0038: GeoETL Pipeline Architecture](adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md) — runtime boundary and worker-profile decisions for GeoETL
 - Metadata v2: see [epic #1035](https://github.com/honua-io/honua-server/issues/1035) for backlog and milestones; [Release Readiness](architecture/metadata-v2-release-readiness.md) lists the gates.
 
 ## Project Operations

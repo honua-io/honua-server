@@ -3,7 +3,7 @@
 This directory contains the Playwright-based browser compatibility suites used by
 the JavaScript certification lane.
 
-Canonical contributor documentation: [docs/contributor/testing-javascript.md](../../docs/contributor/testing-javascript.md).
+Canonical contributor documentation: [testing-javascript.md](../../docs/internal/contributor/testing-javascript.md).
 
 Quick start:
 

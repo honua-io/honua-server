@@ -8,7 +8,7 @@ A standalone PostGIS + pgRouting database for routing development and the gated
 The default Honua PostGIS images (`postgis/postgis:*`) **do not bundle the
 pgRouting extension**, so `CREATE EXTENSION pgrouting` fails on them (see
 migration `src/Honua.Server/Migrations/043_CreatePgRoutingTopology.sql` and
-[ADR-0050](../../docs/contributor/adr/0050-routing-engine-choice-and-naserver-compat.md)).
+[ADR-0050](../../docs/internal/contributor/adr/0050-routing-engine-choice-and-naserver-compat.md)).
 
 This compose uses the official `pgrouting/pgrouting` image (PostGIS + pgRouting
 bundled) and seeds a tiny deterministic topology so a developer can solve routes
