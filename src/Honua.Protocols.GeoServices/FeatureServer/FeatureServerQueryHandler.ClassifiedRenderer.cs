@@ -558,12 +558,9 @@ internal sealed partial class FeatureServerQueryHandler
         // *accumulated* break (breaks[^1]), not a fixed condition over `raw`, so
         // this is a stateful consecutive-dedup rather than a plain filter.
         var breaks = new List<double>(raw.Count);
-        foreach (var value in raw)
+        foreach (var value in (raw).Where(value => breaks.Count == 0 || value > breaks[^1]))
         {
-            if (breaks.Count == 0 || value > breaks[^1])
-            {
-                breaks.Add(value);
-            }
+            breaks.Add(value);
         }
 
         return [.. breaks];
@@ -677,12 +674,9 @@ internal sealed partial class FeatureServerQueryHandler
         // each value against the last *accumulated* result (result[^1]), a
         // stateful consecutive-dedup rather than a filter over `breaks`.
         var result = new List<double>(breakCount);
-        foreach (var value in breaks)
+        foreach (var value in (breaks).Where(value => result.Count == 0 || value > result[^1]))
         {
-            if (result.Count == 0 || value > result[^1])
-            {
-                result.Add(value);
-            }
+            result.Add(value);
         }
 
         if (result.Count == 0 || result[^1] < sortedValues[n - 1])

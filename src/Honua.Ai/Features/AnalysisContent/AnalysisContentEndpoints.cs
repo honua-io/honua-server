@@ -234,7 +234,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.create", ex);
             return CreateGenericProblem(context);
@@ -258,7 +258,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.get", ex);
             return CreateGenericProblem(context);
@@ -314,7 +314,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.list", ex);
             return CreateGenericProblem(context);
@@ -351,7 +351,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.estimate", ex);
             return CreateGenericProblem(context);
@@ -394,7 +394,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.version.get", ex);
             return CreateGenericProblem(context);
@@ -432,7 +432,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.version.create", ex);
             return CreateGenericProblem(context);
@@ -462,7 +462,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.preview", ex);
             return CreateGenericProblem(context);
@@ -493,7 +493,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.run", ex);
             return CreateGenericProblem(context);
@@ -528,7 +528,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.rerun", ex);
             return CreateGenericProblem(context);
@@ -564,7 +564,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.artifact.get", ex);
             return CreateGenericProblem(context);
@@ -589,7 +589,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.job.logs", ex);
             return CreateGenericProblem(context);
@@ -616,7 +616,7 @@ internal static partial class AnalysisContentEndpoints
         // Intentionally generic: this is the endpoint's top-level failure boundary;
         // specific domain exceptions are already mapped above, so anything else becomes
         // an opaque 500 rather than leaking internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogEndpointFailed(context, "analysis-content.job.failure", ex);
             return CreateGenericProblem(context);

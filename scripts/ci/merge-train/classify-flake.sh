@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Step 5: classify-flake runs only after generic timeout classification. It scans failing-job logs for known environmental signatures and reruns failed jobs once. A persistent known environmental signature retains the optimistic merge-through policy; generic timeout/exit-124 failures never reach that path and remain real.
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
+# Step 5: classify-flake runs after generic timeout classification. Scan the
+# failing jobs' logs for known environmental signatures and rerun failed jobs
+# once. Persistent known-environment signatures retain the optimistic
+# merge-through policy; generic timeout/exit-124 failures never reach this path.
 
 # train_run_logs_match_flake <run-id>: fetch the failed jobs' logs and test them
 # against the flake regex. Returns 0 (flake) / 1 (not). Test override:
@@ -49,7 +53,7 @@ train_failing_job_logs() {
     return 0
   fi
   for jid in ${jids}; do
-    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"$'\n'
+    out+="$(gh run view --job "${jid}" --log 2>/dev/null | tail -c "${cap}" || true)"${HONUA_NL}
   done
   printf '%s' "${out}" | tail -c 12000
 }
@@ -59,7 +63,7 @@ train_failing_job_logs() {
 # Otherwise return 1 (treat as real -> attribute). The rerun is side-effecting
 # (gated by TRAIN_APPLY).
 train_classify_flake() {
-  local run_id="$1" rerun_count="${2:-0}" callback="${3:-}"
+  local run_id="$1" rerun_count="${2:-0}"
   if ! train_run_logs_match_flake "${run_id}"; then
     # Deterministic path found NO known flake signature. This is the ambiguous
     # condition for the Phase-2 unknown-signature gate: optionally ask Bedrock
@@ -70,8 +74,8 @@ train_classify_flake() {
         return 1
       fi
       train_log "llm[flake.unknown] classified TRANSIENT; issuing single rerun of failed jobs"
-      train_request_failed_job_rerun "${run_id}" flake "$((rerun_count + 1))" "${callback}"
-      return $?
+      train_side_effect gh run rerun "${run_id}" --failed
+      return 0
     fi
     train_log "no flake signature in failing logs; treating as real failure"
     return 1
@@ -89,7 +93,8 @@ train_classify_flake() {
     return 2
   fi
   train_log "flake signature matched; issuing single rerun of failed jobs"
-  train_request_failed_job_rerun "${run_id}" flake "$((rerun_count + 1))" "${callback}"
+  train_side_effect gh run rerun "${run_id}" --failed
+  return 0
 }
 
 # --- Phase 2 gate: unknown-signature judgment (gated LLM) ---------------------

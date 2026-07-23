@@ -588,6 +588,7 @@ jobs:
         run: |
           scripts/ci/validate-ci-router.sh
           scripts/ci/merge-train/fixtures/validate-mode.sh
+          bash scripts/ci/validate-single-merge-authority.sh
 
       - name: Validate Kubernetes operator guide contract
         run: scripts/ci/check-kubernetes-guide.sh

@@ -820,7 +820,7 @@ internal sealed partial class TileOperationExecutionCore
         // Path.Combine is safe here: the second segment is a fixed-prefix, GUID-suffixed
         // relative literal generated locally, never an externally-supplied/rooted path.
         var archiveStream = new FileStream(
-            Path.Combine(Path.GetTempPath(), $"honua-pmtiles-{Guid.NewGuid():N}.tmp"),
+            Path.Join(Path.GetTempPath(), $"honua-pmtiles-{Guid.NewGuid():N}.tmp"),
             FileMode.CreateNew,
             FileAccess.ReadWrite,
             FileShare.None,

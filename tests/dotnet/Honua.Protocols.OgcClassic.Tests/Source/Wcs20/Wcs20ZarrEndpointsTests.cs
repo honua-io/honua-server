@@ -288,6 +288,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         {
             var data = Get(key);
             // Ownership transfers to the returned Stream's caller, which disposes it after reading.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult<Stream>(new MemoryStream(
                 data,
                 checked((int)offset),
@@ -314,6 +315,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             // Exact equality is intentional: both sides are integer-valued doubles (the request
             // literal "666" is parsed straight to 666.0 with no arithmetic in between), so this is
             // a deterministic sentinel match, not a genuine floating-point precision comparison.
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             => request.Selections.Any(static selection => selection.Coordinate == 666)
                 ? Task.FromResult(new ZarrRasterSliceReadResult(
                     ZarrRasterSliceReadStatus.ReaderUnavailable,

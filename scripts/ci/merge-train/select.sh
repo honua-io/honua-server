@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
 # Step 1: select — pick the ready PRs for the next batch.
 #
-# Ready = non-draft, labels exclude train:hold / train:escalated (and the
-# pre-existing `hold` opt-out), mergeable == MERGEABLE, and the CI Gate check
-# is SUCCESS OR a flake-only failure. Ordered oldest-createdAt first, capped at
-# MAX_BATCH.
+# Ready = open, non-draft, unheld, mergeable, and exact-current-head PR Gate +
+# Review Gate are both successful. Ordered oldest-createdAt first.
 #
-# READ-ONLY: this step never mutates anything (only gh ... --json reads), so it
-# runs identically in dry-run and live mode.
+# Dry-run selection is read-only. Live selection refreshes the SHA-bound Review
+# Gate from current Codex evidence so resolving a review thread cannot strand a
+# clean PR behind a stale failure status.
 
 # Real-gate job names: a CI Gate failure caused by ANY of these is never a flake
 # (a human must fix it), so the whole PR stays FAIL even under merge-through. The
@@ -100,8 +100,8 @@ train_select_failure_is_flake_only() {
   # cancelled/timed-out/startup-failure shard, or a flake-log `failure` shard.
   while IFS= read -r line; do
     [[ -z "${line}" ]] && continue
-    concl="${line%%$'\t'*}"
-    job="${line#*$'\t'}"
+    concl="${line%%${HONUA_TAB}*}"
+    job="${line#*${HONUA_TAB}}"
     if printf '%s' "${job}" | grep -Eq "${TRAIN_AGGREGATOR_JOB_REGEX}"; then
       continue   # aggregator-only failure => underlying shard cancelled/flaked
     fi
@@ -184,6 +184,97 @@ train_pr_has_hold_label() {
     <<<"${labels_json}" >/dev/null 2>&1
 }
 
+train_pr_admission_snapshot() {
+  local pr="$1"
+  if [[ -n "${TRAIN_ADMISSION_JSON_FOR_PR:-}" ]]; then
+    "${TRAIN_ADMISSION_JSON_FOR_PR}" "${pr}"
+    return
+  fi
+  gh api graphql -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number state isDraft headRefOid labels(first:100){nodes{name} pageInfo{hasNextPage}} reviews(first:100){nodes{author{login} body submittedAt updatedAt state commit{oid}} pageInfo{hasNextPage}} reviewThreads(first:100){nodes{isResolved comments(first:100){nodes{author{login} commit{oid}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}} commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}} pageInfo{hasNextPage}}}}}}}}}' \
+    -F owner="${GITHUB_REPOSITORY%%/*}" -F repo="${GITHUB_REPOSITORY#*/}" -F number="${pr}" \
+    --jq '.data.repository.pullRequest | {number,state,isDraft,headRefOid,labels:.labels.nodes,labelsTruncated:.labels.pageInfo.hasNextPage,reviews:.reviews.nodes,reviewsTruncated:.reviews.pageInfo.hasNextPage,reviewThreads:.reviewThreads.nodes,reviewThreadsTruncated:(.reviewThreads.pageInfo.hasNextPage or any(.reviewThreads.nodes[]?; .comments.pageInfo.hasNextPage)),statusCheckRollup:(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []),checksTruncated:(.commits.nodes[0].commit.statusCheckRollup.contexts.pageInfo.hasNextPage // false)}'
+}
+
+train_publish_review_gate_status() {
+  local pr="$1" head="$2" state="$3" description="$4"
+  if [[ -n "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER:-}" ]]; then
+    "${TRAIN_REVIEW_GATE_STATUS_PUBLISHER}" "${pr}" "${head}" "${state}" "${description}"
+    return
+  fi
+  gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${head}" \
+    -f state="${state}" -f context='Review Gate' -f description="${description}" \
+    -f target_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/pull/${pr}" >/dev/null
+}
+
+# Re-evaluate current exact-head Codex evidence rather than trusting a cached
+# Review Gate status. API/truncation/negative evidence fails closed. In live mode
+# publish the result so branch protection and subsequent controllers see it.
+train_refresh_review_gate() {
+  local pr="$1" head="$2" snapshot="$3" unresolved payload result state description
+  unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
+    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
+  payload="$(jq -nc --argjson reviews "$(jq -c '.reviews // []' <<<"${snapshot}")" \
+    --argjson unresolvedCount "${unresolved}" --arg head "${head}" \
+    '{reviews:$reviews,unresolvedCount:$unresolvedCount,head:$head}')" || return 1
+  result="$(printf '%s' "${payload}" | node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}")" || return 1
+  if jq -e '.exactReview' <<<"${result}" >/dev/null; then
+    state=success; description='Current exact-head Codex evidence is clean'
+  else
+    state=failure; description='No current clean exact-head Codex evidence'
+  fi
+  if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
+    train_publish_review_gate_status "${pr}" "${head}" "${state}" "${description}" || return 1
+  fi
+  [[ "${state}" == "success" ]]
+}
+
+train_snapshot_gate_success() {
+  local snapshot="$1" context="$2"
+  jq -e --arg context "${context}" '
+    [.statusCheckRollup[]
+      | select((.__typename == "CheckRun" and .name == $context and .status == "COMPLETED" and .conclusion == "SUCCESS")
+            or (.__typename == "StatusContext" and .context == $context and .state == "SUCCESS"))]
+    | length > 0' <<<"${snapshot}" >/dev/null
+}
+
+# Re-fetch all mutable PR state. The rollup belongs to headRefOid, so comparing
+# expected_head binds both gate results to the exact admitted SHA.
+train_pr_admission() {
+  local pr="$1" expected_head="$2" snapshot labels
+  TRAIN_LAST_ADMISSION_SNAPSHOT=""
+  snapshot="$(train_pr_admission_snapshot "${pr}" 2>/dev/null)" || {
+    train_warn "reject #${pr}: admission snapshot unavailable"; return 1;
+  }
+  [[ -n "${snapshot}" && "${snapshot}" != "null" ]] || return 1
+  [[ "$(jq -r '.state' <<<"${snapshot}")" == "OPEN" ]] || { train_warn "reject #${pr}: closed"; return 1; }
+  [[ "$(jq -r '.isDraft' <<<"${snapshot}")" == "false" ]] || { train_warn "reject #${pr}: draft"; return 1; }
+  [[ "$(jq -r '.headRefOid' <<<"${snapshot}")" == "${expected_head}" ]] || { train_warn "reject #${pr}: head advanced"; return 1; }
+  jq -e '(.labelsTruncated or .reviewsTruncated or .reviewThreadsTruncated or .checksTruncated) | not' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: snapshot truncated"; return 1; }
+  labels="$(jq -c '.labels // []' <<<"${snapshot}")"
+  train_pr_has_hold_label "${labels}" && { train_warn "reject #${pr}: held/escalated"; return 1; }
+  train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}" || { train_warn "reject #${pr}: current Codex evidence is unavailable or negative"; return 1; }
+  train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
+  if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
+    train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
+  fi
+  TRAIN_LAST_ADMISSION_SNAPSHOT="${snapshot}"
+}
+
+# Fetch the complete open-PR queue. `gh pr list --limit 100` silently truncated
+# busy queues, starving newer PRs forever; GraphQL pagination has no fixed cap.
+train_open_pr_queue() {
+  local pages
+  if [[ -n "${TRAIN_PR_QUEUE_PAGES_CMD:-}" ]]; then
+    pages="$("${TRAIN_PR_QUEUE_PAGES_CMD}")"
+  else
+    pages="$(gh api graphql --paginate \
+      -F owner="${GITHUB_REPOSITORY%%/*}" -F repo="${GITHUB_REPOSITORY#*/}" \
+      -F base="${TRAIN_BASE_BRANCH}" \
+      -f query='query($owner:String!,$repo:String!,$base:String!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequests(first:100,after:$endCursor,states:OPEN,baseRefName:$base,orderBy:{field:CREATED_AT,direction:ASC}){nodes{number headRefOid isDraft mergeable mergeStateStatus labels(first:100){nodes{name}} createdAt author{login}} pageInfo{hasNextPage endCursor}}}}')"
+  fi
+  jq -sc '[.[].data.repository.pullRequests.nodes[] | .labels = (.labels.nodes // [])]' <<<"${pages}"
+}
+
 # train_select: emit the selected batch as JSON lines (one object per PR):
 #   {number, headRefOid, createdAt, gate}
 # Honors MAX_BATCH. Caller pipes through `jq -s .` if it wants an array.
@@ -195,9 +286,7 @@ train_select() {
   if [[ -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
     pr_list="${TRAIN_PR_LIST_JSON}"
   else
-    pr_list="$(gh pr list --base "${TRAIN_BASE_BRANCH}" --state open \
-      --json number,headRefOid,isDraft,mergeable,mergeStateStatus,labels,createdAt,files,author \
-      --limit 100)"
+    pr_list="$(train_open_pr_queue)"
   fi
 
   # Oldest createdAt first.
@@ -220,37 +309,26 @@ train_select() {
     if train_pr_has_hold_label "${labels}"; then
       train_log "skip #${number}: hold/escalated label"; continue
     fi
+    if jq -e --arg landing "${TRAIN_LABEL_LANDING}" 'any(.[]; .name == $landing)' <<<"${labels}" >/dev/null; then
+      train_log "skip #${number}: post-land finalization pending"; continue
+    fi
     if [[ "${mergeable}" != "MERGEABLE" ]]; then
       train_log "skip #${number}: mergeable=${mergeable}"; continue
     fi
 
-    # CI Gate state. In fixture mode the caller may inject a `gate` field.
-    local gate rollup
-    gate="$(jq -r '.gate // empty' <<<"${line}")"
-    if [[ -z "${gate}" ]]; then
-      if [[ -n "${TRAIN_ROLLUP_JSON_FOR_PR:-}" ]]; then
-        rollup="$("${TRAIN_ROLLUP_JSON_FOR_PR}" "${number}")"
-      else
-        rollup="$(gh pr view "${number}" --json statusCheckRollup \
-          --jq '.statusCheckRollup' 2>/dev/null || echo '[]')"
-      fi
-      gate="$(train_select_ci_gate_state "${rollup}")"
+    # Exact-head admission is mandatory. Batch CI remains the integration
+    # authority, but cannot substitute for PR and Codex-review readiness.
+    local gate expected_head
+    expected_head="$(jq -r '.headRefOid' <<<"${line}")"
+    if ! train_pr_admission "${number}" "${expected_head}"; then
+      train_log "skip #${number}: exact-head admission failed"; continue
     fi
-
-    # OPTIMISTIC BATCH-AND-FIX: do NOT require a green per-PR CI to batch a PR.
-    # The ONE batch CI is the authoritative gate; real failures are fixed forward
-    # (autofix) or the culprit is attributed + dropped (train:escalated), so a
-    # genuinely-broken PR self-excludes after one try. This is what buys "less
-    # CI" — one batch run judges N PRs instead of gating on N green per-PR runs.
-    # The gate value is retained only as an informational signal and for the
-    # all-green direct-merge fast-path in train.sh.
-    case "${gate}" in
-      SUCCESS|FLAKE) : ;;
-      *) train_log "include #${number} despite CI Gate=${gate}: batch CI + autofix is the judge" ;;
-    esac
+    # Admission evidence is not CI evidence. Preserve the actual exact-head CI
+    # Gate state for observability; it may legitimately be MISSING.
+    gate="$(train_select_ci_gate_state "$(jq -c '.statusCheckRollup' <<<"${TRAIN_LAST_ADMISSION_SNAPSHOT}")")"
 
     jq -nc --argjson n "${number}" \
-           --arg oid "$(jq -r '.headRefOid' <<<"${line}")" \
+           --arg oid "${expected_head}" \
            --arg created "$(jq -r '.createdAt' <<<"${line}")" \
            --arg gate "${gate}" \
            --arg author "$(jq -r '.author.login // .author.name // "?"' <<<"${line}")" \
@@ -261,6 +339,13 @@ train_select() {
       train_log "reached MAX_BATCH=${MAX_BATCH}"; break
     fi
   done <<<"${ordered}"
+}
+
+# Exact same predicate as selection, bounded to one result for self-chaining.
+train_has_selectable_pr() {
+  local count
+  count="$(MAX_BATCH=1 train_select | jq -s 'length')" || return 1
+  [[ "${count}" -gt 0 ]]
 }
 
 # --- Phase 2 gate: overlap-dependency judgment (gated LLM) --------------------

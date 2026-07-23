@@ -324,11 +324,10 @@ internal static class OgcRecordsEndpoints
         // contain multiple protocol-specific service rows with the same public name
         // (for example FeatureServer/MapServer/STAC views), but Records should expose
         // the public service once with merged protocol links.
-        foreach (var serviceGroup in snapshot.Graph.Services
+        foreach (var services in (snapshot.Graph.Services
                      .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)).Select(serviceGroup => serviceGroup.ToArray()))
         {
-            var services = serviceGroup.ToArray();
             var visiblePublications = services
                 .SelectMany(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
                     .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))

@@ -164,6 +164,7 @@ internal static class GeoServicesFieldConventions
         // Not rewritten as .Where(...): the loop mutates the shared attributes dictionary
         // in place (attributes[fieldName] = epochMs) rather than filtering into a new
         // sequence, and the condition threads a Try-pattern out-var into that mutation.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var fieldName in dateFieldNames)
         {
             if (attributes.TryGetValue(fieldName, out var dateValue)

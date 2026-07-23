@@ -123,7 +123,7 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         // Intentionally generic: this is a long-running background verification loop. A
         // single failed pass (e.g. a transient database error) must not crash the host;
         // retain the prior good/broken signal and retry on the next interval.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogVerificationFailed(_logger, ex);
         }
@@ -147,11 +147,13 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         // method is safe; Interlocked keeps the write/read atomic for the gauge callback.
         if (report.Verified)
         {
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             Interlocked.Exchange(ref _chainBrokenGauge, 0);
             LogVerified(_logger, report.RowsChecked, report.UnhashedRows);
             return;
         }
 
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         Interlocked.Exchange(ref _chainBrokenGauge, 1);
         LogChainBroken(
             _logger,

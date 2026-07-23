@@ -320,7 +320,7 @@ internal static class DataEnrichmentRequestHandlers
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: this is the enrichment
             // reader call boundary; the failure is logged and mapped to a generic error

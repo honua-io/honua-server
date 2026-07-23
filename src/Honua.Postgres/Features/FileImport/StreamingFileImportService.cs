@@ -69,11 +69,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     // Safe: the second Path.Combine argument in each of these is a compile-time relative literal,
     // never caller-supplied input, so it cannot silently discard Path.GetTempPath().
-    private static readonly string _shapefileScratchRoot = Path.Combine(Path.GetTempPath(), "honua-shapefile");
-    private static readonly string _geoPackageScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geopackage");
-    private static readonly string _kmzScratchRoot = Path.Combine(Path.GetTempPath(), "honua-kmz");
-    private static readonly string _fileGdbScratchRoot = Path.Combine(Path.GetTempPath(), "honua-filegdb");
-    private static readonly string _geoParquetScratchRoot = Path.Combine(Path.GetTempPath(), "honua-geoparquet");
+    private static readonly string _shapefileScratchRoot = Path.Join(Path.GetTempPath(), "honua-shapefile");
+    private static readonly string _geoPackageScratchRoot = Path.Join(Path.GetTempPath(), "honua-geopackage");
+    private static readonly string _kmzScratchRoot = Path.Join(Path.GetTempPath(), "honua-kmz");
+    private static readonly string _fileGdbScratchRoot = Path.Join(Path.GetTempPath(), "honua-filegdb");
+    private static readonly string _geoParquetScratchRoot = Path.Join(Path.GetTempPath(), "honua-geoparquet");
     private static readonly CompositeFormat _nullGeometryWarningFormat =
         CompositeFormat.Parse("{0} row(s) were skipped because geometry was null.");
     private static readonly CompositeFormat _partialImportWarningFormat =
@@ -672,7 +672,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         // not already covered by a specific catch above must still surface as a Failed
         // ImportResult instead of crashing the request/job, and the message is a generic
         // client-safe fallback so no provider internals leak.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
             errorMessage = "Import failed.";

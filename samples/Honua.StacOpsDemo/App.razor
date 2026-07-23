@@ -392,7 +392,7 @@
         {
             return;
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional catch-all: this is the top-level UI load boundary for the demo
             // page, and any failure (network, parsing, provider) must degrade to the

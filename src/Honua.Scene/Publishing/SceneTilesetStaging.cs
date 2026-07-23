@@ -42,8 +42,8 @@ internal static class SceneTilesetStaging
         // can never drop contentRootPath.
         var rooted = Path.IsPathRooted(outputRoot)
             ? outputRoot
-            : Path.Combine(contentRootPath, outputRoot);
-        return Path.GetFullPath(Path.Combine(rooted, sceneId));
+            : Path.Join(contentRootPath, outputRoot);
+        return Path.GetFullPath(Path.Join(rooted, sceneId));
     }
 
     /// <summary>
@@ -70,8 +70,8 @@ internal static class SceneTilesetStaging
         // can never drop contentRootPath.
         var rooted = Path.IsPathRooted(outputRoot)
             ? outputRoot
-            : Path.Combine(contentRootPath, outputRoot);
-        return Path.GetFullPath(Path.Combine(rooted, $".staging-{intentId}"));
+            : Path.Join(contentRootPath, outputRoot);
+        return Path.GetFullPath(Path.Join(rooted, $".staging-{intentId}"));
     }
 
     /// <summary>
@@ -130,7 +130,7 @@ internal static class SceneTilesetStaging
         // Intentionally generic: staging cleanup is best-effort and must never throw
         // back into a publish/compensation flow; onError lets the caller log it for a
         // janitor sweep instead.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             onError?.Invoke(ex);
         }

@@ -446,14 +446,10 @@ public readonly record struct ImageServerMosaicRule
         // from within the loop as soon as a matching property is found, not a pure filter —
         // a LINQ equivalent would still need to iterate to find the first match and would
         // be harder to read than the loop.
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in (element.EnumerateObject()).Where(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.String))
         {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
-                property.Value.ValueKind == JsonValueKind.String)
-            {
-                value = property.Value.GetString();
-                return !string.IsNullOrEmpty(value);
-            }
+            value = property.Value.GetString();
+            return !string.IsNullOrEmpty(value);
         }
 
         value = null;

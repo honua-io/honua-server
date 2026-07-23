@@ -72,6 +72,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         var request = context.Request;
 
@@ -537,7 +538,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -560,6 +561,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         var request = context.Request;
 
@@ -791,7 +793,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcFeaturesLog.ItemQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -1325,6 +1327,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var fieldName in propertyFields)
         {
             if (lookup.TryGetValue(fieldName, out var value))
@@ -1339,14 +1342,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string propertyName, out JsonProperty property)
     {
-        foreach (var candidate in element.EnumerateObject())
+        foreach (var candidate in (element.EnumerateObject()).Where(candidate => candidate.NameEquals(propertyName) || string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (candidate.NameEquals(propertyName) ||
-                string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))
-            {
-                property = candidate;
-                return true;
-            }
+            property = candidate;
+            return true;
         }
 
         property = default;

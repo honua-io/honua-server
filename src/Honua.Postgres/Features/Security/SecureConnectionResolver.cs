@@ -140,7 +140,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 var connectionString = await ResolveConnectionStringInternalAsync(connection, cancellationToken);
                 return await TestActualConnectionAsync(connectionString, connection, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Resolution/probe failure for this specific connection: log, persist the unhealthy
                 // status so it surfaces in the registry, and return false rather than throwing.
@@ -150,7 +150,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 return false;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Outer guard for registry-lookup failures (not covered by the inner try): health-check
             // probe semantics — any failure means "unhealthy", not an exception the caller should handle.
@@ -380,7 +380,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
 
             return isHealthy;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Connection probe failure: log, persist the unhealthy status, and return false rather
             // than throwing — this is a health-check helper, not a query path.

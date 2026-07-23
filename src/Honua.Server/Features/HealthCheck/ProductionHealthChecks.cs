@@ -237,7 +237,7 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
 
             return HealthCheckResult.Healthy("Database is healthy", data);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the IHealthCheck request boundary; any
             // failure probing the database must be reported as an Unhealthy result below
@@ -337,7 +337,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
 
             return HealthCheckResult.Healthy("Redis is healthy", data);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the IHealthCheck request boundary; any
             // failure probing Redis must be reported as an Unhealthy result below rather
@@ -419,7 +419,7 @@ internal sealed class FileUploadHealthCheck : IHealthCheck
 
             return HealthCheckResult.Healthy("File upload service is healthy", data);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the IHealthCheck request boundary; any
             // failure reading upload-queue metrics must be reported as an Unhealthy
@@ -498,7 +498,7 @@ internal sealed class ProductionMetricsHealthCheck : IHealthCheck
 
             return HealthCheckResult.Healthy("Production metrics are healthy", data);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the IHealthCheck request boundary; any
             // failure collecting production metrics must be reported as a Degraded

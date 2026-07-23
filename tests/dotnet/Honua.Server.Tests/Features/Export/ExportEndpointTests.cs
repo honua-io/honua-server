@@ -107,7 +107,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         // Save to temp file and verify it's a valid SQLite/GeoPackage database
         var bytes = await response.Content.ReadAsByteArrayAsync();
         // False positive: the second segment is a generated relative filename, never absolute.
-        var tempPath = Path.Combine(Path.GetTempPath(), $"test-export-{Guid.NewGuid():N}.gpkg");
+        var tempPath = Path.Join(Path.GetTempPath(), $"test-export-{Guid.NewGuid():N}.gpkg");
 
         try
         {

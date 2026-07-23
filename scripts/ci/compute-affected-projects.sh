@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Compute the closure of .csproj files affected by a diff so CI build steps
 # can scope `dotnet build` to changed projects + their reverse-dependencies
 # instead of rebuilding the whole solution every push.
@@ -33,7 +34,14 @@ head_ref="${HEAD_REF:-HEAD}"
 # Shared infrastructure that invalidates the affected-projects assumption.
 # Edits to any of these force a full-graph build because the dependency
 # graph or the build itself could be silently affected by them.
-default_force_full=$'Directory.Packages.props\nDirectory.Build.props\nDirectory.Build.targets\nHonua.sln\nglobal.json\nNuGet.config\n.github/\nscripts/ci/'
+default_force_full='Directory.Packages.props
+Directory.Build.props
+Directory.Build.targets
+Honua.sln
+global.json
+NuGet.config
+.github/
+scripts/ci/'
 force_full_paths="${FORCE_FULL_BUILD_PATHS:-${default_force_full}}"
 
 # Diff the working tree against base. Tolerate the case where the base ref
@@ -101,7 +109,7 @@ for csproj in "${all_csprojs[@]}"; do
     ref="${ref//\\//}"
     resolved="$(cd "${csproj_dir}" && realpath -m --relative-to="${REPO_ROOT}" "${ref}" 2>/dev/null || true)"
     [[ -z "${resolved}" ]] && continue
-    reverse_refs["${resolved}"]+="${csproj}"$'\n'
+    reverse_refs["${resolved}"]+="${csproj}"${HONUA_NL}
   done < <(grep -oE 'ProjectReference[[:space:]]+Include="[^"]+\.csproj"' "${csproj}" 2>/dev/null \
            | sed -E 's/.*Include="([^"]+)".*/\1/')
 done

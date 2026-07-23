@@ -107,7 +107,7 @@ public static class SecurityTestScenarios
                     IsSafe = IsResponseSafe(response.StatusCode, responseContent, payload)
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: an attack payload can trigger any exception
                 // type from the client/server stack, and any exception here is a safe
@@ -157,7 +157,7 @@ public static class SecurityTestScenarios
                     IsSafe = !content.Contains(payload, StringComparison.OrdinalIgnoreCase)
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: an attack payload can trigger any exception
                 // type from the client/server stack, and any exception here is a safe

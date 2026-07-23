@@ -3,6 +3,8 @@
 # reproduces, it is real and must continue to attribution; unlike a recognized
 # environmental flake, a persistent timeout is never eligible to merge through.
 
+TRAIN_TIMEOUT_TAB="$(printf '\tX')"; TRAIN_TIMEOUT_TAB="${TRAIN_TIMEOUT_TAB%X}"
+
 train_log_is_timeout() {
   grep -Eiq 'process completed with exit code 124|exit(ed)?( with)?( code)?[ =:]124|tim(e|ed)[ -]?out after|timeout after|command timed out|execution timed out' <<<"$1"
 }
@@ -14,8 +16,8 @@ train_wait_for_rerun_visibility() {
   local interval="${TRAIN_RERUN_VISIBILITY_POLL_SECONDS:-5}" deadline row attempt status
   deadline=$(( $(train_now) + grace ))
   while :; do
-    row="$(train_run_attempt_status "${run_id}" || echo $'0\t')"
-    IFS=$'\t' read -r attempt status <<<"${row}"
+    row="$(train_run_attempt_status "${run_id}" || printf '0\t\n')"
+    IFS="${TRAIN_TIMEOUT_TAB}" read -r attempt status <<<"${row}"
     [[ "${attempt}" =~ ^[0-9]+$ && "${attempt}" -gt "${base}" ]] && return 0
     [[ "$(train_now)" -ge "${deadline}" ]] && return 1
     sleep "${interval}"
@@ -185,7 +187,7 @@ train_run_logs_match_timeout() {
   rows="$(gh run view "${run_id}" --json jobs \
     --jq '.jobs[] | select(.conclusion=="failure") | [.databaseId, .name] | @tsv' \
     2>/dev/null || echo "")"
-  while IFS=$'\t' read -r jid name; do
+  while IFS="${TRAIN_TIMEOUT_TAB}" read -r jid name; do
     [[ -n "${jid}" ]] || continue
     if [[ -n "${failing_names}" ]] && ! grep -Fqx -- "${name}" <<<"${failing_names}"; then
       continue

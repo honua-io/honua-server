@@ -771,6 +771,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                 var coords = new List<double>();
                 // Not a simple filter: TryGetDouble's out-param is the value being collected, so
                 // `.Where(...)` can't express this without duplicating the TryGetDouble call.
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var entry in extentEl.EnumerateArray())
                 {
                     if (entry.ValueKind == JsonValueKind.Number && entry.TryGetDouble(out var d))

@@ -80,7 +80,7 @@ public sealed class KubernetesJobLifecycleCloudIntegrationTests : IClassFixture<
             {
                 await backend.CancelAsync(job);
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Cleanup is best-effort; the cluster is ephemeral CI infrastructure.
             }

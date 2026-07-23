@@ -45,7 +45,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         // All three segments are fixed relative literals (none rooted), so nothing is dropped.
-        _fixture.UseSeed(Path.Combine("tests", "seed", "server.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
 
         // Configure test limits
         _fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(_testLimits));

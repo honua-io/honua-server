@@ -311,6 +311,7 @@ internal static class OgcFeatureIdentifierResolver
             // non-canonical ids) and binds the extracted `objectId` used below; a .Where() would
             // have to re-parse the id, so the guard-clause form here is clearer.
             var tokensByObjectId = new Dictionary<long, string>(distinctIds.Count);
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var featureId in distinctIds)
             {
                 if (TryParseCanonicalPositiveObjectId(featureId, out var objectId))
@@ -334,6 +335,7 @@ internal static class OgcFeatureIdentifierResolver
                     // judgment call: TryGetValue both filters (skips features whose id was not
                     // requested) and binds the extracted `token` used below; a .Where() would
                     // have to re-look-up the token, so the guard-clause form here is clearer.
+                    // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                     foreach (var feature in fastPathResult.Items)
                     {
                         if (tokensByObjectId.TryGetValue(feature.Id, out var token))

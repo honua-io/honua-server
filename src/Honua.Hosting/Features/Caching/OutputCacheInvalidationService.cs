@@ -434,16 +434,11 @@ internal sealed partial class OutputCacheInvalidationService
                 // Not rewritten as .Where(...).FirstOrDefault(): the matched resource
                 // and its publication must be assigned together from the same match,
                 // which a single Where/FirstOrDefault projection can't express cleanly.
-                foreach (var resource in snapshot.Graph.Resources)
+                foreach (var resource in (snapshot.Graph.Resources).Where(resource => string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase)))
                 {
-                    if (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        matchedResource = resource;
-                        matchedPub = snapshot.Index.PublicationsByResource[resource.Metadata.Id]
-                            .OrderBy(p => p.LayerIndex ?? int.MaxValue)
-                            .FirstOrDefault();
-                        break;
-                    }
+                    matchedResource = resource;
+                    matchedPub = snapshot.Index.PublicationsByResource[resource.Metadata.Id].OrderBy(p => p.LayerIndex ?? int.MaxValue).FirstOrDefault();
+                    break;
                 }
             }
 

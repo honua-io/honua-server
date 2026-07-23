@@ -35,7 +35,7 @@ public sealed class ContextAndResultTests
         {
             // Path.Combine args below are a temp-dir root plus a literal relative file
             // name; no rooted-segment risk (cs/path-combine false positive).
-            var path = Path.Combine(dir.FullName, "out.txt");
+            var path = Path.Join(dir.FullName, "out.txt");
             File.WriteAllText(path, new string('x', 100));
 
             var sink = new OutputSink(maxTotalBytes: 150);
@@ -47,7 +47,7 @@ public sealed class ContextAndResultTests
             sink.Artifacts.Should().ContainSingle();
 
             // A second 100-byte file would push past the 150-byte cap.
-            var path2 = Path.Combine(dir.FullName, "out2.txt");
+            var path2 = Path.Join(dir.FullName, "out2.txt");
             File.WriteAllText(path2, new string('y', 100));
             var act = () => sink.AddArtifact("out2.txt", path2);
             act.Should().Throw<OutputSizeExceededException>();
@@ -69,7 +69,7 @@ public sealed class ContextAndResultTests
         {
             // Path.Combine args are a temp-dir root plus a literal relative file name;
             // no rooted-segment risk (cs/path-combine false positive).
-            var path = Path.Combine(dir.FullName, "f.txt");
+            var path = Path.Join(dir.FullName, "f.txt");
             File.WriteAllText(path, "x");
             var sink = new OutputSink(1000);
             var act = () => sink.AddArtifact(name, path);
@@ -97,7 +97,7 @@ public sealed class ContextAndResultTests
         {
             // Path.Combine args are a temp-dir root plus a literal relative file name;
             // no rooted-segment risk (cs/path-combine false positive).
-            var path = Path.Combine(dir.FullName, "a.txt");
+            var path = Path.Join(dir.FullName, "a.txt");
             File.WriteAllText(path, "hello");
             var puts = new List<(string Bucket, string Key, string Path)>();
 

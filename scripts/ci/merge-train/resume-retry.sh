@@ -3,6 +3,8 @@
 # retry intent resumes the existing batch/run; any state/run/branch mismatch is
 # a hard fail-closed error. This path never dispatches CI or requests a rerun.
 
+TRAIN_RESUME_TAB="$(printf '\tX')"; TRAIN_RESUME_TAB="${TRAIN_RESUME_TAB%X}"
+
 # _train_resume_is_ancestor <ancestor> <descendant>: test seam for fixtures.
 _train_resume_is_ancestor() {
   if [[ -n "${TRAIN_RESUME_ANCESTRY_CHECKER:-}" ]]; then
@@ -150,7 +152,7 @@ train_restore_retry_intent() {
   _train_resume_is_ancestor "${trunk}" "${batch_sha}" || return 2
 
   row="$(_train_resume_run_identity "${run_id}" || echo "")"
-  IFS=$'\t' read -r run_branch run_head current_attempt run_event run_path <<<"${row}"
+  IFS="${TRAIN_RESUME_TAB}" read -r run_branch run_head current_attempt run_event run_path <<<"${row}"
   [[ "${run_branch}" == "${batch}" && "${run_head}" == "${batch_sha}" \
     && "${current_attempt}" =~ ^[0-9]+$ && "${current_attempt}" -ge "${base}" \
     && "${run_event}" == "workflow_dispatch" && "${run_path}" == ".github/workflows/ci.yml" ]] || return 2

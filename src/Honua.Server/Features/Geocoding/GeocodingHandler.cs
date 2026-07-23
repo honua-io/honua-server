@@ -80,7 +80,7 @@ internal sealed class GeocodingHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for the GeocodeServer
         // metadata endpoint; the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeocodingLog.OperationFailed(_logger, "metadata", "unknown", ex.Message, ex);
             return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(context, "Unable to resolve geocoding provider configuration."));
@@ -265,7 +265,7 @@ internal sealed class GeocodingHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for findAddressCandidates;
         // the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var providerName = ResolveProviderName(GetValue(values, "provider"));
             GeocodingLog.OperationFailed(_logger, "findAddressCandidates", providerName, ex.Message, ex);
@@ -403,7 +403,7 @@ internal sealed class GeocodingHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for reverseGeocode;
         // the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var providerName = ResolveProviderName(GetValue(values, "provider"));
             GeocodingLog.OperationFailed(_logger, "reverseGeocode", providerName, ex.Message, ex);
@@ -534,7 +534,7 @@ internal sealed class GeocodingHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for suggest;
         // the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var providerName = ResolveProviderName(GetValue(values, "provider"));
             GeocodingLog.OperationFailed(_logger, "suggest", providerName, ex.Message, ex);
@@ -701,7 +701,7 @@ internal sealed class GeocodingHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for geocodeAddresses;
         // the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeocodingLog.OperationFailed(_logger, "geocodeAddresses", resolvedProviderName, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Batch geocoding request failed.");
@@ -745,9 +745,8 @@ internal sealed class GeocodingHandler(
             // Not a simple .Select(): the loop branches into two different accumulators
             // (queries vs. invalidIndices) keyed by the positional index, so a LINQ map
             // wouldn't preserve the dual-output/index-tracking behavior cleanly.
-            foreach (var record in recordsArray.EnumerateArray())
+            foreach (var address in (recordsArray.EnumerateArray()).Select(record => ExtractAddressFromRecord(record)))
             {
-                var address = ExtractAddressFromRecord(record);
                 if (!string.IsNullOrWhiteSpace(address))
                 {
                     queries.Add(address);
@@ -1251,9 +1250,8 @@ internal sealed class GeocodingHandler(
         var selected = new List<string>(tokens.Length);
         // Not a simple .Select(): the loop short-circuits with early returns (empty-field
         // error, "*" wildcard) that a LINQ map/filter chain can't replicate.
-        foreach (var token in tokens)
+        foreach (var trimmed in (tokens).Select(token => token.Trim()))
         {
-            var trimmed = token.Trim();
             if (trimmed.Length == 0)
             {
                 error = "outFields parameter contains an empty field name.";

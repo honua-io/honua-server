@@ -75,11 +75,11 @@ internal sealed class InMemoryCloudFileStorage : ICloudFileStorage
         // Ownership of the MemoryStream transfers to the caller via the returned Stream;
         // the caller reads and disposes it, so it is intentionally not disposed here.
         => Task.FromResult<Stream?>(
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             _objects.TryGetValue(fileId, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
 
     public Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
         => Task.FromResult(_objects.ContainsKey(fileId));
-
     // Unused by the scene asset path.
     public Task<UploadResult> UploadAsync(ByteArrayUploadRequest request, CancellationToken cancellationToken = default)
         => throw new NotSupportedException();

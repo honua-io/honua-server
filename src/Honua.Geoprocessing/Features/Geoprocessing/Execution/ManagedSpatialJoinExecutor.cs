@@ -186,9 +186,8 @@ internal sealed class ManagedSpatialJoinExecutor(
         // Not a .Select(...) candidate: each token goes through multi-step parsing with
         // an explicit validation throw, which reads better as an imperative loop than a
         // Select lambda with an embedded throw.
-        foreach (var token in raw!.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var parts in (raw!.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(token => token.Split(':', StringSplitOptions.TrimEntries)))
         {
-            var parts = token.Split(':', StringSplitOptions.TrimEntries);
             var statName = (parts.Length >= 2 ? parts[1] : parts[0]).ToLowerInvariant();
             var field = parts.Length >= 2 ? parts[0] : string.Empty;
 
@@ -309,6 +308,7 @@ internal sealed class ManagedSpatialJoinExecutor(
             // Not a .Where(...) candidate: TryReadNumeric's out value feeds four
             // running-aggregate updates in the body, so filtering separately would mean
             // parsing each value twice.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var field in _fields)
             {
                 if (TryReadNumeric(joinFeature, field, out var numeric))

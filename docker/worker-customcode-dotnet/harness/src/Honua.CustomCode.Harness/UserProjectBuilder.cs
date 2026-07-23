@@ -55,7 +55,7 @@ public sealed class UserProjectBuilder
         var root = Path.GetFullPath(sourceRoot);
         // False positive: the IsPathRooted check immediately above rejects any
         // absolute depsManifest before it reaches this combine.
-        var project = Path.GetFullPath(Path.Combine(root, depsManifest));
+        var project = Path.GetFullPath(Path.Join(root, depsManifest));
 
         // Defense-in-depth: the project must stay within the cloned source root.
         var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;

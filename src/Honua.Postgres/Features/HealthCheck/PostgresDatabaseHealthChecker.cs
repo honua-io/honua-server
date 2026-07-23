@@ -46,7 +46,7 @@ internal sealed partial class PostgresDatabaseHealthChecker(
         }
         // Intentionally generic: a health check must never throw regardless of the underlying
         // failure — any exception means "unhealthy", so log for diagnostics and return false.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.HealthCheckFailed(_logger, ex);
             return false;

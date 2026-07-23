@@ -133,7 +133,7 @@ public sealed class PostgresShareExportStoreTests(PostgresFixture fixture)
         var root = FindRepoRoot();
         // All segments after `root` are fixed literals and can never be rooted, so Path.Combine
         // cannot drop earlier segments here (cs/path-combine false positive).
-        var migrationPath = Path.Combine(root, "src", "Honua.Server", "Migrations", "037_CreateShareExportTraffic.sql");
+        var migrationPath = Path.Join(root, "src", "Honua.Server", "Migrations", "037_CreateShareExportTraffic.sql");
         var sql = await File.ReadAllTextAsync(migrationPath);
         sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
         await fixture.ExecuteAsync(sql, schema);
@@ -184,7 +184,7 @@ public sealed class PostgresShareExportStoreTests(PostgresFixture fixture)
         {
             // All segments after `current.FullName` are fixed literals and can never be rooted, so
             // Path.Combine cannot drop earlier segments here (cs/path-combine false positive).
-            if (File.Exists(Path.Combine(current.FullName, "src", "Honua.Server", "Migrations", "037_CreateShareExportTraffic.sql")))
+            if (File.Exists(Path.Join(current.FullName, "src", "Honua.Server", "Migrations", "037_CreateShareExportTraffic.sql")))
             {
                 return current.FullName;
             }

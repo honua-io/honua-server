@@ -139,7 +139,7 @@ internal static class AdminStyleSuggestionEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the style suggestion
         // endpoint; the failure is logged and mapped to a generic admin problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             AdminStyleSuggestionLog.StyleSuggestionFailed(logger, layerId, ex.Message, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(

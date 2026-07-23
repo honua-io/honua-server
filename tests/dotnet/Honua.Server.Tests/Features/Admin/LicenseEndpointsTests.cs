@@ -78,7 +78,7 @@ public class LicenseEndpointsTests : IAsyncLifetime
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Second segment is a fixed relative literal filename, so it can never be
         // rooted and silently discard tempDirectory.FullName.
-        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var licensePath = Path.Join(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
             expiresAt: DateTimeOffset.UtcNow.AddDays(30),
@@ -148,7 +148,7 @@ public class LicenseEndpointsTests : IAsyncLifetime
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Second segment is a fixed relative literal filename, so it can never be
         // rooted and silently discard tempDirectory.FullName.
-        var licensePath = Path.Combine(tempDirectory.FullName, "license.honua-license.json");
+        var licensePath = Path.Join(tempDirectory.FullName, "license.honua-license.json");
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
             expiresAt: DateTimeOffset.UtcNow.AddDays(45),

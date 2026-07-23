@@ -84,7 +84,7 @@ internal sealed class Wfs20QueryParameterAdapter(
 
             return Task.FromResult(QueryAdapterResult.Success(query));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: adapter boundary converting protocol-shaped input
             // into the unified query model. Already logged (with exception) and mapped
@@ -155,7 +155,7 @@ internal sealed class Wfs20EditParameterAdapter(
 
             return Task.FromResult(EditAdapterResult.Success(editRequest, transaction, metadata));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: adapter boundary converting protocol-shaped input
             // into the unified edit model. Already logged (with exception) and mapped

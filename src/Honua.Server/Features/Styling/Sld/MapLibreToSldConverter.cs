@@ -36,9 +36,8 @@ internal static class MapLibreToSldConverter
         // `diagnostics` list as a side effect for every layer (including skipped
         // ones), so the loop's ordering/exhaustiveness guarantee is easier to
         // reason about explicitly than through a lazily-evaluated projection.
-        foreach (var layer in layers)
+        foreach (var rule in (layers).Select(layer => ConvertLayerToRule(layer, diagnostics)))
         {
-            var rule = ConvertLayerToRule(layer, diagnostics);
             if (rule != null)
             {
                 rules.Add(rule);

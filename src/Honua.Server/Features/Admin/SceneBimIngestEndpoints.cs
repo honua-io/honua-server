@@ -184,7 +184,7 @@ internal static partial class SceneBimIngestEndpoints
         // Intentional catch-all request-handling boundary: this is the CityGML/BIM
         // ingest endpoint; the failure is logged and mapped to a generic error
         // response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SceneBimIngestLog.IngestFailed(logger, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -260,7 +260,7 @@ internal static partial class SceneBimIngestEndpoints
         // Intentional catch-all: cache invalidation is a best-effort side effect
         // of the ingest; a failure here must not fail the ingest request that
         // already succeeded.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SceneBimIngestLog.CacheInvalidationFailed(logger, sceneId, ex);
         }

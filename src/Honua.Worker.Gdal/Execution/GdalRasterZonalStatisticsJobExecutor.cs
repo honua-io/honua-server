@@ -175,7 +175,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         {
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
-            var inputPath = Path.Combine(workspace, "input.tif");
+            var inputPath = Path.Join(workspace, "input.tif");
 
             // Bound the DECLARED pixel footprint before any gdalwarp/gdalinfo runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a
@@ -210,8 +210,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 // Both second segments are generated relative literals (an internal
                 // zero-based loop counter, never user input), so neither can be rooted
                 // and silently discard workspace.
-                var cutlinePath = Path.Combine(workspace, $"cutline-{zoneIndex}.geojson");
-                var clippedPath = Path.Combine(workspace, $"clipped-{zoneIndex}.tif");
+                var cutlinePath = Path.Join(workspace, $"cutline-{zoneIndex}.geojson");
+                var clippedPath = Path.Join(workspace, $"clipped-{zoneIndex}.tif");
                 var cutlineGeoJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(geometry);
                 await File.WriteAllTextAsync(cutlinePath, cutlineGeoJson, Encoding.UTF8, cancellationToken)
                     .ConfigureAwait(false);

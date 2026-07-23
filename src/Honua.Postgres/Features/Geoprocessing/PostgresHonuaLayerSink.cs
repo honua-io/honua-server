@@ -166,31 +166,31 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
         IReadOnlyList<HonuaLayerSinkRow> rows)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
-        // Not rewritten as rows.Select(...): building each composite key needs a per-row JsonDocument
-        // parse plus a mutable StringBuilder, which is hoisted and reused (via Clear()) below rather
-        // than reallocated per row.
+        // Keep each projected document scoped to one iteration while reusing the key builder.
         var builder = new StringBuilder();
-        foreach (var row in rows)
+        foreach (var document in rows.Select(row => JsonDocument.Parse(row.AttributesJson)))
         {
-            using var document = JsonDocument.Parse(row.AttributesJson);
-            var root = document.RootElement;
-            builder.Clear();
-            for (var i = 0; i < keyFields.Count; i++)
+            using (document)
             {
-                if (i > 0)
+                var root = document.RootElement;
+                builder.Clear();
+                for (var i = 0; i < keyFields.Count; i++)
                 {
-                    builder.Append(KeyFieldSeparator);
+                    if (i > 0)
+                    {
+                        builder.Append(KeyFieldSeparator);
+                    }
+
+                    if (root.TryGetProperty(keyFields[i], out var value) && value.ValueKind != JsonValueKind.Null)
+                    {
+                        builder.Append(value.ValueKind == JsonValueKind.String
+                            ? value.GetString()
+                            : value.GetRawText());
+                    }
                 }
 
-                if (root.TryGetProperty(keyFields[i], out var value) && value.ValueKind != JsonValueKind.Null)
-                {
-                    builder.Append(value.ValueKind == JsonValueKind.String
-                        ? value.GetString()
-                        : value.GetRawText());
-                }
+                keys.Add(builder.ToString());
             }
-
-            keys.Add(builder.ToString());
         }
 
         return keys;
