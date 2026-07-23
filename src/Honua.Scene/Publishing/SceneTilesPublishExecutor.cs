@@ -266,7 +266,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     // Safe: TileStyleSpecDefaults.FileName is a compile-time constant
                     // ("style.json"), never externally supplied, so it can never be rooted.
                     await File.WriteAllBytesAsync(
-                        Path.Combine(stagingDirectory, TileStyleSpecDefaults.FileName),
+                        Path.Join(stagingDirectory, TileStyleSpecDefaults.FileName),
                         styleBytes,
                         cancellationToken).ConfigureAwait(false);
                     styleReference = new TilesetStyleReference
@@ -313,7 +313,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     // Safe: tileFileName and "tileset.json" below are hardcoded literals,
                     // never externally supplied, so neither combine can be rooted.
                     await File.WriteAllBytesAsync(
-                        Path.Combine(stagingDirectory, tileFileName),
+                        Path.Join(stagingDirectory, tileFileName),
                         glb,
                         cancellationToken).ConfigureAwait(false);
 
@@ -327,7 +327,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                         styleReference);
                     var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
                     await File.WriteAllBytesAsync(
-                        Path.Combine(stagingDirectory, "tileset.json"),
+                        Path.Join(stagingDirectory, "tileset.json"),
                         tilesetBytes,
                         cancellationToken).ConfigureAwait(false);
                     tileCount = 1;
@@ -442,7 +442,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         // ValidationException and cancellation are already handled above; any other
         // failure (provider, filesystem, serialization, unexpected bug) must convert
         // to the documented ServiceUnavailableException rather than crash the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
             // Use a dedicated event id with an Exception parameter so the
@@ -514,7 +514,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             // Safe: uri is a deterministic "tile_NNNN.glb" name built from the loop
             // index above, never from external/dataset-controlled content.
             await File.WriteAllBytesAsync(
-                Path.Combine(stagingDirectory, uri),
+                Path.Join(stagingDirectory, uri),
                 glb,
                 cancellationToken).ConfigureAwait(false);
 
@@ -530,7 +530,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
         // Safe: "tileset.json" is a hardcoded literal, never externally supplied.
         await File.WriteAllBytesAsync(
-            Path.Combine(stagingDirectory, "tileset.json"),
+            Path.Join(stagingDirectory, "tileset.json"),
             tilesetBytes,
             cancellationToken).ConfigureAwait(false);
 
@@ -1192,7 +1192,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         // Publish-pipeline compensation boundary: this is a best-effort rollback of a
         // partially-completed publish, already logged below; any exception here must
         // not mask the original failure that triggered compensation.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SceneGenerationLog.RegistrationCompensationFailed(_logger, sceneId, datasetId, ex);
         }

@@ -417,7 +417,7 @@ internal static partial class StaticMapEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for static map
         // rendering; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StaticMapLog.Failed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Static map rendering failed.");

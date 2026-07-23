@@ -54,10 +54,8 @@ def _synthesize_scene(path: str, size: int) -> None:
     ds.GetRasterBand(1).WriteArray(red)
     ds.GetRasterBand(2).WriteArray(nir)
     ds.FlushCache()
-    # Intentional final store, not a dead assignment: osgeo.gdal has no explicit close(); a
-    # GDAL dataset is flushed/closed by dropping its last Python reference, so rebinding `ds`
-    # to None (rather than just letting it go out of scope) here documents that close intent.
-    ds = None  # noqa: F841 — close the dataset (GDAL idiom).
+    # osgeo.gdal has no explicit close; dropping the final reference closes the dataset.
+    del ds
 
 
 def execute(context: GpContext) -> GpResult:

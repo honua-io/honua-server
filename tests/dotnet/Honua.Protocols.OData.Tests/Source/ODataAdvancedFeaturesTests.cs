@@ -36,7 +36,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
     {
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
     }
 
@@ -673,7 +673,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
         await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .UseSeed(Path.Combine("tests", "seed", "odata.yaml"))
+            .UseSeed(Path.Join("tests", "seed", "odata.yaml"))
             .ReplaceService<IFeatureChangeEventPublisher>(publisher);
         await fixture.InitializeAsync();
 

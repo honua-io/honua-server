@@ -306,7 +306,7 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
                 // insert failed; a cleanup failure must not mask the original exception being rethrown.
                 await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
             }

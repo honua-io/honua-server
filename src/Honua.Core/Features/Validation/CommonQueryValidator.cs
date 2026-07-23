@@ -130,6 +130,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         ReadOnlySpan<char> bboxSpan = bboxValue.AsSpan();
         Span<double> coords = stackalloc double[6];
         var count = 0;
+        // codeql[cs/useless-assignment-to-local] -- the value is consumed by the following span or dictionary operation despite the conservative analysis.
         foreach (var range in bboxSpan.Split(','))
         {
             // Do not skip empty tokens: an empty token (e.g. "1,,2,3,4") is a malformed

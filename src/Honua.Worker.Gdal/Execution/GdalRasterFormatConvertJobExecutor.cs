@@ -106,8 +106,8 @@ internal sealed partial class GdalRasterFormatConvertJobExecutor(
             // format.Extension which is only ever a fixed literal drawn from the
             // Formats allowlist above (never user-supplied), so neither can be rooted
             // and silently discard workspace.
-            var inputPath = Path.Combine(workspace, "input.tif");
-            var outputPath = Path.Combine(workspace, $"output.{format.Extension}");
+            var inputPath = Path.Join(workspace, "input.tif");
+            var outputPath = Path.Join(workspace, $"output.{format.Extension}");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).

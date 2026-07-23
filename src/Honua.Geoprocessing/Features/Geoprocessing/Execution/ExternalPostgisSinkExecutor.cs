@@ -218,7 +218,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                             ("partial", true)),
                         cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception publishEx)
+                catch (Exception publishEx) when (publishEx is not OutOfMemoryException)
                 {
                     // Log a structured warning so the batchId is not lost even when the
                     // partial-artifact publish fails during failure handling (BH2-018).
@@ -325,7 +325,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Previously swallowed with no trace, which left an operator staring at a
             // generic "could not be resolved" job failure with no way to diagnose why

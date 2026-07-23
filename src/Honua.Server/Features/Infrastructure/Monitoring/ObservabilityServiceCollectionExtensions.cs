@@ -667,7 +667,7 @@ internal static class ObservabilityServiceCollectionExtensions
         // Intentional catch-all: this is a per-request output-cache-key resolver invoked
         // on the request-handling path. Never let cache-key resolution fault a request;
         // degrade to a sentinel key instead.
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return new KeyValuePair<string, string>("license", "<unknown>");
         }

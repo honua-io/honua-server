@@ -397,9 +397,8 @@ internal static class GeoServicesGeometryConverter
         var holes = new List<LinearRing>();
         var validRingCount = 0;
 
-        foreach (var ring in rings)
+        foreach (var validRing in (rings).Select(ring => FilterValidPoints(ring)))
         {
-            var validRing = FilterValidPoints(ring);
             if (validRing.Length < 3)
             {
                 continue;

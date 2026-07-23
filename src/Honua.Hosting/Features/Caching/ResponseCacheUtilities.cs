@@ -227,9 +227,8 @@ internal static class ResponseCacheUtilities
 
         // Manual buffer fill (not LINQ Select) to avoid per-character allocations
         // in this hot key-normalization path.
-        foreach (var ch in trimmed)
+        foreach (var normalized in (trimmed).Select(ch => char.ToLowerInvariant(ch)))
         {
-            var normalized = char.ToLowerInvariant(ch);
             buffer[length++] = char.IsLetterOrDigit(normalized) || normalized is '-' or '_' or '.'
                 ? normalized
                 : '_';

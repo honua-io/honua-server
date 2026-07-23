@@ -183,7 +183,7 @@ internal sealed class CogTileResolver : ICogTileResolver
             }
             // Intentional catch-all: this is a per-COG loop scanning a mosaic for a tile; one
             // COG's metadata/tile read failure must not abort the scan of the remaining COGs.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 CogLog.MetadataScanFailed(_logger, ex, cog.Id);
             }

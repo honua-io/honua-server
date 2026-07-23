@@ -156,6 +156,7 @@ public sealed class MetadataV2GraphIndex
         // judgment call: the `is not int storageLayerId` pattern-match both filters and binds the
         // extracted value used below; a .Where() would have to re-extract it, which is messier
         // than the guard-clause form here.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var binding in graph.StorageBindings)
         {
             if (binding.StorageLayerId is not int storageLayerId) continue;

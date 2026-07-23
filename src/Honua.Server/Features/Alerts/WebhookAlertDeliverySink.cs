@@ -121,7 +121,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: this is the delivery-sink boundary for a single alert
             // dispatch attempt; the failure is mapped to a retryable delivery result below

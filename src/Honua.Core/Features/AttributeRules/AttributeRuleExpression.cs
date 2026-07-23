@@ -233,6 +233,7 @@ public static class AttributeRuleExpression
             // Kept as a foreach rather than .Where()/.FirstOrDefault(): Match(op) mutates the
             // parser cursor (_pos) as a side effect of testing each operator, so this is a
             // stateful, order-dependent scan rather than a pure filter/projection.
+            // codeql[cs/linq/missed-where] -- predicate mutates parser state; retain imperative control flow.
             foreach (var op in ComparisonOperators)
             {
                 if (Match(op))

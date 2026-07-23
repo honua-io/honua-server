@@ -119,6 +119,7 @@ internal static class GdalUntrustedInputGuard
     {
         // Not a .Where(...)/.FirstOrDefault(...) candidate: decoded is a ReadOnlySpan<byte>
         // (a ref struct), which cannot be captured in a LINQ lambda closure.
+        // codeql[cs/linq/missed-where] -- the predicate reads a ref-like span parameter.
         foreach (var candidate in IndirectionXmlMarkers)
         {
             if (IndexOfAsciiIgnoreCase(decoded, candidate) >= 0)
@@ -136,6 +137,7 @@ internal static class GdalUntrustedInputGuard
     {
         // Not a .Where(...)/.FirstOrDefault(...) candidate: decoded is a ReadOnlySpan<byte>
         // (a ref struct), which cannot be captured in a LINQ lambda closure.
+        // codeql[cs/linq/missed-where] -- the predicate reads a ref-like span parameter.
         foreach (var prefix in DangerousVsiPrefixes)
         {
             if (IndexOfAsciiIgnoreCase(decoded, prefix) >= 0)

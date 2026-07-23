@@ -114,7 +114,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
             _logEncryptionSuccess(_logger, _currentKeyVersion, null);
             return Task.FromResult(encryptedData);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Map any encryption failure to a domain InvalidOperationException so callers never see
             // raw cryptography-library exception details.
@@ -148,7 +148,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
             _logDecryptionFailure(_logger, keyVersion, ex);
             throw new System.Security.Cryptography.CryptographicException("Connection string decryption failed - invalid data or key", ex);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Any non-cryptographic failure (unexpected format, etc.) still maps to a domain
             // InvalidOperationException rather than leaking internals.
@@ -199,7 +199,7 @@ internal sealed class ConnectionEncryptionService : IConnectionEncryptionService
 
             return isValid;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Self-test probe: any failure means encryption is not validated, not an exception the
             // caller should handle — log and return false.

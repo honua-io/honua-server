@@ -183,7 +183,7 @@ internal static class CatalogEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);

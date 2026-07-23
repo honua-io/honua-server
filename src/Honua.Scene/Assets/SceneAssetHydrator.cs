@@ -218,7 +218,7 @@ internal sealed partial class SceneAssetHydrator : ISceneAssetHydrator
         // segment; this combine, plus the StartsWith containment check below, IS the
         // guard that closes the remaining symlink/encoding-trick gap.
         var combined = Path.GetFullPath(
-            Path.Combine(tempDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            Path.Join(tempDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         if (!combined.StartsWith(root, StringComparison.Ordinal))
         {
             return false;

@@ -50,6 +50,7 @@ internal sealed class ImageServerMultidimensionalInfoHandler
         // through the catch block below so RecordException can still attach the exception to
         // the in-flight activity. Disposing via a using-scope ending inside the try would stop
         // the activity before the catch runs, dropping exception telemetry.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? activity = null;
 
         try
@@ -88,7 +89,7 @@ internal sealed class ImageServerMultidimensionalInfoHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.MultidimensionalInfoFailed(_logger, ex, layerId);
             HonuaTelemetry.RecordException(activity, ex);

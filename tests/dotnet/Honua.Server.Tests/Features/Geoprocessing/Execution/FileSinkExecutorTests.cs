@@ -32,7 +32,7 @@ public sealed class FileSinkExecutorTests
         var root = CreateOutputRoot();
         var relativePath = "out/sink.geojson";
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var path = Path.Combine(root, "out", "sink.geojson");
+        var path = Path.Join(root, "out", "sink.geojson");
         var executor = new GeoJsonFileSinkExecutor(Options(root));
         try
         {
@@ -77,7 +77,7 @@ public sealed class FileSinkExecutorTests
         try
         {
             // Path.Combine args are a temp-dir root plus a generated relative file name; no rooted-segment risk.
-            var absolutePath = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-{Guid.NewGuid():N}.geojson");
+            var absolutePath = Path.Join(Path.GetTempPath(), $"honua-geoetl-sink-{Guid.NewGuid():N}.geojson");
 
             var (status, _) = await RunAsync(
                 executor,
@@ -102,7 +102,7 @@ public sealed class FileSinkExecutorTests
         var root = CreateOutputRoot();
         var relativePath = "dlq/quarantine.geojson";
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var path = Path.Combine(root, "dlq", "quarantine.geojson");
+        var path = Path.Join(root, "dlq", "quarantine.geojson");
         var executor = new QuarantineSinkExecutor(Options(root));
         try
         {
@@ -144,7 +144,7 @@ public sealed class FileSinkExecutorTests
             ResultRetention = TimeSpan.FromDays(7),
             // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
             OutputRootDirectory = outputRootDirectory
-                ?? Path.Combine(Path.GetTempPath(), "honua-geoprocessing-outputs")
+                ?? Path.Join(Path.GetTempPath(), "honua-geoprocessing-outputs")
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
@@ -154,7 +154,7 @@ public sealed class FileSinkExecutorTests
     private static string CreateOutputRoot()
     {
         // Path.Combine args are a temp-dir root plus a generated relative folder name; no rooted-segment risk.
-        var root = Path.Combine(Path.GetTempPath(), $"honua-geoetl-sink-root-{Guid.NewGuid():N}");
+        var root = Path.Join(Path.GetTempPath(), $"honua-geoetl-sink-root-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         return root;
     }

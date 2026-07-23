@@ -251,7 +251,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         // (node execution is a plugin surface), so any unhandled exception type must still
         // produce a logged, reported terminal event rather than crashing the background task
         // silently.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SpecTelemetry.RecordException(activity, ex);
             LogApplyTerminatedWithException(_logger, ctx.ApplyToken, ex);
@@ -674,7 +674,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             // Broad catch is intentional: the compute executor is a plugin surface (arbitrary
             // operator implementations), so any exception type must be turned into a clean,
             // logged, per-node "failed" event instead of aborting the whole apply run.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 nodeStopwatch.Stop();
                 SpecTelemetry.NodeDurationMs.Record(nodeStopwatch.Elapsed.TotalMilliseconds,
@@ -730,6 +730,7 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         // lookup per dependency, whereas a LINQ Where(cachedInputs.ContainsKey) + indexer would
         // require two lookups per hit on this per-node hot path.
         var result = new Dictionary<string, CachedArtifactRef>(plannedNode.DependsOn.Count, StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var dep in plannedNode.DependsOn)
         {
             if (cachedInputs.TryGetValue(dep, out var reference))

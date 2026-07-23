@@ -171,7 +171,7 @@ internal sealed class ImageServerProjectHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ProjectFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -263,49 +263,49 @@ internal sealed class ImageServerProjectHandler
             return StandardErrorHelpers.CreateBadRequest(context, error);
         }
 
-        // Not rewritten as .Select: each iteration performs an awaited coordinate-transform
-        // call and can short-circuit the whole handler with an early 400 return, which a
-        // LINQ projection cannot express without materializing the async control flow.
+        // Parse each input through the projection while retaining explicit per-iteration disposal.
         var projected = new List<JsonElement>(request.GeometryJsonStrings.Count);
-        foreach (var geometryJson in request.GeometryJsonStrings)
+        foreach (var document in request.GeometryJsonStrings.Select(geometryJson => JsonDocument.Parse(geometryJson)))
         {
-            using var document = JsonDocument.Parse(geometryJson);
-            var root = document.RootElement;
-            if (!TryGetGeometryDouble(root, "x", out var sample) ||
-                !TryGetGeometryDouble(root, "y", out var line))
+            using (document)
             {
-                const string error = "Each image-space geometry must include numeric x (sample) and y (line).";
-                ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
-                return StandardErrorHelpers.CreateBadRequest(context, error);
-            }
-
-            var (longitude, latitude) = rpcModel.ImageToGround(sample, line);
-
-            var outX = longitude;
-            var outY = latitude;
-            if (reprojectToOut)
-            {
-                var transformResult = await _projection.TransformExtentAsync(
-                    longitude, latitude, longitude, latitude,
-                    GroundSrid, outSrid.Value, datumSelection, cancellationToken).ConfigureAwait(false);
-                if (transformResult is null)
+                var root = document.RootElement;
+                if (!TryGetGeometryDouble(root, "x", out var sample) ||
+                    !TryGetGeometryDouble(root, "y", out var line))
                 {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Image-space ground coordinate could not be projected into the requested outSR.");
+                    const string error = "Each image-space geometry must include numeric x (sample) and y (line).";
+                    ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+                    return StandardErrorHelpers.CreateBadRequest(context, error);
                 }
 
-                outX = transformResult.Value.MinX;
-                outY = transformResult.Value.MinY;
-            }
+                var (longitude, latitude) = rpcModel.ImageToGround(sample, line);
 
-            var geometry = new GeoServicesGeometry
-            {
-                X = outX,
-                Y = outY,
-                SpatialReference = new GeoServicesSpatialReference { Wkid = outSrid.Value, LatestWkid = outSrid.Value },
-            };
-            projected.Add(ToJsonElement(geometry));
+                var outX = longitude;
+                var outY = latitude;
+                if (reprojectToOut)
+                {
+                    var transformResult = await _projection.TransformExtentAsync(
+                        longitude, latitude, longitude, latitude,
+                        GroundSrid, outSrid.Value, datumSelection, cancellationToken).ConfigureAwait(false);
+                    if (transformResult is null)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Image-space ground coordinate could not be projected into the requested outSR.");
+                    }
+
+                    outX = transformResult.Value.MinX;
+                    outY = transformResult.Value.MinY;
+                }
+
+                var geometry = new GeoServicesGeometry
+                {
+                    X = outX,
+                    Y = outY,
+                    SpatialReference = new GeoServicesSpatialReference { Wkid = outSrid.Value, LatestWkid = outSrid.Value },
+                };
+                projected.Add(ToJsonElement(geometry));
+            }
         }
 
         var response = new ImageServerProjectResponse { Geometries = projected.ToArray() };

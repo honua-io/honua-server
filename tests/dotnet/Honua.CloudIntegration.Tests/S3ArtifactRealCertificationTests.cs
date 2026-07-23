@@ -96,7 +96,7 @@ public sealed class S3ArtifactRealCertificationTests : IClassFixture<RealAwsCert
             {
                 await client.DeleteObjectAsync(new DeleteObjectRequest { BucketName = bucket, Key = key });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Best-effort: a leaked object still carries the honua-cert-run tag and is reaped
                 // by the TTL sweeper, so a transient delete blip cannot accumulate cost. Log it so a

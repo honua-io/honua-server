@@ -1,3 +1,3 @@
 # Python Integration Tests
 
-Documentation has moved to [docs/contributor/testing-python.md](../../docs/contributor/testing-python.md).
+Documentation has moved to [testing-python.md](../../docs/internal/contributor/testing-python.md).

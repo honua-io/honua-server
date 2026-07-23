@@ -689,7 +689,7 @@ internal static partial class TilesEndpoints
         }
         // Intentionally generic: this is the top-level tile request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             HonuaTelemetry.RecordException(activity, ex);
@@ -1445,9 +1445,8 @@ internal static partial class TilesEndpoints
         }
 
         var parsedIds = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var rawValue in values)
+        foreach (var value in (values).Select(rawValue => ExtractCollectionId(rawValue)))
         {
-            var value = ExtractCollectionId(rawValue);
             if (string.IsNullOrWhiteSpace(value))
             {
                 error = "Invalid collections parameter.";

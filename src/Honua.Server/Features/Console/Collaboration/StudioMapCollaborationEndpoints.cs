@@ -85,7 +85,7 @@ internal static class StudioMapCollaborationEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -129,7 +129,7 @@ internal static class StudioMapCollaborationEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -174,7 +174,7 @@ internal static class StudioMapCollaborationEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -215,7 +215,7 @@ internal static class StudioMapCollaborationEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -248,7 +248,7 @@ internal static class StudioMapCollaborationEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.

@@ -214,7 +214,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "buffer", ex.Message, ex);
             scope.RecordException(ex);
@@ -293,7 +293,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "simplify", ex.Message, ex);
             scope.RecordException(ex);
@@ -398,7 +398,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "project", ex.Message, ex);
             scope.RecordException(ex);
@@ -474,7 +474,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "union", ex.Message, ex);
             scope.RecordException(ex);
@@ -603,7 +603,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "area", ex.Message, ex);
             scope.RecordException(ex);
@@ -698,7 +698,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "length", ex.Message, ex);
             scope.RecordException(ex);
@@ -785,7 +785,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "distance", ex.Message, ex);
             scope.RecordException(ex);
@@ -909,7 +909,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "relation", ex.Message, ex);
             scope.RecordException(ex);
@@ -1015,7 +1015,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "densify", ex.Message, ex);
             scope.RecordException(ex);
@@ -1091,7 +1091,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "convexHull", ex.Message, ex);
             scope.RecordException(ex);
@@ -1177,7 +1177,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "generalize", ex.Message, ex);
             scope.RecordException(ex);
@@ -1259,7 +1259,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "labelPoints", ex.Message, ex);
             scope.RecordException(ex);
@@ -1346,7 +1346,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "cut", ex.Message, ex);
             scope.RecordException(ex);
@@ -1433,7 +1433,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "trimExtend", ex.Message, ex);
             scope.RecordException(ex);
@@ -1547,7 +1547,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "offset", ex.Message, ex);
             scope.RecordException(ex);
@@ -1636,7 +1636,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "autoComplete", ex.Message, ex);
             scope.RecordException(ex);
@@ -1716,7 +1716,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "reshape", ex.Message, ex);
             scope.RecordException(ex);
@@ -1780,7 +1780,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "findTransformations", ex.Message, ex);
             scope.RecordException(ex);
@@ -1872,7 +1872,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "toGeoCoordinateString", ex.Message, ex);
             scope.RecordException(ex);
@@ -1957,7 +1957,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, "fromGeoCoordinateString", ex.Message, ex);
             scope.RecordException(ex);
@@ -2982,7 +2982,7 @@ internal sealed class GeometryServiceHandler(
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeometryServiceLog.GeometryOperationFailed(_logger, operationName, ex.Message, ex);
             scope.RecordException(ex);

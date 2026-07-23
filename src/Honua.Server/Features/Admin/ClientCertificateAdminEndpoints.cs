@@ -27,10 +27,13 @@ internal static class ClientCertificateAdminEndpoints
     public static void MapClientCertificateAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/security/client-certificates")
-            // #2431: native mTLS / client-certificate authentication was promoted from
-            // experimental to GA (security.mtls Experimental -> Implemented). The gate is
-            // retained but now resolves enabled for the GA capability, so these routes ship on
-            // the default first-release surface (Enterprise entitlement enforced separately).
+            // #2431 promoted native mTLS / client-certificate authentication from experimental
+            // to GA; #2958 DEMOTED it back to experimental (release-safety follow-up): the
+            // always-on client-certificate scheme/RBAC layer interposed on admin requests
+            // regardless of bearer-token validity. These routes are gated OFF the default
+            // surface again until a customer opts in via
+            // Capabilities:Experimental:security.mtls:Enabled=true (Enterprise entitlement is
+            // enforced separately, on top, once the capability is enabled).
             .WithCapabilityGate("security.mtls")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)

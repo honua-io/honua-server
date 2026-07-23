@@ -46,7 +46,7 @@ public static class ContractTestScenarios
                 ActualContent = content
             });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: any failure (schema load, HTTP, parse) becomes a
             // failed ContractValidation entry instead of crashing the harness.
@@ -83,7 +83,7 @@ public static class ContractTestScenarios
             var geoJsonValidation = ValidateGeoJsonStructure(content);
             results.Add(geoJsonValidation);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: reports the failure as a validation result rather
             // than crashing the harness.
@@ -123,7 +123,7 @@ public static class ContractTestScenarios
                 compatibility.TestName = $"Backwards Compatibility: {endpoint}";
                 results.Add(compatibility);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: one endpoint's failure becomes a failed
                 // validation entry for that endpoint without aborting the remaining checks.
@@ -187,7 +187,7 @@ public static class ContractTestScenarios
 
                 results.Add(validation);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: one contract's failure becomes a failed
                 // validation entry for that contract without aborting the remaining checks.
@@ -262,7 +262,7 @@ public static class ContractTestScenarios
                     ActualContent = await response.Content.ReadAsStringAsync()
                 });
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: one endpoint's failure becomes a failed
                 // validation entry for that endpoint without aborting the remaining checks.
@@ -425,7 +425,7 @@ public static class ContractTestScenarios
             // Check that all baseline properties still exist in current
             ValidatePropertyCompatibility(baselineDoc.RootElement, currentDoc.RootElement, "", errors);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: any parse/compare failure becomes a validation
             // error message rather than crashing the harness.

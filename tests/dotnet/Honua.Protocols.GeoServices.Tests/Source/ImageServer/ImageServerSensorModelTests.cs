@@ -128,6 +128,7 @@ public class ImageServerSensorModelTests
         var rpc = ImageServerSensorModel.TryReadRpc(metadata);
 
         rpc.Should().NotBeNull();
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         rpc.Value.LineScale.Should().Be(800);
         rpc.Value.LongitudeScale.Should().Be(0.05);
         rpc.Value.LatitudeScale.Should().Be(0.04);
@@ -232,6 +233,7 @@ public class ImageServerSensorModelTests
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
         sun.Should().NotBeNull();
         sun!.Value.SunElevationDegrees.Should().Be(45.0);
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         sun.Value.SunAzimuthDegrees.Should().Be(137.5);
     }
 
@@ -247,6 +249,7 @@ public class ImageServerSensorModelTests
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
         sun.Should().NotBeNull();
         sun!.Value.SunElevationDegrees.Should().Be(62.0);
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         sun.Value.SunAzimuthDegrees.Should().BeNull();
     }
 
@@ -262,6 +265,7 @@ public class ImageServerSensorModelTests
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
         sun.Should().NotBeNull();
         sun!.Value.SunElevationDegrees.Should().Be(30.0);
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         sun.Value.SunAzimuthDegrees.Should().Be(200.0);
     }
 
@@ -278,6 +282,7 @@ public class ImageServerSensorModelTests
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
         sun.Should().NotBeNull();
         sun!.Value.SunElevationDegrees.Should().BeApproximately(45.0, 1e-9);
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         sun.Value.SunAzimuthDegrees.Should().BeApproximately(90.0, 1e-9);
     }
 

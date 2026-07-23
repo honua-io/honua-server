@@ -59,7 +59,7 @@ internal sealed class ODataQueryParameterAdapter(
     /// <see cref="IFilterExpressionService.ParseAndNormalize"/> overload, validates $select against
     /// <see cref="MetadataV2Resource.SchemaFields"/>, and stores the filter as a
     /// <see cref="QueryFilter"/>. SQL translation is deferred to the downstream processor's
-    /// SQL last-mile bridge (#1035): see metadata-v2-cutover-plan.md.
+    /// SQL last-mile bridge (#1035): see ADR-0040, the Metadata v2 canonical graph.
     /// </summary>
     public Task<QueryAdapterResult> ConvertAsync(
         ODataQueryParameters parameters,
@@ -156,7 +156,7 @@ internal sealed class ODataQueryParameterAdapter(
         }
         // Intentional broad catch: parameter-adaptation boundary; already logged
         // (QueryParameterConversionFailed) and mapped to an adapter failure result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ODataPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
             return Task.FromResult(QueryAdapterResult.Failure("Invalid OData query parameters."));
@@ -227,9 +227,8 @@ internal sealed class ODataQueryParameterAdapter(
         // validates syntax and throws ArgumentException per-segment, and conditionally
         // appends to `clauses` - a LINQ projection would obscure the early-exit validation
         // and per-item side effects rather than simplify them.
-        foreach (var rawField in orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var trimmed in (orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries)).Select(rawField => rawField.Trim()))
         {
-            var trimmed = rawField.Trim();
             if (trimmed.Length == 0)
             {
                 continue;

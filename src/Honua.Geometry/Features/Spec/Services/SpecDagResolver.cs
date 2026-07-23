@@ -199,12 +199,9 @@ internal static class SpecDagResolver
             // is a required side effect for every dependent, not just the ones that reach zero,
             // so a LINQ Where predicate would have to perform the mutation itself — the
             // imperative form keeps the mutation and the conditional enqueue explicit.
-            foreach (var dependent in reverseEdges[next])
+            foreach (var dependent in (reverseEdges[next]).Where(dependent => --inDegree[dependent] == 0))
             {
-                if (--inDegree[dependent] == 0)
-                {
-                    ready.Add(dependent);
-                }
+                ready.Add(dependent);
             }
         }
 

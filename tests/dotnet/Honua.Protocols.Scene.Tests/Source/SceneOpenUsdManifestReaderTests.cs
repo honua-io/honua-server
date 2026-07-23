@@ -174,13 +174,13 @@ public sealed class SceneOpenUsdManifestReaderTests
         // `relativePath` below is always a relative literal supplied by callers
         // in this file's test cases, so Path.Combine cannot silently drop
         // earlier arguments.
-        var root = Path.Combine(Path.GetTempPath(), "honua-openusd-reader-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-openusd-reader-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);
+        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
 
         foreach (var (relativePath, content) in additionalFiles)
         {
-            var path = Path.Combine(root, relativePath);
+            var path = Path.Join(root, relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, content);
         }

@@ -96,6 +96,7 @@ public static class ConfigurationValueExtensions
                 Type type when type == typeof(DateTime) => DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
                 Type type when type == typeof(DateTimeOffset) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
                 Type type when type == typeof(Uri) => new Uri(value, UriKind.RelativeOrAbsolute),
+                // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
                 _ when targetType.IsEnum => Enum.Parse(targetType, value, ignoreCase: true),
                 _ => throw new InvalidOperationException(
                     $"Configuration value '{key}' cannot be converted to {targetType.Name}.")

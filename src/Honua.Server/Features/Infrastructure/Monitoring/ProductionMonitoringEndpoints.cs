@@ -330,7 +330,7 @@ internal static class ProductionMonitoringEndpoints
 
             return Results.Json(response, MetricsJsonContext.Default.ComprehensiveHealthResponse);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic problem response below.
@@ -392,7 +392,7 @@ internal static class ProductionMonitoringEndpoints
 
             return Results.Json(response, MetricsJsonContext.Default.DatabaseResilienceMetricsResponse);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic problem response below.

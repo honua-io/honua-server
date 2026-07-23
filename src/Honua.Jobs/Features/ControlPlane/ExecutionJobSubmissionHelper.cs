@@ -57,7 +57,7 @@ internal static partial class ExecutionJobSubmissionHelper
                     .ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort rollback; job TTL or manual intervention will repair. Still log so
             // the failure is diagnosable instead of silently swallowed.
@@ -202,7 +202,7 @@ internal static partial class ExecutionJobSubmissionHelper
                     .ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Deliberately broad: progress bridging is a best-effort projection and must
             // not fail the submission/reconciliation flow that already persisted the

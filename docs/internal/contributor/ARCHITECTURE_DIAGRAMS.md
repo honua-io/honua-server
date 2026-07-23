@@ -84,7 +84,7 @@ graph TB
         subgraph "Application Containers"
             Server["<b>Honua.Server</b><br/><i>ASP.NET Core API</i><br/><br/>Hosts all protocol endpoints:<br/>• FeatureServer REST<br/>• MapServer REST<br/>• OGC API Features<br/>• OData v4<br/>• Vector Tiles<br/>• Admin API"]
 
-            AdminUI["<b>honua-server-admin</b><br/><i>Blazor WebAssembly</i><br/><br/>Standalone admin interface:<br/>• Connection management<br/>• Layer publishing<br/>• File import<br/>• Style editing"]
+            AdminUI["<b>honua-console</b><br/><i>Standalone web application</i><br/><br/>Admin and Studio interface:<br/>• Connection management<br/>• Layer publishing<br/>• File import<br/>• Style editing"]
         end
 
         subgraph "Infrastructure"
@@ -109,7 +109,7 @@ graph TB
 | Container | Technology | Responsibility |
 |-----------|------------|----------------|
 | **Honua.Server** | ASP.NET Core 10, Native AOT | API host, business logic, protocol translation |
-| **honua-server-admin** | Blazor WebAssembly | Standalone Admin UI deployed separately from `Honua.Server` |
+| **honua-console** | Standalone web application | Active Admin and Studio UI, deployed separately from `Honua.Server` |
 | **PostgreSQL + PostGIS** | PostgreSQL 16, PostGIS 3.4 | Data storage, spatial ops, MVT generation |
 | **Redis** (optional) | Redis 7 | Metadata caching, output caching |
 
@@ -432,45 +432,20 @@ erDiagram
 
 ---
 
-## 9. Admin UI Component Structure
+## 9. Admin and Studio UI Boundary
+
+The UI implementation belongs to the separate `honua-console` repository.
+This repository owns only the Admin API and shared server contracts consumed
+by that application.
 
 ```mermaid
-graph TB
-    subgraph "honua-server-admin (Blazor WASM)"
-        subgraph "Pages"
-            Dashboard[Dashboard.razor<br/><i>Health overview</i>]
-            Connections[Connections.razor<br/><i>DB connection mgmt</i>]
-            Layers[Layers.razor<br/><i>Layer list & publish</i>]
-            Import[Import.razor<br/><i>File import wizard</i>]
-            Preview[Preview.razor<br/><i>Map preview</i>]
-            Styles[LayerStylePage.razor<br/><i>JSON style editor; Maputnik backlog</i>]
-        end
+graph LR
+    Console[honua-console<br/>Admin + Studio UI]
+    AdminApi[Honua.Server<br/>/api/v1/admin/*]
+    Styles[Honua.Server<br/>/ogc/styles/*]
 
-        subgraph "Components"
-            ConnectionForm[ConnectionForm.razor]
-            TableSelector[TableSelector.razor]
-            LayerConfig[LayerConfigForm.razor]
-            FileUploader[FileUploader.razor]
-            MapView[MapView.razor<br/><i>MapLibre GL</i>]
-        end
-
-        subgraph "Services"
-            ApiClient[HonuaApiClient.cs]
-            AuthService[AuthService.cs]
-            StateContainer[AppState.cs]
-        end
-    end
-
-    Dashboard --> ApiClient
-    Connections --> ConnectionForm
-    Connections --> ApiClient
-    Layers --> TableSelector
-    Layers --> LayerConfig
-    Import --> FileUploader
-    Preview --> MapView
-    Styles --> MapView
-
-    ApiClient -->|HTTPS| API[Honua.Server API]
+    Console -->|HTTPS| AdminApi
+    Console -->|Style authoring| Styles
 ```
 
 ---
@@ -576,4 +551,4 @@ graph TB
 ## See Also
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture prose
-- [ADRs](../../contributor/adr) - Architecture Decision Records
+- [ADRs](adr/README.md) - Architecture Decision Records

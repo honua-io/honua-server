@@ -397,7 +397,7 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
                 execution.CompleteCancelled();
                 Log.ProcessCancelled(_logger, execution.OperationId);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: this is the terminal handler for a fire-and-forget
                 // monitor task: any unexpected failure must still mark the execution
@@ -481,9 +481,9 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
 
         var root = string.IsNullOrWhiteSpace(_options.WorkingRoot)
-            ? Path.Combine(Path.GetTempPath(), "honua-local-process")
+            ? Path.Join(Path.GetTempPath(), "honua-local-process")
             : _options.WorkingRoot;
-        var jobDirectory = Path.Combine(root, SanitizeDirectorySegment(job.OperationId));
+        var jobDirectory = Path.Join(root, SanitizeDirectorySegment(job.OperationId));
         Directory.CreateDirectory(jobDirectory);
         return (jobDirectory, true);
     }

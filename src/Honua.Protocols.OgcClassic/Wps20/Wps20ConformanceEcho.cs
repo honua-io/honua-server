@@ -189,6 +189,7 @@ internal sealed class Wps20ConformanceEcho : IDisposable
         Exception? lastFailure = null;
         foreach (var pinnedAddress in pinnedAddresses)
         {
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = createSocket(pinnedAddress.AddressFamily);
             var ownershipTransferred = false;
             try

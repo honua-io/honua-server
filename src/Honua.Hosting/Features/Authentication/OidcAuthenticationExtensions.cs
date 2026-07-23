@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -195,9 +196,21 @@ public static class OidcAuthenticationExtensions
                     return AdminSessionScheme;
                 }
 
-                var clientCertificateOptions = context.RequestServices
-                    .GetService<IOptions<ClientCertificateAuthenticationOptions>>()?
-                    .Value;
+                // #2958: the client-certificate scheme is only registered (and only a valid
+                // forward target) when the security.mtls experimental capability is enabled.
+                // Routing to it while the flag is off would throw (no handler registered for
+                // the scheme), so the capability flag is checked before Mode/certificate
+                // presence even though it changes the branch's meaning: a caller presenting a
+                // certificate while the capability is off falls through to API-key auth below.
+                var mtlsCapabilityEnabled = (context.RequestServices
+                    .GetService<IOptions<CapabilityFlagOptions>>()?
+                    .Value ?? new CapabilityFlagOptions())
+                    .IsExperimentalEnabled(ClientCertificateAuthenticationDefaults.CapabilityId);
+                var clientCertificateOptions = mtlsCapabilityEnabled
+                    ? context.RequestServices
+                        .GetService<IOptions<ClientCertificateAuthenticationOptions>>()?
+                        .Value
+                    : null;
                 if (clientCertificateOptions is not null &&
                     clientCertificateOptions.Mode != ClientCertificateAuthenticationMode.Disabled &&
                     (context.Connection.ClientCertificate is not null ||
@@ -240,7 +253,8 @@ public static class OidcAuthenticationExtensions
         // client-certificate principals with admin roles.
         services.PostConfigure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(authzOptions =>
         {
-            var schemes = BuildSchemes();
+            var schemes = BuildSchemes(
+                ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration));
             var adminRoles = BuildRoleSet(oidcOptions.AdminRoles, "admin", "administrator", "Administrator");
 
             UpdateRolePolicy(
@@ -277,7 +291,7 @@ public static class OidcAuthenticationExtensions
         return services;
     }
 
-    private static List<string> BuildSchemes()
+    private static List<string> BuildSchemes(bool mtlsCapabilityEnabled)
     {
         // Admin APIs authenticate through the composite scheme. Interactive provider
         // schemes are used by backend-assisted login endpoints; adding them to API
@@ -286,12 +300,19 @@ public static class OidcAuthenticationExtensions
         var schemes = new List<string>
         {
             CompositeScheme,
-            ClientCertificateAuthenticationDefaults.AuthenticationScheme,
             // Console-consumable operator bearer (#2258): admin policies must accept
             // a principal projected from a forwardable operator bearer so it resolves
             // to the same RBAC as the cookie session it was issued from.
             OperatorBearerScheme
         };
+
+        // #2958: the client-certificate scheme is only registered when the security.mtls
+        // experimental capability is enabled; adding an unregistered scheme name to a
+        // policy throws at authorization time, so it must be conditional here too.
+        if (mtlsCapabilityEnabled)
+        {
+            schemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+        }
 
         return schemes;
     }

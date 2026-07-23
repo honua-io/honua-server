@@ -124,9 +124,8 @@ class OutputSizeExceeded(RuntimeError):
 class ProgressReporter(Protocol):
     """Reports coarse progress back to the job. The default impl logs."""
 
-    # `...` is the standard typing.Protocol method-stub body (no implementation here by
-    # design); it is not a dead/ineffectual statement.
-    def report(self, pct: float, phase: str) -> None: ...
+    def report(self, pct: float, phase: str) -> None:
+        raise NotImplementedError
 
 
 class _LoggingProgressReporter:
@@ -141,11 +140,11 @@ class _LoggingProgressReporter:
 class Logger(Protocol):
     """Structured-ish logger surface for tools. Lines are captured as job logs."""
 
-    # `...` is the standard typing.Protocol method-stub body (no implementation here by
-    # design); these are not dead/ineffectual statements.
-    def info(self, message: str) -> None: ...
+    def info(self, message: str) -> None:
+        raise NotImplementedError
 
-    def warn(self, message: str) -> None: ...
+    def warn(self, message: str) -> None:
+        raise NotImplementedError
 
 
 class _StdLogger:

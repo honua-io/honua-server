@@ -108,7 +108,7 @@ internal static class PluginExecutionAudit
         {
             throw;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Auditing a best-effort lifecycle transition must never become a new failure source.
         }

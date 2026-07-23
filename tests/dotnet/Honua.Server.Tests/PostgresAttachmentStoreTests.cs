@@ -40,7 +40,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     {
         _schemaName = await _fixture.CreateIsolatedSchemaAsync(nameof(PostgresAttachmentStoreTests));
         // Guid.NewGuid().ToString() is never rooted, so GetTempPath() is never dropped.
-        _tempStoragePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        _tempStoragePath = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_tempStoragePath);
 
         var progressStore = Substitute.For<IUploadProgressStore>();

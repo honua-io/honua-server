@@ -91,6 +91,7 @@ public sealed class GeoParquetUrlPreviewTests : IAsyncLifetime
 
             // Returned to the HttpClient pipeline; disposal ownership transfers to the
             // caller, so this must not be wrapped in `using` here.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = content

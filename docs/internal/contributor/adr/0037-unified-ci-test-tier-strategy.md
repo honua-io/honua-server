@@ -46,7 +46,7 @@ to an event, a selective-test entry point so PRs that touch one feature do not
 have to run every configured shard, and a flaky-quarantine reporting workflow.
 
 This ADR is the convention source. Sibling repositories (`honua-sdk-js`,
-`honua-sdk-python`, `honua-sdk-dotnet`, `honua-server-admin`) adopt the
+`honua-sdk-python`, `honua-sdk-dotnet`, `honua-console`) adopt the
 same `Tier` trait and the same `Fast / Integration / Slow` schedule via
 the cross-repo CI conventions in `honua-devops`.
 

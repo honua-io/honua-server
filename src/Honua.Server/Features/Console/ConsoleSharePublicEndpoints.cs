@@ -109,7 +109,7 @@ internal static class ConsoleSharePublicEndpoints
         // Intentional catch-all request-handling boundary: this is the anonymous
         // public-link resolution endpoint; logs and returns a generic 500 problem
         // response. Never surface raw exception detail on the anonymous surface.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.public.link", ex);
             return TypedResults.Problem(
@@ -161,7 +161,7 @@ internal static class ConsoleSharePublicEndpoints
         // Intentional catch-all request-handling boundary: this is the anonymous
         // public-content resolution endpoint; logs and returns a generic 500 problem
         // response. Never surface raw exception detail on the anonymous surface.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.public.content", ex);
             return TypedResults.Problem(
@@ -212,7 +212,7 @@ internal static class ConsoleSharePublicEndpoints
         // Intentional catch-all request-handling boundary: this is the anonymous
         // embed-token redemption endpoint; logs and returns a generic 500 problem
         // response. Never surface raw exception detail on the anonymous surface.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "share.public.embed", ex);
             return TypedResults.Problem(

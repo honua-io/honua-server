@@ -86,7 +86,7 @@ internal sealed class ShareExportJobTerminalCallback(
         // Intentional catch-all: this is a best-effort reconcile; a failure here must not
         // block the job's terminal transition. The run stays at its prior status until a
         // later terminal notification succeeds.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ShareAdminLog.ExportRunReconcileFailed(logger, runId, exportId, status.Value, job.OperationId, ex);
         }

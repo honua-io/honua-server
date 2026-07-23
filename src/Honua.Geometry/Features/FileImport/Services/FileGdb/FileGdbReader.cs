@@ -104,7 +104,7 @@ internal static class FileGdbReader
         var recordIndex = 0;
         // layer.FileNumber is an int formatted as 8 hex digits, so this segment can never be
         // rooted/absolute — Path.Combine cannot silently drop gdbPath here.
-        var tablePath = Path.Combine(gdbPath, $"a{layer.FileNumber:x8}.gdbtable");
+        var tablePath = Path.Join(gdbPath, $"a{layer.FileNumber:x8}.gdbtable");
 
         if (!File.Exists(tablePath))
         {
@@ -194,7 +194,7 @@ internal static class FileGdbReader
     {
         // "a00000001.gdbtable" is a hardcoded literal, so this segment can never be
         // rooted/absolute — Path.Combine cannot silently drop gdbPath here.
-        var catalogPath = Path.Combine(gdbPath, "a00000001.gdbtable");
+        var catalogPath = Path.Join(gdbPath, "a00000001.gdbtable");
         if (File.Exists(catalogPath))
         {
             var layers = DiscoverLayersFromCatalog(gdbPath, catalogPath);
@@ -265,7 +265,7 @@ internal static class FileGdbReader
                 var fileNumber = objectId;
                 // fileNumber is an int formatted as 8 hex digits, so this segment can never be
                 // rooted/absolute — Path.Combine cannot silently drop gdbPath here.
-                var probeTablePath = Path.Combine(gdbPath, $"a{fileNumber:x8}.gdbtable");
+                var probeTablePath = Path.Join(gdbPath, $"a{fileNumber:x8}.gdbtable");
                 if (!File.Exists(probeTablePath))
                 {
                     continue;

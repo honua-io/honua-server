@@ -232,7 +232,7 @@ public static class LocalstackCli
         // Each candidate combines a PATH entry (directory) with the fixed command
         // filename, so this combine can't drop the directory.
         return path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Select(entry => Path.Combine(entry.Trim(), commandName))
+            .Select(entry => Path.Join(entry.Trim(), commandName))
             .FirstOrDefault(File.Exists);
     }
 }

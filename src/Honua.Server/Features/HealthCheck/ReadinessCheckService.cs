@@ -162,7 +162,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         // Intentional catch-all: this is the readiness-check request boundary spanning
         // several distinct sub-checks; any failure is logged for debugging (without
         // exposing details in the response) and mapped to a NotReady result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var failureMessage = $"{currentCheckName} health check failed";
             Log.DatabaseConnectionFailed(_logger, $"{failureMessage}: {ex.Message}", ex);

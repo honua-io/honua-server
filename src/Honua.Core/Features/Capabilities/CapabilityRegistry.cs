@@ -266,11 +266,17 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("transport.qgis", "transports", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
 
             // Native mTLS (client-certificate) authentication — promoted to GA (Implemented) in
-            // #2431. Second Experimental->Implemented promotion (after alerts.geofence, #2427):
-            // hardened chain/CRL-OCSP revocation validation, then flipped off the experimental
-            // gate. Enterprise entitlement (FeatureCatalog.MtlsClientCertificateKey) so the
-            // manifest/registry advertise it as Enterprise-gated.
-            ("security.mtls", "security", FeatureCatalog.MtlsClientCertificateKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // #2431, then DEMOTED back to experimental in #2958 (release-safety follow-up to
+            // #2946/#2431): the always-on client-certificate scheme/RBAC layer interposed on
+            // every admin request regardless of bearer-token validity (a fully valid JWT could
+            // get a 403 from the cert layer in a host that never configured mTLS). It is now a
+            // built-experimental capability again, gated OFF by default; the auth-layer wiring
+            // (scheme registration, admin/ops-read policy scheme lists, and the enforcement
+            // middleware) reads this same flag directly — see
+            // ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled. Enterprise
+            // entitlement (FeatureCatalog.MtlsClientCertificateKey) still applies on top once
+            // the flag is on.
+            ("security.mtls", "security", FeatureCatalog.MtlsClientCertificateKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("preview.file-import", "preview", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("query.features", "query", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // analysis.spatial is gated by a composite of four analytics keys; the

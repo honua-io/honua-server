@@ -150,11 +150,8 @@ internal sealed class InputValidationMiddleware
         // Validate query parameters
         // Not a pure filter: returns the first invalid ValidateParameter result immediately
         // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
-        foreach (var param in request.Query)
+        foreach (var param in (request.Query).Where(param => !(string.IsNullOrEmpty(param.Key))))
         {
-            if (string.IsNullOrEmpty(param.Key))
-                continue;
-
             var result = ValidateParameter(request, "query", param.Key, param.Value);
             if (!result.IsValid)
                 return result;
@@ -165,11 +162,8 @@ internal sealed class InputValidationMiddleware
         {
             // Not a pure filter: returns the first invalid ValidateParameter result immediately
             // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
-            foreach (var param in request.Form)
+            foreach (var param in (request.Form).Where(param => !(string.IsNullOrEmpty(param.Key))))
             {
-                if (string.IsNullOrEmpty(param.Key))
-                    continue;
-
                 var result = ValidateParameter(request, "form", param.Key, param.Value);
                 if (!result.IsValid)
                     return result;
@@ -179,11 +173,8 @@ internal sealed class InputValidationMiddleware
         // Validate headers for suspicious patterns
         // Not a pure filter: returns the first invalid validation result immediately
         // (short-circuiting the remaining headers), so this doesn't reduce to '.Where(...)'.
-        foreach (var header in request.Headers)
+        foreach (var header in (request.Headers).Where(header => !(string.IsNullOrEmpty(header.Key))))
         {
-            if (string.IsNullOrEmpty(header.Key))
-                continue;
-
             // Check for dangerous headers that can be spoofed
             if (_dangerousHeaders.Contains(header.Key) && _options.ValidateSuspiciousHeaders)
             {
@@ -212,11 +203,8 @@ internal sealed class InputValidationMiddleware
     {
         // Not a pure filter: returns the first invalid result immediately (short-circuiting the
         // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
-        foreach (var value in values)
+        foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
         {
-            if (string.IsNullOrEmpty(value))
-                continue;
-
             if (value.Length > _options.MaxParameterLength)
             {
                 return InputValidationResult.Invalid($"Header '{headerName}' exceeds maximum length of {_options.MaxParameterLength}");
@@ -249,11 +237,8 @@ internal sealed class InputValidationMiddleware
     {
         // Not a pure filter: returns the first invalid result immediately (short-circuiting the
         // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
-        foreach (var value in values)
+        foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
         {
-            if (string.IsNullOrEmpty(value))
-                continue;
-
             // Length validation
             if (value.Length > _options.MaxParameterLength)
             {
@@ -514,11 +499,8 @@ internal sealed class InputValidationMiddleware
     {
         // Not a pure filter: returns the first invalid result immediately (short-circuiting the
         // remaining values across two distinct checks), so this doesn't reduce to '.Where(...)'.
-        foreach (var value in values)
+        foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
         {
-            if (string.IsNullOrEmpty(value))
-                continue;
-
             // Validate IP address format for IP-related headers
             if ((headerName.Contains("IP", StringComparison.OrdinalIgnoreCase) ||
                  headerName.Contains("For", StringComparison.OrdinalIgnoreCase))

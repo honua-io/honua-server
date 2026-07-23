@@ -117,7 +117,7 @@ internal static partial class SceneDatasetEndpoints
             SceneDatasetEndpointsLog.ListedScenes(logger, summaries.Length, include);
             return Results.Json(summaries, SceneDatasetJsonContext.Default.SceneDatasetSummaryArray);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.
@@ -165,7 +165,7 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict,
                 "A scene dataset with this id or name is already registered.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.
@@ -193,7 +193,7 @@ internal static partial class SceneDatasetEndpoints
 
             return Results.Json(ToDetail(record), SceneDatasetJsonContext.Default.SceneDatasetDetail);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.
@@ -222,7 +222,7 @@ internal static partial class SceneDatasetEndpoints
         {
             existing = await service.GetAsync(id, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.
@@ -266,7 +266,7 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound,
                 "Scene dataset not found.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.
@@ -299,7 +299,7 @@ internal static partial class SceneDatasetEndpoints
             SceneDatasetEndpointsLog.SceneDeactivated(logger, id);
             return Results.NoContent();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.
@@ -361,7 +361,7 @@ internal static partial class SceneDatasetEndpoints
 
             return Results.Json(response, SceneDatasetJsonContext.Default.SceneDatasetResolveResponse);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.

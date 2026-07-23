@@ -1565,7 +1565,7 @@ internal static class RasterMapRenderingPipeline
         // Intentional: extent transform is a best-effort optimization for the render
         // pipeline; a provider/query failure falls back to null (caller computes the extent
         // another way) rather than failing the render.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RasterMapRenderingPipelineLog.PostGisExtentTransformFailed(logger, fromSrid, toSrid, ex);
             return null;

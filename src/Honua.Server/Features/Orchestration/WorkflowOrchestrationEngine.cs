@@ -288,7 +288,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                         // Intentional catch-all: this is a per-step loop cancelling orphaned jobs
                         // when the workflow definition is missing; one step's job-cancel failure
                         // must not abort finalisation of the remaining steps in the run.
-                        catch (Exception ex)
+                        catch (Exception ex) when (ex is not OutOfMemoryException)
                         {
                             OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
                             AddOrReplaceCancelWarning(warnings, s.StepId, s.JobId!, "Job cancellation failed.");
@@ -397,7 +397,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     // Intentional catch-all: this is a per-step loop cancelling orphaned jobs
                     // after a step-set mismatch between the run and its definition; one step's
                     // job-cancel failure must not abort finalisation of the remaining steps.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, s.StepId, s.JobId!, ex);
                         AddOrReplaceCancelWarning(mismatchWarnings, s.StepId, s.JobId!, "Job cancellation failed.");
@@ -470,7 +470,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                     // Intentional catch-all: this is a per-step loop cascading cancellation to
                     // worker-owned jobs after the parent run was cancelled; one step's job-cancel
                     // failure must not abort finalisation of the remaining steps.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, state.StepId, state.JobId!, ex);
                         AddOrReplaceCancelWarning(warnings, state.StepId, state.JobId!, "Job cancellation failed.");

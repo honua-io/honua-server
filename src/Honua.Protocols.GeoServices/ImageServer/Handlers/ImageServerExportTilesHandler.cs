@@ -350,7 +350,7 @@ internal sealed class ImageServerExportTilesHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ExportTilesFailed(_logger, ex, layerId, ex.Message);
             scope.RecordException(ex);
@@ -544,9 +544,8 @@ internal sealed class ImageServerExportTilesHandler
         var parsed = new SortedSet<int>();
         if (!string.IsNullOrWhiteSpace(levelsValue))
         {
-            foreach (var token in levelsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var rangeParts in (levelsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(token => token.Split('-', StringSplitOptions.TrimEntries)))
             {
-                var rangeParts = token.Split('-', StringSplitOptions.TrimEntries);
                 if (rangeParts.Length == 1)
                 {
                     if (!TryAddExportTilesLevel(rangeParts[0], limits, parsed, out error))

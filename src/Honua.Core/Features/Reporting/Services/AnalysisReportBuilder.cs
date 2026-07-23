@@ -96,7 +96,7 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: the optional LLM narrative pass must never fail the
                 // whole report; the failure is logged and the report falls back to the

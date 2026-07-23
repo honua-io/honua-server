@@ -472,7 +472,7 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
             // Intentional broad catch: this is a fire-and-forget Timer callback with no caller
             // to observe an exception. Any failure must be logged and swallowed here rather than
             // becoming an unobserved task exception that could crash the process.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 ResourceLog.AutoScanFailed(_logger, ex);
             }

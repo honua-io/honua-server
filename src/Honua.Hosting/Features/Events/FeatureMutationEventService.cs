@@ -280,7 +280,7 @@ internal sealed class FeatureMutationEventService(
         // committed, so a notification failure here must never fail (or appear to fail) the
         // mutation itself — log and continue. PublishAsync already catches internally; this
         // is belt-and-braces against a future change there.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureMutationEventLog.PublishAfterCommitFailed(
                 _logger,

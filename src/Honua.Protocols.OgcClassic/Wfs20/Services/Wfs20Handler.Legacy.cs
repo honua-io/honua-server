@@ -175,7 +175,7 @@ internal sealed partial class Wfs20Handler
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
             return CreateLegacyWfsException(version, ex.ExceptionCode, ex.Message, ex.Locator);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost legacy (WFS 1.0/1.1) GetFeature request
             // boundary. Already logged (with exception) and mapped to a ServiceException.

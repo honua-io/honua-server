@@ -227,7 +227,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
     private static byte[] LoadTestData(params string[] pathSegments)
     {
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var path = Path.Combine(
+        var path = Path.Join(
             new[] { AppContext.BaseDirectory }.Concat(pathSegments).ToArray());
         if (!File.Exists(path))
         {
@@ -264,6 +264,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
             var url = request.RequestUri!.ToString();
             if (responses.TryGetValue(url, out var resp))
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(resp.body)
@@ -277,6 +278,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
                 });
             }
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }

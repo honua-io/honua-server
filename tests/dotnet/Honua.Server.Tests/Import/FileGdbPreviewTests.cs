@@ -37,7 +37,7 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
     {
         // Arrange
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
+        var filePath = Path.Join(AppContext.BaseDirectory, "TestData", "FileGdb", "testopenfilegdb.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
         using var content = new MultipartFormDataContent();
@@ -69,7 +69,7 @@ public sealed class FileGdbPreviewTests : IAsyncLifetime
     {
         // Arrange
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var filePath = Path.Combine(AppContext.BaseDirectory, "TestData", "FileGdb", "sparse.gdb.zip");
+        var filePath = Path.Join(AppContext.BaseDirectory, "TestData", "FileGdb", "sparse.gdb.zip");
         var fileBytes = await File.ReadAllBytesAsync(filePath);
 
         using var content = new MultipartFormDataContent();

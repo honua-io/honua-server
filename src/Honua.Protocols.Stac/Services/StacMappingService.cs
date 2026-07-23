@@ -203,7 +203,7 @@ internal sealed class StacMappingService
             // exceptions for malformed geometry bytes. Geometry is optional in the STAC item
             // response, so a parse failure degrades to an explicit JSON-null geometry rather
             // than failing the whole item mapping.
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // WKB parsing failure — keep geometry as explicit JSON null.
             }
@@ -384,13 +384,10 @@ internal sealed class StacMappingService
                 return true;
             }
 
-            foreach (var attribute in attributes)
+            foreach (var attribute in (attributes).Where(attribute => string.Equals(attribute.Key, name, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(attribute.Key, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    value = attribute.Value;
-                    return true;
-                }
+                value = attribute.Value;
+                return true;
             }
         }
 
@@ -461,7 +458,7 @@ internal sealed class StacMappingService
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.Clone();
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Best-effort GeoJSON conversion — STAC allows a null geometry, so any
             // serialization failure here degrades to that explicit-null representation
@@ -563,7 +560,7 @@ internal sealed class StacMappingService
 
             return null;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Best-effort bbox computation — an unexpected geometry/CRS failure degrades to
             // an absent bbox (allowed by STAC) rather than failing the whole item mapping.

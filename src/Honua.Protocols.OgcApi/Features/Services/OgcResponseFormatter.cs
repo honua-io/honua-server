@@ -168,7 +168,7 @@ internal static class OgcResponseFormatter
         // Intentionally generic: this is a best-effort HTML stats/nav-link enhancement over
         // an already-serialized JSON payload; if the shape is unexpected, omit the fragment
         // rather than fail the HTML response for what is a purely cosmetic feature.
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return string.Empty;
         }
@@ -604,9 +604,8 @@ internal static class OgcResponseFormatter
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiPoint srsName=\"{srsName}\">");
 
-                foreach (var point in points)
+                foreach (var coords in (points).Select(point => point.EnumerateArray().ToArray()))
                 {
-                    var coords = point.EnumerateArray().ToArray();
                     if (coords.Length >= 2)
                     {
                         var x = coords[0].GetDouble();
@@ -640,9 +639,8 @@ internal static class OgcResponseFormatter
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiLineString srsName=\"{srsName}\">");
 
-                foreach (var lineString in lineStrings)
+                foreach (var coordinates in (lineStrings).Select(lineString => ExtractGmlCoordinatePairs(lineString)))
                 {
-                    var coordinates = ExtractGmlCoordinatePairs(lineString);
 
                     if (coordinates.Count > 0)
                     {
@@ -676,9 +674,8 @@ internal static class OgcResponseFormatter
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiPolygon srsName=\"{srsName}\">");
 
-                foreach (var polygon in polygons)
+                foreach (var rings in (polygons).Select(polygon => polygon.EnumerateArray().ToArray()))
                 {
-                    var rings = polygon.EnumerateArray().ToArray();
                     if (rings.Length > 0)
                     {
                         builder.AppendLine($"{indent}  <gml:polygonMember>");

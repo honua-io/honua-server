@@ -311,6 +311,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             // Not rewritten as .Where: the filter condition and the loop-body assignment both
             // depend on the same TryConvertToEpochMilliseconds `out` value (epochMs), which a
             // Where lambda cannot hand back to the loop body without recomputing the conversion.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var fieldName in dateFieldNames)
             {
                 if (attributes.TryGetValue(fieldName, out var dateValue)

@@ -22,7 +22,8 @@ internal sealed class ODataQueryDependencies
         ODataQuerySearchService querySearchService,
         IResponseCache responseCache,
         IETagService etagService,
-        IOptions<CacheOptions> cacheOptions)
+        IOptions<CacheOptions> cacheOptions,
+        ODataFeatureProviderResolver? featureProviderResolver = null)
     {
         FeatureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         GeometryService = geometryService ?? throw new ArgumentNullException(nameof(geometryService));
@@ -32,6 +33,7 @@ internal sealed class ODataQueryDependencies
         ResponseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
         ETagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
         CacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
+        FeatureProviderResolver = featureProviderResolver;
     }
 
     public IFeatureReader FeatureReader { get; }
@@ -42,4 +44,5 @@ internal sealed class ODataQueryDependencies
     public IResponseCache ResponseCache { get; }
     public IETagService ETagService { get; }
     public CacheOptions CacheOptions { get; }
+    public ODataFeatureProviderResolver? FeatureProviderResolver { get; }
 }

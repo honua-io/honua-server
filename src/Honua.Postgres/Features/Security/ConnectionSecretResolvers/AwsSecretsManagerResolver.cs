@@ -383,9 +383,8 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
 
         // Not rewritten as .Select(...): each part is parsed into a key/value pair that can throw on
         // malformed encoding and conditionally assigns one of two outer locals, not a pure projection.
-        foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var kvp in (query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(part => part.Split('=', 2)))
         {
-            var kvp = part.Split('=', 2);
             if (kvp.Length != 2)
             {
                 continue;

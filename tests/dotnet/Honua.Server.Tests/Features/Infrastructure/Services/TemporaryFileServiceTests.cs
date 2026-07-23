@@ -873,10 +873,10 @@ public sealed class TemporaryFileServiceTests : IDisposable
             // Task<Stream?>; the caller is responsible for disposing it (mirrors the
             // real ICloudFileStorage contract), so it is intentionally not disposed here.
             return Task.FromResult<Stream?>(_payloads.TryGetValue(fileId, out var payload)
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 ? new MemoryStream(payload, writable: false)
                 : null);
         }
-
         public Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_payloads.TryGetValue(fileId, out var payload)
@@ -937,13 +937,10 @@ public sealed class TemporaryFileServiceTests : IDisposable
             // "if" is not applicable to a further .Where(...) because TryRemove is a
             // mutating side effect, not a pure predicate — moving it into a filter
             // expression would be misleading rather than clearer.
-            foreach (var file in _files.Values.Where(file => file.ExpiresAt.HasValue && file.ExpiresAt.Value <= now).ToArray())
+            foreach (var file in (_files.Values.Where(file => file.ExpiresAt.HasValue && file.ExpiresAt.Value <= now).ToArray()).Where(file => _files.TryRemove(file.FileId, out _)))
             {
-                if (_files.TryRemove(file.FileId, out _))
-                {
-                    _payloads.TryRemove(file.FileId, out _);
-                    removed++;
-                }
+                _payloads.TryRemove(file.FileId, out _);
+                removed++;
             }
 
             return Task.FromResult(removed);

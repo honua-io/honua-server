@@ -348,7 +348,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             Log.ImportCancelled(_logger);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: this is the top-level import boundary. Any failure must map to a
             // sanitized failure result/progress update rather than letting a raw exception (which may

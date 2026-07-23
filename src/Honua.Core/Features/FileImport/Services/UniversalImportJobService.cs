@@ -137,7 +137,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             // Path.Combine's second argument is a server-generated file name built from a
             // Guid.NewGuid() job id and a fresh Guid.NewGuid() suffix, so it can never be
             // rooted/absolute; Path.Combine cannot silently drop the temp directory here.
-            tempFilePath = Path.Combine(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
+            tempFilePath = Path.Join(Path.GetTempPath(), $"honua-import-{jobId}-{Guid.NewGuid():N}.tmp");
             try
             {
                 await using (var tempStream = new FileStream(tempFilePath, new FileStreamOptions
@@ -306,7 +306,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         // observe a thrown exception, so any import-provider failure must be caught here,
         // logged, and recorded on the job's progress rather than becoming an unobserved task
         // exception.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             activity?.SetTag("honua.import.outcome", "failed");
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
@@ -411,7 +411,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
         // Intentional broad catch: this is the best-effort helper described above — failures
         // are logged and swallowed by design, never rethrown to the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
         }
@@ -600,7 +600,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 await previous.ConfigureAwait(false);
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // StoreAsync logs and swallows failures. This guard prevents one
                 // unexpected fault from breaking the serialized progress chain.
@@ -623,7 +623,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             // StoreAfterPreviousAsync above) — a progress-store fault must be logged and
             // swallowed here so it cannot break the chain or surface as an unobserved task
             // exception on a fire-and-forget progress update.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 UniversalImportJobLog.ProgressUpdateFailed(_logger, _jobId, ex);
             }

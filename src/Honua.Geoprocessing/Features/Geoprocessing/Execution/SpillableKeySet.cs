@@ -84,7 +84,7 @@ internal sealed class SpillableKeySet : IDisposable
     {
         // Second segment is a generated relative literal, so it can never be
         // rooted and silently discard Path.GetTempPath().
-        _spillPath = Path.Combine(Path.GetTempPath(), $"honua-dedup-{Guid.NewGuid():N}.keys");
+        _spillPath = Path.Join(Path.GetTempPath(), $"honua-dedup-{Guid.NewGuid():N}.keys");
         _spillFile = new FileStream(_spillPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
 
         Span<byte> scratch = stackalloc byte[Digest.Size];

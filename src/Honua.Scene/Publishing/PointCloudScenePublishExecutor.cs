@@ -158,13 +158,13 @@ internal sealed partial class PointCloudScenePublishExecutor
             // index by PointCloudTilesetBuilder — neither is derived from the uploaded
             // LAS point data, so neither combine can be rooted.
             await File.WriteAllBytesAsync(
-                Path.Combine(stagingDirectory, "tileset.json"),
+                Path.Join(stagingDirectory, "tileset.json"),
                 tileset.TilesetJsonBytes,
                 cancellationToken).ConfigureAwait(false);
             foreach (var (uri, bytes) in tileset.Tiles)
             {
                 await File.WriteAllBytesAsync(
-                    Path.Combine(stagingDirectory, uri),
+                    Path.Join(stagingDirectory, uri),
                     bytes,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -432,7 +432,7 @@ internal sealed partial class PointCloudScenePublishExecutor
         // Publish-pipeline compensation boundary: this is a best-effort rollback of a
         // partially-completed publish, already logged below; any exception here must
         // not mask the original failure that triggered compensation.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             PointCloudIngestLog.RegistrationCompensationFailed(_logger, sceneId, datasetId, ex);
         }

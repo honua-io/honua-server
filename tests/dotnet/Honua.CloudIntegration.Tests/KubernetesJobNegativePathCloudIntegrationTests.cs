@@ -174,7 +174,7 @@ public sealed class KubernetesJobNegativePathCloudIntegrationTests : IClassFixtu
         {
             await backend.CancelAsync(job);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Cleanup is best-effort; the cluster is ephemeral CI infrastructure and the Job
             // carries an activeDeadlineSeconds/TTL safety net.

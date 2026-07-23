@@ -100,7 +100,7 @@ internal static partial class RateLimitEndpoints
             IReadOnlyList<RateLimitPolicyResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<RateLimitPolicyResponse>>.CreateSuccess(readOnly));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -151,7 +151,7 @@ internal static partial class RateLimitEndpoints
             return TypedResults.Created($"/api/v1/admin/rate-limits/{created.PolicyId}",
                 ApiResponse<RateLimitPolicyResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -180,7 +180,7 @@ internal static partial class RateLimitEndpoints
 
             return TypedResults.Ok(ApiResponse<RateLimitPolicyResponse>.CreateSuccess(ToResponse(policy)));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -226,7 +226,7 @@ internal static partial class RateLimitEndpoints
             var result = await store.UpdatePolicyAsync(updated, context.RequestAborted);
             return TypedResults.Ok(ApiResponse<RateLimitPolicyResponse>.CreateSuccess(ToResponse(result!)));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -256,7 +256,7 @@ internal static partial class RateLimitEndpoints
             RateLimitLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Rate limit policy deleted"));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -299,7 +299,7 @@ internal static partial class RateLimitEndpoints
 
             return TypedResults.Ok(ApiResponse<RateLimitStatusResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.

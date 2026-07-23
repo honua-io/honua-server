@@ -103,8 +103,8 @@ internal sealed partial class GdalRasterizeJobExecutor(
         {
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
-            var inputPath = Path.Combine(workspace, "input.geojson");
-            var outputPath = Path.Combine(workspace, "output.tif");
+            var inputPath = Path.Join(workspace, "input.geojson");
+            var outputPath = Path.Join(workspace, "output.tif");
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
             var args = new List<string> { "-of", "GTiff" };

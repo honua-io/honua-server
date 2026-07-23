@@ -224,6 +224,7 @@ if [[ "${PRE_PR_SCOPE}" == "CI_ONLY" ]]; then
     if grep -qE '^scripts/ci/merge-train/' <<< "${PRE_PR_CHANGED_FILES}"; then
         echo "5. Running merge-train fixtures..."
         scripts/ci/merge-train/fixtures/validate-merge-train.sh
+        scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
     else
         echo "5. Merge-train fixtures not required (surface unchanged)."
     fi

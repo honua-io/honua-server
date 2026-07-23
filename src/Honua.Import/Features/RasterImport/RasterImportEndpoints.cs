@@ -266,7 +266,7 @@ internal static partial class RasterImportEndpoints
                     }
                     // Intentionally generic: this is a fire-and-forget progress update; a failure to
                     // persist progress must not fail or interrupt the underlying raster import.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         Log.ProgressUpdateFailed(progressLogger, p.OperationId, ex);
                     }
@@ -306,7 +306,7 @@ internal static partial class RasterImportEndpoints
         // Intentionally generic: this is the endpoint's last-resort boundary; any unexpected
         // failure not already handled above must be mapped to a generic 500 rather than
         // propagating raw exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<RasterImportEndpointsLog>>();
             Log.ImportFailed(logger, parseResult.Request?.FileName ?? "unknown", ex);
@@ -509,11 +509,11 @@ internal static partial class RasterImportEndpoints
         long maxFileSizeBytes,
         CancellationToken cancellationToken)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), "honua-raster-staging");
+        var tempDir = Path.Join(Path.GetTempPath(), "honua-raster-staging");
         // The second segment is a generated GUID plus only the *extension* portion of the
         // (already-sanitized) upload name — Path.GetExtension never returns a rooted path,
         // so this can never silently drop tempDir.
-        var tempFilePath = Path.Combine(tempDir, $"{Guid.NewGuid()}{Path.GetExtension(safeFileName)}");
+        var tempFilePath = Path.Join(tempDir, $"{Guid.NewGuid()}{Path.GetExtension(safeFileName)}");
 
         try
         {

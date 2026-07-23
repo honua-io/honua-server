@@ -28,7 +28,7 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
     {
         // All three segments are compile-time relative literals (none rooted), so Path.Combine
         // cannot silently drop earlier arguments here.
-        _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
 
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");

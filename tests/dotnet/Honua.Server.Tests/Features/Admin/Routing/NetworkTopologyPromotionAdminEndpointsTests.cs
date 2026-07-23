@@ -125,7 +125,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var generation = allocateDoc.RootElement.GetProperty("generation").GetInt64();
         var rowVersion = allocateDoc.RootElement.GetProperty("rowVersion").GetInt64();
 
-        var editMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/edits")
+        using var editMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/edits")
         {
             Content = JsonContent.Create(new { AddEdges = new[] { EdgeDto($"e-{Guid.NewGuid():N}") } }, options: _jsonOptions),
         };
@@ -136,7 +136,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         using var editDoc = JsonDocument.Parse(await editResponse.Content.ReadAsStringAsync());
         var dirtyRowVersion = editDoc.RootElement.GetProperty("rowVersion").GetInt64();
 
-        var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         submitMessage.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var submitResponse = await _client.SendAsync(submitMessage);
         Assert.Equal(HttpStatusCode.Accepted, submitResponse.StatusCode);
@@ -170,7 +170,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var candidate = await BuildReadyGenerationAsync(datasetId);
         var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
         {
             Content = JsonContent.Create(
                 new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion, Reason = "test" },
@@ -211,7 +211,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var candidate = allocateDoc.RootElement.GetProperty("generation").GetInt64();
         var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
         {
             Content = JsonContent.Create(
                 new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion },
@@ -248,16 +248,16 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var candidateB = await BuildReadyGenerationAsync(datasetId);
         var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
 
-        Task<HttpResponseMessage> PromoteAsync(long candidate)
+        async Task<HttpResponseMessage> PromoteAsync(long candidate)
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
             {
                 Content = JsonContent.Create(
                     new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion },
                     options: _jsonOptions),
             };
             request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
-            return _client.SendAsync(request);
+            return await _client.SendAsync(request);
         }
 
         var results = await Task.WhenAll(PromoteAsync(candidateA), PromoteAsync(candidateB));
@@ -277,7 +277,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var candidate = await BuildReadyGenerationAsync(datasetId);
         var (originalActive, originalRowVersion) = await GetActiveGenerationAsync(datasetId);
 
-        var promoteRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+        using var promoteRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
         {
             Content = JsonContent.Create(
                 new { TargetGeneration = candidate, ExpectedActiveGeneration = originalActive, ExpectedActiveRowVersion = originalRowVersion },
@@ -290,7 +290,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var (newActive, newActiveRowVersion) = await GetActiveGenerationAsync(datasetId);
         Assert.Equal(candidate, newActive);
 
-        var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/rollback")
+        using var rollbackRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/rollback")
         {
             Content = JsonContent.Create(
                 new { TargetGeneration = originalActive, ExpectedActiveGeneration = newActive, ExpectedActiveRowVersion = newActiveRowVersion },
@@ -315,7 +315,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var datasetId = await RegisterDatasetAsync("badrollback");
         var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/rollback")
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/rollback")
         {
             Content = JsonContent.Create(
                 new { TargetGeneration = activeGeneration, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion },
@@ -336,13 +336,17 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
         var idempotencyKey = Guid.NewGuid().ToString();
 
-        Task<HttpResponseMessage> Send() => _client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+        async Task<HttpResponseMessage> Send()
         {
-            Content = JsonContent.Create(
-                new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion },
-                options: _jsonOptions),
-            Headers = { { "Idempotency-Key", idempotencyKey } },
-        });
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+            {
+                Content = JsonContent.Create(
+                    new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion },
+                    options: _jsonOptions),
+                Headers = { { "Idempotency-Key", idempotencyKey } },
+            };
+            return await _client.SendAsync(request);
+        }
 
         var first = await Send();
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
@@ -363,7 +367,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests : IAsyncLifetime
         var candidate = await BuildReadyGenerationAsync(datasetId);
         var (activeGeneration, activeRowVersion) = await GetActiveGenerationAsync(datasetId);
 
-        var promoteRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
+        using var promoteRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/promote")
         {
             Content = JsonContent.Create(
                 new { TargetGeneration = candidate, ExpectedActiveGeneration = activeGeneration, ExpectedActiveRowVersion = activeRowVersion },

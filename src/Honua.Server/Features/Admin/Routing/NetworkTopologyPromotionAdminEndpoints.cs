@@ -153,7 +153,7 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
             NetworkTopologyPromotionAdminLog.PromotionRejected(logger, id, ex.Reason, actor);
             return ProblemDetailsHelpers.CreateAdminProblem(context, status, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyPromotionAdminLog.OperationFailed(logger, "promotion.apply", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -174,7 +174,7 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
             var dtos = history.Select(ToDto).ToArray();
             return Results.Json(dtos, NetworkTopologyRebuildAdminJsonContext.Default.NetworkTopologyPromotionDtoArray);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyPromotionAdminLog.OperationFailed(logger, "promotion.list-history", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,

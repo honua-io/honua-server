@@ -266,6 +266,7 @@ internal sealed partial class GeoServerRestClient
             // declaration would dispose the socket during the `return` unwind, before the
             // caller ever sees the stream, closing the connection out from under it. The
             // `connected` flag makes disposal conditional on transfer *not* having happened.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 
@@ -451,6 +452,7 @@ internal sealed partial class GeoServerRestClient
         {
             var connectionParams = new Dictionary<string, object>();
 
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var entry in EnumerateCollectionItems(dataStoreElement, "connectionParameters", "entry"))
             {
                 if (entry.TryGetProperty("@key", out var keyProp) &&

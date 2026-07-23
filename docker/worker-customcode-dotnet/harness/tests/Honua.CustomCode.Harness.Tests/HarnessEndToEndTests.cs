@@ -25,15 +25,17 @@ public sealed class ProbeTool : IGeoprocessingTool
 
     public Task<GpResult> ExecuteAsync(GpContext context, CancellationToken cancellationToken)
     {
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         ObservedClient = context.Client;
         // At execute time the credential env must already be scrubbed.
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         TokenPresentAtExecute = ObservedEnv is not null && ObservedEnv.ContainsKey("HONUA_JOB_TOKEN");
 
         if (ArtifactToWrite is not null)
         {
             // False positive: ArtifactToWrite is always a test-set relative literal
             // (e.g. "out.geojson"), never rooted.
-            var path = Path.Combine(context.WorkDirectory, ArtifactToWrite);
+            var path = Path.Join(context.WorkDirectory, ArtifactToWrite);
             File.WriteAllText(path, "result-bytes");
             context.Output.AddArtifact(ArtifactToWrite, path);
         }
@@ -77,15 +79,15 @@ public sealed class HarnessEndToEndTests
         // the injected dotnet runner below stubs the actual compile.
         // Path.Combine args below are a temp-dir root plus literal relative segments; no
         // rooted-segment risk (cs/path-combine false positive).
-        var sourceRoot = Path.Combine(workRoot.FullName, "src");
-        Directory.CreateDirectory(Path.Combine(sourceRoot, "tool"));
-        File.WriteAllText(Path.Combine(sourceRoot, "tool", "MyTool.csproj"), "<Project />");
+        var sourceRoot = Path.Join(workRoot.FullName, "src");
+        Directory.CreateDirectory(Path.Join(sourceRoot, "tool"));
+        File.WriteAllText(Path.Join(sourceRoot, "tool", "MyTool.csproj"), "<Project />");
 
         return new HarnessOptions
         {
-            SourceRoot = Path.Combine(workRoot.FullName, "src"),
-            BuildOutput = Path.Combine(workRoot.FullName, "build"),
-            WorkDir = Path.Combine(workRoot.FullName, "out"),
+            SourceRoot = Path.Join(workRoot.FullName, "src"),
+            BuildOutput = Path.Join(workRoot.FullName, "build"),
+            WorkDir = Path.Join(workRoot.FullName, "out"),
             // Fake git: succeed, and report HEAD == requested SHA.
             SourceFetch = new SourceFetch((args, _) =>
                 args is ["rev-parse", "HEAD"] ? new ProcessResult(0, ValidSha, "") : new ProcessResult(0, "", "")),

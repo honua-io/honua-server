@@ -62,7 +62,7 @@ internal sealed partial class PostgresConnectionDriver : IConnectionDriver
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: this is a connection-test probe (admin "test this connection")
             // where any failure means "unhealthy", not an exception the caller should handle — log

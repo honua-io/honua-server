@@ -20,13 +20,10 @@ gRPC submission against the canonical server pipelines); those patterns have
 since been lifted into the `Honua.Mobile.Field` and `Honua.Mobile.Offline`
 packages.
 
-The roadmap doc at [`docs/developer/mobile-sdk-roadmap.md`](../../developer/mobile-sdk-roadmap.md)
-sequences the next-phase SDK work into six first-tier child tickets. Every one
-of those tickets — Phase-0 scaffolding gap closure, iOS bring-up, Android
-bring-up, auth, offline storage, sync — is constrained by the language
-choice. This ADR codifies the C# / .NET MAUI direction already in production
-in `honua-mobile` so the child tickets operate on a settled, written-down
-foundation rather than an inferred one.
+The implementation roadmap and issue tracking live in `honua-mobile`. This ADR
+codifies the C# / .NET MAUI direction already in production there so mobile
+work operates on a settled, written-down foundation rather than an inferred
+one.
 
 The candidates considered:
 
@@ -62,21 +59,11 @@ the MAUI host) — independent from the `Honua.Sdk.*` packages in
 
 Concrete consequences:
 
-- The mobile SDK consumes server contracts through generated gRPC stubs from
-  the mobile-owned `proto/honua/v1/` definitions in `honua-mobile`. The
-  message schemas mirror the canonical server proto field-for-field, but
-  the package paths currently diverge: the server hosts
-  `geospatial.v1.FeatureService` (defined in
-  `geospatial-grpc/geospatial/v1/feature_service.proto` and
-  registered by `OperationRegistry.cs`), while both `Honua.Mobile.Sdk` and
-  `Honua.Sdk.Grpc` generate clients against the parallel `honua.v1` package.
-  Closing the package gap (either re-packaging the mobile/SDK proto under
-  `geospatial.v1` or registering a `honua.v1` alias on the server) is a
-  Phase-1 prerequisite tracked in
-  [`docs/developer/mobile-sdk-roadmap.md`](../../developer/mobile-sdk-roadmap.md#phase-1--read).
-  There is no FFI boundary and no hand-written DTOs duplicated between
-  repos; the mobile proto packaging is otherwise independent from
-  `Honua.Sdk.Grpc` (which is tuned for desktop/server consumers).
+- The mobile SDK consumes the published `Geospatial.Grpc` package. Canonical
+  `.proto` definitions and wire-contract changes belong in
+  [`honua-io/geospatial-grpc`](https://github.com/honua-io/geospatial-grpc);
+  mobile code must not maintain a parallel proto source of truth. There is no
+  FFI boundary and no hand-written DTO set duplicated between repositories.
 - Build matrix pins to .NET 10 LTS, matching the rest of the Honua server and
   SDK ecosystem (`Honua.Sdk.Grpc`, `Honua.Sdk.OgcFeatures`, the
   `FieldDataCollection` reference app, and the `Honua.Mobile.*` library
@@ -222,14 +209,10 @@ prior ADR proposed an alternative.
 - ADR-0024: Open-Core Edition Model (mobile editions follow server tier
   gating)
 - ADR-0033: Unified License Format and Entitlement Architecture
-- [Honua Mobile SDK Roadmap](../../developer/mobile-sdk-roadmap.md)
 - Canonical feature proto:
   `geospatial-grpc/geospatial/v1/feature_service.proto`
-  (package `geospatial.v1`); registered handlers in
-  `src/Honua.Server/OperationRegistry.cs`. The mobile copy at
-  `honua-mobile/proto/honua/v1/feature_service.proto` mirrors the message
-  schemas under the parallel `honua.v1` package; alignment is a Phase-1
-  prerequisite per the roadmap.
+  (package `geospatial.v1`); generated bindings ship in `Geospatial.Grpc`, and
+  registered handlers are listed in `src/Honua.Server/OperationRegistry.cs`.
 - [`honua-io/honua-mobile`](https://github.com/honua-io/honua-mobile) — the mobile
   SDK repo with the `Honua.Mobile.*` package family and Phase-0 baseline
 - `honua-sdk-dotnet/examples/FieldDataCollection/` — legacy MAUI reference

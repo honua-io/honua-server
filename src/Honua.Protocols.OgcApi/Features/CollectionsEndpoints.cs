@@ -266,7 +266,7 @@ internal static class CollectionsEndpoints
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure not already handled by the specific catches above must map
         // to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CollectionsEndpointLogging.LogCollectionsQueryFailed(logger, ex);
             HonuaTelemetry.RecordException(Activity.Current, ex);
@@ -393,7 +393,7 @@ internal static class CollectionsEndpoints
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure not already handled by the specific catches above must map
         // to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
             HonuaTelemetry.RecordException(Activity.Current, ex);
@@ -495,7 +495,7 @@ internal static class CollectionsEndpoints
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure not already handled by the specific catches above must map
         // to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
             HonuaTelemetry.RecordException(Activity.Current, ex);

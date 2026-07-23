@@ -201,9 +201,8 @@ internal static class GeometryServiceRequestParser
                     // projection into the array would not short-circuit on.
                     var geometries = new string[geometryCount];
                     var i = 0;
-                    foreach (var item in geomArray.EnumerateArray())
+                    foreach (var rawGeometry in (geomArray.EnumerateArray()).Select(item => item.GetRawText()))
                     {
-                        var rawGeometry = item.GetRawText();
                         if (rawGeometry.Length > maxGeometryJsonLength)
                         {
                             return ([], geometryType, $"Geometry at index {i} exceeds the maximum size of {maxGeometryJsonLength} characters.");
@@ -232,9 +231,8 @@ internal static class GeometryServiceRequestParser
                 // projection into the array would not short-circuit on.
                 var geometries = new string[geometryCount];
                 var i = 0;
-                foreach (var item in root.EnumerateArray())
+                foreach (var rawGeometry in (root.EnumerateArray()).Select(item => item.GetRawText()))
                 {
-                    var rawGeometry = item.GetRawText();
                     if (rawGeometry.Length > maxGeometryJsonLength)
                     {
                         return ([], null, $"Geometry at index {i} exceeds the maximum size of {maxGeometryJsonLength} characters.");

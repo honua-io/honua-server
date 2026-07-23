@@ -611,7 +611,7 @@ public sealed class Cql2JsonParser
 
             return new GeometryLiteral(wkb, srid, geoJson);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: geoJson is untrusted CQL2-JSON filter input, and geometry
             // parsing/WKB writing can throw a variety of format/argument exceptions for malformed

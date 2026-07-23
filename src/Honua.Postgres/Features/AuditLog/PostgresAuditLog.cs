@@ -153,7 +153,7 @@ internal sealed class PostgresAuditLog : IAuditLog
             // Honour cooperative cancellation; do not log, the caller is shutting down.
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: audit-write failures must NOT block the audited action; we log
             // and continue. (The IAuditLog contract documents this best-effort policy.)

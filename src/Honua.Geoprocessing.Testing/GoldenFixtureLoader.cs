@@ -126,7 +126,7 @@ public static class GoldenFixtureLoader
 
                 // relativePath was validated as non-rooted immediately above, so Path.Combine
                 // cannot silently drop `directory` here.
-                var path = Path.Combine(directory, relativePath);
+                var path = Path.Join(directory, relativePath);
                 if (!File.Exists(path))
                 {
                     throw new FileNotFoundException(
@@ -149,7 +149,7 @@ public static class GoldenFixtureLoader
             manifest.Id,
             manifest.Process,
             inputs,
-            Path.Combine(directory, manifest.Golden),
+            Path.Join(directory, manifest.Golden),
             ParseMode(manifest.Mode),
             tolerance,
             manifest.Description);

@@ -108,7 +108,7 @@ internal sealed partial class FeatureChangeEventSinkBroadcaster
         // Intentional: sinks are fanned out via Task.WhenAll in PublishAsync above; one
         // sink's failure must not fault the others or the caller, so it is recorded and
         // logged rather than propagated.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureChangeEventSinkMetrics.Failed.Add(1, tag);
             LogSinkPublishFailed(_logger, sink.Name, featureEvent.EventId, ex);

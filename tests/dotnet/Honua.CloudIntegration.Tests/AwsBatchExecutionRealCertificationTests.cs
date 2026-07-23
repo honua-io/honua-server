@@ -210,7 +210,7 @@ public sealed class AwsBatchExecutionRealCertificationTests : IClassFixture<Real
                 CancellationRequestedAt = DateTimeOffset.UtcNow,
             });
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort: the job is ephemeral run-to-completion and ages out on its own; a
             // transient cancel blip must not mask the primary assertion outcome. Log it so a failed

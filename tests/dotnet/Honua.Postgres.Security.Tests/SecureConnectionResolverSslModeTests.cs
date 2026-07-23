@@ -83,6 +83,79 @@ public sealed class SecureConnectionResolverSslModeTests
         Assert.Contains(expectedMessage, exception.InnerException!.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [SecurityTest]
+    [Fact]
+    public async Task ResolveConnectionStringAsync_SecretReferenceWithoutDeclaredHostOrPort_ResolvesWithoutTamperCheck()
+    {
+        // A secret-reference connection created without a declared host/port (see
+        // SecureConnectionEndpoints.CreateConnection, which leaves them blank rather than
+        // asserting a value the caller never supplied) makes no host/port assertion to
+        // tamper-check against. The resolved secret's host/port stand unchallenged
+        // (honua-server#2949) — unlike the mismatch cases above, where the connection
+        // explicitly declares "db.example.com:5432" and a disagreeing secret is tamper.
+        var connection = DataConnection.CreateWithSecretReference(
+            name: "production-analytics",
+            host: string.Empty,
+            port: 0,
+            databaseName: "analytics",
+            username: "app",
+            secretRef: "env:PROD_DB_CONNECTION",
+            secretType: "EnvironmentVariable",
+            createdBy: "test",
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+        const string resolvedConnectionString =
+            "Host=replica.example.com;Port=6432;Database=analytics;Username=app;Password=secret;SslMode=Require";
+
+        var resolver = new SecureConnectionResolver(
+            new StubRegistry(connection),
+            new StubEncryptionService("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require"),
+            new StubSecretResolver(resolvedConnectionString),
+            NullLogger<SecureConnectionResolver>.Instance);
+
+        var resolved = await resolver.ResolveConnectionStringAsync(connection.Name);
+
+        Assert.Equal(resolvedConnectionString, resolved);
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task ResolveConnectionStringAsync_SecretReferenceWithApiPersistedHostPlaceholder_ResolvesWithoutTamperCheck()
+    {
+        // SecureConnectionEndpoints.CreateConnection persists Host as the neutral
+        // DataConnection.SecretReferenceMetadataPlaceholder — not an empty string — when the
+        // caller omits it for a secret-reference connection. The resolver must recognize that
+        // exact placeholder as "no host declared" the same way it recognizes string.Empty;
+        // comparing it against the resolved secret's real host would reject the documented/common
+        // case of every secret-reference connection created through the admin API without a
+        // declared host (honua-server#2949).
+        var connection = DataConnection.CreateWithSecretReference(
+            name: "production-analytics",
+            host: DataConnection.SecretReferenceMetadataPlaceholder,
+            port: 0,
+            databaseName: DataConnection.SecretReferenceMetadataPlaceholder,
+            username: DataConnection.SecretReferenceMetadataPlaceholder,
+            secretRef: "env:PROD_DB_CONNECTION",
+            secretType: "EnvironmentVariable",
+            createdBy: "test",
+            sslRequired: true,
+            sslMode: SslMode.Require);
+
+        const string resolvedConnectionString =
+            "Host=replica.example.com;Port=6432;Database=analytics;Username=app;Password=secret;SslMode=Require";
+
+        var resolver = new SecureConnectionResolver(
+            new StubRegistry(connection),
+            new StubEncryptionService("Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require"),
+            new StubSecretResolver(resolvedConnectionString),
+            NullLogger<SecureConnectionResolver>.Instance);
+
+        var resolved = await resolver.ResolveConnectionStringAsync(connection.Name);
+
+        Assert.Equal(resolvedConnectionString, resolved);
+    }
+
     private sealed class StubRegistry(DataConnection connection) : ISecureConnectionRegistry
     {
         private readonly DataConnection _connection = connection;

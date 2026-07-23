@@ -129,7 +129,7 @@ internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkf
             // Intentional catch-all: this is a per-listener loop broadcasting a
             // workflow-operation transition; one listener's failure must not
             // stop the transition from reaching the remaining listeners.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 LogListenerFailed(_logger, operation.OperationId, kind.ToString(), ex);
             }

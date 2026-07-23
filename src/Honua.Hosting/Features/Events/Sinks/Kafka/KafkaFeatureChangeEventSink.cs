@@ -66,7 +66,7 @@ internal sealed partial class KafkaFeatureChangeEventSink : IFeatureChangeEventS
         // Intentional: this is the sink's publish boundary — a producer failure of any kind
         // must be routed to the dead-letter path rather than propagate, so the mutation
         // that raised the event is never rolled back by a downstream broker failure.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             await DeadLetterAsync(featureEvent, key, value, headers, ex, cancellationToken).ConfigureAwait(false);
         }

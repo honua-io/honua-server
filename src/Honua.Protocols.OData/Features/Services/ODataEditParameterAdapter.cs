@@ -126,7 +126,7 @@ internal sealed class ODataEditParameterAdapter(
         }
         // Intentional broad catch: parameter-adaptation boundary; already logged
         // (EditParameterConversionFailed) and mapped to an adapter failure result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ODataPreparedAdaptersLog.EditParameterConversionFailed(_logger, ex);
             return Task.FromResult(EditAdapterResult.Failure("Invalid OData edit request."));

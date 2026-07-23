@@ -46,7 +46,7 @@ public static class GeometryGoldenComparer
         {
             actual = ReadFeatures(actualGeoJson);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: any parse failure (malformed JSON, unsupported GeoJSON
             // shape, NTS reader errors) should surface as a structured golden mismatch
@@ -60,7 +60,7 @@ public static class GeometryGoldenComparer
         {
             golden = ReadFeatures(goldenGeoJson);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: see rationale above for the actual-artifact parse.
             return GoldenComparisonResult.Mismatch(

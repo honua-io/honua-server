@@ -47,6 +47,7 @@ internal static class StartupConfigurationHelpers
             // Not a simple .Where(): the filter condition depends on IPAddress.TryParse's
             // `out` value, which the body also needs, so a LINQ predicate can't cleanly
             // carry that state without re-parsing per candidate.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var proxy in knownProxies)
             {
                 if (IPAddress.TryParse(proxy, out var ip))
@@ -259,23 +260,24 @@ internal static class StartupConfigurationHelpers
                 "*.staticwebassets.runtime.json",
                 SearchOption.TopDirectoryOnly);
 
-            foreach (var manifestPath in manifests)
+            foreach (var stream in manifests.Select(File.OpenRead))
             {
-                using var stream = File.OpenRead(manifestPath);
-                using var document = JsonDocument.Parse(stream);
-
-                if (!document.RootElement.TryGetProperty("ContentRoots", out var contentRoots) ||
-                    contentRoots.ValueKind != JsonValueKind.Array)
+                using (stream)
                 {
-                    continue;
-                }
+                    using var document = JsonDocument.Parse(stream);
 
-                foreach (var contentRoot in contentRoots.EnumerateArray())
-                {
-                    var path = contentRoot.GetString();
-                    if (!string.IsNullOrWhiteSpace(path) && !Directory.Exists(path))
+                    if (!document.RootElement.TryGetProperty("ContentRoots", out var contentRoots) ||
+                        contentRoots.ValueKind != JsonValueKind.Array)
                     {
-                        Directory.CreateDirectory(path);
+                        continue;
+                    }
+
+                    foreach (var path in (contentRoots.EnumerateArray()).Select(contentRoot => contentRoot.GetString()))
+                    {
+                        if (!string.IsNullOrWhiteSpace(path) && !Directory.Exists(path))
+                        {
+                            Directory.CreateDirectory(path);
+                        }
                     }
                 }
             }

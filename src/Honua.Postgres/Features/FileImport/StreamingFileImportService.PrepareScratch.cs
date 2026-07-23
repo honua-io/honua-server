@@ -33,7 +33,7 @@ internal sealed partial class StreamingFileImportService
             throw new NotSupportedException("Shapefile imports require a .zip containing .shp and .dbf files.");
         }
 
-        var scratchDir = Path.Combine(_shapefileScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(_shapefileScratchRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
         string? zipPath = null;
@@ -54,7 +54,7 @@ internal sealed partial class StreamingFileImportService
             }
             else
             {
-                zipPath = Path.Combine(scratchDir, "upload.zip");
+                zipPath = Path.Join(scratchDir, "upload.zip");
                 await using (var zipFileStream = File.Create(zipPath))
                 {
                     await stream.CopyToAsync(zipFileStream, cancellationToken);
@@ -109,7 +109,7 @@ internal sealed partial class StreamingFileImportService
                 {
                     File.Delete(zipPath);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Intentionally generic: best-effort temp-zip cleanup; log and continue rather
                     // than failing the import over a leftover temp file (the scratch directory
@@ -124,10 +124,10 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Combine(_geoPackageScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(_geoPackageScratchRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
-        var filePath = Path.Combine(scratchDir, "upload.gpkg");
+        var filePath = Path.Join(scratchDir, "upload.gpkg");
 
         try
         {
@@ -159,7 +159,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Combine(_kmzScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(_kmzScratchRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
         string? zipPath = null;
@@ -180,7 +180,7 @@ internal sealed partial class StreamingFileImportService
             }
             else
             {
-                zipPath = Path.Combine(scratchDir, "upload.kmz");
+                zipPath = Path.Join(scratchDir, "upload.kmz");
                 await using (var zipFileStream = File.Create(zipPath))
                 {
                     await stream.CopyToAsync(zipFileStream, cancellationToken);
@@ -194,7 +194,7 @@ internal sealed partial class StreamingFileImportService
                 ?? throw new InvalidDataException("KMZ does not contain a .kml file.");
             var extractionBudget = CreateArchiveExtractionBudget();
 
-            var kmlPath = Path.Combine(scratchDir, "doc.kml");
+            var kmlPath = Path.Join(scratchDir, "doc.kml");
             await ExtractEntryAsync(kmlEntry, kmlPath, extractionBudget, cancellationToken);
 
             return new KmzScratch(scratchDir, kmlPath);
@@ -217,7 +217,7 @@ internal sealed partial class StreamingFileImportService
                 {
                     File.Delete(zipPath);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Intentionally generic: best-effort temp-zip cleanup; log and continue rather
                     // than failing the import over a leftover temp file (the scratch directory
@@ -245,10 +245,10 @@ internal sealed partial class StreamingFileImportService
             return new GeoParquetScratch(stream, null);
         }
 
-        var scratchDir = Path.Combine(_geoParquetScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(_geoParquetScratchRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
-        var filePath = Path.Combine(scratchDir, "upload.parquet");
+        var filePath = Path.Join(scratchDir, "upload.parquet");
 
         try
         {
@@ -287,7 +287,7 @@ internal sealed partial class StreamingFileImportService
         Stream stream,
         CancellationToken cancellationToken)
     {
-        var scratchDir = Path.Combine(_fileGdbScratchRoot, Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(_fileGdbScratchRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
         string? zipPath = null;
@@ -308,7 +308,7 @@ internal sealed partial class StreamingFileImportService
             }
             else
             {
-                zipPath = Path.Combine(scratchDir, "upload.gdb.zip");
+                zipPath = Path.Join(scratchDir, "upload.gdb.zip");
                 await using (var zipFileStream = File.Create(zipPath))
                 {
                     await stream.CopyToAsync(zipFileStream, cancellationToken);
@@ -344,7 +344,7 @@ internal sealed partial class StreamingFileImportService
                 // entry.FullName is untrusted archive content; if it were ever rooted, Path.Combine
                 // would silently discard scratchDir. That case is still caught below: the resolved
                 // entryPath is checked against normalizedRoot before any write happens.
-                var entryPath = Path.GetFullPath(Path.Combine(scratchDir, entry.FullName));
+                var entryPath = Path.GetFullPath(Path.Join(scratchDir, entry.FullName));
                 if (!entryPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidDataException("Archive contains path traversal.");
@@ -395,7 +395,7 @@ internal sealed partial class StreamingFileImportService
                 {
                     File.Delete(zipPath);
                 }
-                catch
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     // Intentionally generic: best-effort temp-zip cleanup; the scratch directory
                     // deletion above already handles removal of this file regardless.
@@ -531,7 +531,7 @@ internal sealed partial class StreamingFileImportService
             throw new InvalidDataException($"Archive entry name '{componentName}' resolves to an absolute path, which is not permitted.");
         }
 
-        return Path.Combine(scratchDir, componentName);
+        return Path.Join(scratchDir, componentName);
     }
 
     private static async Task ExtractEntryAsync(

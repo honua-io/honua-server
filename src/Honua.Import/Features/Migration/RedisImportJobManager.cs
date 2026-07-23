@@ -152,7 +152,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             }
             // Intentionally generic (see class remarks): mark Redis unavailable and fall
             // back to the in-memory queue rather than failing the enqueue.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 MarkRedisUnavailable("enqueue", ex);
             }
@@ -186,7 +186,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
                 }
                 // Intentionally generic (see class remarks): mark Redis unavailable and fall
                 // back to in-memory/local dequeue rather than failing the poll.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     MarkRedisUnavailable("dequeue", ex);
                 }
@@ -221,7 +221,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             }
             // Intentionally generic (see class remarks): mark Redis unavailable and report
             // the local fallback length instead of failing the length check.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 MarkRedisUnavailable("length", ex);
             }
@@ -242,7 +242,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             }
             // Intentionally generic (see class remarks): completion bookkeeping is best-effort;
             // mark Redis unavailable rather than failing the caller's completion signal.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 MarkRedisUnavailable("complete", ex);
             }
@@ -287,7 +287,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
             }
             // Intentionally generic (see class remarks): mark Redis unavailable and fall back
             // to recovering in-flight jobs from local state instead of failing recovery.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 MarkRedisUnavailable("recover", ex);
             }
@@ -336,7 +336,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
         }
         // Intentionally generic (see class remarks): this is a connection probe; any failure
         // just means Redis is still down, so keep using the local fallback and retry later.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _lastRedisFailure = DateTime.UtcNow;
             Log.RedisFailed(_logger, "restore", ex);
@@ -505,7 +505,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): mark Redis unavailable and fall back to
         // local leadership rather than failing the acquisition attempt.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MarkRedisUnavailable("acquire", ex);
             return _isLeader;
@@ -558,7 +558,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): mark Redis unavailable and report the
         // lease as lost rather than failing the heartbeat call.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MarkRedisUnavailable("heartbeat", ex);
             return false;
@@ -584,7 +584,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): release is best-effort — local leadership
         // state is already retired in the finally block regardless of Redis outcome.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LeadershipError(_logger, "release", ex);
         }
@@ -625,7 +625,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): this is a connection probe; any failure
         // just means Redis is still down, so keep using local fallback leadership and retry later.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _lastRedisFailure = DateTime.UtcNow;
             Log.LeadershipError(_logger, "restore", ex);
@@ -675,7 +675,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): mark Redis unavailable and fall back to
         // local leadership rather than failing the leadership sync.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MarkRedisUnavailable("sync", ex);
         }
@@ -729,7 +729,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
             _ = HeartbeatAsync(CancellationToken.None);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.UnhandledTimerException(_logger, nameof(HeartbeatCallback), ex);
         }
@@ -792,7 +792,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): release-on-dispose must not throw; log
         // any remaining failure and let disposal complete cleanly.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LeadershipError(_logger, "dispose", ex);
         }
@@ -812,7 +812,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         }
         // Intentionally generic (see class remarks): release is best-effort during dispose;
         // log any failure rather than letting it escape the dispose path.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.LeadershipError(_logger, "dispose-release", ex);
         }
@@ -950,7 +950,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         // Intentionally generic (see class remarks): translate any distributed-cache/Redis
         // failure into a well-defined distributed-state-unavailable exception and mark the
         // local fallback active.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (cachedWriteCompleted)
             {
@@ -960,7 +960,8 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
                 {
                     await cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
                 }
-                catch
+                // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                 }
             }
@@ -1020,7 +1021,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         // Intentionally generic (see class remarks): translate any distributed-cache/Redis
         // failure into a well-defined distributed-state-unavailable exception and mark the
         // local fallback active.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HandleRedisFailure(ex, "get progress");
             throw CreateDistributedStateUnavailableException("get progress", ex);
@@ -1060,7 +1061,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             // Intentionally generic (see class remarks): translate any distributed-cache/Redis
             // failure into a well-defined distributed-state-unavailable exception and mark the
             // local fallback active.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 HandleRedisFailure(ex, "delete progress");
                 throw CreateDistributedStateUnavailableException("delete progress", ex);
@@ -1166,7 +1167,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
         }
         // Intentionally generic (see class remarks): this is a connection probe; any failure
         // just means Redis is still down, so keep using the local fallback and retry later.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _lastRedisFailure = DateTime.UtcNow;
             Log.RedisFailed(_logger, "restore progress", ex);
@@ -1209,7 +1210,7 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
             // Intentionally generic (see class remarks): translate any distributed-cache/Redis
             // failure into a well-defined distributed-state-unavailable exception and mark the
             // local fallback active.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 HandleRedisFailure(ex, "scan progress");
                 throw CreateDistributedStateUnavailableException("list active jobs", ex);

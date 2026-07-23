@@ -128,8 +128,8 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             // an uncompressed LAS the managed reader can parse directly.
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
-            var inputPath = Path.Combine(workspace, "input.laz");
-            var outputPath = Path.Combine(workspace, "output.las");
+            var inputPath = Path.Join(workspace, "input.laz");
+            var outputPath = Path.Join(workspace, "output.las");
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();

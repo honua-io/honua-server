@@ -136,7 +136,7 @@ internal sealed partial class GeoservicesImportService
             // outer transaction is not poisoned by the 25P02 aborted-transaction state. Use
             // CancellationToken.None: if the caller's token has been cancelled we still need to
             // clean up the transaction state.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 await transaction.RollbackAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
                 firstError ??= "Feature import failed.";

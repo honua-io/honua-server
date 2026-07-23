@@ -198,7 +198,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         // Intentionally generic: the underlying topology validator can throw a wide range of
         // provider/native-library exception types for malformed geometry; any failure here is
         // logged and reported as a validation failure rather than propagating.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogTopologyValidationFailed(_logger, ex);
             return GeometryValidationResult.Failure(
@@ -235,7 +235,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
         // Intentionally generic: the underlying topology validator can throw a wide range of
         // provider/native-library exception types for malformed geometry; any failure here is
         // logged and reported as a repair failure rather than propagating.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogGeometryRepairFailed(_logger, ex);
             return GeometryRepairResult.Failed("Repair error.");

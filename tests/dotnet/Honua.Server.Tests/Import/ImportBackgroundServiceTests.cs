@@ -249,6 +249,7 @@ public sealed class ImportBackgroundServiceTests
             }
 
             // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
+            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
             lastObservedProgress.Should().NotBeNull();
             lastObservedProgress!.Status.Should().Be(
                 GeoservicesImportStatus.Queued,

@@ -814,7 +814,7 @@ internal static class ServiceCollectionExtensions
                 .GetResult();
             return resolved ?? connectionString;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a startup-time secret resolution failure must fail fast with a
             // domain exception (rather than letting a raw secret-provider exception, which may carry

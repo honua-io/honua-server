@@ -240,7 +240,7 @@ internal sealed partial class ScopedJobTokenIssuer(
                     return null;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 ScopedJobTokenLog.DistributedCacheReadFailed(_logger, LogValueRedactor.Hash(key), ex);
                 // Intentional: distributed cache is unreachable; fall back to the in-process memory tier
@@ -290,7 +290,7 @@ internal sealed partial class ScopedJobTokenIssuer(
         {
             await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: removal is best-effort; the entry's own TTL is the safety net,
             // and the failure is already logged for diagnosis.

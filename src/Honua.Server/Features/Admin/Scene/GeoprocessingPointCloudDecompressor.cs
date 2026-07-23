@@ -171,6 +171,7 @@ internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudD
         // Not a simple filter: each artifact's URI must be decoded via TryDecodeLasDataUri,
         // whose out-parameter is the return value, so a LINQ Where/Select would not
         // simplify this short-circuiting "find first decodable artifact" loop.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var artifact in package.Artifacts)
         {
             if (TryDecodeLasDataUri(artifact.Uri, out var bytes))

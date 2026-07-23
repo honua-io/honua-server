@@ -65,7 +65,7 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentionally generic: this is a long-running background sweep loop. A
                 // single failed iteration must not kill the host's background service; log
@@ -122,7 +122,7 @@ internal sealed partial class WorkflowOperationBackstopSweepService(
                         .ReconcileOnceAsync(new OperationRef(operationKind, operation.OperationId), cancellationToken)
                         .ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Intentional broad catch: this is a per-operation attempt inside the
                     // backstop sweep loop; one operation's reconcile failure must not abort

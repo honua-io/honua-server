@@ -62,9 +62,11 @@ public sealed class MapServerFixture : IAsyncLifetime
             if (!_sharedInitialized)
             {
                 await StartContainerAsync().ConfigureAwait(false);
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = true;
             }
 
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             _sharedRefCount++;
         }
         finally
@@ -81,6 +83,7 @@ public sealed class MapServerFixture : IAsyncLifetime
         {
             if (_sharedRefCount > 0)
             {
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedRefCount--;
             }
 
@@ -178,8 +181,8 @@ public sealed class MapServerFixture : IAsyncLifetime
     // an earlier argument.
     private static MapServerStagingDirectory CreateStagingDirectory()
     {
-        var rootDirectory = Path.Combine(Path.GetTempPath(), $"honua-mapserver-{Guid.NewGuid():N}");
-        var dataDirectory = Path.Combine(rootDirectory, "data");
+        var rootDirectory = Path.Join(Path.GetTempPath(), $"honua-mapserver-{Guid.NewGuid():N}");
+        var dataDirectory = Path.Join(rootDirectory, "data");
         Directory.CreateDirectory(dataDirectory);
 
         ZipFile.ExtractToDirectory(
@@ -187,12 +190,12 @@ public sealed class MapServerFixture : IAsyncLifetime
             dataDirectory,
             overwriteFiles: true);
 
-        File.WriteAllText(Path.Combine(dataDirectory, "featureinfo.html"), "zone=[zone_type]\nisland=[island]\n");
+        File.WriteAllText(Path.Join(dataDirectory, "featureinfo.html"), "zone=[zone_type]\nisland=[island]\n");
 
-        var mapFilePath = Path.Combine(rootDirectory, "mapserver.map");
+        var mapFilePath = Path.Join(rootDirectory, "mapserver.map");
         File.WriteAllText(mapFilePath, MapFileContent);
 
-        var mapCacheFilePath = Path.Combine(rootDirectory, "mapcache.xml");
+        var mapCacheFilePath = Path.Join(rootDirectory, "mapcache.xml");
         File.WriteAllText(mapCacheFilePath, MapCacheXmlContent);
 
         return new MapServerStagingDirectory(rootDirectory, dataDirectory, mapFilePath, mapCacheFilePath);

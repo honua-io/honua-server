@@ -440,7 +440,7 @@ internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTel
         // Intentional broad catch: exception telemetry is itself a side channel invoked while
         // handling another exception. A failure here must never mask or replace the original
         // exception flow, so it is logged and swallowed rather than propagated.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Don't let telemetry recording break the application
             TelemetryLog.ExceptionRecordingFailed(_logger, ex);

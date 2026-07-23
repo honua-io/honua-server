@@ -93,7 +93,7 @@ internal sealed partial class ODataBatchOperationHandler(
             }
             // Intentional broad catch: best-effort post-commit cache invalidation; a Redis
             // failure here must not turn an already-committed batch into a 500 for the client.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.BatchPostCommitSideEffectFailed(_logger, "cache invalidation", ex);
             }
@@ -104,7 +104,7 @@ internal sealed partial class ODataBatchOperationHandler(
             }
             // Intentional broad catch: best-effort post-commit event publish; a broker
             // failure here must not turn an already-committed batch into a 500 for the client.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.BatchPostCommitSideEffectFailed(_logger, "event publish", ex);
             }
@@ -132,7 +132,7 @@ internal sealed partial class ODataBatchOperationHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for $batch; the
         // exception is logged (Log.BatchFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.BatchFailed(_logger, ex);

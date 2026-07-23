@@ -90,7 +90,7 @@ internal sealed class Wfs20FeatureFormatConverter : IWfs20FeatureFormatConverter
             // For now, return the GML as a string (this would need a proper GML parser)
             return geometryElement.ToString();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: this is a best-effort GML geometry extraction step;
             // any malformed/unexpected XML shape should log and yield null rather than fail.

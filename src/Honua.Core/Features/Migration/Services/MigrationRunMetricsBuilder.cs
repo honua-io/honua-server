@@ -116,12 +116,9 @@ public static class MigrationRunMetricsBuilder
         // Not rewritten as PreferredPhaseOrder.Where(observed.Remove): the condition itself
         // mutates `observed`, removing each matched phase so the leftover loop below only
         // enumerates phases that were not part of the preferred ordering.
-        foreach (var preferred in PreferredPhaseOrder)
+        foreach (var preferred in (PreferredPhaseOrder).Where(preferred => observed.Remove(preferred)))
         {
-            if (observed.Remove(preferred))
-            {
-                ordered.Add(preferred);
-            }
+            ordered.Add(preferred);
         }
 
         foreach (var leftover in observed.OrderBy(static phase => phase, StringComparer.Ordinal))

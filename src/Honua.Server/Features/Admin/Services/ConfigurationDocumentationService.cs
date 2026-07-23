@@ -219,7 +219,7 @@ public sealed class ConfigurationDocumentationService
         var defaults = new CloudStorageOptions();
         // Path.Combine is safe here: the second segment is a fixed relative literal, never
         // an externally-supplied/rooted path.
-        var defaultLocalBasePath = Path.Combine(Path.GetTempPath(), "honua-storage");
+        var defaultLocalBasePath = Path.Join(Path.GetTempPath(), "honua-storage");
 
         return new ConfigurationSection
         {
@@ -499,7 +499,7 @@ public sealed class ConfigurationDocumentationService
                 // Path.Combine is safe here: the second segment is a fixed relative literal,
                 // never an externally-supplied/rooted path.
                 BuildProperty("TemporaryFiles:StorageDirectory", "TemporaryFiles__StorageDirectory", "string",
-                    "Base directory for temporary file storage", Path.Combine(Path.GetTempPath(), "honua-temp")),
+                    "Base directory for temporary file storage", Path.Join(Path.GetTempPath(), "honua-temp")),
                 BuildProperty("TemporaryFiles:DefaultExpiration", "TemporaryFiles__DefaultExpiration", "timespan",
                     "Default expiration time for temporary files", TimeSpan.FromHours(1)),
                 BuildProperty("TemporaryFiles:MaxFileSizeBytes", "TemporaryFiles__MaxFileSizeBytes", "integer",
@@ -965,12 +965,9 @@ public sealed class ConfigurationDocumentationService
             // Not a pure filter: seenNames.Add(...) has a side effect (marks the name
             // seen across contributors) that the Where predicate would still need to
             // perform, so converting to LINQ would not simplify or clarify this loop.
-            foreach (var envVar in contributor.GetEnvironmentVariables())
+            foreach (var envVar in (contributor.GetEnvironmentVariables()).Where(envVar => seenNames.Add(envVar.Name)))
             {
-                if (seenNames.Add(envVar.Name))
-                {
-                    envVars.Add(envVar);
-                }
+                envVars.Add(envVar);
             }
         }
 

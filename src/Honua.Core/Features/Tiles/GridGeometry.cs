@@ -68,12 +68,9 @@ public sealed record GridGeometry
         // default(GridLevel) (Level == 0) rather than null when nothing matches; that would
         // silently misreport "found level 0" for a not-found gridset level. The explicit loop
         // preserves the intended nullable "no such level" contract.
-        foreach (var candidate in Levels)
+        foreach (var candidate in (Levels).Where(candidate => candidate.Level == level))
         {
-            if (candidate.Level == level)
-            {
-                return candidate;
-            }
+            return candidate;
         }
 
         return null;

@@ -108,7 +108,7 @@ internal static partial class VisibilityAnalysisEndpoints
         }
         // Intentional broad catch: this is the request-body parse boundary for the line-of-sight
         // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger is not null)
             {
@@ -236,7 +236,7 @@ internal static partial class VisibilityAnalysisEndpoints
         }
         // Intentional broad catch: this is the request-body parse boundary for the viewshed
         // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger is not null)
             {

@@ -205,7 +205,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: workspace resolution can fail for many storage-provider
             // reasons (I/O, auth, quota) and must surface as a job failure rather than crash

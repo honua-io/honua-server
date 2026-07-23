@@ -330,7 +330,7 @@ internal sealed partial class ArgoRolloutsClient(
         {
             body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception readEx)
+        catch (Exception readEx) when (readEx is not OutOfMemoryException)
         {
             // Intentional broad catch: this is a best-effort read of the failed response body
             // purely for diagnostic logging; if the body can't be read for any reason, fall
@@ -601,6 +601,7 @@ internal static class ArgoRolloutsPatchSerializer
         // Not rewritten as .Where(...)/.Select(...): this is a find-first lookup that
         // returns a derived value (the image string) directly from the loop, falling
         // through to null when no container matches.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var container in containers.EnumerateArray())
         {
             if (container.ValueKind == JsonValueKind.Object &&

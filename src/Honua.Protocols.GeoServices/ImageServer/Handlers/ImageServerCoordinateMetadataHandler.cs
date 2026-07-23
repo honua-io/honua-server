@@ -100,7 +100,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ServiceInfoFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -187,7 +187,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.IdentifyFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -247,7 +247,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.CatalogQueryFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -367,6 +367,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
                 // Not rewritten as .Where(...): TryReadPointGeometry uses the Try-pattern
                 // (bool + out point), so a LINQ equivalent would need an intermediate
                 // nullable projection that is harder to read than the loop.
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var geometry in geometriesElement.EnumerateArray())
                 {
                     if (TryReadPointGeometry(geometry, fallbackSrid, out var point))

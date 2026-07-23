@@ -120,6 +120,7 @@ internal static class ArcGisRestOutboundGuard
             // to the returned NetworkStream (ownsSocket: true) on success, so the
             // socket must survive past this scope in that case. The manual dispose
             // in `finally` only runs when the connect attempt did not succeed.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 

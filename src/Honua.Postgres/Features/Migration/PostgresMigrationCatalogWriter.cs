@@ -528,7 +528,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             """;
 
         // honua.relationships has CHECK constraints on relationship_id > 0 and
-        // relationship_type âˆˆ {esriRelRoleOrigin, esriRelRoleDestination,
+        // relationship_type ∈ {esriRelRoleOrigin, esriRelRoleDestination,
         // esriRelRoleAny}. Stable-hash the source identifier when the source did
         // not advertise an integer id so the row still satisfies the schema.
         var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);

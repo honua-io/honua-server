@@ -72,7 +72,7 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
         // not from a runtime request.
         var assetRoot = Path.IsPathRooted(entry.AssetRoot)
             ? entry.AssetRoot
-            : Path.Combine(contentRoot, entry.AssetRoot);
+            : Path.Join(contentRoot, entry.AssetRoot);
 
         // Path.GetFullPath preserves a trailing directory separator, but
         // DirectoryInfo.FullName never reports one for non-root directories.

@@ -266,7 +266,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         }
         // Intentional broad catch: this is the request-handling boundary for the buffer-aggregate
         // analytics query; the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger != null)
             {

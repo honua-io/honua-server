@@ -52,7 +52,7 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
 
             return result;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the top-level health-check request boundary;
             // any failure in a component check must be reported as an Unhealthy result
@@ -110,7 +110,7 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
                 }
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: per-component health probe; any failure is reported
             // as an Unhealthy component result rather than aborting the overall health check.
@@ -147,7 +147,7 @@ internal sealed class BasicHealthCheckService : IHealthCheckService
                 }
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: per-component health probe; any failure is reported
             // as a Degraded component result rather than aborting the overall health check.

@@ -211,7 +211,7 @@ public sealed class DocumentationCoverageTests
 
             return memberNode != null && !string.IsNullOrWhiteSpace(memberNode.InnerText);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional catch-all (not a silent-swallow bug): this is a best-effort heuristic
             // over a possibly-missing/malformed XML doc file (XmlException, IOException, etc. are

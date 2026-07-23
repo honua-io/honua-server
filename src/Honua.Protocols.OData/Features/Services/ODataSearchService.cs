@@ -314,9 +314,8 @@ internal sealed partial class ODataSearchService
         // Not rewritten as `.Select(...)`: beyond mapping match -> token, this loop carries
         // mutable parser state (currentGroup/negate/termGroups) across iterations and throws
         // on overlong terms, so a LINQ projection would not simplify it.
-        foreach (Match match in tokenMatches)
+        foreach (var token in (tokenMatches).Select(match => match.Value))
         {
-            var token = match.Value;
 
             if (token.Equals("OR", StringComparison.OrdinalIgnoreCase))
             {
@@ -788,6 +787,7 @@ internal sealed partial class ODataSearchService
         // validates $expand syntax and throws ArgumentException per-segment, and populates
         // `optionsByName` with side effects - a LINQ projection would obscure that flow.
         var segments = SplitTopLevel(expand);
+        // codeql[cs/linq/missed-select] -- the mapped local is normalized again during parsing.
         foreach (var segment in segments)
         {
             var trimmed = segment.Trim();

@@ -323,7 +323,7 @@ internal static partial class MapServerEndpoints
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MapServerLog.GenerateKmlFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer generateKml failed.");
@@ -799,7 +799,7 @@ internal static partial class MapServerEndpoints
             geometry = reader.Read(wkb);
             return geometry != null && !geometry.IsEmpty;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional catch-all: a single feature's malformed/corrupt WKB should be skipped
             // (caller treats a false return as "no geometry, continue") rather than aborting the

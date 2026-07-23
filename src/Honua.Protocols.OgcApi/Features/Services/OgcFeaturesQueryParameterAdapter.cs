@@ -166,7 +166,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         // Intentionally generic: this is the query-parameter adapter boundary between the
         // protocol layer and the shared query pipeline; any unanticipated failure must map
         // to a protocol-compliant validation failure rather than propagate as a 500.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcFeaturesPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
             return QueryAdapterResult.Failure("Invalid query parameters.");
@@ -258,6 +258,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         }
 
         var normalized = new List<string>(tokens.Length);
+        // codeql[cs/linq/missed-select] -- the mapped local is normalized again during parsing.
         foreach (var rawToken in tokens)
         {
             var token = rawToken.Trim();

@@ -252,6 +252,7 @@ public sealed class GeoservicesRelationshipApplyTests
         // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
         // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotImplemented));
     }
 }

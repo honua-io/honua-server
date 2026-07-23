@@ -358,7 +358,7 @@ internal static class GPServerEndpoints
                 GPServerJsonContext.Default.GPSubmitJobResponse,
                 contentType: "application/json");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: this is the request-handling boundary for the
             // submitJob endpoint. MapExceptionToResult records telemetry and always
@@ -500,7 +500,7 @@ internal static class GPServerEndpoints
             await TryCancelOrphanedExecuteJobAsync(jobService, submittedJobId, context.User, logger);
             return MapExceptionToResult(context, logger, "Execute", ex);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: final fallback after the TimeoutException/
             // OperationCanceledException cases above. MapExceptionToResult logs and
@@ -531,7 +531,7 @@ internal static class GPServerEndpoints
             GPServerLog.OrphanedExecuteJobCancelRequested(logger, jobId);
             await jobService.CancelJobAsync(jobId, user, CancellationToken.None);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: best-effort cleanup on a detached token after the
             // request has already failed/timed out. This must never throw — the orphaned
@@ -772,7 +772,7 @@ internal static class GPServerEndpoints
             return Results.Json(response, GPServerJsonContext.Default.GPJobsListResponse,
                 contentType: "application/json");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: request-handling boundary for the jobs-list
             // endpoint; MapExceptionToResult logs and records telemetry for every
@@ -935,7 +935,7 @@ internal static class GPServerEndpoints
             return Results.Json(response, GPServerJsonContext.Default.GPJobStatusResponse,
                 contentType: "application/json");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: request-handling boundary for the job-status
             // endpoint; MapExceptionToResult logs and records telemetry for every
@@ -1034,7 +1034,7 @@ internal static class GPServerEndpoints
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
                 contentType: "application/json");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: request-handling boundary for the job-result
             // endpoint; MapExceptionToResult logs and records telemetry for every
@@ -1119,7 +1119,7 @@ internal static class GPServerEndpoints
             return Results.Json(response, GPServerJsonContext.Default.GPJobStatusResponse,
                 contentType: "application/json");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: request-handling boundary for the cancel-job
             // endpoint; MapExceptionToResult logs and records telemetry for every
@@ -1622,6 +1622,7 @@ internal static class GPServerEndpoints
         // the Try-pattern (TryGetValue + int.TryParse), not a pure filter — it needs the
         // parsed int value, not just the matching key, so a LINQ equivalent would need an
         // intermediate nullable projection and would be harder to read than the loop.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in new[] { "srid", "toSrid", "targetSrid", "outSr" })
         {
             if (rawParameters.TryGetValue(key, out var value) &&

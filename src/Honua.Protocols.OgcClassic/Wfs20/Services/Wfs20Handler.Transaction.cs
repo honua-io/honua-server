@@ -224,7 +224,7 @@ internal sealed partial class Wfs20Handler
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost Transaction request boundary. Already
             // logged (with exception), recorded on telemetry, and mapped to a WFS

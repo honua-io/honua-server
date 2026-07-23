@@ -50,7 +50,7 @@ public sealed class TemporaryFileOptions
     /// </summary>
     // Safe Path.Combine: both segments are compile-time/runtime-fixed (Path.GetTempPath()
     // and a literal), never user input, so the second segment can never be rooted.
-    public string StorageDirectory { get; init; } = Path.Combine(Path.GetTempPath(), "honua-temp");
+    public string StorageDirectory { get; init; } = Path.Join(Path.GetTempPath(), "honua-temp");
 
     /// <summary>
     /// Default expiration time for temporary files.
@@ -161,10 +161,10 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         var fileName = $"{fileId}{extension}";
         // Safe Path.Combine: fileName is derived from a server-generated Guid plus a
         // fixed extension lookup, never from caller input, so it can never be rooted.
-        var filePath = Path.Combine(_options.StorageDirectory, fileName);
+        var filePath = Path.Join(_options.StorageDirectory, fileName);
 
         var expirationTime = DateTimeOffset.UtcNow.Add(expiration ?? _options.DefaultExpiration);
-        var metadataPath = Path.Combine(_options.StorageDirectory, $"{fileId}.meta");
+        var metadataPath = Path.Join(_options.StorageDirectory, $"{fileId}.meta");
 
         await _writeGate.WaitAsync(cancellationToken);
         try
@@ -233,13 +233,13 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             // digits (no path separators possible), so it can never be rooted; the
             // resolved-path check below is additional defense-in-depth.
             var resolvedBase = Path.GetFullPath(_options.StorageDirectory);
-            var resolvedMeta = Path.GetFullPath(Path.Combine(_options.StorageDirectory, $"{actualFileId}.meta"));
+            var resolvedMeta = Path.GetFullPath(Path.Join(_options.StorageDirectory, $"{actualFileId}.meta"));
             if (!resolvedMeta.StartsWith(resolvedBase, StringComparison.Ordinal))
             {
                 return null;
             }
 
-            var metadataPath = Path.Combine(_options.StorageDirectory, $"{actualFileId}.meta");
+            var metadataPath = Path.Join(_options.StorageDirectory, $"{actualFileId}.meta");
             if (!File.Exists(metadataPath))
             {
                 return null;
@@ -278,7 +278,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 // Safe Path.Combine: actualFileId is the same validated 32-hex-digit value
                 // checked above; ext comes from the fixed _allowedExtensions set, not caller
                 // input.
-                var testPath = Path.Combine(_options.StorageDirectory, $"{actualFileId}{ext}");
+                var testPath = Path.Join(_options.StorageDirectory, $"{actualFileId}{ext}");
                 // Defense-in-depth: verify data file path also stays within storage directory
                 var resolvedData = Path.GetFullPath(testPath);
                 if (!resolvedData.StartsWith(resolvedBase, StringComparison.Ordinal))
@@ -305,7 +305,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         // Intentional: this is the temporary-file read boundary; any I/O or deserialization
         // failure resolves to "not found" rather than leaking filesystem details to the
         // caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogRetrieveFileFailed(_logger, fileId, ex);
             return null;
@@ -352,7 +352,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 }
                 // Intentional: this is a background cleanup pass over one metadata file among
                 // many; a single corrupt/unreadable file must not abort the sweep of the rest.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     LogProcessMetadataFailed(_logger, metadataPath, ex);
                 }
@@ -365,7 +365,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                     var fileId = Path.GetFileNameWithoutExtension(dataPath);
                     // Safe Path.Combine: fileId comes from Path.GetFileNameWithoutExtension,
                     // which strips any directory component, so it can never be rooted.
-                    var metadataPath = Path.Combine(_options.StorageDirectory, $"{fileId}.meta");
+                    var metadataPath = Path.Join(_options.StorageDirectory, $"{fileId}.meta");
                     if (File.Exists(metadataPath))
                     {
                         continue;
@@ -382,7 +382,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
                 }
                 // Intentional: same rationale as the metadata-file loop above — one orphaned
                 // data file failing must not abort the rest of the sweep.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     LogProcessMetadataFailed(_logger, dataPath, ex);
                 }
@@ -396,7 +396,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         // Intentional: this cleanup pass runs on a background timer/service; a directory
         // enumeration failure must not crash the caller — log and let the next scheduled
         // pass retry.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogCleanupFailed(_logger, ex);
         }
@@ -467,7 +467,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         try
         {
             // Delete metadata file
-            var metadataPath = Path.Combine(_options.StorageDirectory, $"{fileId}.meta");
+            var metadataPath = Path.Join(_options.StorageDirectory, $"{fileId}.meta");
             if (File.Exists(metadataPath))
             {
                 File.Delete(metadataPath);
@@ -477,7 +477,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
             var possibleExtensions = _allowedExtensions;
             foreach (var ext in possibleExtensions)
             {
-                var filePath = Path.Combine(_options.StorageDirectory, $"{fileId}{ext}");
+                var filePath = Path.Join(_options.StorageDirectory, $"{fileId}{ext}");
                 if (File.Exists(filePath))
                 {
                     File.Delete(filePath);
@@ -488,7 +488,7 @@ internal sealed partial class FileSystemTemporaryFileService : ITemporaryFileSer
         // Intentional: this is a best-effort delete (called from cleanup sweeps and
         // failure-path rollback in StoreTemporaryFileAsync); an I/O failure must not
         // propagate, since the caller has no recovery action beyond logging.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogDeleteFileFailed(_logger, fileId, ex);
         }

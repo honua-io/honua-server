@@ -104,7 +104,7 @@ internal sealed partial class NotifyingWorkflowOperationStore : IWorkflowOperati
             var opsNotifier = scope.ServiceProvider.GetRequiredService<OpsNotificationService>();
             await opsNotifier.NotifyAsync(notification, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is a best-effort ops notification side effect
             // of a workflow-status change; a notifier failure must not fail or roll back

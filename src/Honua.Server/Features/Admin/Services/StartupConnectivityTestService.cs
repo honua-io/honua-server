@@ -82,7 +82,7 @@ internal sealed class StartupConnectivityTestService
 
             return result;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the top-level startup connectivity
             // orchestrator; any unexpected failure must be captured in the result
@@ -125,7 +125,7 @@ internal sealed class StartupConnectivityTestService
                 secretProviderTest.Details.Add("Provider Count", supportedProviders.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is a per-item loop where one test's
             // failure must not abort the rest of the connectivity test run.
@@ -156,7 +156,7 @@ internal sealed class StartupConnectivityTestService
                 }
                 test.Details.Add("Reference", MaskSecretReference(secretRef));
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: per-item loop over secret references; one
                 // reference's failure must not abort the rest of the connectivity test run.
@@ -218,7 +218,7 @@ internal sealed class StartupConnectivityTestService
                     await TestDatabaseConnectionStringAsync(test, connectionString, cancellationToken);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: per-item loop over configured database
                 // connections; one connection's failure must not abort the rest of
@@ -264,7 +264,7 @@ internal sealed class StartupConnectivityTestService
             test.Success = false;
             test.Error = "Database connection test timed out";
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: best-effort single connectivity probe against
             // a caller-supplied connection string; any failure is reported back as a
@@ -314,7 +314,7 @@ internal sealed class StartupConnectivityTestService
                 test.Success = false;
                 test.Error = "External service connection timed out";
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: per-item loop over configured external
                 // service URLs; one service's failure must not abort the rest of
@@ -373,7 +373,7 @@ internal sealed class StartupConnectivityTestService
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: best-effort single connectivity probe; any
             // failure is reported back as a failed test result rather than
@@ -422,7 +422,7 @@ internal sealed class StartupConnectivityTestService
                     test.Details.Add("Configuration", "Valid");
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: best-effort single connectivity probe; any
                 // failure is reported back as a failed test result rather than

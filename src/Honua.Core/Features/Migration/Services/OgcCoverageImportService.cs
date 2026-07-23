@@ -442,9 +442,9 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         // Both Path.Combine arguments below are safe: "honua-ogc-coverage-import" is a fixed
         // relative literal, and the filename is a server-generated GUID ("N" format, hex only)
         // plus a fixed extension - neither can become a rooted path that discards tempDir.
-        var tempDir = Path.Combine(Path.GetTempPath(), "honua-ogc-coverage-import");
+        var tempDir = Path.Join(Path.GetTempPath(), "honua-ogc-coverage-import");
         Directory.CreateDirectory(tempDir);
-        var path = Path.Combine(tempDir, $"{Guid.NewGuid():N}.tif");
+        var path = Path.Join(tempDir, $"{Guid.NewGuid():N}.tif");
         try
         {
             await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -499,7 +499,7 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
                 File.Delete(path);
             }
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional broad catch: best-effort temp-file cleanup. The caller has already
             // completed (or failed) its own operation, so a deletion failure here must not

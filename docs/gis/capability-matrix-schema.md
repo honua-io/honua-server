@@ -113,8 +113,18 @@ key list:
 ## Drift and freshness
 
 Unlike `feature-catalog.json` (drift-gated by an xUnit `[Fact]` in
-`Honua.Architecture.Tests`), `capability-matrix.v1.json` is drift-checked by
-the CI workflow itself (`--check` mode above), not a C# test — its inputs span
-a hand-maintained Markdown table (`cite-status.md`) that a C# architecture
-test has no reason to parse independently. Treat a workflow failure exactly
-like a failed architecture test: regenerate locally and commit the result.
+`Honua.Architecture.Tests`), `capability-matrix.v1.json` itself is
+drift-checked by the CI workflow (`--check` mode above), not a C# test.
+Treat a workflow failure exactly like a failed architecture test: regenerate
+locally and commit the result.
+
+`cite-status.md`'s per-suite table — one of this artifact's source inputs —
+*is* independently parsed by a C# architecture test,
+`CiteStatusComplianceDriftTests`
+(`tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CiteStatusComplianceDriftTests.cs`,
+#2924). That test uses the same row-parsing pattern as
+`generate-capability-matrix.py`'s `parse_cite_status`, but for a different
+join: it gates the `x-honua-cite-compliance` vendor extension in
+`src/Honua.Server/openapi.json` and the other four `*-openapi.json` files
+against `cite-status.md`'s totals, independently of this capability-matrix
+aggregation.

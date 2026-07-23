@@ -873,6 +873,7 @@ public sealed class DeployWorkflowServiceTests
         // is shared by multiple call sites in this file, so a `using` cannot be threaded through
         // this helper's return value.
         var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             new StubHttpClientFactory(new HttpClient(new DelegateHttpMessageHandler(_ =>
                 new HttpResponseMessage(HttpStatusCode.OK)
                 {

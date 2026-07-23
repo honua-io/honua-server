@@ -115,9 +115,8 @@ internal sealed partial class FeatureQueryBuilder
 
         // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
         // per-expression parse (literal/null-check/comparison/etc.), not a pure 1:1 mapping.
-        foreach (var expression in expressions)
+        foreach (var trimmedExpression in (expressions).Select(expression => expression.Trim()))
         {
-            var trimmedExpression = expression.Trim();
             if (trimmedExpression.Length == 0)
             {
                 throw new ArgumentException(UnsupportedWhereClauseMessage);

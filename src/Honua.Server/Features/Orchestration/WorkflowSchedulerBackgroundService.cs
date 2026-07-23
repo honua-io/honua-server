@@ -59,7 +59,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
             }
             // Intentionally generic: this is a long-running background loop; a single failed
             // tick must not kill the host — log and keep polling.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
             }
@@ -159,7 +159,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 }
                 // Intentional catch-all: advancing the durable cursor here is best-effort;
                 // leaving PendingCursorAt set means the next tick will simply retry the advance.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     OrchestrationLog.SchedulerTickFailed(logger, ex);
                 }
@@ -232,7 +232,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 }
                 // Intentional catch-all: the pending-cursor write is best-effort here; a failure
                 // just means the cursor advance is retried (or reconciled) on a later tick.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     OrchestrationLog.SchedulerTickFailed(logger, ex);
                 }
@@ -255,7 +255,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 }
                 // Intentional catch-all: same best-effort pending-cursor write as the success
                 // path above; a failure here is retried on a later tick.
-                catch (Exception pendingEx)
+                catch (Exception pendingEx) when (pendingEx is not OutOfMemoryException)
                 {
                     OrchestrationLog.SchedulerTickFailed(logger, pendingEx);
                 }
@@ -265,7 +265,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 await TryReleaseScheduleClaimAsync(definition.WorkflowId, next.Value).ConfigureAwait(false);
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Transient: release the claim so another tick (on this replica or a peer)
                 // can retry the occurrence. Do not advance cursors; the retry depends on
@@ -305,7 +305,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
             // Intentional catch-all: advancing the durable cursor here is best-effort; the
             // in-memory cursor already moved above, and a failed durable advance is retried
             // (or reconciled from PendingCursorAt) on a later tick.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 OrchestrationLog.SchedulerTickFailed(logger, ex);
             }
@@ -339,7 +339,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
                 .ReleaseScheduleClaimAsync(workflowId, fireTime, CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // If release fails, the claim TTL still bounds the worst case: the slot stays
             // reserved until the retention expires. Log but do not surface the failure.
@@ -378,7 +378,7 @@ internal sealed class WorkflowSchedulerBackgroundService(
         // can throw several distinct exception types (invalid id, invalid expression, platform
         // ICU/timezone-db lookup failures); any of them means the schedule is unusable and
         // must fall back to the invalid-cron sentinel below rather than crash the tick loop.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Not logged here: this is a static helper with no logger access. The caller
             // (TickAsync) detects the resulting Cron/TimeZone == null and logs it exactly

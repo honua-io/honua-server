@@ -370,7 +370,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         // Intentionally generic: this is the last-resort PostGIS ST_Transform fallback path;
         // on failure there is nowhere further to fall back to, so log and return null for the
         // caller to treat as "transform unavailable".
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
             return null;
@@ -434,7 +434,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         // Intentionally generic: this is the last-resort PostGIS ST_Transform fallback path;
         // on failure there is nowhere further to fall back to, so log and return null for the
         // caller to treat as "transform unavailable".
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
             return null;
@@ -494,7 +494,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         // Intentionally generic: this is the last-resort PostGIS ST_Transform fallback path;
         // on failure there is nowhere further to fall back to, so log and return false for the
         // caller to treat as "transform unavailable".
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.PostGisTransformFailed(_logger, fromSrid, toSrid, ex);
             return false;

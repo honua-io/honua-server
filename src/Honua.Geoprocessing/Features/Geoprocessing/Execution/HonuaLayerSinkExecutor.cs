@@ -152,7 +152,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: this is the job's top-level sink-load boundary — any
             // failure must become a Failed job result (not a crashed worker), and the full

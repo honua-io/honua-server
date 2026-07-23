@@ -29,9 +29,28 @@ set -euo pipefail
 : "${TRAIN_REMOTE:=origin}"     # git remote.
 : "${TRAIN_FWDFIX_CAP:=2}"      # max forward-fix (format) attempts per batch.
 : "${TRAIN_FLAKE_RERUN_CAP:=1}" # max flake reruns per failing run.
+: "${TRAIN_TIMEOUT_RERUN_CAP:=1}" # max timeout-only failed-job reruns per run.
+: "${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS:=6600}" # 110m inside controller's 120m cap.
+: "${TRAIN_CONTROLLER_TIMEOUT_SECONDS:=7200}" # merge-train workflow job cap.
+: "${TRAIN_CONTROLLER_SHUTDOWN_RESERVE_SECONDS:=300}" # state/summary persistence floor.
+
+# Initialize one absolute polling deadline for the entire controller run. It is
+# exported because batch execution is captured through command substitutions;
+# every initial/retry wait must inherit the same deadline rather than resetting
+# another 6600-second allowance. The configured budget leaves 600 seconds under
+# the 120-minute job cap (and never less than the explicit 300-second reserve).
+train_init_controller_deadline() {
+  [[ -n "${TRAIN_CONTROLLER_DEADLINE_EPOCH:-}" ]] && return 0
+  local usable=$((TRAIN_CONTROLLER_TIMEOUT_SECONDS - TRAIN_CONTROLLER_SHUTDOWN_RESERVE_SECONDS))
+  local budget="${TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS}"
+  [[ "${budget}" -gt "${usable}" ]] && budget="${usable}"
+  [[ "${budget}" -gt 0 ]] || return 1
+  TRAIN_CONTROLLER_DEADLINE_EPOCH=$(( $(train_now) + budget ))
+  export TRAIN_CONTROLLER_DEADLINE_EPOCH
+}
 
 # Flake signature regex (classify-flake). A failing job whose log matches this
-# is treated as environmental and rerun once; reproducing twice => real. Beyond
+# is treated as environmental and rerun once; persistent recognized flakes may merge through. Generic timeout/exit-124 handling has higher precedence and persistent timeouts remain real.
 # the Postgres deadlock/Testcontainers signatures, the test harness's isolation
 # race surfaces as transient schema-setup errors ("relation/column/schema ...
 # does not exist", "does not exist at character N") when a test runs before its
@@ -322,6 +341,7 @@ train_metrics_render() {
     --argjson skipped_conflict "$(train_metric_get skipped_conflict 0)" \
     --argjson skipped_select "$(train_metric_get skipped_select 0)" \
     --argjson flake_reruns "$(train_metric_get flake_reruns 0)" \
+    --argjson timeout_reruns "$(train_metric_get timeout_reruns 0)" \
     --argjson forward_fixes "$(train_metric_get forward_fixes 0)" \
     --argjson preexisting_passes "$(train_metric_get preexisting_passes 0)" \
     --argjson autofix_attempts "$(train_metric_get autofix_attempts 0)" \
@@ -345,6 +365,7 @@ train_metrics_render() {
         landed: $landed,
         escalated: $escalated,
         flake_reruns: $flake_reruns,
+        timeout_reruns: $timeout_reruns,
         forward_fixes: $forward_fixes,
         preexisting_passes: $preexisting_passes,
         autofix_attempts: $autofix_attempts,

@@ -803,6 +803,7 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
+        // codeql[cs/linq/missed-where] -- the predicate binds the parsed object ID through an out variable.
         foreach (var entry in attributes.Where(e => string.Equals(e.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)))
         {
             if (FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
@@ -1301,6 +1302,7 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyDictionary<string, StringValues> values)
     {
         Dictionary<string, StringValues>? filter = null;
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in DeleteFilterParameterKeys)
         {
             if (TryGetValue(values, key, out var raw) && !StringValues.IsNullOrEmpty(raw))

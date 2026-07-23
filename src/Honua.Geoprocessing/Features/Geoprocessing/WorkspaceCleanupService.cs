@@ -67,7 +67,7 @@ internal sealed class WorkspaceCleanupService : BackgroundService
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentionally broad: this is the BackgroundService's run loop — a single
                 // sweep failure must not stop future sweeps, so it is logged and the loop

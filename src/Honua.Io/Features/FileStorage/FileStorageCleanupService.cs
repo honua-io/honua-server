@@ -74,7 +74,7 @@ internal sealed class FileStorageCleanupService : BackgroundService
             }
             // Intentionally generic: this is a long-running background loop; a single failed
             // cleanup iteration must not kill the host — log and keep going.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FileStorageLog.CleanupError(_logger, ex);
             }

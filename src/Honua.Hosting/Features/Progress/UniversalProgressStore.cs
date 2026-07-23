@@ -201,7 +201,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         // DistributedStateUnavailableException (after flagging fallback mode) so callers get
         // a single well-known error rather than a leaked provider exception type. This
         // pattern repeats across the Redis-backed methods below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HandleRedisFailure(ex, "set progress");
             throw CreateDistributedStateUnavailableException("set progress", ex);
@@ -260,7 +260,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         }
         // Intentional: see the "set progress" catch above — same translate-to-typed-exception
         // pattern for the Redis boundary.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HandleRedisFailure(ex, "get progress");
             throw CreateDistributedStateUnavailableException("get progress", ex);
@@ -295,7 +295,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             }
             // Intentional: see the "set progress" catch above — same translate-to-typed-exception
             // pattern for the Redis boundary.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 HandleRedisFailure(ex, "delete progress");
                 throw CreateDistributedStateUnavailableException("delete progress", ex);
@@ -501,7 +501,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         // already guards against releasing a lock this writer no longer owns, and any
         // remaining lock still expires on its own TTL, so a release failure is logged and
         // swallowed rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ConditionalWriteLockReleaseFailed(_logger, operationId, ex);
         }
@@ -614,7 +614,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         // Intentional: this is a probe attempting to exit fallback mode; a failure just
         // means Redis is still unavailable, so it is logged and reported as "not restored"
         // rather than thrown.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _lastRedisFailure = DateTime.UtcNow;
             Log.RedisFailed(_logger, "restore progress", ex);
@@ -658,7 +658,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
             }
             // Intentional: see the "set progress" catch above — same translate-to-typed-exception
             // pattern for the Redis boundary.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 HandleRedisFailure(ex, "scan progress");
                 throw CreateDistributedStateUnavailableException("list active operations", ex);
@@ -742,7 +742,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
         // Intentional: operation-type lookup is a best-effort convenience for index
         // maintenance during delete; a failure to resolve it must not fail the delete, so
         // it is logged and reported as "unknown type" instead.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.StoredOperationTypeLookupFailed(_logger, operationId, ex);
             return null;

@@ -39,7 +39,7 @@ public sealed class CapabilityImpactCompletenessTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+            if (File.Exists(Path.Join(directory.FullName, "Honua.sln")))
             {
                 return directory.FullName;
             }

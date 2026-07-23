@@ -175,7 +175,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         // Intentional broad catch: this is a per-section startup validation step; one
         // section's unexpected failure must be recorded as a validation error and the
         // remaining sections must still be validated rather than aborting startup.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationValidatorLog.ValidateConfigurationSectionFailed(_logger, metadata.SectionName, optionsType.Name, ex);
 
@@ -194,7 +194,7 @@ internal sealed class ConfigurationValidator : IConfigurationValidator, IConfigu
         // Intentional broad catch: this is a per-section startup validation step; a
         // failure resolving one options instance must be recorded and treated as
         // "unbound" so the remaining sections still validate rather than aborting.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationValidatorLog.ResolveConfigurationInstanceFailed(_logger, registration.Metadata.OptionsType.Name, ex);
             return null;

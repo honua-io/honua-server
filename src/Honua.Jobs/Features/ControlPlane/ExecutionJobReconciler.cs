@@ -383,7 +383,7 @@ internal sealed partial class ExecutionJobReconciler(
                     .ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Deliberately broad: a progress-store failure here must not fail the retry
             // reset itself — the job record still needs to be requeued for another attempt.
@@ -419,7 +419,7 @@ internal sealed partial class ExecutionJobReconciler(
                     .ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Deliberately broad: bridging progress is a best-effort side effect of
             // reconciliation and must not fail the reconcile cycle that already persisted
@@ -614,7 +614,7 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
                     {
                         await reconciler.ReconcileExecutionJobAsync(job.OperationId, stoppingToken).ConfigureAwait(false);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Deliberately broad: one job's reconciliation failure must not stop
                         // the sweep from reconciling the remaining active jobs in this batch.
@@ -626,7 +626,7 @@ internal sealed class ExecutionJobReconcilerBackgroundService(
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: a failure while listing/dispatching active jobs must not
                 // crash this background service; log and retry on the next poll interval.

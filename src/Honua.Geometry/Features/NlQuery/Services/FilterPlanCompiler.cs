@@ -293,7 +293,7 @@ public static class FilterPlanCompiler
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: geoJson is untrusted NL-query input, and GeoJsonReader/WKB
             // writing can throw a variety of format/argument exceptions for malformed geometry. Wrap

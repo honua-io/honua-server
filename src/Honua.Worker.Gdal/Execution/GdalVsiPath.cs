@@ -63,7 +63,7 @@ internal static class GdalVsiPath
         // normalizedKey is validated immediately above to not be rooted, so it can
         // never make Path.Combine here silently discard root; the containment check
         // below is the actual escape guard.
-        var combined = Path.GetFullPath(Path.Combine(root, normalizedKey));
+        var combined = Path.GetFullPath(Path.Join(root, normalizedKey));
         var rootPrefix = Path.EndsInDirectorySeparator(root)
             ? root
             : root + Path.DirectorySeparatorChar;

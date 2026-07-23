@@ -91,14 +91,11 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should be within the date range
-        foreach (var eventDate in features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString()))
+        foreach (var eventDate in (features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString())).Where(eventDate => eventDate != null).Select(eventDate => eventDate!))
         {
-            if (eventDate != null)
-            {
-                var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
-                parsedDate.Should().BeOnOrAfter(startDate, "Feature date should be after start date");
-                parsedDate.Should().BeOnOrBefore(endDate, "Feature date should be before end date");
-            }
+            var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+            parsedDate.Should().BeOnOrAfter(startDate, "Feature date should be after start date");
+            parsedDate.Should().BeOnOrBefore(endDate, "Feature date should be before end date");
         }
     }
 
@@ -123,13 +120,10 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have event_date after threshold
-        foreach (var eventDate in features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString()))
+        foreach (var eventDate in (features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString())).Where(eventDate => eventDate != null).Select(eventDate => eventDate!))
         {
-            if (eventDate != null)
-            {
-                var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
-                parsedDate.Should().BeAfter(thresholdDate, "Feature date should be after threshold");
-            }
+            var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+            parsedDate.Should().BeAfter(thresholdDate, "Feature date should be after threshold");
         }
     }
 
@@ -154,13 +148,10 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have event_date before threshold
-        foreach (var eventDate in features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString()))
+        foreach (var eventDate in (features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString())).Where(eventDate => eventDate != null).Select(eventDate => eventDate!))
         {
-            if (eventDate != null)
-            {
-                var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
-                parsedDate.Should().BeBefore(thresholdDate, "Feature date should be before threshold");
-            }
+            var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+            parsedDate.Should().BeBefore(thresholdDate, "Feature date should be before threshold");
         }
     }
 
@@ -188,17 +179,12 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should be in one of the two date ranges
-        foreach (var eventDate in features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString()))
+        foreach (var eventDate in (features.Select(f => ParseAttributes(f).GetProperty("event_date").GetString())).Where(eventDate => eventDate != null).Select(eventDate => eventDate!))
         {
-            if (eventDate != null)
-            {
-                var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
-                var inFirstRange = parsedDate >= startDate1 && parsedDate <= endDate1;
-                var inSecondRange = parsedDate >= startDate2 && parsedDate <= endDate2;
-
-                (inFirstRange || inSecondRange).Should().BeTrue(
-                    $"Feature date {parsedDate} should be in one of the specified ranges");
-            }
+            var parsedDate = DateTime.Parse(eventDate, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+            var inFirstRange = parsedDate >= startDate1 && parsedDate <= endDate1;
+            var inSecondRange = parsedDate >= startDate2 && parsedDate <= endDate2;
+            (inFirstRange || inSecondRange).Should().BeTrue($"Feature date {parsedDate} should be in one of the specified ranges");
         }
     }
 
@@ -221,11 +207,10 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have matching created_date
-        foreach (var dateElement in features.Select(ParseAttributes)
+        foreach (var dateValue in (features.Select(ParseAttributes)
                      .Where(attributes => attributes.TryGetProperty("created_date", out _))
-                     .Select(attributes => attributes.GetProperty("created_date")))
+                     .Select(attributes => attributes.GetProperty("created_date"))).Select(dateElement => dateElement.GetString()))
         {
-            var dateValue = dateElement.GetString();
             if (dateValue != null)
             {
                 var parsedDate = DateTime.Parse(dateValue, CultureInfo.InvariantCulture);
@@ -295,11 +280,10 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
             var features = await ParseFeaturesAsync(response);
 
             // Verify null handling logic
-            foreach (var dateElement in features.Select(ParseAttributes)
+            foreach (var isNull in (features.Select(ParseAttributes)
                          .Where(attributes => attributes.TryGetProperty("event_date", out _))
-                         .Select(attributes => attributes.GetProperty("event_date")))
+                         .Select(attributes => attributes.GetProperty("event_date"))).Select(dateElement => dateElement.ValueKind == JsonValueKind.Null))
             {
-                var isNull = dateElement.ValueKind == JsonValueKind.Null;
 
                 if (filterExpression.StartsWith("not", StringComparison.OrdinalIgnoreCase) ||
                     filterExpression.Contains("ne null", StringComparison.OrdinalIgnoreCase))

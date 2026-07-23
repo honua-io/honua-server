@@ -100,7 +100,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the anonymous
         // dataset endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.dataset", ex);
             return AnonymousError();
@@ -134,7 +134,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the anonymous
         // data.json endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.data-json", ex);
             return AnonymousError();
@@ -167,7 +167,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the anonymous
         // Schema.org endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.schema-org", ex);
             return AnonymousError();
@@ -204,7 +204,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the anonymous
         // STAC catalog endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.stac.catalog", ex);
             return TypedResults.Problem(
@@ -239,7 +239,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the anonymous
         // STAC collection endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.stac.collection", ex);
             return AnonymousError();
@@ -279,7 +279,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the anonymous
         // STAC item endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.stac.item", ex);
             return AnonymousError();

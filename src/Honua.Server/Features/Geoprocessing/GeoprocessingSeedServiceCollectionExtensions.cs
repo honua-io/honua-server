@@ -68,7 +68,7 @@ internal sealed partial class GeoprocessingSeedHostedService(
         }
         // Intentional catch-all: as documented on the class above, seeding is a best-effort
         // startup convenience; any failure must not block host startup.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.SeedFailed(logger, ex);
         }

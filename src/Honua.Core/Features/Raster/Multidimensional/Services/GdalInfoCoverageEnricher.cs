@@ -81,6 +81,7 @@ public static class GdalInfoCoverageEnricher
         var values = new List<double>();
         // Not a simple filter: TryGetDouble's out-param is the value being collected, so
         // `.Where(...)` can't express this without duplicating the TryGetDouble call.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var entry in gt.EnumerateArray())
         {
             if (entry.TryGetDouble(out var v))
@@ -220,6 +221,7 @@ public static class GdalInfoCoverageEnricher
         var coords = new List<double>();
         // Not a simple filter: TryGetDouble's out-param is the value being collected, so
         // `.Where(...)` can't express this without duplicating the TryGetDouble call.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var entry in point.EnumerateArray())
         {
             if (entry.TryGetDouble(out var v))
@@ -259,6 +261,7 @@ public static class GdalInfoCoverageEnricher
         var result = new List<double>();
         // Not a simple filter: TryParse's out-param is the value being collected, so
         // `.Where(...)` can't express this without duplicating the TryParse call.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var part in ParseBraceList(value))
         {
             if (double.TryParse(part, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))

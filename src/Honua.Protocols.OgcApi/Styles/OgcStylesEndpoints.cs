@@ -520,7 +520,7 @@ public static class OgcStylesEndpoints
         // Intentionally generic: this is best-effort cache eviction after a style mutation
         // has already been committed; an eviction failure must only be logged, not fail the
         // request or leave the caller thinking the mutation itself failed.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcStylesLog.StylesCacheEvictionFailed(logger, ex);
         }

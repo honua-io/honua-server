@@ -26,7 +26,7 @@ public sealed class OgcFeaturesSpatialReferenceTestsFixture : IAsyncLifetime
     {
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
-        App.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
+        App.UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
         await App.InitializeAsync();
 
         // V2 query processor rejects bbox queries on resources whose Spatial slot is

@@ -348,6 +348,16 @@ If `HONUA_TEST_MYSQL` is unset (or not exactly `1`) each infrastructure-gated
 test is reported as skipped before `InitializeAsync` starts Docker. They are
 not part of the default PR test suite.
 
+### HTTP-stack smoke coverage (nightly)
+
+`Honua.ProviderSmoke.Tests` boots a full HTTP-stack host with
+`DataSource:Provider=mysql` against a Testcontainers `mysql:8` instance and asserts real
+seeded-row correctness — not just 200s — through GeoServices FeatureServer, OGC API
+Features, OData, and tiles (TileJSON + a raster PNG tile; vector MVT is out of scope, see
+Limitations Summary). Runs nightly and on demand via
+[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
+part of standard PR CI.
+
 ### MariaDB compatibility
 
 The integration suite uses MySQL 8 as the canonical engine. MariaDB 10.6 is

@@ -48,7 +48,7 @@ public sealed class NvidiaConstructionFixtureFileTests
     {
         // _fixtureRoot is absolute; the filename constant is a relative literal,
         // so Path.Combine cannot silently drop it.
-        var path = Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.MainTilesetFileName);
+        var path = Path.Join(_fixtureRoot, NvidiaConstructionFixturePaths.MainTilesetFileName);
         File.Exists(path).Should().BeTrue("the demo fixture must commit the main tileset");
 
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -137,7 +137,7 @@ public sealed class NvidiaConstructionFixtureFileTests
     {
         // _fixtureRoot is absolute; the filename constant is a relative literal,
         // so Path.Combine cannot silently drop it.
-        var path = Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName);
+        var path = Path.Join(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName);
         File.Exists(path).Should().BeTrue();
 
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -179,7 +179,7 @@ public sealed class NvidiaConstructionFixtureFileTests
         // _fixtureRoot is absolute; the filename constant is a relative literal,
         // so Path.Combine cannot silently drop it.
         using var sidecar = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName)));
+            Path.Join(_fixtureRoot, NvidiaConstructionFixturePaths.ObservationsSidecarFileName)));
         var observations = sidecar.RootElement.GetProperty("observations");
 
         foreach (var tilesetName in BothTilesetFiles)
@@ -209,7 +209,7 @@ public sealed class NvidiaConstructionFixtureFileTests
         {
             // _fixtureRoot is absolute; `relative` is always one of the relative
             // path constants above, so Path.Combine cannot silently drop it.
-            var bytes = File.ReadAllBytes(Path.Combine(_fixtureRoot, relative));
+            var bytes = File.ReadAllBytes(Path.Join(_fixtureRoot, relative));
             bytes.Length.Should().BeGreaterThan(4);
             System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("b3dm");
         }
@@ -218,25 +218,24 @@ public sealed class NvidiaConstructionFixtureFileTests
     [UnitTest]
     public void TilesetContentUris_AreSafeRelativePaths()
     {
-        foreach (var tileset in BothTilesetFiles)
+        foreach (var doc in BothTilesetFiles.Select(LoadTileset))
         {
-            // Not a candidate for .Select(...): `doc` is an IDisposable
-            // JsonDocument scoped to this iteration via `using`, and the loop
-            // body runs several assertions against `uri`, not a pure mapping.
-            using var doc = LoadTileset(tileset);
-            var uri = doc.RootElement.GetProperty("root").GetProperty("content").GetProperty("uri").GetString();
+            using (doc)
+            {
+                var uri = doc.RootElement.GetProperty("root").GetProperty("content").GetProperty("uri").GetString();
 
-            uri.Should().NotBeNullOrEmpty();
-            uri!.Should().NotStartWith("/", "asset URIs must be relative so the scene resolver constrains them under AssetRoot");
-            uri.Should().NotStartWith("\\");
-            uri.Should().NotContain("..", "no traversal segments in fixture content URIs");
-            uri.Should().NotStartWith("http://", "demo fixture must not reference live cloud or external hosts");
-            uri.Should().NotStartWith("https://");
+                uri.Should().NotBeNullOrEmpty();
+                uri!.Should().NotStartWith("/", "asset URIs must be relative so the scene resolver constrains them under AssetRoot");
+                uri.Should().NotStartWith("\\");
+                uri.Should().NotContain("..", "no traversal segments in fixture content URIs");
+                uri.Should().NotStartWith("http://", "demo fixture must not reference live cloud or external hosts");
+                uri.Should().NotStartWith("https://");
+            }
         }
     }
 
     private JsonDocument LoadTileset(string fileName)
         // _fixtureRoot is absolute; every caller passes one of the tileset
         // filename constants above, so Path.Combine cannot silently drop it.
-        => JsonDocument.Parse(File.ReadAllText(Path.Combine(_fixtureRoot, fileName)));
+        => JsonDocument.Parse(File.ReadAllText(Path.Join(_fixtureRoot, fileName)));
 }

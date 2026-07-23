@@ -137,7 +137,7 @@ internal static class ConsoleContentEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content list endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.list", ex);
             return TypedResults.Problem(
@@ -181,7 +181,7 @@ internal static class ConsoleContentEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content get endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.get", ex);
             return TypedResults.Problem(
@@ -237,7 +237,7 @@ internal static class ConsoleContentEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content create endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.create", ex);
             return TypedResults.Problem(
@@ -309,7 +309,7 @@ internal static class ConsoleContentEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content update endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.update", ex);
             return TypedResults.Problem(
@@ -383,7 +383,7 @@ internal static class ConsoleContentEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content patch endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.patch", ex);
             return TypedResults.Problem(
@@ -414,7 +414,7 @@ internal static class ConsoleContentEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the content delete endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.delete", ex);
             return TypedResults.Problem(
@@ -451,7 +451,7 @@ internal static class ConsoleContentEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.provenance", ex);
             return TypedResults.Problem(

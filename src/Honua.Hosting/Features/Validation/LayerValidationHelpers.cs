@@ -575,9 +575,8 @@ internal static class LayerValidationHelpers
         // Not converted to `.Where(...)`: beyond the early-continue filters, the loop folds
         // into a running "best candidate so far" accumulator (chosen/chosenIsPreferredType)
         // across iterations, which a filter+project chain cannot express.
-        foreach (var pub in snapshot.Graph.Publications)
+        foreach (var pub in (snapshot.Graph.Publications).Where(pub => !(pub.LayerIndex != layerId)))
         {
-            if (pub.LayerIndex != layerId) continue;
             if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service)) continue;
             var resource = snapshot.ResolveResource(pub);
             if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service)) continue;
@@ -812,9 +811,8 @@ internal static class LayerValidationHelpers
         // reused across the equality and visibility checks — inlining them into a single
         // LINQ predicate would duplicate the lookups or require a less readable local
         // function.
-        foreach (var pub in snapshot.Graph.Publications)
+        foreach (var pub in (snapshot.Graph.Publications).Where(pub => !(!pub.IsPrimary)))
         {
-            if (!pub.IsPrimary) continue;
             var pubResource = snapshot.ResolveResource(pub);
             if (pubResource is null) continue;
             if (string.Equals(pubResource.Metadata.Id, validation.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))

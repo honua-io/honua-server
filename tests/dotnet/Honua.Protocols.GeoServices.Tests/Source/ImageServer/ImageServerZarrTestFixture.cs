@@ -85,9 +85,9 @@ internal sealed class ImageServerFixtureRangeReader(Dictionary<string, byte[]> o
 
         // Ownership transfers to the caller via the returned Stream; the caller disposes it.
         return Task.FromResult<Stream>(
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             new MemoryStream(data, (int)offset, Math.Min(length, data.Length - (int)offset)));
     }
-
     public Task<long> GetObjectSizeAsync(
         string bucket,
         string key,

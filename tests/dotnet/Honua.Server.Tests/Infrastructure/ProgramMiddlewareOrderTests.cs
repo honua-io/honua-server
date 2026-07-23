@@ -34,7 +34,7 @@ public sealed class ProgramMiddlewareOrderTests
         while (directory != null)
         {
             // False positive: all later segments are fixed relative literals, never absolute.
-            var candidate = Path.Combine(directory.FullName, "src", "Honua.Server", "Program.cs");
+            var candidate = Path.Join(directory.FullName, "src", "Honua.Server", "Program.cs");
             if (File.Exists(candidate))
             {
                 return candidate;

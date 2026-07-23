@@ -79,6 +79,7 @@ internal sealed class TenantSchemaRoutingMiddleware(
             // set true after that same null check above), but the compiler's nullable-flow analysis
             // doesn't track that invariant across the intervening try/finally, so the check stays
             // to keep this a genuine null-safe dereference rather than a null-forgiving one.
+            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
             if (routed && schemaContext is not null)
             {
                 schemaContext.CurrentSchema = null;

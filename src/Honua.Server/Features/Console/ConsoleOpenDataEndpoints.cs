@@ -92,7 +92,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the open-data page read endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.get", ex);
             return InternalError("Console open-data page read failed", "An internal error occurred while reading the open-data page.");
@@ -150,7 +150,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the open-data page write endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.save", ex);
             return InternalError("Console open-data page write failed", "An internal error occurred while saving the open-data page.");
@@ -182,7 +182,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the open-data eligibility endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.eligibility", ex);
             return InternalError("Console open-data eligibility failed", "An internal error occurred while evaluating open-data eligibility.");
@@ -218,7 +218,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the DCAT export preview endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.dcat", ex);
             return InternalError("Console open-data DCAT preview failed", "An internal error occurred while generating the DCAT export.");
@@ -247,7 +247,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the STAC publication status endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.stac.status", ex);
             return InternalError("Console STAC status read failed", "An internal error occurred while reading the STAC publication status.");
@@ -314,7 +314,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the STAC publish endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.stac.publish", ex);
             return InternalError("Console STAC publish failed", "An internal error occurred while publishing to the STAC catalog.");
@@ -343,7 +343,7 @@ internal static class ConsoleOpenDataEndpoints
         }
         // Intentional catch-all request-handling boundary: logs and returns a generic
         // 500 problem response for the STAC unpublish endpoint.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "open-data.stac.unpublish", ex);
             return InternalError("Console STAC unpublish failed", "An internal error occurred while unpublishing from the STAC catalog.");

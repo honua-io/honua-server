@@ -171,7 +171,7 @@ internal sealed partial class AdminAuthSessionStore(
                     return null;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 AdminAuthSessionLog.DistributedCacheReadFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
                 // Distributed cache is unreachable; fall back to the in-process memory tier
@@ -228,7 +228,7 @@ internal sealed partial class AdminAuthSessionStore(
         {
             await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: the memory-tier entry is already removed above, and the distributed
             // entry still expires on its own TTL, so a removal failure here is non-fatal — log

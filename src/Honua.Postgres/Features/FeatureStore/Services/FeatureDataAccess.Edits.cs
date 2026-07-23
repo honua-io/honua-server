@@ -381,7 +381,7 @@ internal sealed partial class FeatureDataAccess
         // unexpected failure must still roll back the transaction (if any) and return a
         // FeatureEditResult describing which operations succeeded before the failure,
         // rather than letting the exception propagate past the batch boundary.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ApplyEditsFailed(_logger, layerId, editBatch.TotalOperations, ex);
 
@@ -609,7 +609,7 @@ internal sealed partial class FeatureDataAccess
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
                     // GetSafeEditOperationError (avoids leaking SQL/provider internals) and let the
                     // rest of the batch continue.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         createResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
                         return false;
@@ -656,7 +656,7 @@ internal sealed partial class FeatureDataAccess
                     }
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
                     // GetSafeEditOperationError and let the rest of the batch continue.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         updateResults.Add(EditOperationResult.Failure(
                             GetSafeEditOperationError(ex, "Update"),
@@ -712,7 +712,7 @@ internal sealed partial class FeatureDataAccess
                     }
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
                     // GetSafeEditOperationError and let the rest of the batch continue.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         deleteResults.Add(EditOperationResult.Failure(
                             GetSafeEditOperationError(ex, "Delete"),
@@ -1030,7 +1030,7 @@ internal sealed partial class FeatureDataAccess
                     }
                     // Intentionally broad: per-feature failure in an adaptive batch; sanitize via
                     // GetSafeEditOperationError and let the remaining features in the batch continue.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         return (
                             null,
@@ -1075,7 +1075,7 @@ internal sealed partial class FeatureDataAccess
             }
             // Intentionally broad: per-feature failure in the row-by-row create path; sanitize
             // via GetSafeEditOperationError and let the rest of the batch continue.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Create")));
             }
@@ -1123,7 +1123,7 @@ internal sealed partial class FeatureDataAccess
         // half and retry each half so a single bad row can't fail the whole batch. No logging here
         // by design — the recursion bottoms out at singleCreateAsync's single-row path, which
         // sanitizes and reports the actual failing row via GetSafeEditOperationError.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             var midpoint = features.Length / 2;
             var left = Slice(features, 0, midpoint);
@@ -1299,7 +1299,7 @@ internal sealed partial class FeatureDataAccess
             }
             // Intentionally broad: per-row failure in the batch update path; sanitize via
             // GetSafeEditOperationError and let the rest of the batch continue.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             }
@@ -1377,7 +1377,7 @@ internal sealed partial class FeatureDataAccess
             }
             // Intentionally broad: per-row failure in the batch delete path; sanitize via
             // GetSafeEditOperationError and let the rest of the batch continue.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 results.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: featureId));
             }

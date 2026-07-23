@@ -329,10 +329,12 @@ public static class InlineColorRamp
             // returns one of its arguments verbatim (no rounding/arithmetic), so
             // comparing it back against r/g/b for hue-sector selection is exact
             // bit-identity, not lossy floating-point math.
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             if (max == r)
             {
                 h = 60 * (((g - b) / delta) % 6);
             }
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             else if (max == g)
             {
                 h = 60 * (((b - r) / delta) + 2);
@@ -460,6 +462,7 @@ public static class InlineColorRamp
         // Not a simple filter: the matched property's JsonElement (`child`) is consumed
         // by the body to extract the returned `value`, so a `.Where(...)` filter can't
         // carry that extraction across without recomputing TryGetProperty.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var candidate in new[] { property, ToLowerFirst(property), property.ToLowerInvariant() })
         {
             if (element.TryGetProperty(candidate, out var child) && child.ValueKind == JsonValueKind.String)

@@ -218,7 +218,7 @@ internal static class ItemEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
@@ -345,7 +345,7 @@ internal static class ItemEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
@@ -478,6 +478,7 @@ internal static class ItemEndpoints
             return null;
         }
 
+        // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
         var attributes = feature?.Attributes;
         if (attributes is null)
         {

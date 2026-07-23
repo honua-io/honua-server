@@ -325,7 +325,7 @@ internal sealed partial class KubernetesJobClient(
         // Intentional catch-all: this is a best-effort read of the error response body for
         // diagnostics; a failure to read it must not prevent the caller from surfacing the
         // original API error, so a placeholder is substituted instead.
-        catch (Exception readEx)
+        catch (Exception readEx) when (readEx is not OutOfMemoryException)
         {
             body = $"<unreadable response body: {readEx.Message}>";
         }
@@ -366,7 +366,7 @@ internal sealed partial class KubernetesJobClient(
             // malformed bundle must not prevent handler construction. Fall back to the
             // default OS trust store — the connection will still fail at the transport
             // layer if the CA is genuinely untrusted.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 if (logger is not null)
                 {
@@ -488,7 +488,7 @@ internal sealed partial class KubernetesJobClient(
         }
         // Intentional catch-all: best-effort read of the kubelet-projected namespace file;
         // I/O failures are ignored and the adapter falls back to the configured default.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (logger is not null)
             {

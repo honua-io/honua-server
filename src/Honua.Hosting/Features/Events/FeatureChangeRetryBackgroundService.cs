@@ -29,7 +29,7 @@ internal sealed partial class FeatureChangeRetryBackgroundService(
                     }
                     // Intentional: this is a long-running background retry loop; one item's
                     // failure must not stop the loop from draining the rest of the queue.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         LogRetryWorkerFailed(_logger, pendingId, ex);
                     }
@@ -45,7 +45,7 @@ internal sealed partial class FeatureChangeRetryBackgroundService(
             // Intentional: this is the outer background-service loop; an unexpected fault
             // from the queue enumeration itself must not kill the host — log, back off, and
             // let the while loop restart the worker.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 LogRetryWorkerRestarting(_logger, ex);
                 await Task.Delay(WorkerRestartDelay, stoppingToken).ConfigureAwait(false);

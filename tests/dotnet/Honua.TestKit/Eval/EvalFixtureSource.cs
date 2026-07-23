@@ -107,10 +107,10 @@ public sealed class SharedCorpusFixtureSource : IEvalFixtureSource
         // `path` can't be dropped by an unexpectedly-rooted later argument.
         var candidates = new[]
         {
-            Path.Combine(path, "seed.yaml"),
-            Path.Combine(path, "seed.yml"),
-            Path.Combine(path, "tests", "seed", "seed.yaml"),
-            Path.Combine(path, "tests", "seed", "seed.yml")
+            Path.Join(path, "seed.yaml"),
+            Path.Join(path, "seed.yml"),
+            Path.Join(path, "tests", "seed", "seed.yaml"),
+            Path.Join(path, "tests", "seed", "seed.yml")
         };
 
         return candidates.FirstOrDefault(File.Exists);
@@ -136,5 +136,5 @@ public sealed class LocalSeedFixtureSource : IEvalFixtureSource
 
     /// <inheritdoc />
     // Both segments are fixed literals, so this combine can never drop an argument.
-    public string SeedPath => Path.Combine("tests", "seed", "seed.yaml");
+    public string SeedPath => Path.Join("tests", "seed", "seed.yaml");
 }

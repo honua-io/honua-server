@@ -45,7 +45,7 @@ public class FilterExpressionPropertyTests
             // The structure should represent the same logical operation
             return leftAssoc.GetType() == rightAssoc.GetType();
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional broad catch: this is a property-based test generating arbitrary
             // (possibly malformed) expression trees; construction failing is itself a valid
@@ -77,7 +77,7 @@ public class FilterExpressionPropertyTests
 
             return leftAssoc.GetType() == rightAssoc.GetType();
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional broad catch: same property-based rationale as the AND case above —
             // construction failing is a valid outcome for some generated inputs.
@@ -124,7 +124,7 @@ public class FilterExpressionPropertyTests
 
             return true;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional broad catch: same property-based rationale as above — a generated
             // value that isn't a valid literal is an expected outcome, expressed here as

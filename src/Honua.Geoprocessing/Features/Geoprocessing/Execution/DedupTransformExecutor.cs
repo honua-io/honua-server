@@ -71,11 +71,10 @@ internal sealed class DedupTransformExecutor(
         // Not a .Select(...) candidate: each iteration appends two StringBuilder
         // segments (the escaped value and the field separator) rather than mapping to
         // a single projected value, so a LINQ projection wouldn't simplify this.
-        foreach (var field in keys)
-        {
-            var raw = attributes is not null && attributes.Exists(field)
+        foreach (var raw in (keys).Select(field => attributes is not null && attributes.Exists(field)
                 ? Convert.ToString(attributes.GetOptionalValue(field), CultureInfo.InvariantCulture)
-                : null;
+                : null))
+        {
             // Use the out-of-band NullMarker so a no-break-space attribute value cannot
             // collide with the null representation (BH-026). Escape U+001E and U+001F
             // within non-null values so the inter-field separator is always unambiguous

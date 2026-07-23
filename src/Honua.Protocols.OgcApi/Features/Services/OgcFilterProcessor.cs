@@ -265,7 +265,7 @@ internal sealed partial class OgcFilterProcessor
         // Intentionally generic: this is the filter-processing boundary between the protocol
         // layer and the shared filter/CRS pipeline; any unanticipated failure must map to a
         // protocol-compliant validation failure rather than propagate as a 500.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FilterLog.FilterProcessingFailed(_logger, ex);
             return FilterProcessingResult.Failure(InvalidFilterProcessingMessage);

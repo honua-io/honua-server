@@ -455,7 +455,7 @@ internal sealed class DataAnnotationValidateOptions<
         // dependency (it is resolved as a plain IValidateOptions<TOptions> via DI), and an
         // unregistered options type is an expected, benign case here — falling back to the
         // type name still yields a usable section label for the validator below.
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             _sectionName = typeof(TOptions).Name;
         }

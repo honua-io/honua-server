@@ -150,7 +150,7 @@ internal sealed partial class NetworkTopologyRebuildReconcilerBackgroundService 
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.ReconciliationPassFailed(_logger, ex);
             }

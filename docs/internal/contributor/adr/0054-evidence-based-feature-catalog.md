@@ -2,8 +2,8 @@
 
 ## Status
 
-Proposed. Slice 1 (API-surface projection + drift guard + MCP resource) lands
-with this ADR; later slices are tracked in #1946 (see roadmap below).
+Accepted. The API-surface projection, drift guard, and MCP resource are shipped;
+later slices remain tracked in #1946 (see roadmap below).
 
 ## Context
 

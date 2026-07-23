@@ -1071,7 +1071,7 @@ app.Use(async (context, next) =>
 app.UseResponseCompression();
 app.UseWebSockets();
 
-// The admin web UI lives in the sibling `honua-server-admin` repo and is deployed
+// The admin web UI lives in the separate `honua-console` repo and is deployed
 // as a standalone Blazor WebAssembly app. This server only exposes the backing
 // `/api/v1/admin/*` REST + gRPC surface; the `/admin` static-asset prefix is no
 // longer served in-process.

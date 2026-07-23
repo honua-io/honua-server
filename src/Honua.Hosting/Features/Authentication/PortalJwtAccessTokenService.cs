@@ -11,7 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
-/// Optional JWT access-token format for the OAuth2 surface (ADR-0054, #1890).
+/// Optional JWT access-token format for the OAuth2 surface (ADR-0068, #1890).
 /// </summary>
 /// <remarks>
 /// <para>

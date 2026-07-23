@@ -120,7 +120,7 @@ internal static class ImportBackgroundServiceCoordinator
             // Intentionally generic: this is a long-running background worker loop shared by
             // every import job type; a single failed tick must not kill the host — log, back
             // off, and keep dequeuing.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 logProcessingError(logger, ex);
                 await Task.Delay(_processingErrorDelay, stoppingToken).ConfigureAwait(false);
@@ -171,7 +171,7 @@ internal static class ImportBackgroundServiceCoordinator
             }
             // Intentionally generic: this is a background cancellation/heartbeat polling
             // loop; a single failed poll must not kill the monitor — log and keep polling.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 logPollFailed(logger, jobId, ex);
             }
@@ -222,7 +222,7 @@ internal static class ImportBackgroundServiceCoordinator
         }
         // Intentionally generic: this is best-effort queue acknowledgement after a job has
         // already finished; a failure here must not surface as a failure of the job itself.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             logCompletionAcknowledgeFailed(logger, jobId, ex);
         }
@@ -346,7 +346,7 @@ internal sealed class ImportJobProgressController<TProgress> : IDisposable
         }
         // Intentionally generic: this is a best-effort progress update (see method name);
         // a failure to publish progress must not fail the import job itself.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             logProgressUpdateFailed(logger, _jobId, ex);
         }

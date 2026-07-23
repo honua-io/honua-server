@@ -35,6 +35,13 @@
     <ProjectReference Include="..\Honua.Protocols.Stac.Tests\Honua.Protocols.Stac.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.SensorThings.Tests\Honua.Protocols.SensorThings.Tests.csproj" />
     <ProjectReference Include="..\Honua.Worker.Gdal.Tests\Honua.Worker.Gdal.Tests.csproj" />
+    <!-- honua-server#2947: provider-http-smoke suite (FeatureServer/OGC API Features/
+         OData/Tiles smoke coverage against DuckDB/MySql/SQL Server). Named
+         Honua.ProviderSmoke.Tests rather than Honua.Protocols.*.Tests since it spans
+         multiple protocol families against multiple provider fixtures rather than one
+         protocol; see the matching explicit glob entry in
+         ArchitectureTestHelpers.IntegrationTestAssemblies. -->
+    <ProjectReference Include="..\Honua.ProviderSmoke.Tests\Honua.ProviderSmoke.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

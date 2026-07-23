@@ -397,7 +397,7 @@ internal static class OgcCommonUtilities
             sb.Append("</ul></nav>");
             return sb.ToString();
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Best-effort navigation enhancement: if the payload cannot be parsed
             // or a link field carries an unexpected JSON value kind, omit the link

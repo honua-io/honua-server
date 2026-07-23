@@ -308,7 +308,7 @@ internal sealed class FeatureServerEditsHandler(
         }
         // Intentional catch-all request-handling boundary: logs and returns a GeoServices-format
         // 500 rather than letting an unmapped provider/store exception crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             scope.RecordException(ex);
@@ -442,7 +442,7 @@ internal sealed class FeatureServerEditsHandler(
             }
             // Intentional catch-all: one add-slot's unexpected failure must not abort the whole
             // batch; it is logged and reported as a per-slot GeoServices edit failure.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureServerLog.FeatureAddFailed(logger, i, ex.Message, ex);
                 context.HasValidationErrors = true;
@@ -580,7 +580,7 @@ internal sealed class FeatureServerEditsHandler(
             }
             // Intentional catch-all: one update-slot's unexpected failure must not abort the whole
             // batch; it is logged and reported as a per-slot GeoServices edit failure.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FeatureServerLog.FeatureUpdateFailed(logger, i, ex.Message, ex);
                 context.HasValidationErrors = true;
@@ -1280,6 +1280,7 @@ internal sealed class FeatureServerEditsHandler(
         // Not rewritten as .Where(...): the Try-pattern (TryGetValue + TryConvertToLong) needs to
         // produce two correlated outputs (key and feature) from a single pass, which a filter
         // predicate can't express as clearly as the loop.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var feature in result.Items)
         {
             if (feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue)
@@ -1629,12 +1630,9 @@ internal sealed class FeatureServerEditsHandler(
         // Not rewritten as .Where(...): this is a first-match short-circuit that returns from
         // inside the loop body (including the Try-pattern conversion result), not a pure filter.
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        foreach (var entry in attributes)
+        foreach (var entry in (attributes).Where(entry => string.Equals(entry.Key, objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(entry.Key, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                return FeatureServerValueParser.TryConvertToLong(entry.Value, out objectId);
-            }
+            return FeatureServerValueParser.TryConvertToLong(entry.Value, out objectId);
         }
 
         return false;

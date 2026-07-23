@@ -1,5 +1,18 @@
 # Databricks provider (read-only, best-effort)
 
+## Protocol routing
+
+OData collection queries, counts, and streaming responses resolve this provider per layer from the
+Metadata v2 storage binding. Providers without native streaming use the same routed reader through
+a bounded, materialized page; Honua never falls back to the primary provider for that layer.
+This provider is read-only, so OData create/update/delete requests (including `$batch` mutations)
+return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
+
+OGC API Tiles per-collection provider routing remains the follow-up slice of
+[issue #2962](https://github.com/honua-io/honua-server/issues/2962). Until that lands, do not treat
+secondary-provider OGC tile reachability as supported.
+
+
 The Databricks provider serves Honua feature layers from tables/views in a Databricks
 SQL Warehouse. It plugs in alongside the primary backend (PostGIS, DuckDB, or MySQL)
 through the shared feature-provider router: any layer whose backing `DataConnection`

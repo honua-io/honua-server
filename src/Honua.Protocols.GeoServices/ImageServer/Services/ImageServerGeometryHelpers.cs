@@ -190,6 +190,7 @@ internal static class ImageServerGeometryHelpers
         }
 
         // paths: [[[x,y], ...], ...] and rings: [[[x,y], ...], ...]
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var name in new[] { "paths", "rings" })
         {
             if (root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.Array)

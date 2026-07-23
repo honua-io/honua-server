@@ -242,7 +242,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='raw' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>blocked</wps:LiteralValue></wps:Data></wps:Input></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         await jobs.Received(1).EnsureCallerAuthorizedAsync(
@@ -300,7 +301,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>hello_literal</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -320,7 +322,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='complexInput'><wps:Data><testElement>hello_complex</testElement></wps:Data></wps:Input><wps:Output id='complexOutput' transmission='value'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -337,7 +340,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         var description = await fixture.Client.GetStringAsync("/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=org.n52.javaps.test.EchoProcess");
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='raw' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>ets-alias</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         description.Should().Contain("<ows:Identifier>org.n52.javaps.test.EchoProcess</ows:Identifier>");
@@ -354,7 +358,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='async' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>async-aloha</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='reference'/></wps:Execute>";
 
-        var execute = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var execute = await fixture.Client.PostAsync("/wps", requestContent);
         var executeXml = await execute.Content.ReadAsStringAsync();
         var jobId = System.Xml.Linq.XDocument.Parse(executeXml).Descendants(System.Xml.Linq.XName.Get("JobID", "http://www.opengis.net/wps/2.0")).Single().Value;
         var status = await fixture.Client.GetStringAsync($"/wps?service=WPS&request=GetStatus&version=2.0.0&jobId={jobId}");
@@ -378,7 +383,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://localhost/private'/></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -397,7 +403,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>aloha</wps:LiteralValue></wps:Data></wps:Input>{outputs}</wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -422,7 +429,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://does-not-resolve.invalid/value'/></wps:Input><wps:Output id='{outputId}' transmission='{transmission}'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -439,7 +447,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0' xmlns:xlink='http://www.w3.org/1999/xlink'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Reference mimeType='text/plain' xlink:href='https://does-not-resolve.invalid/value'/></wps:Input><wps:Output id='literalOutput' transmission='value'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -470,7 +479,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         await fixture.InitializeAsync();
         var body = $"<wps:Execute service='WPS' version='2.0.0' mode='{mode}' response='{responseForm}' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>canonical.test</ows:Identifier><wps:Output id='result' transmission='{transmission}'/></wps:Execute>";
 
-        var response = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await jobs.DidNotReceive().SubmitJobAsync(
@@ -491,7 +501,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
 
         var capabilities = await fixture.Client.GetStringAsync("/wps?service=WPS&request=GetCapabilities&version=2.0.0");
         const string body = "<wps:Execute service='WPS' version='2.0.0' mode='sync' response='document' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>honua.cite.echo</ows:Identifier><wps:Input id='literalInput'><wps:Data><wps:LiteralValue>aloha</wps:LiteralValue></wps:Data></wps:Input><wps:Output id='literalOutput' transmission='reference'/></wps:Execute>";
-        var result = await fixture.Client.PostAsync("/wps", new StringContent(body, Encoding.UTF8, "application/xml"));
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/xml");
+        var result = await fixture.Client.PostAsync("/wps", requestContent);
         var resultXml = await result.Content.ReadAsStringAsync();
 
         capabilities.Should().Contain("https://cite.example.test/root/wps");

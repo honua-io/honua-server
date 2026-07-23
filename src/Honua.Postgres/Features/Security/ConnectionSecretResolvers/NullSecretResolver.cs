@@ -100,7 +100,7 @@ internal sealed class EnvironmentSecretResolver : IConnectionSecretResolver
         // (Environment.GetEnvironmentVariable can only realistically throw under a locked-down
         // security policy); treat any failure as "cannot resolve" rather than adding a logger
         // dependency to this lightweight resolver.
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return false;
         }

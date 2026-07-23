@@ -533,11 +533,13 @@ internal static class ExpressionEvaluator
         var difference = upper - lower;
         var progress = input - lower;
 
+        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
         if (difference == 0.0)
         {
             return 0.0;
         }
 
+        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
         if (@base == 1.0)
         {
             return progress / difference;

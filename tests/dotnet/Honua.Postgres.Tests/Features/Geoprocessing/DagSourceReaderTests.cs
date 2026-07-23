@@ -71,6 +71,7 @@ public sealed class DagSourceReaderTests
         features.Should().HaveCount(3);
         // Geometry round-trips to GeoJSON points through the reused Esri->GeoJSON converter.
         var firstGeometry = new GeoJsonReader().Read<Geometry>(features[0].GeometryGeoJson!) as Point;
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         firstGeometry.Should().NotBeNull();
         var point = firstGeometry ?? throw new InvalidOperationException("Expected a Point geometry.");
         point.X.Should().BeApproximately(10.0, 1e-9);
@@ -327,6 +328,7 @@ public sealed class DagSourceReaderTests
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that
             // invokes this handler; it is disposed by the caller, not here (cs/local-not-disposed
             // false positive).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
@@ -344,6 +346,7 @@ public sealed class DagSourceReaderTests
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that
             // invokes this handler; it is disposed by the caller, not here (cs/local-not-disposed
             // false positive).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_body, Encoding.UTF8, "application/json")

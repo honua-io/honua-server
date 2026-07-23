@@ -188,7 +188,7 @@ public sealed class GroundingFixtureReplayTests
         while (directory is not null)
         {
             // False positive: all later segments are fixed relative literals, never absolute.
-            var candidate = Path.Combine(directory, "tests", "fixtures", "grounding", "grounding-fixtures.json");
+            var candidate = Path.Join(directory, "tests", "fixtures", "grounding", "grounding-fixtures.json");
             if (File.Exists(candidate))
             {
                 return candidate;

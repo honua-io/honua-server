@@ -18,7 +18,7 @@ public sealed class GeoPackagePreviewTests
     {
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
         {
@@ -51,7 +51,7 @@ public sealed class GeoPackagePreviewTests
         // feature; the resolver must return 27700, not 1 (#2743).
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
         {
@@ -78,7 +78,7 @@ public sealed class GeoPackagePreviewTests
         // the resolver returns null so the import requires an explicit source SRID (#2743).
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
         {
@@ -107,7 +107,7 @@ public sealed class GeoPackagePreviewTests
         // code; import-path SRID validation still guards nonsense codes downstream (#2743).
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
         {
@@ -134,7 +134,7 @@ public sealed class GeoPackagePreviewTests
     {
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
         {
@@ -160,7 +160,7 @@ public sealed class GeoPackagePreviewTests
     {
         // The second segment is a fixed literal prefix plus a GUID-derived token and can never be
         // rooted, so Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
 
         try
         {

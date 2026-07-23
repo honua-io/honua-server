@@ -81,7 +81,7 @@ public sealed class EvalHarnessSupportTests
         try
         {
             // Path.Combine args are relative test fixture fragments; no rooted-segment risk
-            var seedPath = Path.Combine(tempDirectory.FullName, "seed.yaml");
+            var seedPath = Path.Join(tempDirectory.FullName, "seed.yaml");
             File.WriteAllText(seedPath, "version: 1\ncollections: []\nfeatures: []\n");
 
             var source = SharedCorpusFixtureSource.TryCreate(tempDirectory.FullName, "corpus@123");
@@ -124,7 +124,7 @@ public sealed class EvalHarnessSupportTests
     {
         var scenario = EvalScenarioLoader.LoadById(scenarioId);
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk
-        var seedPath = ResolveRepoRelativePath(Path.Combine("tests", "seed", "seed.yaml"));
+        var seedPath = ResolveRepoRelativePath(Path.Join("tests", "seed", "seed.yaml"));
 
         File.Exists(seedPath).Should().BeTrue(
             because: $"seed corpus must be discoverable at '{seedPath}' for eval harness validation");
@@ -158,7 +158,7 @@ public sealed class EvalHarnessSupportTests
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
@@ -166,8 +166,8 @@ public sealed class EvalHarnessSupportTests
         // relative is always a repo-relative fragment built from literal path
         // segments by this file's own callers; no rooted-segment risk.
         return directory != null
-            ? Path.Combine(directory.FullName, relative)
-            : Path.Combine(AppContext.BaseDirectory, relative);
+            ? Path.Join(directory.FullName, relative)
+            : Path.Join(AppContext.BaseDirectory, relative);
     }
 
     [UnitTest]
@@ -177,7 +177,7 @@ public sealed class EvalHarnessSupportTests
         const string OverrideVariable = "HONUA_EVAL_SCENARIO_ROOT";
         var original = Environment.GetEnvironmentVariable(OverrideVariable);
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk
-        var missingDirectory = Path.Combine(Path.GetTempPath(), "honua-eval-missing-" + Guid.NewGuid().ToString("N"));
+        var missingDirectory = Path.Join(Path.GetTempPath(), "honua-eval-missing-" + Guid.NewGuid().ToString("N"));
         try
         {
             Environment.SetEnvironmentVariable(OverrideVariable, missingDirectory);

@@ -277,7 +277,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     // Intentionally generic: the edit is already committed, so a publish failure
                     // must not fail the request or stop events for the remaining operations
                     // (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
-                    catch (Exception publishEx)
+                    catch (Exception publishEx) when (publishEx is not OutOfMemoryException)
                     {
                         Log.FeatureChangePublishFailed(_logger, layerId, objectId, publishEx);
                     }
@@ -307,7 +307,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.BatchTransactionFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(Activity.Current, ex);
@@ -588,7 +588,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
                 // Intentionally generic: the edit is already committed, so a publish failure
                 // must not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
-                catch (Exception publishEx)
+                catch (Exception publishEx) when (publishEx is not OutOfMemoryException)
                 {
                     Log.FeatureChangePublishFailed(_logger, layerId, updated.Value.Id, publishEx);
                 }
@@ -632,7 +632,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure not already handled by the specific catches above must map
         // to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ReplaceFeatureFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(Activity.Current, ex);
@@ -925,7 +925,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
                 // Intentionally generic: the edit is already committed, so a publish failure
                 // must not surface as a 500 (mirrors OgcFeaturesCrudHandler.TryPublishFeatureChangeAsync).
-                catch (Exception publishEx)
+                catch (Exception publishEx) when (publishEx is not OutOfMemoryException)
                 {
                     Log.FeatureChangePublishFailed(_logger, layerId, updated.Value.Id, publishEx);
                 }
@@ -969,7 +969,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure not already handled by the specific catches above must map
         // to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.PatchFeatureFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(Activity.Current, ex);
@@ -1202,7 +1202,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         // Intentionally generic: this prepares a single operation within a batch transaction;
         // any unanticipated failure must be reported as that operation's own batch-item error
         // rather than aborting or crashing the entire batch request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.BatchOperationFailed(_logger, layerId.ToString(), operation.Id ?? "unknown", ex);
             return PreparedBatchValidationResult.Failure(CreateBatchFailure(

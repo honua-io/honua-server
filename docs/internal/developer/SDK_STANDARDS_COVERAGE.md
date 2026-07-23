@@ -13,7 +13,7 @@ Use this page together with:
   protocol adapter support
 - [Metadata and Catalog Parity Matrix](metadata-catalog-parity-matrix.md) for
   metadata/catalog endpoint parity targets
-- [Mobile SDK Roadmap](mobile-sdk-roadmap.md) for MAUI/offline field workflows
+- [honua-mobile](https://github.com/honua-io/honua-mobile) for MAUI/offline field workflows
 
 ## Claim Rules
 

@@ -133,7 +133,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
             // Intentional catch-all: this is a per-provider attempt inside the failover loop;
             // the exception is already logged with full detail below and failover to the next provider continues.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 stopwatch.Stop();
                 lastException = ex;
@@ -247,7 +247,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
             // Intentional catch-all: this is a per-provider attempt inside the failover loop;
             // the exception is already logged with full detail below and failover to the next provider continues.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 stopwatch.Stop();
                 lastException = ex;
@@ -363,7 +363,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
             // Intentional catch-all: this is a per-provider attempt inside the failover loop;
             // the exception is already logged with full detail below and failover to the next provider continues.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 stopwatch.Stop();
                 lastException = ex;
@@ -497,7 +497,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             }
             // Intentional catch-all: this is a per-provider attempt inside the failover loop;
             // the exception is already logged with full detail below and failover to the next provider continues.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 stopwatch.Stop();
                 lastException = ex;

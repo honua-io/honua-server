@@ -272,7 +272,7 @@ internal sealed class GeoprocessingJobDispatcher
         {
             await _jobQueue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: the documented best-effort removal (see the XML doc
             // above) — logged so the stale-claim reconciler's later fix-up is diagnosable.

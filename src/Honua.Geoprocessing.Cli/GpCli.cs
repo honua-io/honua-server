@@ -242,6 +242,7 @@ public static class GpCli
         // Not rewritten as .Where(...): the filter also extracts "gdal.command" via
         // TryGetValue, so a LINQ form would need an awkward Select/Where split for no
         // real readability gain.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var log in result.Logs)
         {
             if (log.Metadata is not null
@@ -798,7 +799,7 @@ public static class GpCli
             // traversal-free path — never rooted or attacker-controlled.
             foreach (var file in plan.Files)
             {
-                var target = Path.Combine(outputDir, file.RelativePath);
+                var target = Path.Join(outputDir, file.RelativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 await File.WriteAllTextAsync(target, file.Contents).ConfigureAwait(false);
                 Console.WriteLine($"  wrote {file.RelativePath}  ({file.Description})");
@@ -827,7 +828,7 @@ public static class GpCli
         // traversal-free path — never rooted or attacker-controlled.
         foreach (var file in plan.Files)
         {
-            var target = Path.Combine(repoRoot, file.RelativePath);
+            var target = Path.Join(repoRoot, file.RelativePath);
             if (File.Exists(target))
             {
                 throw new GpCliUsageException(
@@ -900,7 +901,7 @@ public static class GpCli
         // repoRoot is an absolute directory path from ResolveRepoRoot(), and both branches
         // are compile-time literal repo-relative paths, so Path.Combine cannot silently drop
         // either segment here.
-        var registrationFile = Path.Combine(
+        var registrationFile = Path.Join(
             repoRoot,
             kind == GpProcessKind.Gdal
                 ? "src/Honua.Worker.Gdal/GdalWorkerServiceCollectionExtensions.cs"
@@ -924,7 +925,7 @@ public static class GpCli
         // metadata surface; native processes still declare a definition with the native
         // runtime profile). repoRoot is absolute and the second segment is a compile-time
         // literal, so Path.Combine cannot silently drop either argument here.
-        var catalogFile = Path.Combine(
+        var catalogFile = Path.Join(
             repoRoot,
             "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs");
         if (File.Exists(catalogFile))
@@ -954,7 +955,7 @@ public static class GpCli
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "Honua.sln")))
+            if (File.Exists(Path.Join(dir.FullName, "Honua.sln")))
             {
                 return dir.FullName;
             }
@@ -983,7 +984,7 @@ public static class GpCli
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir.FullName, "samples", "gp");
+            var candidate = Path.Join(dir.FullName, "samples", "gp");
             if (Directory.Exists(candidate))
             {
                 return candidate;

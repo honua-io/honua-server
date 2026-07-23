@@ -49,9 +49,8 @@ public sealed class ProcessMigrationEvidenceFixtureTests
 
         // Not a missed-Select: each iteration performs assertions as a side effect rather than
         // building a projected collection, so a .Select(...) rewrite would not be equivalent.
-        foreach (var processId in processIds)
+        foreach (var definition in (processIds).Select(processId => _catalog.GetProcess(processId)))
         {
-            var definition = _catalog.GetProcess(processId);
             definition.Should().NotBeNull();
 
             var classification = ProcessMigrationEvidenceClassifier.Classify(definition!);
@@ -91,7 +90,7 @@ public sealed class ProcessMigrationEvidenceFixtureTests
         {
             // Path.Combine args are directory.FullName (the walk-up root) followed only by
             // literal relative fixture-path segments from call sites; no rooted-segment risk.
-            var candidate = Path.Combine(new[] { directory.FullName }.Concat(segments).ToArray());
+            var candidate = Path.Join(new[] { directory.FullName }.Concat(segments).ToArray());
             if (File.Exists(candidate))
             {
                 return candidate;

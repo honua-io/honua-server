@@ -230,7 +230,7 @@ internal sealed partial class PluginEditPipeline : IPluginEditPipeline
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // After-hooks are best-effort: the edit is already committed. Never propagate.
                 measure.MarkFailed();

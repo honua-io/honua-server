@@ -1,14 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.Infrastructure;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
+using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 using Testcontainers.MySql;
@@ -27,7 +28,7 @@ namespace Honua.MySql.Tests;
 [Trait("Category", "MySql")]
 public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
 {
-    private const int LayerId = 1;
+    private const int LayerId = 0;
     private MySqlContainer _container = null!;
     private MySqlDataSource _dataSource = null!;
     private MySqlFeatureStore _store = null!;
@@ -137,29 +138,27 @@ public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
-    public async Task Query_WithGeoServicesEwkbBboxIntersectsFilter_ReturnsSubset()
+    public async Task FeatureServer_BboxQuery_ThroughHttpStack_ReturnsMySqlSubset()
     {
-        // Feed the exact EWKB emitted by the production GeoServices geometry adapter.
-        var bboxWkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(
-        new GeoServicesGeometry
+        var fixture = new WebAppFixture().ReplaceService<IFeatureReader>(_store);
+        try
         {
-            Xmin = -121.995,
-            Ymin = 37.005,
-            Xmax = -121.95,
-            Ymax = 37.055,
-            SpatialReference = new GeoServicesSpatialReference { Wkid = 4326 }
-        },
-            srid: 4326);
-        var query = new FeatureQuery
-        {
-            SpatialFilter = SpatialFilter.Create(
-                geometry: bboxWkb,
-                spatialRelationship: SpatialRelationship.Intersects,
-                srid: 4326)
-        };
+            await fixture.InitializeAsync();
+            var geometry = Uri.EscapeDataString("-121.995,37.005,-121.95,37.055");
 
-        var count = await _store.CountAsync(LayerId, query);
-        Assert.Equal(5, count);
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{LayerId}/query" +
+                $"?geometry={geometry}&geometryType=esriGeometryEnvelope&inSR=4326" +
+                "&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json");
+
+            response.EnsureSuccessStatusCode();
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(5, payload.RootElement.GetProperty("count").GetInt64());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]

@@ -66,14 +66,11 @@ internal sealed class ODataAggregationHandler
 
         // The terminal (last) transform decides whether the result is an aggregation or features.
         var terminal = ParseApplyExpression(segments[^1]);
-        foreach (var parsed in segments.Select(ParseApplyExpression))
+        foreach (var parsed in (segments.Select(ParseApplyExpression)).Where(parsed => parsed.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(parsed.FilterExpression)))
         {
-            if (parsed.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(parsed.FilterExpression))
-            {
-                // filter() narrows rows before aggregation; apply every filter segment to the query
-                // (a trailing filter-only pipeline then simply returns the filtered features).
-                query = ApplyODataFilter(query, parsed.FilterExpression, resource);
-            }
+            // filter() narrows rows before aggregation; apply every filter segment to the query
+            // (a trailing filter-only pipeline then simply returns the filtered features).
+            query = ApplyODataFilter(query, parsed.FilterExpression, resource);
         }
 
         object[] aggregatedValues;
@@ -472,6 +469,7 @@ internal sealed class ODataAggregationHandler
         // come from the same `TryGetNumericValue` out-parameter call, so a LINQ `Where` would
         // need to invoke it twice (once to filter, once to re-extract the value) or project
         // through an intermediate tuple - neither is clearer than the explicit loop.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var accumulator in accumulators)
         {
             if (TryGetNumericValue(feature, accumulator.Field, out var value))

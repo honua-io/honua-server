@@ -86,6 +86,7 @@ internal sealed partial class RedisVersionLock : IVersionLock
         private readonly string _key;
         private readonly string _token;
         private readonly TimeSpan _leaseDuration;
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         private readonly CancellationTokenSource _cts = new();
         private readonly Task _renewalLoop;
         private readonly ILogger _logger;
@@ -149,7 +150,7 @@ internal sealed partial class RedisVersionLock : IVersionLock
             // Intentional broad catch: RenewAsync already logs its own RedisException failures via
             // Log.VersionLockRenewalError; this only needs to observe task completion so the lock
             // release below always runs regardless of how the renewal loop ended.
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Renewal-loop failures are already logged; release the lock regardless.
             }

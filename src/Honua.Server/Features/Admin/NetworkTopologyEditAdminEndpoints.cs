@@ -101,7 +101,7 @@ internal static partial class NetworkTopologyEditAdminEndpoints
             NetworkTopologyEditAdminLog.ListedGenerations(logger, id, dtos.Length);
             return Results.Json(dtos, NetworkTopologyEditAdminJsonContext.Default.NetworkTopologyGenerationDtoArray);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyEditAdminLog.OperationFailed(logger, "list-generations", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -130,7 +130,7 @@ internal static partial class NetworkTopologyEditAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound,
                 "Network dataset not found or has no active topology generation.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyEditAdminLog.OperationFailed(logger, "allocate-draft", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -159,7 +159,7 @@ internal static partial class NetworkTopologyEditAdminEndpoints
         {
             targetGeneration = await generationStore.GetAsync(id, generation, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyEditAdminLog.OperationFailed(logger, "edit-batch.lookup-generation", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -177,7 +177,7 @@ internal static partial class NetworkTopologyEditAdminEndpoints
         {
             dataset = await datasetResolver.ResolveAsync(id, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyEditAdminLog.OperationFailed(logger, "edit-batch.resolve-dataset", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
@@ -276,7 +276,7 @@ internal static partial class NetworkTopologyEditAdminEndpoints
             NetworkTopologyEditAdminLog.ValidationFailed(logger, id, generation, ex.Message);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             NetworkTopologyEditAdminLog.OperationFailed(logger, "edit-batch.apply", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,

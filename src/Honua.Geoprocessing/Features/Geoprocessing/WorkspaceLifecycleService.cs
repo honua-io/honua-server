@@ -281,7 +281,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             transitioned = await _artifactStore.TransitionStateAsync(
                 request.ArtifactId, ArtifactLifecycleState.Promoted, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a failed state transition must trigger compensating
             // rollback of the already-created promoted copy rather than leave two live
@@ -315,7 +315,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         {
             rolledBack = await _artifactStore.DeleteAsync(promotedArtifactId, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: this is the compensating-rollback path itself — it
             // must report back to the caller (manual cleanup may be needed) rather than
@@ -447,7 +447,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentionally broad: this is the per-workspace sweep boundary — one
                 // workspace's cleanup failure must not abort the sweep for every other

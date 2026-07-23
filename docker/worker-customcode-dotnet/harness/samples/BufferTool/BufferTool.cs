@@ -52,7 +52,7 @@ public sealed class BufferTool : IGeoprocessingTool
         {
             geometry = new WKTReader().Read(wkt);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: WKT parsing can throw a variety of NTS/format
             // exceptions and this tool boundary reports every failure as a GpResult
@@ -76,7 +76,7 @@ public sealed class BufferTool : IGeoprocessingTool
 
         // False positive: outName was already validated by ArtifactNames.IsSimpleFileName
         // above, so it is never rooted/absolute.
-        var outPath = Path.Combine(context.WorkDirectory, outName);
+        var outPath = Path.Join(context.WorkDirectory, outName);
         File.WriteAllText(outPath, JsonSerializer.Serialize(feature));
         context.Progress.Report(90.0, "writing output");
 

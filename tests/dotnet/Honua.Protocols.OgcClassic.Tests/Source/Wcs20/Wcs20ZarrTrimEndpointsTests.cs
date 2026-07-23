@@ -219,6 +219,7 @@ public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime
         {
             var data = Get(key);
             // Ownership transfers to the returned Stream's caller, which disposes it after reading.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult<Stream>(new MemoryStream(
                 data,
                 checked((int)offset),

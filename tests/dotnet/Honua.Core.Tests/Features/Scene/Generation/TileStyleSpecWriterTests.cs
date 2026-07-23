@@ -464,7 +464,9 @@ public sealed class TileStyleSpecWriterTests
         // measurement comparison, so a tolerance would diverge from client runtimes.
         return op switch
         {
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             "===" => left == right,
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             "!==" => left != right,
             ">" => left > right,
             ">=" => left >= right,

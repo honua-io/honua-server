@@ -225,6 +225,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var extentByResourceId = new Dictionary<string, LayerExtentInsert?>(StringComparer.Ordinal);
         // Not rewritten as .Where(...): each guard short-circuits the next, and the loop body
         // populates two collections together (the HashSet.Add result gates the dictionary write).
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var publication in graph.Publications)
         {
             if (publication.LayerIndex is not int layerIndex) continue;

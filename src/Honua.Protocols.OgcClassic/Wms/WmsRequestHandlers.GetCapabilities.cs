@@ -227,7 +227,7 @@ internal static partial class WmsRequestHandlers
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: a per-layer temporal resolution failure must degrade to no
             // TIME dimension rather than fail the whole capabilities document (see doc comment above).

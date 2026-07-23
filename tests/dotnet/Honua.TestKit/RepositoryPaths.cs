@@ -34,7 +34,7 @@ public static class RepositoryPaths
         var parts = new string[segments.Length + 1];
         parts[0] = root;
         Array.Copy(segments, 0, parts, 1, segments.Length);
-        return Path.Combine(parts);
+        return Path.Join(parts);
     }
 
     private static string? FindRepositoryRoot()
@@ -42,7 +42,7 @@ public static class RepositoryPaths
         // "Honua.sln" is a fixed literal marker filename, never rooted, so
         // directory.FullName can't be dropped here.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }

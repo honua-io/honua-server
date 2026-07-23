@@ -40,8 +40,6 @@
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
-    <InternalsVisibleTo Include="Honua.MySql.Tests" />
-    <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />

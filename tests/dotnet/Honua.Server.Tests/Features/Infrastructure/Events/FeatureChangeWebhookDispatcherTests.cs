@@ -628,10 +628,10 @@ public sealed class FeatureChangeWebhookDispatcherTests
         {
             SendCount++;
             // Ownership transfers to the HttpClient pipeline/caller, which disposes it; not this handler's responsibility.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }
-
     private sealed class CancellationAwareHandler : HttpMessageHandler
     {
         private readonly TaskCompletionSource _requestStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);

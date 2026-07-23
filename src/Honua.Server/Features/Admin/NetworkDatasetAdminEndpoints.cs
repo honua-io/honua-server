@@ -110,7 +110,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             NetworkDatasetAdminLog.Listed(logger, dtos.Length);
             return Results.Json(dtos, NetworkDatasetAdminJsonContext.Default.NetworkDatasetDtoArray);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic 500 admin problem response below.
@@ -138,7 +138,7 @@ internal static partial class NetworkDatasetAdminEndpoints
 
             return Results.Json(ToDto(record), NetworkDatasetAdminJsonContext.Default.NetworkDatasetDto);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic 500 admin problem response below.
@@ -181,7 +181,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict,
                 "A network dataset with this id is already registered.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic 500 admin problem response below.
@@ -210,7 +210,7 @@ internal static partial class NetworkDatasetAdminEndpoints
         {
             existing = await store.GetAsync(id, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic 500 admin problem response below.
@@ -244,7 +244,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             NetworkDatasetAdminLog.Updated(logger, saved.Id);
             return Results.Json(ToDto(saved), NetworkDatasetAdminJsonContext.Default.NetworkDatasetDto);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic 500 admin problem response below.
@@ -273,7 +273,7 @@ internal static partial class NetworkDatasetAdminEndpoints
             NetworkDatasetAdminLog.Deleted(logger, id);
             return Results.NoContent();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic 500 admin problem response below.

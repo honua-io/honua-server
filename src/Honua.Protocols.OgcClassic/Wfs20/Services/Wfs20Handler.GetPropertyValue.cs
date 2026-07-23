@@ -158,7 +158,7 @@ internal sealed partial class Wfs20Handler
                 "InvalidParameterValue",
                 "Invalid WFS parameter value; see logs for details.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost GetPropertyValue request boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -410,7 +410,9 @@ internal sealed partial class Wfs20Handler
         // Not simplifiable to bare 'A': the null-conditional chain makes these `bool?`,
         // and `== true` is the idiom that collapses a null (no field) to false while
         // keeping `isGeometry`/`isFeatureId` non-nullable `bool`.
+        // codeql[cs/simplifiable-boolean-expression] -- the written form preserves NaN or nullable-boolean semantics.
         var isGeometry = geometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
+        // codeql[cs/simplifiable-boolean-expression] -- the written form preserves NaN or nullable-boolean semantics.
         var isFeatureId = primaryKeyField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true ||
                           resolvedName.Equals("objectid", StringComparison.OrdinalIgnoreCase);
         var field = resource.SchemaFields.FirstOrDefault(candidate =>

@@ -49,7 +49,7 @@ public sealed class AdminSampleSeedFixtureTests
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         // "Honua.sln" is a fixed literal (never rooted), so directory.FullName is never dropped.
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
@@ -57,6 +57,6 @@ public sealed class AdminSampleSeedFixtureTests
         directory.Should().NotBeNull("the test should run under the repository output tree");
         // `path` is always caller-supplied relative literals (e.g. "tests", "seed", "*.yaml"),
         // never rooted, so directory!.FullName is never dropped.
-        return Path.Combine(new[] { directory!.FullName }.Concat(path).ToArray());
+        return Path.Join(new[] { directory!.FullName }.Concat(path).ToArray());
     }
 }

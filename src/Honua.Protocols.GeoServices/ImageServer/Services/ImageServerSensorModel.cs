@@ -264,6 +264,7 @@ internal static class ImageServerSensorModel
 
     private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] names)
     {
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var name in names)
         {
             if (root.TryGetProperty(name, out array) && array.ValueKind == JsonValueKind.Array)
@@ -278,6 +279,7 @@ internal static class ImageServerSensorModel
 
     private static bool TryGetObject(JsonElement root, out JsonElement value, params string[] names)
     {
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var name in names)
         {
             if (root.TryGetProperty(name, out value) && value.ValueKind == JsonValueKind.Object)
@@ -319,6 +321,7 @@ internal static class ImageServerSensorModel
         // Not rewritten as .Where(...): this is a first-match short-circuit over the
         // Try-pattern (bool + out), not a pure filter — a LINQ equivalent would need an
         // intermediate nullable projection and would be harder to read than the loop.
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var name in names)
         {
             if (TryGetDouble(root, name, out value))

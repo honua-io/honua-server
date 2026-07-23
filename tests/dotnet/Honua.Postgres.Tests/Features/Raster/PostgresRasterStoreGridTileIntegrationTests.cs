@@ -163,6 +163,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
 
             result.Should().NotBeNull("the gridset mosaic tile SQL must return a rendered tile");
             result!.Value.Width.Should().Be(256);
+            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
             result.Value.Height.Should().Be(256);
             result.Value.Srid.Should().Be(4326);
             result.Value.Data.Should().NotBeEmpty();

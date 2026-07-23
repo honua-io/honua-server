@@ -285,7 +285,7 @@ internal sealed partial class Wfs20Handler
                 exceptionCode,
                 "Invalid WFS parameter value; see logs for details.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost GetFeature request boundary. Already
             // logged (with exception) and mapped to a WFS ExceptionReport.

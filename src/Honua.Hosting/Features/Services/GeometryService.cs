@@ -64,7 +64,7 @@ internal sealed class GeometryService : IGeometryService
             var geometry = NewWkbReader().Read(wkb);
             return DetectZMFromGeometry(geometry);
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional: WKB from callers may be malformed/truncated in ways that surface as
             // varied exception types (parse, argument, index) from the reader; this is a
@@ -227,7 +227,7 @@ internal sealed class GeometryService : IGeometryService
                 Srid = geometry.SRID > 0 ? geometry.SRID : null
             };
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional: same rationale as DetectZM(byte[]?) above — malformed WKB can surface
             // as varied exception types, and this accessor's contract is to return null rather

@@ -106,7 +106,7 @@ public sealed class CertificationEvidenceCollector
     // The second argument is always a generated file name (never rooted), so this
     // combine can't drop _outputDirectory.
     public string EnvelopePath =>
-        Path.Combine(_outputDirectory, $"{_runId}-{_clientLane}-{_protocol}.cert.json");
+        Path.Join(_outputDirectory, $"{_runId}-{_clientLane}-{_protocol}.cert.json");
 
     /// <summary>
     /// Number of results recorded so far.
@@ -165,7 +165,7 @@ public sealed class CertificationEvidenceCollector
             });
             throw new XunitException($"{ServerRegressionPrefix} {certId}: {ex.Message}", ex);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: any non-assertion exception is classified as a
             // client-incompat failure, recorded, then rethrown as XunitException so xUnit

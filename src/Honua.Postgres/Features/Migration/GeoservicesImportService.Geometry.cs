@@ -105,7 +105,7 @@ internal sealed partial class GeoservicesImportService
 
             return null;
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentionally generic: malformed/unrecognized Esri geometry JSON should return null
             // like the "no recognized shape" path above, not crash the import. The caller
@@ -124,6 +124,7 @@ internal sealed partial class GeoservicesImportService
                 return true;
 
             // Rings (polygon), paths (polyline), points (multipoint): check coordinate array lengths
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var propName in new[] { "rings", "paths" })
             {
                 if (geometry.TryGetProperty(propName, out var arrays) &&
@@ -141,7 +142,7 @@ internal sealed partial class GeoservicesImportService
 
             return false;
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentionally generic: this only feeds a diagnostic higher-dimension-count statistic,
             // not the actual geometry insert path; malformed geometry JSON here safely degrades to

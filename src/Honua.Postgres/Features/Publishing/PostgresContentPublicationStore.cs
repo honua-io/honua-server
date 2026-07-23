@@ -467,7 +467,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // The connection may already be faulted; the using-scope disposes it.
         }

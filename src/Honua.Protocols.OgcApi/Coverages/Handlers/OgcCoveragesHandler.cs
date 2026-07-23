@@ -320,7 +320,7 @@ internal sealed class OgcCoveragesHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "collections", null);
             HonuaTelemetry.RecordException(activity, ex);
@@ -384,7 +384,7 @@ internal sealed class OgcCoveragesHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "collection", collectionId);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the coverage collection.");
@@ -444,7 +444,7 @@ internal sealed class OgcCoveragesHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "schema", collectionId);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the coverage schema.");
@@ -576,7 +576,7 @@ internal sealed class OgcCoveragesHandler
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure not already handled by the ArgumentException case above
         // must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcCoveragesLog.RequestFailed(_logger, ex, "coverage", collectionId);
             telemetry.RecordException(ex);

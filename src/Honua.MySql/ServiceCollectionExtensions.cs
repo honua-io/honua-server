@@ -8,6 +8,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Security;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Features.FeatureStore;
@@ -119,6 +121,33 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<IVersionManager>(_ => new NoOpVersionManager());
+        // Honua.Infrastructure.Services.SpatialReferenceResolver (a mandatory scoped
+        // dependency of FeatureServer/ImageServer/GeometryService/gRPC) requires
+        // ICrsDetectionService regardless of provider. Only Postgres ever registered one
+        // (CRS detection from WKT/.prj/GeoJSON needs its spatial_ref_sys catalog), so every
+        // FeatureServer query under DataSource:Provider=mysql failed DI activation outright
+        // before this fix (honua-server#2947).
+        services.AddScoped<ICrsDetectionService>(_ => new NoOpCrsDetectionService());
+        // Same gap, same fix shape: SpatialReferenceResolver also requires ICrsRegistry.
+        // WellKnownCrsRegistry covers CRS84/EPSG:4326/EPSG:3857 (the practical case for a
+        // provider with no spatial_ref_sys-equivalent catalog) and honestly reports
+        // "unsupported" for anything else.
+        services.AddScoped<ICrsRegistry>(_ => new WellKnownCrsRegistry());
+        // FeatureProviderQueryRouter (wired unconditionally in
+        // InfrastructureCompositionRoot, regardless of primary provider) requires
+        // ISecureConnectionRegistry to resolve any publication's storage-binding
+        // connection. MySql has no honua.data_connections-equivalent catalog of its
+        // own; a process-local in-memory registry keeps DI activation working and
+        // supports a secondary/additional provider (e.g. SQL Server) layered on top
+        // (honua-server#2947).
+        services.AddSingleton<ISecureConnectionRegistry, InMemorySecureConnectionRegistry>();
+        // Honua.Protocols.OData's ODataSearchService (wired unconditionally regardless of
+        // provider) requires IRelationshipStore; MySql/MariaDB documents relationship
+        // queries as unsupported (honua-server#2947).
+        services.AddScoped<IRelationshipStore>(_ => new ReadOnlyRelationshipStore("MySQL/MariaDB"));
+        // OGC API Features' shared geometry services (mandatory, wired unconditionally
+        // regardless of provider) require ICoordinateTransformService (honua-server#2947).
+        services.AddSingleton<ICoordinateTransformService>(_ => new WellKnownCoordinateTransformService());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("MySQL/MariaDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("MySQL/MariaDB"));
 

@@ -85,7 +85,7 @@ internal static partial class PackageReviewEndpoints
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // admin problem-details response below.

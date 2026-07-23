@@ -224,7 +224,7 @@ internal sealed partial class PortalOAuthStore(
                     return null;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional: any distributed-cache failure degrades to a cache miss
                 // (already logged) rather than surfacing to the OAuth request path.
@@ -268,7 +268,7 @@ internal sealed partial class PortalOAuthStore(
         {
             await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: removal is best-effort; the entry's own TTL is the safety net,
             // and the failure is already logged for diagnosis.
@@ -339,7 +339,7 @@ internal sealed partial class PortalOAuthStore(
                     TimeSpan.FromSeconds(30),
                     StackExchange.Redis.When.NotExists).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Redis claim failed (connection issue); fall through to non-atomic GET+DEL.
                 PortalOAuthLog.ClaimLockAcquireFailed(_logger, LogValueRedactor.Hash(key), ex);
@@ -361,7 +361,7 @@ internal sealed partial class PortalOAuthStore(
             {
                 payload = await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional: any distributed-cache failure degrades to a cache miss
                 // (already logged) rather than surfacing to the OAuth request path.
@@ -381,7 +381,7 @@ internal sealed partial class PortalOAuthStore(
             {
                 await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional: removal is best-effort; the entry's own TTL is the safety
                 // net, and the failure is already logged for diagnosis.
@@ -401,7 +401,7 @@ internal sealed partial class PortalOAuthStore(
                 {
                     await redisDb.KeyDeleteAsync(claimKey).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Ignored; the claim key expires automatically via its TTL.
                     PortalOAuthLog.ClaimLockReleaseFailed(_logger, LogValueRedactor.Hash(key), ex);
@@ -429,7 +429,7 @@ internal sealed partial class PortalOAuthStore(
                 .GetField("_cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             return field?.GetValue(redisCache) as StackExchange.Redis.IDatabase;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: reflection access is best-effort and commonly unavailable on
             // first-request cold start; callers fall back to non-atomic cache operations.

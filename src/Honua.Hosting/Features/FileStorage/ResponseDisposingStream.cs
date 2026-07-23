@@ -7,6 +7,7 @@ namespace Honua.FileStorage;
 
 internal sealed class ResponseDisposingStream : DelegatingStream
 {
+    // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
     private readonly IDisposable _response;
     private bool _disposed;
 

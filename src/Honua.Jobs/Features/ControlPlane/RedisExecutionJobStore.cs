@@ -276,6 +276,7 @@ internal sealed partial class RedisExecutionJobStore(
             // CreatedAt.ToUnixTimeMilliseconds() (see UpdateQueryIndexesAsync) and never carry a
             // fractional tie-breaker, and millisecond epoch values stay well within double's
             // 53-bit exact-integer range. This equality check has no floating-point precision risk.
+            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
             if (lowestScore == scoreWindowMax)
             {
                 scoreWindowSkip += processedAtLowestScore;

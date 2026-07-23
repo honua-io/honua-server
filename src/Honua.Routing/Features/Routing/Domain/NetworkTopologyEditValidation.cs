@@ -84,6 +84,7 @@ public static class NetworkTopologyEditValidation
             return false;
         }
 
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var edge in batch.AddEdges.Concat(batch.UpdateEdges))
         {
             if (!TryValidateEdge(edge, generationSrid, allowedAttributeKeys, out error))
@@ -92,6 +93,7 @@ public static class NetworkTopologyEditValidation
             }
         }
 
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var edgeId in batch.DeleteEdgeIds)
         {
             if (!TryValidateStableId(edgeId, "edge id", out error))
@@ -100,6 +102,7 @@ public static class NetworkTopologyEditValidation
             }
         }
 
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var restriction in batch.AddRestrictions.Concat(batch.UpdateRestrictions))
         {
             if (!TryValidateRestriction(restriction, out error))
@@ -108,6 +111,7 @@ public static class NetworkTopologyEditValidation
             }
         }
 
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var restrictionId in batch.DeleteRestrictionIds)
         {
             if (!TryValidateStableId(restrictionId, "turn restriction id", out error))
@@ -382,6 +386,7 @@ public static class NetworkTopologyEditValidation
                 return false;
             }
 
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var ordinate in position.EnumerateArray())
             {
                 if (ordinate.ValueKind != JsonValueKind.Number || !ordinate.TryGetDouble(out var value) || !double.IsFinite(value))
@@ -404,13 +409,10 @@ public static class NetworkTopologyEditValidation
         out string error)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var id in adds.Concat(updates).Concat(deletes))
+        foreach (var id in (adds.Concat(updates).Concat(deletes)).Where(id => !string.IsNullOrEmpty(id) && !seen.Add(id)))
         {
-            if (!string.IsNullOrEmpty(id) && !seen.Add(id))
-            {
-                error = $"Duplicate {role} id '{id}' within the same batch.";
-                return false;
-            }
+            error = $"Duplicate {role} id '{id}' within the same batch.";
+            return false;
         }
 
         error = string.Empty;

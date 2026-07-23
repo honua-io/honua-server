@@ -17,7 +17,7 @@ resource family URI to its schema file, so a harness can resolve a schema from
 a vocabulary key without hard-coding paths.
 
 A self-check **conformance fixture tree** lives under
-[`../../conformance/fixtures/`](../../conformance/fixtures/): example tool-call
+[`../fixtures/`](../fixtures/): example tool-call
 inputs and resource payloads that validate against these schemas. An
 implementer can run their JSON Schema validator over the fixtures to confirm the
 schemas load and that the examples conform, before testing their own server.
@@ -27,18 +27,18 @@ schemas load and that the examples conform, before testing their own server.
 These schemas are **derived from**, and faithful to, the normative prose:
 
 - Tool families and names come from
-  [`spec/taxonomy.md` §MCP Tools to Workflow Family Mapping](../taxonomy.md#mcp-tools-to-workflow-family-mapping).
+  [`spec/taxonomy.md` §MCP Tools to Workflow Family Mapping](https://github.com/honua-io/geospatial-mcp/blob/trunk/spec/taxonomy.md#mcp-tools-to-workflow-family-mapping).
 - Resource families, URI grammar, and inspection fields come from
-  [`spec/resources.md`](../resources.md).
+  [`spec/resources.md`](https://github.com/honua-io/geospatial-mcp/blob/trunk/spec/resources.md).
 - The canonical concept model (`AnalysisPlan`, `ArtifactRef`, `WorkspaceRef`,
   `GeoprocessingError`, …) comes from
-  [`spec/taxonomy.md` §Canonical Concept Model](../taxonomy.md#canonical-concept-model).
+  [`spec/taxonomy.md` §Canonical Concept Model](https://github.com/honua-io/geospatial-mcp/blob/trunk/spec/taxonomy.md#canonical-concept-model).
 
 ### Where the prose is intentionally upstream-owned
 
 The prose **defers concrete field spellings** for several canonical objects to
 `honua-server` (`MapPackage`, `AppPackage`, `PublishedService`, `Deployment`
-— see [`resources.md` §2.4 Deferred-Shape Fixtures](../conformance.md#24-deferred-shape-fixtures)
+— see [`spec/conformance.md` §2.4 Deferred-Shape Fixtures](https://github.com/honua-io/geospatial-mcp/blob/trunk/spec/conformance.md#24-deferred-shape-fixtures)
 and the responsibility-level projections in `resources.md`). For those, the
 prose deliberately gives **responsibilities**, not a frozen field table.
 

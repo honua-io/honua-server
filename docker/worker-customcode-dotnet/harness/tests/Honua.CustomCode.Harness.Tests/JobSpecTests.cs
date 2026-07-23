@@ -165,7 +165,7 @@ public sealed class JobSpecTests
         try
         {
             // False positive: "spec.json" is a fixed relative literal, never absolute.
-            var specPath = Path.Combine(dir.FullName, "spec.json");
+            var specPath = Path.Join(dir.FullName, "spec.json");
             File.WriteAllText(specPath, JsonSerializer.Serialize(new Dictionary<string, object>
             {
                 ["runtime"] = "dotnet",
@@ -202,7 +202,7 @@ public sealed class JobSpecTests
         try
         {
             // False positive: "spec.json" is a fixed relative literal, never absolute.
-            var specPath = Path.Combine(dir.FullName, "spec.json");
+            var specPath = Path.Join(dir.FullName, "spec.json");
             // The token is (incorrectly) placed in the spec file — it must NOT be honored.
             File.WriteAllText(specPath, JsonSerializer.Serialize(new Dictionary<string, object>
             {

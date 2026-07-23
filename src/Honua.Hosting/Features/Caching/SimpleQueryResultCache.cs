@@ -40,7 +40,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         // Intentional: a cache read failure is treated as a miss — logged and
         // swallowed rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SimpleQueryResultCacheLog.GetFailed(_logger, cacheKey, ex);
             return default;
@@ -85,7 +85,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         // Intentional: a cache removal failure is best-effort — logged and
         // reported as "not removed" rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SimpleQueryResultCacheLog.RemoveFailed(_logger, cacheKey, ex);
             return false;
@@ -100,7 +100,7 @@ internal sealed class SimpleQueryResultCache : IQueryResultCache
         }
         // Intentional: a bulk invalidation failure is best-effort — logged and
         // reported as "nothing invalidated" rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SimpleQueryResultCacheLog.InvalidateFailed(_logger, pattern, ex);
             return 0;

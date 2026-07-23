@@ -155,6 +155,7 @@ internal sealed class WorkspaceResource : IMcpResource
         // Not rewritten as .Where(...)/.Select(...): the match test itself is
         // the out-param lookup (TryGetMetadataValue) whose result is what gets
         // returned, so a LINQ filter would need the same out-var capture.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var artifact in workspace.Artifacts)
         {
             if (TryGetMetadataValue(artifact.Metadata, "resultPackageId", out var resultPackageId)

@@ -107,7 +107,7 @@ internal sealed class DeployPreflightProbe(
                 BackupHook = backupHook
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: migration planning failure must not fail the whole
             // preflight probe. The client only sees the generic degraded message; log the

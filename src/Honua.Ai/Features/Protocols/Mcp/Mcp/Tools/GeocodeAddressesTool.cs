@@ -219,7 +219,7 @@ internal sealed class GeocodeAddressesTool : IMcpTool
         // Intentionally generic: one provider blow-up must not fail the remaining addresses in
         // this batch. The raw exception is not relayed (it can carry provider internals); the
         // coordinator has already logged the failure through its own pipeline.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             item.Error = "Geocoding failed for this address.";
             return item;

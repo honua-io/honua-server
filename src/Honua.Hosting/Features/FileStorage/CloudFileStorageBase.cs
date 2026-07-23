@@ -70,7 +70,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             // upload pipeline itself; log and continue.
             progressReporter.Report(progress);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
         }
@@ -165,6 +165,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             // Not converted to `.Where(...)`: the predicate is an awaited async delete call
             // that must run sequentially per file (not fanned out via Task.WhenAll), so a
             // synchronous LINQ filter cannot express it.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var fileId in fileIds.Keys)
             {
                 if (await DeleteBatchFileAsync(fileId, cancellationToken))
@@ -342,7 +343,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             {
                 await previous.ConfigureAwait(false);
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentional: StoreAsync logs and swallows persistence failures; this keeps
                 // the serialized chain intact if a future change lets one escape.
@@ -359,7 +360,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
                     .SetProgressAsync(_uploadId, progress, TimeSpan.FromHours(1), CancellationToken.None)
                     .ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FileStorageLog.ProgressUpdateFailed(_logger, ex, _uploadId);
             }
@@ -420,7 +421,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Log but don't throw - cleanup is best-effort
             FileStorageLog.CleanupCancelledUploadFailed(Logger, uploadId, ex);

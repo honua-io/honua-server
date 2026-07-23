@@ -20,7 +20,7 @@ public sealed class SldConversionTests
 {
     // All later segments are fixed relative literals, so they can never be
     // rooted and silently discard AppContext.BaseDirectory.
-    private static readonly string FixtureRoot = Path.Combine(
+    private static readonly string FixtureRoot = Path.Join(
         AppContext.BaseDirectory,
         "TestData",
         "Sld");
@@ -1016,7 +1016,7 @@ public sealed class SldConversionTests
     {
         // Internal test helper: fixtureName is always a relative literal fixture
         // filename supplied by callers in this file, never rooted.
-        var path = Path.Combine(FixtureRoot, fixtureName);
+        var path = Path.Join(FixtureRoot, fixtureName);
         return File.ReadAllText(path);
     }
 }

@@ -349,9 +349,8 @@ internal static partial class MapServerEndpoints
                 }
             }
 
-            foreach (var candidate in _candidates.Where(c => c.PublicLayerId == rightLayerId))
+            foreach (var resourceName in (_candidates.Where(c => c.PublicLayerId == rightLayerId)).Select(candidate => candidate.Resource.Metadata.Name))
             {
-                var resourceName = candidate.Resource.Metadata.Name;
                 if (!string.IsNullOrWhiteSpace(resourceName))
                 {
                     return resourceName.Trim();
@@ -376,7 +375,7 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
-            foreach (var ch in trimmed.Where(ch => !char.IsLetterOrDigit(ch) && ch != '_'))
+            if (trimmed.Any(ch => !char.IsLetterOrDigit(ch) && ch != '_'))
             {
                 return false;
             }
@@ -476,12 +475,8 @@ internal static partial class MapServerEndpoints
                 return true;
             }
 
-            foreach (var allowed in _options.AllowedWorkspaceIds.Where(allowed => string.Equals(allowed, workspaceId, StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-
-            return false;
+            return _options.AllowedWorkspaceIds.Any(
+                allowed => string.Equals(allowed, workspaceId, StringComparison.OrdinalIgnoreCase));
         }
 
         private bool TryFindPublishedLayerForWorkspaceTable(

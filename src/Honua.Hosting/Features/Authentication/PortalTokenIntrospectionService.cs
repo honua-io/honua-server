@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
-/// RFC 7662 token introspection for the OAuth2 surface (ADR-0054, #1890). Answers
+/// RFC 7662 token introspection for the OAuth2 surface (ADR-0068, #1890). Answers
 /// for both token formats Honua issues: the opaque, cache-backed portal token (the
 /// default) and the optional signed JWT. Both ultimately resolve to a cache entry,
 /// so a revoked (evicted) or expired token always introspects as inactive — the

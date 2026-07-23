@@ -39,9 +39,8 @@ internal static class GdalZoneAdmission
         // soon as MaxZoneVertices is exceeded (the DoS admission guard this type exists
         // for, #2766) rather than first materializing every geometry's vertex count.
         long totalVertices = 0;
-        foreach (var feature in zones)
+        foreach (var geometry in (zones).Select(feature => feature.Geometry))
         {
-            var geometry = feature.Geometry;
             if (geometry is null)
             {
                 continue;

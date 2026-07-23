@@ -603,8 +603,8 @@ public sealed class FormSubmissionServiceTests
         var bytes = byteLength is int length
             ? new byte[length]
             : Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
-        // Ownership transfers to the returned FormFile, which the caller uses/disposes as needed.
-        var stream = new MemoryStream(bytes);
+        // The FormFile must retain this in-memory stream after the helper returns.
+        var stream = new MemoryStream(bytes); // lgtm [cs/local-not-disposed] Test-only MemoryStream has no unmanaged resources.
         var file = new FormFile(stream, 0, stream.Length, partName, fileName)
         {
             Headers = new HeaderDictionary()

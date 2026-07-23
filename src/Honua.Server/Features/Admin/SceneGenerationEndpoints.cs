@@ -135,7 +135,7 @@ internal static partial class SceneGenerationEndpoints
         {
             return Results.StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: the exception filters above
             // handle known error types; anything else is logged and mapped to a generic
@@ -229,7 +229,7 @@ internal static partial class SceneGenerationEndpoints
         {
             await invalidator.InvalidateSceneAsync(sceneId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: cache invalidation failures must not surface to the
             // caller — the generated scene is still valid, the next request will simply

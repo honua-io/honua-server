@@ -186,7 +186,7 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
                 CancellationToken.None).ConfigureAwait(false);
             return exitCode == 0;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Any failure to launch/query the container runtime just means Docker is unavailable
             // here; callers use this as a skip-gate, not an assertion.
@@ -208,7 +208,7 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
                 ENTRYPOINT ["httpd", "-f", "-p", "{ReplicaContainerPort.ToString(System.Globalization.CultureInfo.InvariantCulture)}", "-h", "/www"]
                 """;
             // "Dockerfile" is a fixed relative literal, so Path.Combine cannot drop contextDir here.
-            await File.WriteAllTextAsync(Path.Combine(contextDir, "Dockerfile"), dockerfile).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Join(contextDir, "Dockerfile"), dockerfile).ConfigureAwait(false);
 
             var (exitCode, _, stderr) = await RunProcessAsync(
                 ContainerRuntime,
@@ -225,7 +225,7 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
             {
                 Directory.Delete(contextDir, recursive: true);
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Best-effort temp cleanup.
             }

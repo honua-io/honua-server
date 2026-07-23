@@ -70,7 +70,7 @@ internal static partial class TemporalHistoryEndpoints
         {
             return problem;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: TemporalProblemMapping above
             // handles known error types; anything else is logged and mapped to a generic
@@ -118,7 +118,7 @@ internal static partial class TemporalHistoryEndpoints
         {
             return problem;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: TemporalProblemMapping above
             // handles known error types; anything else is logged and mapped to a generic

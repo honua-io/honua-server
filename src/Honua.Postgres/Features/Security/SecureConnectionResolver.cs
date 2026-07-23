@@ -140,7 +140,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 var connectionString = await ResolveConnectionStringInternalAsync(connection, cancellationToken);
                 return await TestActualConnectionAsync(connectionString, connection, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Resolution/probe failure for this specific connection: log, persist the unhealthy
                 // status so it surfaces in the registry, and return false rather than throwing.
@@ -150,7 +150,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 return false;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Outer guard for registry-lookup failures (not covered by the inner try): health-check
             // probe semantics — any failure means "unhealthy", not an exception the caller should handle.
@@ -246,25 +246,38 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                             $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
                     }
 
-                    // Host/port match is a tamper check for managed (encrypted) connections, where the stored
-                    // host/port are authoritative and the connection string is assembled from them. For
-                    // secret-reference connections the resolved secret IS the source of truth (the stored
-                    // host/port are optional display metadata), so this match check does not apply.
-                    if (string.IsNullOrWhiteSpace(connection.SecretRef))
-                    {
-                        if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
-                            throw new InvalidOperationException(
-                                $"Connection '{connection.Name}' resolved host does not match configured host.");
-                        }
+                    // Host/port match is a tamper check: when the connection owner declared a host/port,
+                    // the resolved connection string must agree with it. This applies uniformly to managed
+                    // (encrypted) and secret-reference connections. For secret-reference connections the
+                    // declared host/port are optional display metadata (see
+                    // SecureConnectionEndpoints.CreateConnection, which substitutes the neutral
+                    // DataConnection.SecretReferenceMetadataPlaceholder when the caller omits them): when
+                    // the caller leaves them blank — persisted as that same placeholder, not an empty
+                    // string — no host/port assertion was made, so the resolved secret is the uncontested
+                    // source of truth and the check is skipped for that field. Comparing the placeholder
+                    // itself against the resolved secret's real host would reject every secret-reference
+                    // connection created without a declared host (honua-server#2949). When the caller DOES
+                    // declare a real host/port, that declaration is a security assertion, and a disagreeing
+                    // secret is tamper — same as for managed connections, where the check always applies
+                    // because Host/Port are required fields.
+                    var hasDeclaredHost =
+                        !string.IsNullOrWhiteSpace(connection.Host) &&
+                        !string.Equals(connection.Host, DataConnection.SecretReferenceMetadataPlaceholder, StringComparison.Ordinal);
 
-                        if (builder.Port != 0 && builder.Port != connection.Port)
-                        {
-                            _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
-                            throw new InvalidOperationException(
-                                $"Connection '{connection.Name}' resolved port does not match configured port.");
-                        }
+                    if (hasDeclaredHost &&
+                        !string.IsNullOrWhiteSpace(builder.Host) &&
+                        !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' resolved host does not match configured host.");
+                    }
+
+                    if (connection.Port != 0 && builder.Port != 0 && builder.Port != connection.Port)
+                    {
+                        _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' resolved port does not match configured port.");
                     }
                 }
                 catch (ArgumentException ex)
@@ -367,7 +380,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
 
             return isHealthy;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Connection probe failure: log, persist the unhealthy status, and return false rather
             // than throwing — this is a health-check helper, not a query path.

@@ -58,9 +58,8 @@ internal static class StatisticsSupport
         // Not a .Select(...) candidate: each token goes through multi-step parsing with
         // an explicit validation throw, which reads better as an imperative loop than a
         // Select lambda with an embedded throw.
-        foreach (var token in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var parts in (raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(token => token.Split(':', StringSplitOptions.TrimEntries)))
         {
-            var parts = token.Split(':', StringSplitOptions.TrimEntries);
             var statName = (parts.Length >= 2 ? parts[1] : parts[0]).ToLowerInvariant();
             var field = parts.Length >= 2 ? parts[0] : string.Empty;
 

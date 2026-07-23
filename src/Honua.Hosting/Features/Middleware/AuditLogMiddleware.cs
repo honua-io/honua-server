@@ -80,7 +80,7 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
         {
             await auditLog.RecordAsync(auditEvent, context.RequestAborted).ConfigureAwait(false);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // IAuditLog implementations are expected to swallow their own errors;
             // we add a belt-and-braces catch here so the middleware never throws

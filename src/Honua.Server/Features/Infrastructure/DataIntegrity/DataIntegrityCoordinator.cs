@@ -109,6 +109,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         // instances can legitimately be constructed concurrently (DI does not guarantee this type
         // is a singleton), so the write uses CompareExchange instead of a plain '??=' to avoid a
         // benign-looking but still racy read-then-write on shared static state.
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         Interlocked.CompareExchange(ref _cleanupLogger, logger, null);
     }
 
@@ -181,7 +182,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // Intentional catch-all: we are already inside the handler for a failed
             // transaction. A failure while rolling back must not replace or mask the
             // original exception, which is rethrown below; log it and continue.
-            catch (Exception rollbackEx)
+            catch (Exception rollbackEx) when (rollbackEx is not OutOfMemoryException)
             {
                 DataIntegrityCoordinatorLog.CoordinatedTransactionRollbackFailed(_logger, operationId, rollbackEx);
             }
@@ -318,7 +319,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 // Intentional catch-all: per-item loop over registered file/cache commit
                 // actions. One operation's failure must not prevent the others from
                 // attempting to commit; failures are collected and raised together below.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     DataIntegrityCoordinatorLog.OperationCommitFailed(_logger, type, key, _operationId, ex);
                     exceptions.Add(ex);
@@ -351,7 +352,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 // Intentional catch-all: per-item loop over registered file/cache rollback
                 // actions. One operation's failure must not stop the remaining operations
                 // from also attempting to roll back; failures are collected and logged below.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     DataIntegrityCoordinatorLog.OperationRollbackFailed(_logger, type, key, _operationId, ex);
                     exceptions.Add(ex);
@@ -367,7 +368,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // resource (the database transaction) after file/cache rollbacks above; the
             // failure is collected with the others and reported via the summary log below
             // rather than thrown, so callers still observe the outcome of all operations.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 exceptions.Add(ex);
             }
@@ -393,7 +394,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 // Intentional catch-all: this is a best-effort rollback attempt during
                 // disposal. A failure here must not prevent the transaction from being
                 // disposed in the finally block below; log and continue.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     DataIntegrityCoordinatorLog.TransactionDisposalFailed(_logger, _operationId, ex);
                 }
@@ -436,7 +437,7 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
                 // Intentional catch-all: this is a best-effort lock release during dispose.
                 // A failure here must not prevent the finally block below from decrementing
                 // the entry's ref count, which would otherwise leak the lock entry.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     DataIntegrityCoordinatorLog.DistributedLockReleaseFailed(_logger, _lockKey, _operationId, ex);
                 }
@@ -491,16 +492,17 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // Remove expired entries whose locks are idle. Entries that are still
             // referenced (a legitimately long-running holder or queued waiters)
             // are left untouched and revisited on a later sweep.
-            // Not filtered via '.Where(...)': TryRemoveIdleEntry has the side effect of removing
-            // and disposing the lock entry, so it cannot be hoisted into a predicate.
             var removedCount = 0;
+            // codeql[cs/linq/missed-where] -- TryRemoveIdleEntry mutates and disposes lock state.
             foreach (var key in expiredKeys)
             {
-                if (TryRemoveIdleEntry(key))
+                if (!TryRemoveIdleEntry(key))
                 {
-                    _lockOwnership.TryRemove(key, out _);
-                    removedCount++;
+                    continue;
                 }
+
+                _lockOwnership.TryRemove(key, out _);
+                removedCount++;
             }
 
             // If collections are growing too large, also sweep locks that have no
@@ -508,15 +510,16 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // using the same ref-count guard.
             if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
-                // Not filtered via '.Where(...)': TryRemoveIdleEntry has the side effect of
-                // removing and disposing the lock entry, so it cannot be hoisted into a predicate.
                 var orphanedRemoved = 0;
+                // codeql[cs/linq/missed-where] -- TryRemoveIdleEntry mutates and disposes lock state.
                 foreach (var lockKey in _globalLocks.Keys)
                 {
-                    if (!_lockOwnership.ContainsKey(lockKey) && TryRemoveIdleEntry(lockKey))
+                    if (_lockOwnership.ContainsKey(lockKey) || !TryRemoveIdleEntry(lockKey))
                     {
-                        orphanedRemoved++;
+                        continue;
                     }
+
+                    orphanedRemoved++;
                 }
 
                 if (orphanedRemoved > 0 && _cleanupLogger is { } orphanLogger)

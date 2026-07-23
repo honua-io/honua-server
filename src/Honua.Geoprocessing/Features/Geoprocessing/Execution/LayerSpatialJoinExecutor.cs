@@ -133,6 +133,7 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
 
                 // Not a .Where(...) candidate: TryReadNumeric's out value is consumed in
                 // the body, so filtering separately would mean parsing each value twice.
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var accumulator in accumulators)
                 {
                     if (StatisticsSupport.TryReadNumeric(candidate, accumulator.Key, out var value))

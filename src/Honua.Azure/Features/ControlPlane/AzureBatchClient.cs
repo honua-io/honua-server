@@ -439,7 +439,7 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
         // create successfully. Any failure here (including cancellation from the
         // dedicated cleanup timeout) is logged and swallowed rather than masking the
         // original creation failure that triggered this cleanup attempt.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.IncompleteJobCleanupFailed(_logger, jobId, ex.Message);
         }

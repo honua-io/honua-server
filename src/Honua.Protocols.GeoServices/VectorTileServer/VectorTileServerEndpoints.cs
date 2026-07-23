@@ -218,9 +218,8 @@ internal static partial class VectorTileServerEndpoints
         double? east = null;
         double? north = null;
 
-        foreach (var publication in publications)
+        foreach (var bbox in (publications).Select(publication => publication.Resource.ReadBbox()))
         {
-            var bbox = publication.Resource.ReadBbox();
             if (bbox is null)
             {
                 continue;

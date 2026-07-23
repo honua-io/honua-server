@@ -115,7 +115,7 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
         // the SMTP client can still fail in other ways (e.g. malformed address/credentials
         // configuration); any such failure must be reported as a retryable delivery result
         // rather than throwing out of the alert dispatch pipeline.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (_logger is not null)
             {

@@ -245,7 +245,6 @@ internal static class GeoServicesRequestValueHelpers
         // disposal is deferred to the response's own lifetime via RegisterForDispose.
         var timeoutCts = new CancellationTokenSource(queryTimeout);
         var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(baseToken, timeoutCts.Token);
-
         context.Response.RegisterForDispose(timeoutCts);
         context.Response.RegisterForDispose(combinedCts);
 

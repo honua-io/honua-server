@@ -95,7 +95,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
         // network, pool exhaustion, etc.) is mapped to the shared ServiceUnavailableException
         // rather than propagated raw, giving callers/protocol adapters a consistent 503 without
         // leaking driver/connection-string internals.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             throw new ServiceUnavailableException("Database connection failed.", ex);
         }

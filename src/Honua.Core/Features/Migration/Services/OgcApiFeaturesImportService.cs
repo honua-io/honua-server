@@ -1110,6 +1110,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             // declaration would dispose the socket during the `return` unwind, before the
             // caller ever sees the stream, closing the connection out from under it. The
             // `connected` flag makes disposal conditional on transfer *not* having happened.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 

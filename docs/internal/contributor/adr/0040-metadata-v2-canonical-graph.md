@@ -270,7 +270,7 @@ or `child` when a concrete consumer needs it.
   - `MetadataV2GraphIndex.cs` — built lookups (ResourcesById, ResourcesByStorageLayerId, etc.)
   - `MetadataV2GraphValidation.cs` — invariant enforcement
 - **Crosswalk**: `docs/contributor/architecture/metadata-v2-crosswalk.md`
-- **Cutover plan**: `docs/contributor/architecture/metadata-v2-cutover-plan.md`
+- **Cutover result**: the v1 metadata abstractions and tables have been removed; migration `038_DropV1MetadataGraphTables.sql` finalizes the hard cutover.
 - **Cutover PR**: #1157
 
 ## Related ADRs

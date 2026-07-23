@@ -391,12 +391,11 @@ public sealed class PMTilesProxyServiceTests
         // the returned stream is owned and disposed by the caller, not by this stub.
         public Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
             => Task.FromResult<Stream?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry)
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 ? new MemoryStream(entry.Bytes, writable: false)
                 : null);
-
         public Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
             => Task.FromResult<byte[]?>(!_missingBytes.Contains(fileId) && _files.TryGetValue(fileId, out var entry) ? entry.Bytes : null);
-
         public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default) => Task.FromResult(_files.Remove(fileId));
         public Task<BatchUploadResult> UploadBatchAsync(BatchUploadRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<int> DeleteBatchAsync(string batchId, CancellationToken cancellationToken = default) => Task.FromResult(0);
@@ -458,6 +457,7 @@ public sealed class PMTilesProxyServiceTests
         // Ownership transfer: the returned stream is owned and disposed by the caller,
         // matching the real range-read contract.
         public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             => Task.FromResult<Stream>(new MemoryStream(new byte[length]));
 
         public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)

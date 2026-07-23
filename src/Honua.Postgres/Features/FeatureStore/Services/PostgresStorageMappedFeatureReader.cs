@@ -934,9 +934,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var parameterizedExpressions = new List<string>(expressions.Count);
         // Not rewritten as .Select(e => e.Trim()): the trim is only the first step of a multi-branch
         // per-expression parse (null-check vs. comparison), not a pure 1:1 mapping.
-        foreach (var expression in expressions)
+        foreach (var part in (expressions).Select(expression => expression.Trim()))
         {
-            var part = expression.Trim();
             var nullMatch = NullCheckRegex().Match(part);
             if (nullMatch.Success)
             {
@@ -1100,6 +1099,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
+            // codeql[cs/useless-assignment-to-local] -- the value is consumed by the following span or dictionary operation despite the conservative analysis.
             var deserialized = string.IsNullOrWhiteSpace(attributesJson)
                 ? new Dictionary<string, object?>()
                 : JsonSerializer.Deserialize(

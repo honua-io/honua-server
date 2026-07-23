@@ -430,7 +430,7 @@ internal sealed class PostgresSceneDatasetRegistry : ISceneDatasetRegistry, ISce
         // handles the rooted case directly), so it cannot silently drop ContentRootPath here.
         var rooted = Path.IsPathRooted(assetRoot)
             ? assetRoot
-            : Path.Combine(_environment.ContentRootPath, assetRoot);
+            : Path.Join(_environment.ContentRootPath, assetRoot);
 
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(rooted));
     }

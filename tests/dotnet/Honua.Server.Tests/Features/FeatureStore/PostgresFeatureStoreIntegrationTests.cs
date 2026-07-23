@@ -442,6 +442,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         {
             var category = f.Attributes["category"]?.ToString();
             // FluentAssertions' NotBeNullOrEmpty()/BeOneOf() are null-safe extension methods, not dereferences.
+            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
             category.Should().NotBeNullOrEmpty();
             category.Should().BeOneOf("retail", "commercial");
             Convert.ToInt32(f.Attributes["value"], CultureInfo.InvariantCulture).Should().BeGreaterOrEqualTo(500);
@@ -705,6 +706,7 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         result.DeleteResults[0].ErrorMessage.Should().Be("Operation rolled back.");
         result.UpdateResults[0].ErrorMessage.Should().Be("Feature not found.");
 
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         var restoredFeature = await store.GetAsync(GetLayerId("points"), existingFeature.Value.Id, CancellationToken.None);
         restoredFeature.Should().NotBeNull();
         restoredFeature!.Value.Attributes["category"].Should().Be(existingFeature.Value.Attributes["category"]);

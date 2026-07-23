@@ -94,12 +94,9 @@ public sealed class SceneTileTree
         // relying on LINQ's per-item lazy evaluation ordering, which is more
         // confusing than the plain loop it would replace.
         var max = node.Depth;
-        foreach (var childMax in node.Children.Select(ComputeMaxDepth))
+        foreach (var childMax in (node.Children.Select(ComputeMaxDepth)).Where(childMax => childMax > max))
         {
-            if (childMax > max)
-            {
-                max = childMax;
-            }
+            max = childMax;
         }
         return max;
     }

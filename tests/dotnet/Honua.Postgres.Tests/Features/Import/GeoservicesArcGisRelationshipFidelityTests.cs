@@ -225,12 +225,14 @@ public sealed class GeoservicesArcGisRelationshipFidelityTests
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
             if (!_responses.TryGetValue(pathAndQuery, out var body))
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
                 {
                     Content = new StringContent("{\"error\":{\"code\":404,\"message\":\"no fixture\"}}")
                 });
             }
 
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")

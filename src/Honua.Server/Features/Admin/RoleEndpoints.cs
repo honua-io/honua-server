@@ -114,7 +114,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // listing endpoint; the failure is logged and mapped to a generic error
         // response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.ListRolesFailed(logger, ex);
             return TypedResults.Problem(
@@ -156,7 +156,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // creation endpoint; the failure is logged and mapped to a generic error
         // response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.CreateRoleFailed(logger, ex);
             return TypedResults.Problem(
@@ -186,7 +186,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // retrieval endpoint; the failure is logged and mapped to a generic
         // error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.GetRoleFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -229,7 +229,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // update endpoint; the failure is logged and mapped to a generic error
         // response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.UpdateRoleFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -260,7 +260,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // deletion endpoint; the failure is logged and mapped to a generic error
         // response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.DeleteRoleFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -299,7 +299,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // permission retrieval endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.GetPermissionsFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -348,7 +348,7 @@ internal static partial class RoleEndpoints
         // Intentional catch-all request-handling boundary: this is the role
         // permission update endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RoleLog.SetPermissionsFailed(logger, id, ex);
             return TypedResults.Problem(

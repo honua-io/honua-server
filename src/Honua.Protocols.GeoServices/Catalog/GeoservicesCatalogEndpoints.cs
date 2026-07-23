@@ -167,7 +167,7 @@ internal static class GeoservicesCatalogEndpoints
                             };
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Intentional catch-all: one service's raster-store probe failing must not
                         // abort the whole concurrent Parallel.ForEachAsync batch or the directory
@@ -245,6 +245,7 @@ internal static class GeoservicesCatalogEndpoints
         // and the loop both filters (unmapped protocols) and de-duplicates while preserving the
         // service's declared protocol order — a single LINQ expression would be less clear here.
         var types = new List<string>();
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var protocol in service.Protocols)
         {
             if (TryMapServiceType(protocol, out var directoryType) &&

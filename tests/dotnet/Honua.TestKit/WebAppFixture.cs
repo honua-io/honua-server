@@ -142,6 +142,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
         // for the whole fixture. Wrapping this in `using` would dispose it before the
         // fixture's tests run.
+        // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -534,14 +535,14 @@ public sealed class WebAppFixture : IAsyncLifetime
         // is a fixed literal, and seedPath is provably non-rooted here (the IsPathRooted
         // check above already returned for rooted paths).
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
         if (directory != null)
         {
-            var candidate = Path.Combine(directory.FullName, seedPath);
+            var candidate = Path.Join(directory.FullName, seedPath);
             if (File.Exists(candidate))
             {
                 return candidate;

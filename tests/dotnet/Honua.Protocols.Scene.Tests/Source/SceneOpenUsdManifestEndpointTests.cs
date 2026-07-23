@@ -334,9 +334,9 @@ public sealed class SceneOpenUsdManifestEndpointTests
         // Both Path.Combine calls combine an absolute root (temp path, or `root`
         // derived from it) with relative literal segments, so earlier arguments
         // cannot be silently dropped.
-        var root = Path.Combine(Path.GetTempPath(), "honua-openusd-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-openusd-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);
+        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
         return root;
     }
 

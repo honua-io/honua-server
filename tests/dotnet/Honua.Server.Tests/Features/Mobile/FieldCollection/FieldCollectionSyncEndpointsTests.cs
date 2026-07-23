@@ -914,12 +914,14 @@ public sealed class FieldCollectionSyncLicenseGateTests : IAsyncLifetime
 
         foreach (var request in requests.Select(createRequest => createRequest()))
         {
-            using var disposableRequest = request;
-            using var response = await _client.SendAsync(disposableRequest);
+            using (request)
+            {
+                using var response = await _client.SendAsync(request);
 
-            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
+                response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+                var body = await response.Content.ReadAsStringAsync();
+                body.Should().Contain(FeatureCatalog.FieldOpsOfflineSyncKey);
+            }
         }
     }
 }

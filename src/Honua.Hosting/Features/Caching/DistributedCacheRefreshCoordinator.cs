@@ -144,7 +144,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             await _redisSubscriber.PublishAsync(RedisChannel.Literal(RedisInvalidationChannel), key);
             Log.ClusterInvalidationSent(_logger, key);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ClusterInvalidationFailed(_logger, key, ex);
             // Fall back to local invalidation
@@ -244,7 +244,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                     .ConfigureAwait(false);
                 Log.InvalidationSubscriptionStarted(_logger);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Subscription failure must not prevent the background refresh loop
                 // from starting; the coordinator degrades to local-only invalidation.
@@ -301,7 +301,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             // Shutdown deadline exceeded — some invalidations may not have reached Redis.
             Log.ShutdownDrainCancelled(_logger, tasks.Count);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Unexpected aggregate exception; log but do not rethrow so it does not
             // mask other shutdown errors.
@@ -354,7 +354,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // Intentional: this is a fire-and-forget background refresh callback; any failure
         // (provider error, callback bug) must not crash the refresh loop, so it is logged,
         // counted, and backed off instead of propagating.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             SetRetryBackoff(item.Key);
             Interlocked.Increment(ref _failureCount);
@@ -403,7 +403,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // (logged + MarkRedisFailure() below); this pattern repeats across the
         // TryClaimDistributed*/WasDistributedInvalidated*/ReleaseDistributedClaimAsync
         // helpers in this file.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "TryClaimRefresh", key, ex);
             MarkRedisFailure();
@@ -463,7 +463,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "TryClaimWriteBack", key, ex);
             MarkRedisFailure();
@@ -483,7 +483,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             var invalidatedKey = RedisKeyPrefix + "invalidated:" + key;
             return _redisDb.KeyExists(invalidatedKey);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "WasInvalidated", key, ex);
             MarkRedisFailure();
@@ -503,7 +503,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             var invalidatedKey = RedisKeyPrefix + "invalidated:" + key;
             return await _redisDb.KeyExistsAsync(invalidatedKey).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "WasInvalidatedAsync", key, ex);
             MarkRedisFailure();
@@ -560,7 +560,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "TryClaimWriteBackAsync", key, ex);
             MarkRedisFailure();
@@ -583,7 +583,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // Intentional: per the XML doc above, this wrapper must never fault or cancel so the
         // fire-and-forget task can be safely awaited during drain; any Redis failure is logged
         // and swallowed here.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, operation, key, ex);
         }
@@ -645,7 +645,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // Intentional: dispatching the fire-and-forget invalidation script is best-effort;
         // any failure to even schedule it still falls back to local invalidation so
         // correctness on this node is preserved.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "NotifyInvalidation", key, ex);
             MarkRedisFailure();
@@ -715,7 +715,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
                     new RedisValue[] { _instanceId })
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RedisOperationFailed(_logger, "ReleaseClaim", key, ex);
             MarkRedisFailure();
@@ -742,7 +742,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // Intentional: a Redis SCAN failure for the metrics gauge degrades to the local
         // pending-key count rather than failing the caller (this is diagnostics, not the
         // critical path).
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.QueueDepthCheckFailed(_logger, ex);
             return _localPendingKeys.Count;
@@ -806,7 +806,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // Intentional: this is the Redis pub/sub message handler; a malformed or
         // unexpected message must not tear down the subscription, so it is logged and
         // dropped rather than propagated.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.InvalidationProcessingFailed(_logger, message, ex);
         }

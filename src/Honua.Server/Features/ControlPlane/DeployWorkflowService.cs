@@ -283,7 +283,7 @@ internal sealed partial class DeployWorkflowService
                 // Intentional broad catch: this is a per-backend deploy-submission attempt; any
                 // failure from the external backend call is recorded as a Failed workflow status
                 // rather than propagated, so the durable operation record always reflects the outcome.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.DeploySubmissionFailed(_logger, operation.OperationId, targetId, ex);
                     operation = operation with
@@ -393,7 +393,7 @@ internal sealed partial class DeployWorkflowService
         // Intentional broad catch: this is a per-backend deploy-submission attempt; any failure
         // from the external backend call is recorded as a Failed workflow status rather than
         // propagated, so the durable operation record always reflects the outcome.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DeploySubmissionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
             var failed = preliminary with
@@ -498,7 +498,7 @@ internal sealed partial class DeployWorkflowService
         // Intentional broad catch: this is a manual promotion attempt against the deploy backend; any
         // failure is recorded as ManualInterventionRequired rather than propagated, so the durable
         // operation record and audit trail always reflect the outcome for the operator to act on.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DeployManualPromotionFailed(_logger, operation.OperationId, operation.Deploy.TargetId, ex);
             var failed = operation with

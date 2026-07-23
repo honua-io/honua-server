@@ -399,7 +399,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         // The filename segment is a fixed literal + GUID token and can never be rooted, so
         // Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-{Guid.NewGuid():N}.gpkg");
         try
         {
             await EnsureImportFunctionsAsync();

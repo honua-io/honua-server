@@ -292,7 +292,7 @@ internal static partial class ImportEndpoints
         // Intentionally generic: top-level endpoint boundary after the specific
         // format/validation cases above; any remaining unexpected failure maps to a
         // generic 500 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, file.FileName, ex);
@@ -350,7 +350,7 @@ internal static partial class ImportEndpoints
         // Intentionally generic: top-level endpoint boundary after the specific
         // format/validation cases above; any remaining unexpected failure maps to a
         // generic 500 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, parseResult.Request?.TableName ?? "unknown", ex);
@@ -435,7 +435,7 @@ internal static partial class ImportEndpoints
         // Intentionally generic: top-level endpoint boundary after the specific
         // format/validation cases above; any remaining unexpected failure maps to a
         // generic 500 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.PreviewFailed(logger, staged.File?.FileName ?? "unknown", ex);
@@ -550,7 +550,7 @@ internal static partial class ImportEndpoints
         // Intentionally generic: top-level endpoint boundary after the specific
         // format/validation cases above; any remaining unexpected failure maps to a
         // generic 500 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, executionRequest.TableName, ex);
@@ -697,7 +697,7 @@ internal static partial class ImportEndpoints
                 }
                 // Intentionally generic: best-effort cleanup of a cancelled upload; a cleanup
                 // failure must not mask the cancellation being rethrown below.
-                catch (Exception cleanupEx)
+                catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
                     Log.CleanupFailed(logger, uploadId, cleanupEx);
@@ -717,7 +717,7 @@ internal static partial class ImportEndpoints
                 // Intentionally generic: best-effort cleanup of an orphaned cloud-staged file
                 // after an import failure; a cleanup failure must not mask the original
                 // exception being rethrown below.
-                catch (Exception cleanupEx)
+                catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
                     Log.CleanupFailed(logger, cloudFileId, cleanupEx);
@@ -777,7 +777,7 @@ internal static partial class ImportEndpoints
         // Intentionally generic: this is a best-effort snapshot refresh (see method summary);
         // the import itself already succeeded, so a refresh failure is logged and swallowed
         // rather than failing the response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.SnapshotRefreshFailed(logger, tableName, ex);
@@ -865,7 +865,7 @@ internal static partial class ImportEndpoints
             }
             // Intentionally generic: this is a best-effort progress update callback; a
             // failure to publish progress must not fail the underlying upload/import.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.ProgressUpdateFailed(progressLogger, uploadId, ex);
             }
@@ -1226,7 +1226,7 @@ internal static partial class ImportEndpoints
         // a separator nor a drive/root prefix; it is also appended as a suffix after the GUID,
         // so this segment can never be rooted.
         var extension = Path.GetExtension(fileName);
-        return Path.Combine(
+        return Path.Join(
             Path.GetTempPath(),
             "honua-import-staging",
             $"{Guid.NewGuid():N}{extension}");
@@ -1415,7 +1415,7 @@ internal static partial class ImportEndpoints
         }
         // Intentionally generic: top-level endpoint boundary; any unexpected failure from the
         // job service maps to a generic 503 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, "jobs", ex);
@@ -1464,7 +1464,7 @@ internal static partial class ImportEndpoints
         }
         // Intentionally generic: top-level endpoint boundary; any unexpected failure from the
         // job service maps to a generic 503 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, jobId, ex);
@@ -1519,7 +1519,7 @@ internal static partial class ImportEndpoints
         }
         // Intentionally generic: top-level endpoint boundary; any unexpected failure from the
         // job service maps to a generic 503 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
             Log.ImportFailed(logger, jobId, ex);

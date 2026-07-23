@@ -183,9 +183,8 @@ internal static class EsriJsonFormatReader
 
         // Not a simple map/select: this loop folds rings into shell/hole state across iterations
         // (via FlushShell), so an imperative loop is clearer than a LINQ chain here.
-        foreach (var ringElement in rings.EnumerateArray())
+        foreach (var coordinates in (rings.EnumerateArray()).Select(ringElement => ReadCoordinates(ringElement)))
         {
-            var coordinates = ReadCoordinates(ringElement);
             if (coordinates.Length < 4)
             {
                 continue;

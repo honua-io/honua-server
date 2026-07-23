@@ -781,4 +781,4 @@ including telemetry checkpoints and the legacy-branch removal milestone.
   AWS License Manager, Azure Marketplace SaaS Fulfillment v2, Azure
   Marketplace Metered Billing.
 - HashiCorp Enterprise / Elastic license file format (industry reference).
-- Issues #338, #390, #645, #804, `honua-io/honua-server-admin#23`.
+- Issues #338, #390, #645, #804, plus the licensing workspace in `honua-io/honua-console`.

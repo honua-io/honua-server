@@ -36,7 +36,7 @@ internal sealed partial class ExecutionQueueDepthCollectorBackgroundService(
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: a single failed sweep (store outage, telemetry error)
                 // must not crash this background service; log and retry next interval.

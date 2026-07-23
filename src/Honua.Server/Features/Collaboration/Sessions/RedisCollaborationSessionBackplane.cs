@@ -69,7 +69,7 @@ internal sealed partial class RedisCollaborationSessionBackplane
         }
         // Intentionally generic: startup subscribe is best-effort (see class remarks);
         // Redis-less or unreachable: stay disabled and fall back to local-only delivery.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.BackplaneUnavailable(_logger, ex);
         }
@@ -86,7 +86,7 @@ internal sealed partial class RedisCollaborationSessionBackplane
         }
         // Intentionally generic: shutdown unsubscribe is best-effort; a failed
         // unsubscribe must not block host shutdown.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.BackplaneUnavailable(_logger, ex);
         }
@@ -116,7 +116,7 @@ internal sealed partial class RedisCollaborationSessionBackplane
         // Intentionally generic: a collaboration mutation must never fail because
         // the Redis backplane is unavailable (see class remarks); the failure is
         // rate-limited-logged and swallowed so local delivery still proceeds.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (Interlocked.Exchange(ref _publishFailureLogged, 1) == 0)
             {
@@ -151,7 +151,7 @@ internal sealed partial class RedisCollaborationSessionBackplane
         // Intentionally generic: this is the Redis pub/sub receive callback for a
         // peer broadcast; a malformed or unexpected payload must not crash the
         // subscription, so it is rate-limited-logged and dropped.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (Interlocked.Exchange(ref _receiveFailureLogged, 1) == 0)
             {

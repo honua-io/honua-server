@@ -4090,10 +4090,10 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
             Cases: _scorecardEntries.ToArray());
 
         // Path.Combine args are a temp-root plus a literal/generated relative fragment; no rooted-segment risk.
-        var directory = Path.Combine(Path.GetTempPath(), "honua-import-fidelity-scorecards");
+        var directory = Path.Join(Path.GetTempPath(), "honua-import-fidelity-scorecards");
         Directory.CreateDirectory(directory);
         // Path.Combine args are a directory plus a generated relative file name; no rooted-segment risk.
-        var filePath = Path.Combine(
+        var filePath = Path.Join(
             directory,
             $"geoservices-import-fidelity-scorecard-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.json");
         var json = JsonSerializer.Serialize(payload, _scorecardJsonOptions);

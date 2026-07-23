@@ -119,7 +119,7 @@ internal static partial class MigrationRunAdminEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestBodyReadFailed(GetLogger(context), "RecordMigrationRunStarted", ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
@@ -296,7 +296,7 @@ internal static partial class MigrationRunAdminEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestBodyReadFailedForRun(GetLogger(context), "RecordMigrationRunCompleted", runId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
@@ -373,7 +373,7 @@ internal static partial class MigrationRunAdminEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestBodyReadFailedForRun(GetLogger(context), "RecordMigrationRunScorecard", runId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);
@@ -450,7 +450,7 @@ internal static partial class MigrationRunAdminEndpoints
             }
             // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
             // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.RequestBodyReadFailedForRun(GetLogger(context), "CancelMigrationRun", runId, ex);
                 await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body.", StatusCodes.Status400BadRequest);

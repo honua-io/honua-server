@@ -260,7 +260,7 @@ internal static partial class WmsRequestHandlers
                 "WMS request includes an option the configured feature provider does not support.",
                 StatusCodes.Status400BadRequest);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost WMS request-dispatch boundary. Already
             // logged (with exception) and mapped to a WMS ServiceExceptionReport.

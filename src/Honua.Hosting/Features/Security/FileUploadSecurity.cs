@@ -396,7 +396,7 @@ internal static class FileUploadSecurity
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional: any failure reading/parsing the upload (IO, malformed stream, etc.)
             // must fail closed as an invalid file rather than propagate to the caller.
@@ -475,7 +475,7 @@ internal static class FileUploadSecurity
         {
             throw;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // If we can't read as text, report it as invalid to be safe.
             // Binary files should not reach this method (IsTextFile check filters them).

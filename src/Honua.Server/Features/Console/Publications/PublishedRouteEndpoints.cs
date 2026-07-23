@@ -148,7 +148,7 @@ internal static class PublishedRouteEndpoints
         // Intentional broad catch: this is the request-handling boundary for the published-artifact
         // read endpoint (after the more specific ContentPublicationException case above); the
         // failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ContentPublicationEndpointsLog.EndpointFailed(logger, "published.read", ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An internal error occurred while reading the published artifact.");

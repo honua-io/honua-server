@@ -7,10 +7,17 @@ This page is the single fixed-path answer to "what is the current OGC CITE
 pass rate for each protocol on `trunk`?" It exists so re-grading agents and
 auditors can find an authoritative number without spelunking workflow artifacts.
 
-**Source of truth.** This page mirrors the totals in
-[`docs/internal/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md),
-which is the website-linkable copy of this page. The suite totals here are
-the canonical source of truth for this repo’s OGC CITE evidence snapshot.
+**Source of truth.** This page is the single canonical snapshot of OGC CITE
+per-suite pass rates. [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
+is the stable, website-linkable evidence-run narrative (workflow links,
+artifact contents, refresh steps) and links here for the numbers rather than
+restating them — see that page. The `x-honua-cite-compliance` vendor
+extension in `src/Honua.Server/openapi.json` and the other four
+`*-openapi.json` files also declares this page as its `authoritativeSource`,
+and an architecture test
+(`tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CiteStatusComplianceDriftTests.cs`)
+gates every one of those five files against the table below so they can
+never silently drift from it.
 
 **Local results note.** The per-suite result directories
 (`cite-results/`, `cite-wfs20-results/`, `cite-tiles-results/`,
@@ -155,15 +162,18 @@ hand-maintained table below.
    `cite-conformance-evidence-*` artifact's `conformance-summary.md` into the
    table above.
 4. Update "Last reviewed", the run number, the commit SHA, and the run date.
-5. If a suite regresses, both this page and
-   `docs/internal/contributor/ogc-cite-conformance-evidence.md` must be updated in the
-   same commit, and the public claim should be downgraded until the regression
-   clears.
+5. If a suite regresses, update this page (the canonical numbers), the
+   evidence-run narrative in `docs/contributor/ogc-cite-conformance-evidence.md`,
+   and the `x-honua-cite-compliance` vendor extension in the affected
+   `*-openapi.json` file(s) in the same commit — `CiteStatusComplianceDriftTests`
+   fails the build if any of them disagree. Downgrade the public claim until
+   the regression clears.
 
 ## Related Documents
 
-- [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
-  — canonical, website-linkable summary (source of truth).
+- [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
+  — stable, website-linkable evidence-run narrative; see this page for the
+  canonical per-suite numbers.
 - [`docs/contributor/cite-runbook.md`](internal/contributor/cite-runbook.md) —
   per-suite scope, scripts, workflow files, and open issues.
 - [`docs/contributor/ogc-certification-path.md`](internal/contributor/ogc-certification-path.md)

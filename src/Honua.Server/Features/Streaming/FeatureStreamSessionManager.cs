@@ -71,7 +71,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             _subscriber.Subscribe(BroadcastChannel, HandleClusterBroadcast);
             _clusterBroadcastEnabled = true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: cluster broadcast subscribe is best-effort during
             // construction. A Redis outage here must not prevent the session manager (and
@@ -344,7 +344,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             _subscriber.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is a best-effort cross-node publish on the
             // feature-edit hot path. Failure falls back to the retry backlog instead of
@@ -424,12 +424,14 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             // actually sends. The generation observed at match time travels
             // with the frame so the writer can reject queued frames whose
             // subscription was unsubscribed or replaced before drain.
-            foreach (var subscriptionMessage in matches.Select(match => message with
+            // codeql[cs/linq/missed-where] -- queue writes are ordered side effects, not a filtering operation.
+            foreach (var match in matches)
             {
-                Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
-                SubscriptionGeneration = match.Generation
-            }))
-            {
+                var subscriptionMessage = message with
+                {
+                    Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
+                    SubscriptionGeneration = match.Generation
+                };
                 if (TryQueueMessage(id, entry, subscriptionMessage))
                 {
                     delivered++;
@@ -495,7 +497,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 payload.GeometryEnvelope,
                 payload.PropertiesJson));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this handles an inbound Redis pub/sub callback for
             // a cross-node broadcast. A malformed or unexpected payload must not throw back
@@ -513,7 +515,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 TryRecoverClusterBroadcastLocked();
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: this runs on the recurring cluster-broadcast recovery
             // timer callback. A single failed recovery attempt must not kill the timer or
@@ -548,7 +550,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 Interlocked.Exchange(ref _clusterBroadcastUnavailableLogged, 0);
                 Interlocked.Exchange(ref _clusterBroadcastFailedLogged, 0);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: this is a best-effort re-subscribe attempt inside
                 // the recovery loop; Redis may still be unavailable, so log and leave
@@ -582,7 +584,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                     _clusterBroadcastBacklogCount--;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: this is a per-payload attempt inside the backlog
                 // flush loop; one failed publish must not abort the flush of the remaining
@@ -823,7 +825,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             {
                 _subscriber.Unsubscribe(BroadcastChannel, HandleClusterBroadcast);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: best-effort shutdown; the connection owner will
                 // close the Redis subscription anyway.

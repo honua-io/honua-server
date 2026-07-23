@@ -32,7 +32,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
 
     // Path.Combine args are a temp-dir root plus literal/generated relative fragments; no rooted-segment risk.
     private readonly string _outputRoot =
-        Path.Combine(Path.GetTempPath(), "honua-stream-tests", Guid.NewGuid().ToString("N"));
+        Path.Join(Path.GetTempPath(), "honua-stream-tests", Guid.NewGuid().ToString("N"));
 
     public void Dispose()
     {
@@ -279,7 +279,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         // caller could craft a reference pointing at e.g. /etc/passwd or server
         // config files. The outputRootDirectory parameter must reject such references.
         // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
-        var root = Path.Combine(Path.GetTempPath(), "honua-traversal-test-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-traversal-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
         try
@@ -287,7 +287,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
             // Build a crafted reference with a path that escapes the root via "..".
             // The ".." segment here is deliberately adversarial test input (BH-023 regression
             // coverage for the path-traversal guard), not a real Path.Combine argument-drop risk.
-            var traversalPath = Path.GetFullPath(Path.Combine(root, "..", "etc", "passwd"));
+            var traversalPath = Path.GetFullPath(Path.Join(root, "..", "etc", "passwd"));
             var craftedRef = FeatureStreamArtifact.BuildStreamReference(traversalPath, count: 0, bytes: 0);
 
             var accepted = FeatureStreamArtifact.TryOpenRead(

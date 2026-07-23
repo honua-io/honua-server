@@ -132,7 +132,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
         // Intentionally generic: this is the adapter boundary that converts protocol query
         // parameters into the canonical UnifiedQuery; any unanticipated failure must map to a
         // structured Failure result rather than propagate an unhandled exception.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeoServicesPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
             return Task.FromResult(QueryAdapterResult.Failure("Invalid query parameters."));

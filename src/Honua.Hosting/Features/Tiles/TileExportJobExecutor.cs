@@ -74,7 +74,7 @@ internal sealed partial class TileExportJobExecutor(
 
         // Safe Path.Combine: the second segment is a server-generated Guid-based file name,
         // never caller input, so it can never be rooted.
-        var temporaryPath = Path.Combine(Path.GetTempPath(), $"honua-tile-export-{Guid.NewGuid():N}.tmp");
+        var temporaryPath = Path.Join(Path.GetTempPath(), $"honua-tile-export-{Guid.NewGuid():N}.tmp");
         try
         {
             await context.ReportProgressAsync(0, "Generating tile package", cancellationToken).ConfigureAwait(false);
@@ -130,7 +130,7 @@ internal sealed partial class TileExportJobExecutor(
         // Intentional: this is the job-execution boundary; any producer/storage failure not
         // already handled above must resolve to a failed JobExecutionResult (per the
         // canonical job runtime contract) rather than throw out of the executor.
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             Log.ExecutionFailed(logger, context.OperationId, exception);
             return JobExecutionResult.Failed("Tile-export package generation failed.");

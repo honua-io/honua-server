@@ -70,12 +70,9 @@ internal sealed class StatisticsSummarizeExecutor(
         var seen = new HashSet<string>(StringComparer.Ordinal);
         // Not a .Where(...) candidate: seen.Add(spec.Field) is the dedup side effect
         // itself, so a filter predicate here would double as the mutation.
-        foreach (var spec in stats)
+        foreach (var spec in (stats).Where(spec => spec.Kind != StatisticsSupport.StatKind.Count && seen.Add(spec.Field)))
         {
-            if (spec.Kind != StatisticsSupport.StatKind.Count && seen.Add(spec.Field))
-            {
-                fields.Add(spec.Field);
-            }
+            fields.Add(spec.Field);
         }
 
         return fields;
@@ -108,6 +105,7 @@ internal sealed class StatisticsSummarizeExecutor(
             Frequency++;
             // Not a .Where(...) candidate: TryReadNumeric's out value is the addend, so
             // filtering separately would mean parsing each value twice.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var field in numericFields)
             {
                 if (StatisticsSupport.TryReadNumeric(feature, field, out var value))

@@ -137,6 +137,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
             long[] rasterIds;
             if (requestedRasterIds is { Length: > 0 })
             {
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var id in requestedRasterIds)
                 {
                     if (await _rasterStore.GetRasterInfoAsync(layerId, id, cancellationToken).ConfigureAwait(false) is null)
@@ -210,7 +211,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ClassStatisticsFailed(_logger, ex, layerId);
             scope.RecordException(ex);

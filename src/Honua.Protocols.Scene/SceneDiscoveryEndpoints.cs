@@ -154,7 +154,7 @@ internal static partial class SceneDiscoveryEndpoints
             return Results.Json(response, PublicSceneDiscoveryJsonContext.Default.PublicSceneListResponse);
         }
         // Endpoint boundary: catch-all is intentional here, translated to a logged 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.SceneDiscoveryFailed(logger, "list", ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to list scenes.");
@@ -190,7 +190,7 @@ internal static partial class SceneDiscoveryEndpoints
             return Results.Json(response, PublicSceneDiscoveryJsonContext.Default.PublicSceneMetadata);
         }
         // Endpoint boundary: catch-all is intentional here, translated to a logged 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.SceneDiscoveryFailed(logger, "get", ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to get scene.");
@@ -226,7 +226,7 @@ internal static partial class SceneDiscoveryEndpoints
             return Results.Json(response, PublicSceneDiscoveryJsonContext.Default.PublicSceneResolution);
         }
         // Endpoint boundary: catch-all is intentional here, translated to a logged 500 below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.SceneDiscoveryFailed(logger, "resolve", ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "Failed to resolve scene.");

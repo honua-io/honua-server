@@ -472,9 +472,8 @@ public static class MetadataV2GraphValidator
         // Not rewritten as .Select(): the loop accumulates a frequency count into a shared
         // dictionary rather than projecting a new sequence, so this is an aggregation, not a map.
         var counts = new Dictionary<(string, string), int>();
-        foreach (var pub in publications.Where(pub => pub.IsPrimary))
+        foreach (var key in (publications.Where(pub => pub.IsPrimary)).Select(pub => (pub.ResourceId, pub.ServiceId)))
         {
-            var key = (pub.ResourceId, pub.ServiceId);
             counts[key] = counts.TryGetValue(key, out var n) ? n + 1 : 1;
         }
         foreach (var ((resourceId, serviceId), n) in counts)
@@ -669,6 +668,7 @@ public static class MetadataV2GraphValidator
 
         // judgment call: `is { } settings` both filters and binds the extracted value used by
         // every ValidatePositiveInt/Long call below; a .Where() would have to re-extract it.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var service in services)
         {
             if (service.Settings is { } settings)

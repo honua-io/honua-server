@@ -18,11 +18,11 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// <summary>
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
-/// (<c>sync.offline</c> and <c>versioning.branch</c>; <c>alerts.geofence</c>,
-/// <c>realtime.feature-streams</c>, <c>security.mtls</c>, and <c>temporal.*</c> were
-/// promoted to GA, so they are no longer experimental) must be genuinely <b>absent</b>
-/// from every served surface end-to-end when experimental is disabled (the production
-/// default), and become present/served the moment a customer opts one in via
+/// (<c>sync.offline</c>, <c>versioning.branch</c>, and — since #2958 — <c>security.mtls</c>
+/// again; <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>temporal.*</c>
+/// were promoted to GA, so they are no longer experimental) must be genuinely
+/// <b>absent</b> from every served surface end-to-end when experimental is disabled (the
+/// production default), and become present/served the moment a customer opts one in via
 /// <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and B3 (#2335)
 /// opened at the registry/composition layer by asserting the posture at the wire:
 /// <list type="bullet">
@@ -32,10 +32,12 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     opted-in one;
 ///   </description></item>
 ///   <item><description>
-///     the gated VMS route group (<c>/rest/services/{id}/VersionManagementServer</c>)
-///     short-circuits with <c>404 honua:capability-experimental-disabled</c> while
-///     disabled. The now-GA client-certificate, streaming, and temporal groups are
-///     asserted to NOT short-circuit even with experimental off.
+///     the gated VMS and client-certificate route groups
+///     (<c>/rest/services/{id}/VersionManagementServer</c>,
+///     <c>/api/v1/admin/security/client-certificates/*</c>) short-circuit with
+///     <c>404 honua:capability-experimental-disabled</c> while disabled. The now-GA
+///     streaming and temporal groups are asserted to NOT short-circuit even with
+///     experimental off.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -56,9 +58,13 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         "sync.offline",
         // realtime.feature-streams promoted to GA (Implemented) in #2428 — no longer experimental-gated.
-        // alerts.geofence promoted in #2427 and security.mtls in #2431 — neither is gated.
+        // alerts.geofence promoted in #2427 — not gated.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
+        // security.mtls was promoted to GA in #2431, then DEMOTED back to experimental in
+        // #2958 (release-safety follow-up to #2946/#2431): the always-on client-certificate
+        // scheme/RBAC layer interposed on admin requests regardless of bearer-token validity.
+        "security.mtls",
     ];
 
     [IntegrationTest]
@@ -215,12 +221,12 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
-    public async Task ClientCertificatesEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    public async Task ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // #2431 promoted security.mtls Experimental -> Implemented (GA). The client-certificate
-        // trust-profile admin group must no longer short-circuit as experimental-disabled even
-        // with the global experimental switch OFF — the request reaches the handler (subject to
-        // admin auth / edition) instead of the 404 the T10 flip previously produced.
+        // #2958: security.mtls was promoted to GA in #2431, then DEMOTED back to experimental
+        // (release-safety follow-up to #2946/#2431). The client-certificate trust-profile admin
+        // group is gated Preview again: with experimental OFF the capability-gate filter must
+        // short-circuit with 404 honua:capability-experimental-disabled before any handler runs.
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 
@@ -230,7 +236,58 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var response = await client.GetAsync(
                 "/api/v1/admin/security/client-certificates/profiles");
 
+            await AssertExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    public async Task ClientCertificatesEndpoint_WhenExperimentalEnabled_IsNotExperimentalGated()
+    {
+        // Opting the security.mtls capability in (per-capability override, global switch still
+        // OFF) must open the gate — the request reaches the handler (subject to admin auth /
+        // edition) instead of the 404 the capability-gate filter produces while disabled.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: "security.mtls");
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/api/v1/admin/security/client-certificates/profiles");
+
             await AssertNotExperimentalDisabledAsync(response);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/config")]
+    public async Task AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200()
+    {
+        // #2958 regression guard: HandleGetAuthConfig resolves IClientCertificateTrustStore
+        // via [FromServices] to report trust-profile bootstrap hints. That store must stay
+        // registered even while security.mtls is gated off, or this anonymous admin auth
+        // bootstrap endpoint fails DI activation (500) instead of serving a clean 200 for
+        // every OIDC/bearer-only deployment that has never opted into the experimental
+        // capability (the production default) — the exact class of regression this PR
+        // exists to prevent, just against a different endpoint than #2945's.
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.GetAsync("/api/v1/admin/auth/config");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
         {

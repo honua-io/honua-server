@@ -67,6 +67,7 @@ internal sealed class ImageServerMetadataHandler
         // undisposed through the catch block below so RecordException can still attach the
         // exception to the in-flight activity. Disposing via a using-scope ending inside the
         // try would stop the activity before the catch runs, dropping exception telemetry.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
 
         try
@@ -202,7 +203,7 @@ internal sealed class ImageServerMetadataHandler
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ServiceInfoFailed(_logger, ex, layerId);
             HonuaTelemetry.RecordException(featureActivity, ex);

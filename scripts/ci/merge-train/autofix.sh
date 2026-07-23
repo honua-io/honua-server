@@ -184,3 +184,18 @@ train_autofix_attempt() {
   train_warn "autofix attempt $((attempt + 1)) produced no commit; treating as unfixable"
   return 1
 }
+
+# train_autofix_verification_action <run-id> <fqn-list-newline>:
+# map surgical verification to the caller's control-flow decision. Returns 0
+# to land, 1 to retry, and 2 to escalate without retrying. A missing test list
+# cannot become green through retries, so it escalates immediately.
+train_autofix_verification_action() {
+  local run_id="$1" fqns="$2" rc=0
+
+  train_surgical_rerun "${run_id}" "${fqns}" || rc=$?
+  case "${rc}" in
+    0) return 0 ;;
+    2) return 2 ;;
+    *) return 1 ;;
+  esac
+}

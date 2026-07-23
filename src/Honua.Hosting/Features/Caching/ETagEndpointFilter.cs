@@ -170,7 +170,7 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         // Intentional: ETag generation is a caching optimization, not a required
         // behavior — any serialization failure is logged and falls back to
         // skipping the ETag header rather than failing the response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ETagComputationFailed(_logger, ex);
             return null;

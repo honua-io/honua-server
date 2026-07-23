@@ -652,7 +652,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             {
                 await _proxy.StopAsync();
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Best-effort proxy shutdown.
             }
@@ -830,7 +830,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                 {
                     break;
                 }
-                catch
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     // Any other transport/deserialization error during rolling-deploy load generation
                     // just counts as a failed request; cancellation is already rethrown above.

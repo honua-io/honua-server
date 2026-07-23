@@ -53,7 +53,7 @@ internal sealed partial class ExecutionJobBackstopSweepService(
             // Intentionally generic: this is a long-running background backstop-sweep
             // loop. A single failed sweep iteration must not kill the host's
             // background service; log and retry on the next interval.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.BackstopSweepFailed(logger, ex);
             }
@@ -99,7 +99,7 @@ internal sealed partial class ExecutionJobBackstopSweepService(
             // Intentional catch-all: this is a per-job reconcile inside the sweep;
             // one stale job's failure must not stop the rest of the sweep from
             // reconciling the other active jobs.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.BackstopReconcileFailed(logger, job.OperationId, ex);
             }

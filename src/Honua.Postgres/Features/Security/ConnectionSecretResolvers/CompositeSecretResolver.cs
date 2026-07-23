@@ -144,7 +144,7 @@ internal sealed class CompositeSecretResolver : IConnectionSecretResolver
 
             return resolver.CanResolve(secretKey);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: CanResolve is a best-effort capability probe, not a resolve
             // attempt — any failure means "cannot resolve", not an exception the caller should handle.

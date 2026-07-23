@@ -113,6 +113,7 @@ internal static class OgcTemporalFilterParser
         // judgment call: TryResolveTemporalTypeLabel both filters (skips non-temporal field
         // types) and binds the extracted `inferredType` used below; a .Where() would have to
         // re-resolve the type, so the guard-clause form here is clearer.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var field in resource.SchemaFields)
         {
             if (TryResolveTemporalTypeLabel(field.Type, out var inferredType))

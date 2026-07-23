@@ -448,7 +448,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     private static string ReserveSentinelPath()
         // The second segment is a generated relative literal, so it can never be rooted and drop
         // the temp-path prefix.
-        => Path.Combine(Path.GetTempPath(), $"honua_backup_{Guid.NewGuid():N}.marker");
+        => Path.Join(Path.GetTempPath(), $"honua_backup_{Guid.NewGuid():N}.marker");
 
     private static string SentinelCommand(string path)
         => OperatingSystem.IsWindows() ? $"type nul > \"{path}\"" : $": > '{path}'";

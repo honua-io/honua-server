@@ -68,6 +68,41 @@ public sealed class FeatureProviderQueryRouter
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken = default)
     {
+        var providerBinding = await ResolveBindingAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+
+        return providerBinding.Provider is IBindableFeatureDataProvider bindable
+            ? bindable.CreateReaderForBinding(providerBinding)
+            : providerBinding.Provider.Reader;
+    }
+
+    /// <summary>
+    /// Resolves the provider binding for a V2 feature operation without discarding
+    /// the selected provider and its write capability.
+    /// </summary>
+    /// <param name="snapshot">Authorized metadata snapshot.</param>
+    /// <param name="service">Service hosting the publication.</param>
+    /// <param name="resource">Published resource.</param>
+    /// <param name="publication">Publication being resolved.</param>
+    /// <param name="storageLayerId">Fallback integer storage handle.</param>
+    /// <param name="operation">Read capability required by the caller.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The resolved provider binding.</returns>
+    public async Task<FeatureProviderBinding> ResolveBindingAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
@@ -130,9 +165,7 @@ public sealed class FeatureProviderQueryRouter
                 provider,
                 connection);
 
-            return provider is IBindableFeatureDataProvider bindable
-                ? bindable.CreateReaderForBinding(providerBinding)
-                : provider.Reader;
+            return providerBinding;
         }
         catch (InvalidOperationException ex)
         {

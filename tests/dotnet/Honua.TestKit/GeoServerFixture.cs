@@ -66,6 +66,7 @@ public sealed class GeoServerFixture : IAsyncLifetime
             if (!_sharedInitialized)
             {
                 await StartContainerAsync().ConfigureAwait(false);
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = true;
             }
 
@@ -73,9 +74,11 @@ public sealed class GeoServerFixture : IAsyncLifetime
             {
                 await SeedCuratedResourcesAsync(
                     _sharedRestUrl ?? throw new InvalidOperationException("GeoServer REST URL not initialized.")).ConfigureAwait(false);
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedCuratedResourcesSeeded = true;
             }
 
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             _sharedRefCount++;
         }
         finally
@@ -91,6 +94,7 @@ public sealed class GeoServerFixture : IAsyncLifetime
         {
             if (_sharedRefCount > 0)
             {
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedRefCount--;
             }
 
@@ -101,10 +105,15 @@ public sealed class GeoServerFixture : IAsyncLifetime
                     await _sharedContainer.DisposeAsync().ConfigureAwait(false);
                 }
 
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedContainer = null;
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedBaseUrl = null;
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedRestUrl = null;
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedCuratedResourcesSeeded = false;
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = false;
             }
         }

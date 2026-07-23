@@ -128,7 +128,7 @@ internal static partial class UserManagementEndpoints
         // Intentional catch-all request-handling boundary: this is the user
         // listing endpoint; the failure is logged and mapped to a generic error
         // response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             UserManagementLog.ListUsersFailed(logger, ex);
             return TypedResults.Problem(
@@ -158,7 +158,7 @@ internal static partial class UserManagementEndpoints
         // Intentional catch-all request-handling boundary: this is the user
         // retrieval endpoint; the failure is logged and mapped to a generic
         // error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             UserManagementLog.GetUserFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -190,7 +190,7 @@ internal static partial class UserManagementEndpoints
         // Intentional catch-all request-handling boundary: this is the user
         // role update endpoint; the failure is logged and mapped to a generic
         // error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             UserManagementLog.UpdateUserRolesFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -221,7 +221,7 @@ internal static partial class UserManagementEndpoints
         // Intentional catch-all request-handling boundary: this is the user
         // deprovisioning endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             UserManagementLog.DeprovisionUserFailed(logger, id, ex);
             return TypedResults.Problem(
@@ -268,7 +268,7 @@ internal static partial class UserManagementEndpoints
         // Intentional catch-all request-handling boundary: this is the
         // effective-permissions resolution endpoint; the failure is logged and
         // mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             UserManagementLog.ResolveEffectivePermissionsFailed(logger, id, ex);
             return TypedResults.Problem(

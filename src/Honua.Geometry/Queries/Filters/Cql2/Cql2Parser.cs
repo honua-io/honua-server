@@ -742,7 +742,7 @@ public sealed class Cql2Parser
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: wktText is untrusted CQL2 filter input, and WKT
             // parsing/WKB writing can throw a variety of format/argument exceptions for

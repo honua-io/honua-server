@@ -348,7 +348,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         // All segments after AppContext.BaseDirectory are fixed literals or a test-scenario name
         // (always a short identifier, never containing '/' or a drive letter), so Path.Combine
         // cannot drop earlier segments here (cs/path-combine false positive).
-        var fixturePath = Path.Combine(
+        var fixturePath = Path.Join(
             AppContext.BaseDirectory,
             "Features",
             "Import",
@@ -376,7 +376,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         // tokens, or a test-scenario-derived file name (always a short identifier, never containing
         // '/' or a drive letter), so Path.Combine cannot drop earlier segments here
         // (cs/path-combine false positive).
-        var outputBaselinePath = Path.Combine(
+        var outputBaselinePath = Path.Join(
             AppContext.BaseDirectory,
             "Features",
             "Import",
@@ -384,7 +384,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             "ArcGis",
             baselineFile);
 
-        var sourceBaselinePath = Path.GetFullPath(Path.Combine(
+        var sourceBaselinePath = Path.GetFullPath(Path.Join(
             AppContext.BaseDirectory,
             "..", "..", "..",
             "Features",
@@ -468,6 +468,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
             // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")

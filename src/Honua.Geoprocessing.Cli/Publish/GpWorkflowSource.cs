@@ -103,7 +103,7 @@ internal sealed class GpWorkflowSource(IProcessCatalog? catalog, IReadOnlySet<st
         //    to the code-process/unknown-id handling below instead of resolving a fixture.
         if (!Path.IsPathRooted(id))
         {
-            var fixturePath = Path.Combine(fixtureRoot, id, "workflow.json");
+            var fixturePath = Path.Join(fixtureRoot, id, "workflow.json");
             if (File.Exists(fixturePath))
             {
                 var graph = ReadGraphFile(fixturePath);

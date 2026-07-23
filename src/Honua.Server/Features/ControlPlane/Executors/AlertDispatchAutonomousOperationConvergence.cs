@@ -55,7 +55,7 @@ internal sealed class AlertDispatchAutonomousOperationConvergence(
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: this is a best-effort post-action verification
                 // probe; any failure refreshing the backlog snapshot is reported as an

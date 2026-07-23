@@ -328,7 +328,7 @@ internal static class SearchEndpoints
             throw;
         }
         // Endpoint boundary: catch-all is intentional here, telemetry-recorded and logged below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StacTelemetry.RecordException(activity, ex);
             StacLog.OperationFailed(logger, ex);
@@ -606,7 +606,6 @@ internal static class SearchEndpoints
                             candidate.Projection?.SelectedProperties,
                             geometrySrid: Wgs84Srid),
                         candidate.Projection)));
-                remainingSkip = 0;
             }
 
             var stacBase = $"{baseUrl}/stac";
@@ -781,17 +780,14 @@ internal static class SearchEndpoints
             query = query with { SqlFilter = filterQueryResult.SqlFilter };
         }
 
-        if (requestedItemIds is { Length: > 0 } itemIds)
+        if (requestedItemIds is { Length: > 0 } itemIds && !isStorageBound)
         {
-            if (!isStorageBound)
+            query = query with
             {
-                query = query with
-                {
-                    SqlFilter = SqlFragmentHelpers.CombineSqlFilters(
-                        query.SqlFilter,
-                        BuildItemIdsSqlFilter(itemIds, includeObjectIdFallback: true))
-                };
-            }
+                SqlFilter = SqlFragmentHelpers.CombineSqlFilters(
+                    query.SqlFilter,
+                    BuildItemIdsSqlFilter(itemIds, includeObjectIdFallback: true))
+            };
         }
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)

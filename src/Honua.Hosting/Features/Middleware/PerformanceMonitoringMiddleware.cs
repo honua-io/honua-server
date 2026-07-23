@@ -48,6 +48,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
         // reassigned below (only when EnableDetailedRequestTracking is on); C# does not
         // allow reassigning a `using`-declared local, so it is disposed explicitly in the
         // `finally` block instead.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         IOperationScope? operationScope = null;
         var requestErrored = false;
 
@@ -195,7 +196,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
                     memoryUsage.AllocatedBytes / (1024 * 1024)); // Convert to MB
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Don't let memory monitoring failures impact request processing
             PerformanceMonitoringLog.MemoryMonitoringFailed(_logger, ex.Message, ex);

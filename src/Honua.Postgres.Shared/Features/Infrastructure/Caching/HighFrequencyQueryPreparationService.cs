@@ -224,7 +224,7 @@ internal sealed class HighFrequencyQueryPreparationService : BackgroundService
             // Intentionally generic: this is a best-effort warmup over many queries; one statement
             // failing to prepare must not abort preparation of the rest, so the failure is logged
             // and counted, not rethrown.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 failureCount++;
                 HighFrequencyQueryPreparationLog.PreparedHighPriorityStatementFailed(

@@ -90,7 +90,7 @@ internal static partial class LicenseEndpoints
             LicenseLog.LicenseStatusQueried(logger, info.Edition, info.IsValid);
             return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -139,7 +139,7 @@ internal static partial class LicenseEndpoints
             LicenseLog.LicenseUploadFailed(logger, ex.Message);
             return TypedResults.BadRequest(ApiResponse<object>.Failure("License data is invalid."));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.
@@ -172,7 +172,7 @@ internal static partial class LicenseEndpoints
             IReadOnlyList<EntitlementResponse> readOnlyResponse = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<EntitlementResponse>>.CreateSuccess(readOnlyResponse));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and returns a generic
             // problem-details error response below.

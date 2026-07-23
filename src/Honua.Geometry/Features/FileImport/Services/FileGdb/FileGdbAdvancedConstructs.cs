@@ -65,7 +65,7 @@ internal static class FileGdbAdvancedConstructs
 
         // GDB_Items is typically stored as a00000004.gdbtable. This is a hardcoded literal, so
         // the segment can never be rooted/absolute — Path.Combine cannot silently drop gdbPath.
-        var gdbItemsPath = Path.Combine(gdbPath, "a00000004.gdbtable");
+        var gdbItemsPath = Path.Join(gdbPath, "a00000004.gdbtable");
         if (!File.Exists(gdbItemsPath))
         {
             return [];

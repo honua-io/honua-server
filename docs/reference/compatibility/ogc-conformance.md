@@ -1,29 +1,17 @@
 # OGC conformance
 
-Honua Server passes 952 / 952 assertions (100%) across 11 OGC CITE suites on `trunk`,
-with 0 failed, 0 skipped, and 0 CantTell. The authoritative snapshot, evidence-run
-links, and re-grading guidance live in [`docs/cite-status.md`](../../cite-status.md);
-the numbers below are copied directly from that page.
+Honua Server passes every OGC CITE suite it runs on `trunk` at 100%. The
+canonical per-suite pass rates, evidence-run links, and re-grading guidance
+live in [`docs/cite-status.md`](../../cite-status.md) — see that page for the
+current numbers; they are not restated here so there is nothing for this page
+to fall out of sync with.
 
 ## CITE pass rates per suite
 
-Snapshot from the 2026-05-17 evidence run (`allPassed=true`):
-
-| Suite | Profile | Passed / Total | Pass rate |
-|---|---|---:|---:|
-| OGC API Features 1.0 | `default` | 137 / 137 | 100% |
-| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% |
-| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% |
-| GML 3.2 | `applicable` | 17 / 17 | 100% |
-| KML 2.2 | `applicable` | 42 / 42 | 100% |
-| WFS 1.0 | `basic` | 162 / 162 | 100% |
-| WFS 1.1 | `basic` | 39 / 39 | 100% |
-| WFS 2.0 | `basic` | 167 / 167 | 100% |
-| WCS 2.0 | `core` | 82 / 82 | 100% |
-| WMS 1.3 | `default` | 199 / 199 | 100% |
-| WMTS 1.0 | `default` | 60 / 60 | 100% |
-
-The WFS 2.0 explicit transactional slice is tracked separately and passes 25 / 25.
+See the "Current Per-Protocol Status" table in
+[`docs/cite-status.md`](../../cite-status.md#current-per-protocol-status) for
+the canonical passed/total counts and pass rate per suite, including the WFS
+2.0 explicit transactional slice.
 
 ## What conformance means per protocol
 
@@ -70,6 +58,8 @@ Each OGC API surface declares its implemented conformance classes at runtime
 
 The OpenAPI specs under `src/Honua.Server/*-openapi.json` carry the same CITE
 totals in an `x-honua-cite-compliance` vendor extension on the `info` object.
+An architecture test (`CiteStatusComplianceDriftTests`) fails the build if any
+of those five files disagree with `docs/cite-status.md`.
 
 ## API versioning in one paragraph
 
@@ -85,8 +75,8 @@ breaking changes require a new major package (`Geospatial.V2`); see the
 
 ## Related
 
-- [`docs/cite-status.md`](../../cite-status.md) — authoritative CITE snapshot (source of truth for the table above).
-- [CITE conformance evidence](../../internal/contributor/ogc-cite-conformance-evidence.md) — canonical, website-linkable evidence summary.
+- [`docs/cite-status.md`](../../cite-status.md) — authoritative CITE snapshot (source of truth for the numbers above).
+- [CITE conformance evidence](../../internal/contributor/ogc-cite-conformance-evidence.md) — stable, website-linkable evidence-run narrative; see `cite-status.md` for the numbers.
 - [CITE runbook](../../internal/contributor/cite-runbook.md) — per-suite scope, scripts, and workflow files.
 - [OGC certification path](../../internal/contributor/ogc-certification-path.md) — formal certification posture.
 - [Supported clients](clients.md) — which clients consume these protocols, with tested versions.

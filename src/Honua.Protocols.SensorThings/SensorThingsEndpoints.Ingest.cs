@@ -264,6 +264,7 @@ internal static partial class SensorThingsIngestEndpoints
             // .Where(...)/.Any(...): the predicate is an awaited async store call, which
             // synchronous LINQ over IEnumerable cannot express without a separate async-LINQ
             // dependency, so the explicit foreach + early return is the clearest form here.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var datastreamId in rows.Select(r => r.DatastreamId).Distinct())
             {
                 if (await store.GetDatastreamAsync(datastreamId, ct).ConfigureAwait(false) is null)

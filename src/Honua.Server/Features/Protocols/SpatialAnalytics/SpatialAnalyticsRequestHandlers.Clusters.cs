@@ -308,7 +308,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: this is the cluster analytics
             // endpoint; the failure is logged and mapped to a generic error response below.

@@ -94,7 +94,7 @@ internal static partial class WebhookDeliveryHelper
             // Intentional: this is one attempt within the retry loop below — transport
             // failures (DNS, TLS, connection reset) must be caught so the loop can retry
             // with backoff rather than fail the whole delivery on a transient error.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 LogDeliveryException(logger, request.EventId, attempt, ex);
                 if (attempt == maxAttempts)
@@ -199,6 +199,7 @@ internal static partial class WebhookDeliveryHelper
             // constructed but before the caller can use it — closing the connection it just
             // established. The `connected` flag lets the finally block dispose the socket
             // only on the failure paths, where no NetworkStream has taken ownership of it.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             var connected = false;
 

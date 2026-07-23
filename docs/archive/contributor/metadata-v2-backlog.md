@@ -13,14 +13,14 @@ When this file disagrees with GitHub, update this file or ignore it.
 
 1. Start with [#1035](https://github.com/honua-io/honua-server/issues/1035)
    for the epic principle: resource first, service second.
-2. Read [ADR-0023](../adr/0023-metadata-architecture.md) for the existing
+2. Read [ADR-0023](../../internal/contributor/adr/0023-metadata-architecture.md) for the existing
    metadata resource-model direction.
 3. Use the [roadmap](metadata-v2-roadmap.md) for milestone grouping.
-4. Use the [release-readiness gates](metadata-v2-release-readiness.md) before
+4. Use the [release-readiness gates](../../internal/contributor/architecture/metadata-v2-release-readiness.md) before
    treating the Metadata v2 surface as shippable.
-5. Use the [admin UI information model](metadata-v2-admin-ui-information-model.md)
+5. Use the [admin UI information model](../../internal/contributor/architecture/metadata-v2-admin-ui-information-model.md)
    when handing workflow design to Claude Design or another UI agent.
-6. Use the [admin operator workflow map](admin-operator-workflows.md) for
+6. Use the [admin operator workflow map](../../internal/contributor/architecture/admin-operator-workflows.md) for
    server management flows that surround Metadata v2 authoring.
 
 ## Issue Map
@@ -82,6 +82,6 @@ same release gates as new v2 authoring.
 ## Local Artifacts
 
 - [Metadata v2 roadmap](metadata-v2-roadmap.md)
-- [Metadata v2 release-readiness gates](metadata-v2-release-readiness.md)
-- [Metadata v2 admin UI information model](metadata-v2-admin-ui-information-model.md)
-- [Honua admin operator workflows](admin-operator-workflows.md)
+- [Metadata v2 release-readiness gates](../../internal/contributor/architecture/metadata-v2-release-readiness.md)
+- [Metadata v2 admin UI information model](../../internal/contributor/architecture/metadata-v2-admin-ui-information-model.md)
+- [Honua admin operator workflows](../../internal/contributor/architecture/admin-operator-workflows.md)

@@ -39,7 +39,7 @@ internal sealed partial class StreamingFileImportService
                 Directory.Delete(scratchDir, recursive: true);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort scratch cleanup after import: log and continue rather than
             // failing the import operation over a leftover temp directory.
@@ -81,7 +81,7 @@ internal sealed partial class StreamingFileImportService
                 Directory.Delete(scratchDir, recursive: true);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort scratch cleanup after import: log and continue rather than
             // failing the import operation over a leftover temp directory.
@@ -103,7 +103,7 @@ internal sealed partial class StreamingFileImportService
                 Directory.Delete(scratchDir, recursive: true);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort scratch cleanup after import: log and continue rather than
             // failing the import operation over a leftover temp directory.
@@ -135,7 +135,7 @@ internal sealed partial class StreamingFileImportService
                 Directory.Delete(scratchDir, recursive: true);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort scratch cleanup after import: log and continue rather than
             // failing the import operation over a leftover temp directory.
@@ -174,7 +174,7 @@ internal sealed partial class StreamingFileImportService
                 Directory.Delete(scratchDir, recursive: true);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort scratch cleanup after import: log and continue rather than
             // failing the import operation over a leftover temp directory.

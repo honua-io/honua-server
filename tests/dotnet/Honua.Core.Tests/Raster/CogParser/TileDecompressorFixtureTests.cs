@@ -22,7 +22,7 @@ namespace Honua.Core.Tests.Raster.CogParser;
 public class TileDecompressorFixtureTests
 {
     private static readonly string FixtureDirectory =
-        Path.Combine(AppContext.BaseDirectory, "Raster", "CogParser", "Fixtures");
+        Path.Join(AppContext.BaseDirectory, "Raster", "CogParser", "Fixtures");
 
     public static TheoryData<string, string, int, int, int> GdalFixtures() => new()
     {
@@ -52,7 +52,7 @@ public class TileDecompressorFixtureTests
         metadata.BitsPerSample.Should().Be(bitsPerSample);
 
         var actual = await DecodeAllTilesAsync(metadata, reader);
-        var expected = await File.ReadAllBytesAsync(Path.Combine(FixtureDirectory, fixture + ".bin"));
+        var expected = await File.ReadAllBytesAsync(Path.Join(FixtureDirectory, fixture + ".bin"));
 
         AssertBytesEqual(expected, actual, fixture);
     }
@@ -63,7 +63,7 @@ public class TileDecompressorFixtureTests
         // Guards the guard: proves the fixture comparison would actually catch a decoder that
         // ignored tag 317, rather than the predictor being a no-op on this data.
         var (metadata, reader) = await ReadFixtureMetadataAsync("lzw_pred2_uint8");
-        var expected = await File.ReadAllBytesAsync(Path.Combine(FixtureDirectory, "lzw_pred2_uint8.bin"));
+        var expected = await File.ReadAllBytesAsync(Path.Join(FixtureDirectory, "lzw_pred2_uint8.bin"));
 
         var withoutPredictor = await DecodeAllTilesAsync(metadata, reader, TilePixelLayout.None);
 
@@ -247,7 +247,7 @@ public class TileDecompressorFixtureTests
     private static async Task<(CogMetadata Metadata, InMemoryRangeReader Reader)>
         ReadFixtureMetadataAsync(string fixture)
     {
-        var tiff = await File.ReadAllBytesAsync(Path.Combine(FixtureDirectory, fixture + ".tif"));
+        var tiff = await File.ReadAllBytesAsync(Path.Join(FixtureDirectory, fixture + ".tif"));
         var reader = new InMemoryRangeReader(tiff);
         var metadata = await new CogMetadataExtractor().ReadMetadataAsync(reader, "fixtures", fixture + ".tif");
         return (metadata, reader);
@@ -324,9 +324,9 @@ public class TileDecompressorFixtureTests
         {
             var available = Math.Max(0, _data.Length - (int)offset);
             var bytesToRead = Math.Min(length, available);
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult<Stream>(new MemoryStream(_data, (int)offset, bytesToRead));
         }
-
         public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
             => Task.FromResult((long)_data.Length);
     }

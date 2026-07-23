@@ -1342,6 +1342,7 @@ internal static partial class FeatureServerEndpoints
             // Not rewritten as .Where: the pattern-matched `objectId`/`feature` locals are bound
             // by the filter condition itself and consumed in the loop body — a Where lambda's
             // pattern variables do not escape to the outer foreach body.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var edit in edits)
             {
                 if (edit.ObjectId is { } objectId && edit.Payload is GeoServicesFeature feature)

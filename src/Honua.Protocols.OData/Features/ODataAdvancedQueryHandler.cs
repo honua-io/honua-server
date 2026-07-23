@@ -115,7 +115,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for $apply; the
         // exception is logged (Log.ApplyFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.ApplyFailed(_logger, layerId, ex);
@@ -267,7 +267,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
         // Intentional broad catch: this is the request-handling boundary for $search; the
         // exception is logged (Log.SearchFailed) and mapped to an OData-format 500 error.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.SearchFailed(_logger, layerId, ex);

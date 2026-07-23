@@ -269,6 +269,7 @@ internal sealed partial class AnalysisContentService(
         // loop body as part of the match test itself (TryGetValue/TryParse), so a
         // LINQ filter would need to re-run the same parse twice or capture state
         // in a closure — a plain loop is clearer and behavior-preserving.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in LayerInputKeys)
         {
             if (step.Inputs.TryGetValue(key, out var raw)

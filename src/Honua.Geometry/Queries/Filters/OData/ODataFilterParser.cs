@@ -663,7 +663,7 @@ public sealed class ODataFilterParser
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Broad catch is intentional: wkt is untrusted OData filter input, and WKT
             // parsing/WKB writing can throw a variety of format/argument exceptions for

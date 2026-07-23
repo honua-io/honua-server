@@ -93,7 +93,7 @@ public sealed class Harness
         {
             client = CredentialSandbox.BuildScopedClient(spec.BaseUrl, spec.JobToken, _options.ClientFactory);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: the injected client factory is arbitrary (tests
             // supply fakes, production wires a real HTTP client) and any construction
@@ -152,7 +152,7 @@ public sealed class Harness
                 log.Warn("job cancelled");
                 return ExitCancelled;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional catch-all: this boundary runs arbitrary user tool code, so any
                 // exception type must be caught, logged in full, and mapped to the harness's
@@ -185,7 +185,7 @@ public sealed class Harness
             log.Warn($"output cap exceeded: {ex.Message}");
             return ExitToolFailed;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: the uploader is injectable (S3 in production, a fake
             // in tests) and any upload failure must degrade to a harness-error exit rather

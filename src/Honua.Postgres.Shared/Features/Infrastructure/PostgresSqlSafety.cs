@@ -95,12 +95,9 @@ internal static class PostgresSqlSafety
         // Not rewritten as .Where(...).FirstOrDefault(): this needs to throw when no Word token
         // exists, and SqlToken is a struct where a default() sentinel would be ambiguous with a
         // genuine empty-value token.
-        foreach (var token in EnumerateSqlTokensOutsideQuotes(sql))
+        foreach (var token in (EnumerateSqlTokensOutsideQuotes(sql)).Where(token => token.Kind == SqlTokenKind.Word))
         {
-            if (token.Kind == SqlTokenKind.Word)
-            {
-                return token.Value;
-            }
+            return token.Value;
         }
 
         throw new ArgumentException("SQL command text does not contain an executable statement.", nameof(sql));

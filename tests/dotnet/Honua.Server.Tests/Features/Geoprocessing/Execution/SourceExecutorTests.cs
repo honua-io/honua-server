@@ -89,6 +89,7 @@ public sealed class SourceExecutorTests
         var features = ReadFeatures(uri!);
         features.Should().HaveCount(2);
         var point = features[0].Geometry as Point;
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         point.Should().NotBeNull("the derived geometry must be a Point");
         point!.X.Should().BeApproximately(10, 1e-9);
         point.Y.Should().BeApproximately(20, 1e-9);

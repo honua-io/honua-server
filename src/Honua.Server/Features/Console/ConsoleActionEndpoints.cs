@@ -73,13 +73,9 @@ internal static class ConsoleActionEndpoints
                 // directly from the enclosing method on the first invalid value, and a
                 // default(ConsoleContentAction) sentinel from FirstOrDefault would be
                 // indistinguishable from a legitimately-defined zero value.
-                foreach (var action in supplied)
+                foreach (var action in (supplied).Where(action => !ConsoleEnumParser.IsDefined(action)))
                 {
-                    if (!ConsoleEnumParser.IsDefined(action))
-                    {
-                        return TypedResults.BadRequest(ApiResponse<object>.Failure(
-                            $"actions contain undefined value '{(int)action}'."));
-                    }
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure($"actions contain undefined value '{(int)action}'."));
                 }
             }
 
@@ -187,7 +183,7 @@ internal static class ConsoleActionEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the action-check
         // endpoint; the failure is logged and mapped to a generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "actions.check", ex);
             return TypedResults.Problem(

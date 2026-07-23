@@ -41,7 +41,7 @@ internal sealed class WorkflowOrchestrationBackgroundService(
                     // Intentional catch-all: this is a per-run reconcile inside the
                     // background poll loop; one run's failure must not stop the
                     // other active runs from being reconciled in this pass.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         OrchestrationLog.ReconciliationFailed(logger, run.RunId, ex);
                     }
@@ -54,7 +54,7 @@ internal sealed class WorkflowOrchestrationBackgroundService(
             // Intentionally generic: this is a long-running background reconciler
             // loop. A single failed poll iteration must not kill the host's
             // background service; log and retry on the next interval.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 OrchestrationLog.PollLoopFailed(logger, ex);
             }

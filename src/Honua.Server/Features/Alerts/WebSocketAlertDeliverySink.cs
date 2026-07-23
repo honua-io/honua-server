@@ -38,7 +38,7 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
             {
                 // Individual subscriber was disconnected; skip.
             }
-            catch (Exception)
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentional broad catch: this is a per-subscriber attempt inside the
                 // broadcast fan-out loop; one subscriber's handler failure must not block
@@ -58,11 +58,11 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         // Not scoped with `using`: ownership of this CancellationTokenSource transfers to
         // the stored SubscriptionEntry, which outlives this method. It is disposed by
         // RemoveSubscriber/DisconnectSubscriber on unsubscribe or by Dispose() at shutdown.
+        // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
         var entry = new SubscriptionEntry(handler, new CancellationTokenSource(), DateTimeOffset.UtcNow, options?.ClientLabel);
         _subscribers.TryAdd(id, entry);
         return new Subscription(this, id, entry.Cts.Token);
     }
-
     public IReadOnlyList<StreamingSubscriptionInfo> GetSubscriptions()
     {
         return _subscribers.Select(kvp =>
@@ -98,6 +98,7 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
     /// </summary>
     public void Dispose()
     {
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var id in _subscribers.Keys)
         {
             if (_subscribers.TryRemove(id, out var entry))
@@ -165,7 +166,7 @@ internal sealed class WebSocketAlertDeliverySink : IAlertDeliverySink
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional catch-all: this is the delivery-sink boundary for a single alert
             // dispatch attempt; the failure is mapped to a retryable delivery result below

@@ -493,7 +493,7 @@ internal sealed class McpDataAccessSurface
         // 2025-03-26 tool-execution failures (auth, approval, validation, domain) must appear
         // inside the result with isError: true so standard clients can drive retry/re-auth flows
         // without parsing protocol-level JSON-RPC errors.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             result = McpToolHelpers.ErrorResult(ex);
             var code = ExtractErrorCode(result);

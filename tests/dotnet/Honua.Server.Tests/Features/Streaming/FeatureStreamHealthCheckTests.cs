@@ -80,6 +80,7 @@ public sealed class FeatureStreamHealthCheckTests
             // A `using` declaration doesn't apply cleanly to a dynamically-sized List<T> of
             // disposables created via LINQ; disposing each item in a finally block is the
             // correct idiom here.
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             foreach (var session in sessions)
             {
                 session.Dispose();

@@ -98,7 +98,7 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
             // Intentionally generic: this is a long-running background loop; a single failed
             // iteration (leader election, warmup) must not kill the host — log and retry after
             // the standard interval so warmup keeps working on subsequent iterations.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.WarmupLoopError(_logger, ex);
                 await Task.Delay(LeaderElectionRetryInterval, stoppingToken);
@@ -116,7 +116,7 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
             // Intentionally generic: best-effort leadership release during shutdown; the lease
             // will still expire on its own TTL, so any failure here is logged and swallowed
             // rather than delaying host shutdown.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.LeadershipReleaseError(_logger, ex);
             }
@@ -152,7 +152,7 @@ internal sealed partial class PostgresCrsWarmupService : BackgroundService
         // Intentionally generic: this is a best-effort cache-warmup pass; a resolve failure for
         // any CRS/SRID here must not propagate and take down the background service or block
         // subsequent warmup iterations — log and move on, real requests still resolve CRS on demand.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.WarmupFailed(_logger, ex);
         }

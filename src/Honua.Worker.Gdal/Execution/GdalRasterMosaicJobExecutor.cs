@@ -156,13 +156,13 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         {
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
-            var outputPath = Path.Combine(workspace, "output.tif");
+            var outputPath = Path.Join(workspace, "output.tif");
             var inputPaths = new List<string>(sources.Count);
             for (var i = 0; i < sources.Count; i++)
             {
                 // Second segment is a generated relative literal (a loop counter, never
                 // user input), so it can never be rooted and silently discard workspace.
-                var inputPath = Path.Combine(workspace, $"input{i.ToString(CultureInfo.InvariantCulture)}.tif");
+                var inputPath = Path.Join(workspace, $"input{i.ToString(CultureInfo.InvariantCulture)}.tif");
                 await File.WriteAllBytesAsync(inputPath, sources[i], cancellationToken).ConfigureAwait(false);
                 inputPaths.Add(inputPath);
             }

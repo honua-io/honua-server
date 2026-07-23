@@ -202,6 +202,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         // is not a projected CRS to avoid false matches on datum names
         if (!isProjected)
         {
+            // codeql[cs/linq/missed-where] -- validation is asynchronous and must retain imperative control flow.
             foreach (var kvp in _wellKnownEpsgCodes.Where(kvp => cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase)))
             {
                 if (await ValidateSridAsync(kvp.Value, cancellationToken))
@@ -525,7 +526,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: fail closed and reject unvalidated SRIDs to prevent data
             // corruption. PostGIS would reject invalid SRIDs later anyway, but by then the
@@ -562,7 +563,7 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally generic: any failure querying spatial_ref_sys (connection, timeout,
             // malformed WKT) should fall through to "no match" rather than propagate, so the

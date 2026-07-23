@@ -89,12 +89,9 @@ public static class FeatureOrdering
             return value;
         }
 
-        foreach (var attribute in feature.Attributes)
+        foreach (var attribute in (feature.Attributes).Where(attribute => string.Equals(attribute.Key, requestedField, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(attribute.Key, requestedField, StringComparison.OrdinalIgnoreCase))
-            {
-                return attribute.Value;
-            }
+            return attribute.Value;
         }
 
         return null;

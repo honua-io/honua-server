@@ -632,7 +632,7 @@ public static partial class Extensions
                 // Intentionally generic: this is a long-running background monitoring
                 // loop. A single failed iteration (e.g. transient GC-info read failure)
                 // must not kill the host's background service; log and keep polling.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     MemoryMonitoringLog.MemoryMonitoringServiceFailed(_logger, ex);
                     await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);

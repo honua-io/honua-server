@@ -33,7 +33,7 @@ internal sealed class TileOperationBackgroundService(
                     // Intentional catch-all: this is a per-job loop inside the background tile
                     // worker; one queued job's failure must not stop the worker from draining
                     // the rest of the queue.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         TileOperationLog.BackgroundJobProcessingFailed(_logger, jobId, ex);
                     }
@@ -48,7 +48,7 @@ internal sealed class TileOperationBackgroundService(
             // Intentionally generic: this is a long-running background worker loop. A
             // failure reading the queue must not kill the host's background service;
             // log, back off, and restart the worker loop.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 TileOperationLog.BackgroundWorkerRestarting(_logger, ex);
                 await Task.Delay(WorkerRestartDelay, stoppingToken).ConfigureAwait(false);

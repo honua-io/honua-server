@@ -77,7 +77,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             // (connection, auth, migration, or otherwise) must be classified via
             // IsTransientConnectivityError below rather than crash the background service,
             // so retries/backoff and the terminal "give up" path both stay reachable.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 if (!StartupDatabaseResilience.IsTransientConnectivityError(ex))
                 {

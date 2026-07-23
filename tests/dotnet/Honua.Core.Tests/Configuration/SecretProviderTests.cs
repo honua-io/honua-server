@@ -272,7 +272,7 @@ public class SecretProvider : ISecretProvider, IDisposable
             }
             return value;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: any resolution failure (missing key, provider
             // outage, malformed reference) is normalized into a single domain

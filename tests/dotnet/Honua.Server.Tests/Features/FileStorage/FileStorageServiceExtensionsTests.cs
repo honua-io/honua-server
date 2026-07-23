@@ -37,7 +37,7 @@ public sealed class FileStorageServiceExtensionsTests
         options.Provider.Should().Be(CloudStorageProvider.Local);
         options.LocalStorage.Should().NotBeNull();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        options.LocalStorage!.BasePath.Should().Be(Path.Combine(Path.GetTempPath(), "honua-storage"));
+        options.LocalStorage!.BasePath.Should().Be(Path.Join(Path.GetTempPath(), "honua-storage"));
         options.LocalStorage.CreateDirectoryIfNotExists.Should().BeTrue();
         storage.Should().BeOfType<LocalFileStorage>();
     }

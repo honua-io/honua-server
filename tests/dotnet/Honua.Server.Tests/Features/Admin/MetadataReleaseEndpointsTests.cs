@@ -1048,9 +1048,8 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
-            foreach (var environment in environments.Where(_snapshots.ContainsKey))
+            foreach (var snapshot in (environments.Where(_snapshots.ContainsKey)).Select(environment => _snapshots[environment]))
             {
-                var snapshot = _snapshots[environment];
                 yield return new MetadataV2EnvironmentRevision
                 {
                     Environment = snapshot.Graph.Environment,

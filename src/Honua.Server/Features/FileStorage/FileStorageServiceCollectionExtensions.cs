@@ -54,7 +54,7 @@ public static class FileStorageServiceCollectionExtensions
                 // Path.Combine is safe here: Path.GetTempPath() is the OS temp directory and
                 // "honua-storage" is a fixed relative literal, neither externally controlled.
                 BasePath = section.GetValue("LocalStorage:BasePath", null as string)
-                           ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
+                           ?? Path.Join(Path.GetTempPath(), "honua-storage"),
                 CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
             };
             services.AddSingleton<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>(
@@ -165,7 +165,7 @@ public static class FileStorageServiceCollectionExtensions
             {
                 // Path.Combine is safe here: Path.GetTempPath() is the OS temp directory and
                 // "honua-storage" is a fixed relative literal, neither externally controlled.
-                BasePath = Path.Combine(Path.GetTempPath(), "honua-storage"),
+                BasePath = Path.Join(Path.GetTempPath(), "honua-storage"),
                 CreateDirectoryIfNotExists = true
             }));
         }
@@ -243,7 +243,7 @@ public static class FileStorageServiceCollectionExtensions
         options.LocalStorage = new LocalStorageOptions
         {
             BasePath = section.GetValue("LocalStorage:BasePath", null as string)
-                       ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
+                       ?? Path.Join(Path.GetTempPath(), "honua-storage"),
             CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
         };
     }
