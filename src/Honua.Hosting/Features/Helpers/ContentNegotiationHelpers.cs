@@ -82,9 +82,8 @@ internal static class ContentNegotiationHelpers
                 continue;
             }
 
-            foreach (var value in rawHeader.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var trimmed in (rawHeader.Split(',', StringSplitOptions.RemoveEmptyEntries)).Select(value => value.Trim()))
             {
-                var trimmed = value.Trim();
                 if (string.IsNullOrEmpty(trimmed))
                 {
                     continue;

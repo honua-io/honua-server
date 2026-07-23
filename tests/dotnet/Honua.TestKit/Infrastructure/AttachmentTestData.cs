@@ -170,7 +170,7 @@ public static class AttachmentTestData
         {
             await fileStorage.DeleteAsync(fileId);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Broad catch is intentional: best-effort cleanup for test data, any failure
             // here (already deleted, storage unavailable, etc.) should not fail the test.

@@ -110,10 +110,10 @@ public sealed class SplunkHecAuditSinkTests
                 ? string.Join(' ', values)
                 : null;
             // Ownership transfers to the HttpClient pipeline, which disposes the response.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(_status));
         }
     }
-
     /// <summary>
     /// Minimal <see cref="IHttpClientFactory"/> test double that hands back a client wired
     /// to a fixed handler on every call, recording how many times (and with what name) it

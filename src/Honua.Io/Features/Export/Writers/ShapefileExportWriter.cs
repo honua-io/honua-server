@@ -39,13 +39,13 @@ internal static class ShapefileExportWriter
         // "honua-export" is a compile-time relative literal and Guid.NewGuid().ToString("N")
         // is a fixed-format hex string (no separators, never rooted), so this combine cannot
         // silently drop Path.GetTempPath().
-        var scratchDir = Path.Combine(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
 
         try
         {
             // "export.shp" is a compile-time relative literal, so it cannot be rooted.
-            var shpPath = Path.Combine(scratchDir, "export.shp");
+            var shpPath = Path.Join(scratchDir, "export.shp");
             var warnings = new List<string>();
             var skippedNullGeometry = 0;
 
@@ -120,7 +120,7 @@ internal static class ShapefileExportWriter
 
             // Create ZIP archive to temp file to avoid sync I/O on response body.
             // "export.zip" is a compile-time relative literal, so it cannot be rooted.
-            var zipPath = Path.Combine(scratchDir, "export.zip");
+            var zipPath = Path.Join(scratchDir, "export.zip");
             {
                 await using var zipStream = File.Create(zipPath);
                 using var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: false);
@@ -145,7 +145,7 @@ internal static class ShapefileExportWriter
             // Intentionally generic: best-effort scratch-directory cleanup that must not
             // mask the write result (success or failure) above it; log and move on.
             try { Directory.Delete(scratchDir, recursive: true); }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 ExportLog.ScratchDirectoryCleanupFailed(logger, scratchDir, ex);
             }

@@ -118,7 +118,7 @@ internal sealed partial class ODataCrudService
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.GetFeatureFailed) and mapped to an OData-format error result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.GetFeatureFailed(_logger, layerId, objectId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred processing the OData request");
@@ -222,7 +222,7 @@ internal sealed partial class ODataCrudService
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.CreateFeatureFailed) and mapped to an OData-format error result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred creating the feature");
@@ -401,7 +401,7 @@ internal sealed partial class ODataCrudService
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.UpdateFeatureFailed) and mapped to an OData-format error result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
             return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred updating the feature");
@@ -499,7 +499,7 @@ internal sealed partial class ODataCrudService
         }
         // Intentional broad catch: request-handling boundary; already logged
         // (Log.DeleteFeatureFailed) and mapped to an OData-format error result.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DeleteFeatureFailed(_logger, layerId, objectId, ex);
             return ODataCrudResult<object>.Error("An error occurred deleting the feature");

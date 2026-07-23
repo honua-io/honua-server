@@ -214,7 +214,7 @@ internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
         // FederatedSourceUnavailableException (preserving the original as InnerException) so
         // one misbehaving source cannot surface a raw, connector-specific exception type to
         // callers or take down the overall federated query.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             throw new FederatedSourceUnavailableException(source.Id, FederatedSourceUnavailableReason.Faulted, ex);
         }

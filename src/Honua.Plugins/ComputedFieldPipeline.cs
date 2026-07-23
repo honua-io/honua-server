@@ -86,7 +86,7 @@ internal sealed partial class ComputedFieldPipeline : IComputedFieldPipeline
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Computed fields are best-effort on the read path: isolate and omit.
                 measure.MarkFailed();

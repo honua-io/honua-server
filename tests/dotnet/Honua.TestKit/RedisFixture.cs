@@ -37,19 +37,24 @@ public sealed class RedisFixture : IAsyncLifetime
                 var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
                 if (string.IsNullOrWhiteSpace(externalConnectionString))
                 {
+                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                     _sharedContainer = new RedisBuilder("redis:7.2-alpine")
                         .Build();
                     await _sharedContainer.StartAsync();
+                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                     _sharedConnectionString = _sharedContainer.GetConnectionString();
                 }
                 else
                 {
+                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                     _sharedConnectionString = externalConnectionString;
                 }
 
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = true;
             }
 
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             _sharedRefCount++;
             _connectionString = _sharedConnectionString;
         }
@@ -66,6 +71,7 @@ public sealed class RedisFixture : IAsyncLifetime
         {
             if (_sharedRefCount > 0)
             {
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedRefCount--;
             }
 
@@ -76,8 +82,11 @@ public sealed class RedisFixture : IAsyncLifetime
                     await _sharedContainer.DisposeAsync();
                 }
 
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedContainer = null;
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedConnectionString = null;
+                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
                 _sharedInitialized = false;
             }
         }

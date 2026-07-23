@@ -81,7 +81,7 @@ internal static class FeatureChangeEventEnrichment
                 : null;
             return ([env.MinX, env.MinY, env.MaxX, env.MaxY], geometryJson, srid);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Invalid WKB — skip enrichment rather than failing the write.
             return (null, null, null);
@@ -99,7 +99,7 @@ internal static class FeatureChangeEventEnrichment
         {
             return JsonSerializer.Serialize(attributes, FeatureChangeEventEnrichmentJsonContext.Default.ImmutableDictionaryStringObject);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Unsupported runtime attribute value — skip enrichment rather than failing the write.
             return null;

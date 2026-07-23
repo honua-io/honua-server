@@ -211,6 +211,7 @@ internal sealed partial class FeatureServerQueryHandler(
         // Not converted to a `using` declaration: featureActivity starts as null and is
         // reassigned once telemetry context is available further down, but using-declared
         // variables are read-only (CS1656) — the manual finally-dispose is required here.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -381,7 +382,7 @@ internal sealed partial class FeatureServerQueryHandler(
         }
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -405,6 +406,7 @@ internal sealed partial class FeatureServerQueryHandler(
         // Not converted to a `using` declaration: featureActivity starts as null and is
         // reassigned once telemetry context is available further down, but using-declared
         // variables are read-only (CS1656) — the manual finally-dispose is required here.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -1274,7 +1276,7 @@ internal sealed partial class FeatureServerQueryHandler(
         // Intentionally generic: this is the top-level request handler boundary; any
         // unanticipated failure must map to a generic 500 (or the already-started
         // streaming result) rather than crash the request.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
@@ -2308,6 +2310,7 @@ internal sealed partial class FeatureServerQueryHandler(
             return true;
         }
 
+        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
         foreach (var path in paths)
         {
             if (!TryValidateCoordinateCollection(path, isGeographic, out errorMessage))

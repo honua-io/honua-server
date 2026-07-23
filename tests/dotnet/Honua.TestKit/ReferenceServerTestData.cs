@@ -12,7 +12,7 @@ internal static class ReferenceServerTestData
     // argument by unexpectedly resolving as rooted.
     internal static string ResolveTsunamiEvacuationZonesZipPath()
     {
-        var outputDirectoryCandidate = Path.Combine(
+        var outputDirectoryCandidate = Path.Join(
             AppContext.BaseDirectory,
             "TestData",
             TsunamiEvacuationZonesZipFileName);
@@ -22,14 +22,14 @@ internal static class ReferenceServerTestData
         }
 
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
         if (directory != null)
         {
-            var repositoryCandidate = Path.Combine(
+            var repositoryCandidate = Path.Join(
                 directory.FullName,
                 "tests",
                 "dotnet",

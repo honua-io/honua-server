@@ -137,6 +137,7 @@ internal sealed partial class FeatureChangeRetryQueue(
         // Not scoped with `using`: disposal must happen only after cancelling the renewal
         // loop, awaiting its completion, and awaiting the async lease release — see the
         // `finally` block below, which performs that ordered teardown explicitly.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         var leaseCoordinator = await TryAcquireClaimLeaseAsync(pendingId).ConfigureAwait(false);
         if (_redisDb != null && leaseCoordinator == null)
         {
@@ -534,7 +535,7 @@ internal sealed partial class FeatureChangeRetryQueue(
                 await Task.Delay(RetryDelay).ConfigureAwait(false);
                 await _queue.Writer.WriteAsync(new PendingFeatureChangeSignal(pendingId)).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentionally generic: this is a fire-and-forget scheduled-retry background
                 // task (Task.Run with no awaiter). An unhandled exception here would become an

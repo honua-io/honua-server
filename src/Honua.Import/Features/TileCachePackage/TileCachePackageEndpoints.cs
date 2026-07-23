@@ -91,7 +91,7 @@ internal static class TileCachePackageEndpoints
         // read with random access without buffering the whole package in memory.
         // The second segment is a server-generated "honua-tpk-{guid}.tmp" name (not
         // derived from the caller-supplied fileName), so it can never be rooted/absolute.
-        var tempPath = Path.Combine(Path.GetTempPath(), $"honua-tpk-{Guid.NewGuid():N}.tmp");
+        var tempPath = Path.Join(Path.GetTempPath(), $"honua-tpk-{Guid.NewGuid():N}.tmp");
         try
         {
             long written;

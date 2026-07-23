@@ -136,11 +136,11 @@ public sealed class NominatimGeocodeProviderTests
         {
             SendCount++;
             // Ownership transfers to the HttpClient pipeline, which disposes the response.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             var response = ResponseFactory?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
             };
-
             return Task.FromResult(response);
         }
     }

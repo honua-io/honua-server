@@ -219,6 +219,7 @@ public sealed class ObservabilitySpineTests
     {
         foreach (var directoryInfo in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.Select(start => new DirectoryInfo(start)))
         {
+            // codeql[cs/linq/missed-select] -- the directory cursor is reassigned while walking parents.
             var directory = directoryInfo;
             while (directory is not null)
             {

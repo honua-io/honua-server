@@ -114,7 +114,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
         // All segments are fixed relative literals, so none can be rooted and
         // silently discard an earlier one.
-        var schemaPath = ResolveSchemaPath(Path.Combine("tests", "dotnet", "Honua.Server.Tests", "TestData", "tilejson-3.0.schema.json"));
+        var schemaPath = ResolveSchemaPath(Path.Join("tests", "dotnet", "Honua.Server.Tests", "TestData", "tilejson-3.0.schema.json"));
         var schemaJson = await File.ReadAllTextAsync(schemaPath);
         var schema = JSchema.Parse(schemaJson);
 
@@ -221,7 +221,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         // Second segment is the fixed literal "Honua.sln", so it can never be
         // rooted and silently discard directory.FullName.
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
@@ -230,7 +230,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         {
             // relativePath is guaranteed non-rooted here: the Path.IsPathRooted
             // check above already short-circuited a rooted path.
-            var candidate = Path.Combine(directory.FullName, relativePath);
+            var candidate = Path.Join(directory.FullName, relativePath);
             if (File.Exists(candidate))
             {
                 return candidate;

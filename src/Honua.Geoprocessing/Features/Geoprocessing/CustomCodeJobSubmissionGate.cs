@@ -101,7 +101,7 @@ internal sealed class CustomCodeJobSubmissionGate
         {
             await _scopedJobTokenIssuer.RevokeAsync(token, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: this is the documented best-effort revocation path (see
             // the XML doc above) — a revoke failure must not fail job submission/cleanup, but

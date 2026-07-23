@@ -409,12 +409,12 @@ internal static class ExportEndpoints
         // "honua-export" is a compile-time relative literal and Guid.NewGuid().ToString("N")
         // is a fixed-format hex string (no separators, never rooted), so this combine cannot
         // silently drop Path.GetTempPath().
-        var scratchDir = Path.Combine(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
+        var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratchDir);
         // SanitizeExportFilename strips path separators, drive/colon characters, and
         // traversal segments (FileUploadSecurity.SanitizeFileName), so the combined
         // segment cannot be rooted and cannot escape scratchDir.
-        var gpkgPath = Path.Combine(scratchDir, $"{SanitizeExportFilename(serviceName, layerName)}.gpkg");
+        var gpkgPath = Path.Join(scratchDir, $"{SanitizeExportFilename(serviceName, layerName)}.gpkg");
 
         try
         {
@@ -441,7 +441,7 @@ internal static class ExportEndpoints
             // Intentionally generic: best-effort scratch-directory cleanup that must not
             // mask the write/response result above it; log and move on.
             try { Directory.Delete(scratchDir, recursive: true); }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 ExportLog.ScratchDirectoryCleanupFailed(logger, scratchDir, ex);
             }

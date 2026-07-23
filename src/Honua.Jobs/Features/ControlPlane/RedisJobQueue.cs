@@ -387,7 +387,7 @@ internal sealed partial class RedisJobQueue(
                 .ConfigureAwait(false);
             Log.ClaimRolledBack(logger, operationId);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort; stale-claim reconciliation is the safety net.
             Log.ClaimRollbackFailed(logger, operationId, ex);
@@ -401,7 +401,7 @@ internal sealed partial class RedisJobQueue(
             await _database.SortedSetRemoveAsync(ClaimedSetKey, operationId).ConfigureAwait(false);
             await _database.KeyDeleteAsync(GetClaimMetaKey(operationId)).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort; stale-claim reconciliation is the safety net.
             Log.ClaimRollbackFailed(logger, operationId, ex);
@@ -429,6 +429,7 @@ internal sealed partial class RedisJobQueue(
 
     private static DateTimeOffset? GetVisibleAfter(HashEntry[] meta)
     {
+        // codeql[cs/linq/missed-where] -- the predicate binds the parsed timestamp through an out variable.
         foreach (var entry in meta.Where(e => e.Name == "visibleAfter"))
         {
             if (long.TryParse(entry.Value.ToString(), out var ms))

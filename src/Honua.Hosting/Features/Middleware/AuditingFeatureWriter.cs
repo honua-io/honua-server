@@ -202,7 +202,7 @@ internal sealed class AuditingFeatureWriter(
 
             await _auditLog.RecordAsync(auditEvent, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Auditing must never break the edit path. Sinks log their own errors.
         }

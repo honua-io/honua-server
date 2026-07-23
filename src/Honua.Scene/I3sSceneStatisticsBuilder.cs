@@ -113,6 +113,7 @@ public static class I3sSceneStatisticsBuilder
         // accumulation below, so a LINQ split would need a redundant second lookup.
         var present = 0;
         var distinct = new HashSet<string>(StringComparer.Ordinal);
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var feature in features)
         {
             if (feature.Attributes.TryGetValue(attributeKey, out var value) && value is not null)

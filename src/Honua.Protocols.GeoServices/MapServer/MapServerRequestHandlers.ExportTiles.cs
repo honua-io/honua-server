@@ -295,7 +295,7 @@ internal static partial class MapServerEndpoints
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MapServerLog.ExportTilesFailed(logger, plan.ServiceId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer exportTiles failed.");
@@ -540,9 +540,8 @@ internal static partial class MapServerEndpoints
         var parsed = new SortedSet<int>();
         if (!string.IsNullOrWhiteSpace(levelsValue))
         {
-            foreach (var token in levelsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var rangeParts in (levelsValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).Select(token => token.Split('-', StringSplitOptions.TrimEntries)))
             {
-                var rangeParts = token.Split('-', StringSplitOptions.TrimEntries);
                 if (rangeParts.Length == 1)
                 {
                     if (!TryAddExportTilesLevel(rangeParts[0], limits, parsed, out error))

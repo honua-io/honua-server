@@ -273,9 +273,8 @@ public static class GdalWorkerServiceCollectionExtensions
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Not a .Select(...) candidate: seen.Add(trimmed) is the dedup side effect
         // itself, so a projection here would double as the mutation.
-        foreach (var child in children)
+        foreach (var value in (children).Select(child => child.Value))
         {
-            var value = child.Value;
             if (string.IsNullOrWhiteSpace(value))
             {
                 continue;

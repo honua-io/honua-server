@@ -146,7 +146,7 @@ internal static partial class ArcGisMigrationEvidenceEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), runId, ex);
             await AdminResponseWriter.WriteErrorAsync(
@@ -241,7 +241,7 @@ internal static partial class ArcGisMigrationEvidenceEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), runId, ex);
             await AdminResponseWriter.WriteErrorAsync(

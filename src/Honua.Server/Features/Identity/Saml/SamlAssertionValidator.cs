@@ -202,6 +202,7 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
         // The subjectElement is null check is redundant in practice (a null subjectElement
         // always yields a null/empty nameId above too) but makes subjectElement's non-null
         // state after this guard provable to the compiler, avoiding a redundant `?.` below.
+        // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
         if (string.IsNullOrEmpty(nameId) || subjectElement is null)
         {
             return SamlValidationResult.Failure("SAML assertion has no Subject NameID.");

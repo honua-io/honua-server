@@ -503,7 +503,7 @@ internal static partial class MapServerEndpoints
         // Intentionally generic: this is a top-level protocol request handler; any
         // unexpected failure (parsing bugs, provider errors, etc.) must map to a
         // generic 500 rather than crash the host or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             MapServerLog.ExportFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer export failed.");
@@ -1674,6 +1674,7 @@ internal static partial class MapServerEndpoints
         // Not rewritten as .Where(...): int.TryParse uses the Try-pattern (bool + out id),
         // so a LINQ equivalent would need an intermediate nullable projection that is
         // harder to read than the loop.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var part in idList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))

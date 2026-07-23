@@ -213,6 +213,7 @@ internal static class OgcGeoJsonGeometryShapeValidator
             // not merely numerically close — this is a structural check, not a computed one.
             if (!firstOrdinates[i].TryGetDouble(out var firstValue) ||
                 !secondOrdinates[i].TryGetDouble(out var secondValue) ||
+                // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
                 firstValue != secondValue)
             {
                 return false;

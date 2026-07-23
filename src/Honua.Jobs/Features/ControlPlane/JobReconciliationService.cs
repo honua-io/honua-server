@@ -53,7 +53,7 @@ internal sealed partial class JobReconciliationService(
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: a single failed sweep must not crash this background
                 // service; log and retry on the next sweep interval.
@@ -279,7 +279,7 @@ internal sealed partial class JobReconciliationService(
             {
                 await jobQueue.RemoveAsync(preFail.OperationId, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.QueueRemovalFailed(logger, preFail.OperationId, ex);
             }
@@ -290,7 +290,7 @@ internal sealed partial class JobReconciliationService(
                 {
                     await logStore.SetRetentionAsync(preFail.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.LogRetentionFailed(logger, preFail.OperationId, ex);
                 }
@@ -355,7 +355,7 @@ internal sealed partial class JobReconciliationService(
         {
             await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.QueueRemovalFailed(logger, current.OperationId, ex);
         }
@@ -366,7 +366,7 @@ internal sealed partial class JobReconciliationService(
             {
                 await logStore.SetRetentionAsync(current.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.LogRetentionFailed(logger, current.OperationId, ex);
             }
@@ -384,7 +384,7 @@ internal sealed partial class JobReconciliationService(
             {
                 await callback.OnTerminalAsync(job, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: one misbehaving terminal callback must not stop the
                 // remaining callbacks from running, and the job's own terminal transition
@@ -429,7 +429,7 @@ internal sealed partial class JobReconciliationService(
         {
             await jobQueue.RemoveAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.QueueRemovalFailed(logger, job.OperationId, ex);
         }
@@ -440,7 +440,7 @@ internal sealed partial class JobReconciliationService(
             {
                 await logStore.SetRetentionAsync(job.OperationId, LogRetention, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.LogRetentionFailed(logger, job.OperationId, ex);
             }

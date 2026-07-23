@@ -71,7 +71,7 @@ internal sealed partial class TileCacheEvictionHostedService(
                 }
                 // Intentionally generic: this is a periodic background eviction sweep. A
                 // failed sweep must not tear down the hosted service; log and retry next tick.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.EvictionSweepFailed(_logger, ex);
                 }

@@ -96,8 +96,9 @@ internal static class OgcOpenApiSpecUtilities
         if (_openApiCache.Count >= MaxCacheEntries)
         {
             // Remove one arbitrary entry rather than clearing the whole cache.
-            // Not rewritten as .Where(): this stops at the first successful TryRemove (a
-            // side-effecting removal), not a filter over the sequence.
+            // This stops at the first successful TryRemove (a side-effecting removal), not a
+            // filter over the sequence.
+            // codeql[cs/linq/missed-where] -- the predicate mutates the cache and the loop exits after the first success.
             foreach (var kvp in _openApiCache)
             {
                 if (_openApiCache.TryRemove(kvp))
@@ -119,8 +120,8 @@ internal static class OgcOpenApiSpecUtilities
         // steered by an absolute/rooted second argument here.
         var searchPaths = new[]
         {
-            Path.Combine(contentRootPath, openApiFileName),
-            Path.Combine(AppContext.BaseDirectory, openApiFileName)
+            Path.Join(contentRootPath, openApiFileName),
+            Path.Join(AppContext.BaseDirectory, openApiFileName)
         };
 
         foreach (var openApiPath in searchPaths.Distinct(StringComparer.OrdinalIgnoreCase))
