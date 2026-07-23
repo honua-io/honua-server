@@ -9,7 +9,7 @@ namespace Honua.Server.Startup;
 /// <summary>
 /// Static-asset wiring + endpoint filtering for the small hosted Blazor shells that ship
 /// inside the server (currently just the optional STAC ops demo at <c>/samples/stac-ops</c>).
-/// The in-tree admin UI was extracted to the sibling <c>honua-server-admin</c> repo and is
+/// The in-tree admin UI was replaced by the separate <c>honua-console</c> repository and is
 /// permanently blocked here so its leftover endpoint metadata cannot resurface.
 /// </summary>
 internal static class HostedBlazorAssetHelpers
@@ -51,7 +51,7 @@ internal static class HostedBlazorAssetHelpers
     {
         var blockedPrefixes = new List<string>(1);
         // Always block the `admin/` static-asset prefix — the in-tree Blazor admin UI
-        // moved to the sibling `honua-server-admin` repo and ships as a separately
+        // moved to the separate `honua-console` repo and ships as a separately
         // deployed static site.
         blockedPrefixes.Add("admin/");
 

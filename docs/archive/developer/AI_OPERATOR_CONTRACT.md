@@ -835,7 +835,7 @@ kinds). `SubmitPlanJob` creates durable job records with idempotency support
 and requires Redis-backed storage. `GetJob` and `CancelJob` are fully wired.
 
 The durable job orchestration substrate (#681,
-[ADR-0031](../contributor/adr/0031-durable-job-orchestration-substrate.md))
+[ADR-0031](../../internal/contributor/adr/0031-durable-job-orchestration-substrate.md))
 defines the execution contracts and infrastructure: atomic claim via
 `IJobQueue`, heartbeat liveness detection, configurable retry policies
 (exponential backoff by default), timeout enforcement with terminal failure

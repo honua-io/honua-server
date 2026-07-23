@@ -2,7 +2,10 @@
 
 ## Status
 
-Superseded for this repo. The Blazor Admin UI now lives in the separate `honua-server-admin` repository; `Honua.Server` only serves the `/api/v1/admin/*` backing API and does not host `/admin` static assets.
+Superseded. The active Admin and Studio UI lives in the separate `honua-console`
+repository; `honua-server-admin` is archived. `Honua.Server` only serves the
+backing APIs and does not host `/admin` static assets. The sections below retain
+the retired Blazor WASM design as historical decision context.
 
 ## Context
 
@@ -34,7 +37,9 @@ The Admin UI needs architectural decisions around:
 
 ### Hosting Model: Standalone
 
-The integrated hosting option has been removed from this repository. The Admin UI is built and deployed from `honua-server-admin`; this server exposes only the `/api/v1/admin/*` API surface and related auth endpoints.
+The integrated hosting option has been removed from this repository. The active
+UI is built and deployed from `honua-console`; this server exposes the backing
+Admin API and related authentication endpoints.
 
 ```text
 ┌─────────────────┐     ┌─────────────────┐

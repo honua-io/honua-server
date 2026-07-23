@@ -1,4 +1,4 @@
-# ADR-0054: Optional JWT access tokens + RFC 7662 introspection for the OAuth2 surface
+# ADR-0068: Optional JWT access tokens + RFC 7662 introspection for the OAuth2 surface
 
 ## Status
 
