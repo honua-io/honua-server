@@ -141,20 +141,21 @@ public sealed class ODataFeatureProviderResolverTests
     }
 
     [Fact]
-    public async Task ResolveReaderAsync_MissingRoutingMetadata_FailsClosed()
+    public async Task ResolveReaderAsync_MissingRoutingMetadata_UsesPrimaryPipeline()
     {
         var connectionId = Guid.NewGuid();
         var provider = Substitute.For<IFeatureDataProvider>();
         provider.ProviderName.Returns(DataProviderNames.SqlServer);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
         provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        var fallbackReader = Substitute.For<IFeatureReader>();
         var resolver = new ODataFeatureProviderResolver(
-            Substitute.For<IFeatureReader>(),
+            fallbackReader,
             Substitute.For<IFeatureWriter>(),
             CreateRouter(connectionId, provider));
         var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
 
-        var act = () => resolver.ResolveReaderAsync(
+        var resolved = await resolver.ResolveReaderAsync(
             snapshot,
             service,
             resource,
@@ -163,7 +164,59 @@ public sealed class ODataFeatureProviderResolverTests
             FeatureProviderReadOperation.Query,
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*routing metadata*");
+        resolved.Should().BeSameAs(fallbackReader);
+    }
+
+    [Fact]
+    public async Task ResolveQueryReaderAsync_LocalBindingWithoutConnection_UsesPrimaryPipeline()
+    {
+        var fallbackReader = Substitute.For<IFeatureReader>();
+        var resolver = new ODataFeatureProviderResolver(
+            fallbackReader,
+            Substitute.For<IFeatureWriter>(),
+            providerQueryRouter: null);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId: null);
+
+        var resolved = await resolver.ResolveQueryReaderAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            41,
+            requireCount: true,
+            CancellationToken.None);
+        var writeSupport = await resolver.CheckWriteSupportAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            41,
+            CancellationToken.None);
+
+        resolved.Should().BeSameAs(fallbackReader);
+        writeSupport.Supported.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ResolveReaderAsync_RoutedBindingWithoutRouter_FailsClosed()
+    {
+        var connectionId = Guid.NewGuid();
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IFeatureWriter>(),
+            providerQueryRouter: null);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var act = () => resolver.ResolveReaderAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            41,
+            FeatureProviderReadOperation.Query,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*routing is not configured*");
     }
 
     private static FeatureProviderQueryRouter CreateRouter(Guid connectionId, IFeatureDataProvider provider)
@@ -190,7 +243,7 @@ public sealed class ODataFeatureProviderResolverTests
     }
 
     private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
-        CreateSnapshot(string connectionId)
+        CreateSnapshot(string? connectionId)
     {
         var service = new MetadataV2Service
         {
@@ -223,11 +276,6 @@ public sealed class ODataFeatureProviderResolverTests
             Locator = "dbo.secondary",
             StorageLayerId = 41
         };
-        var connection = new MetadataV2Connection
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = connectionId, Name = "secondary" },
-            Provider = DataProviderNames.SqlServer
-        };
         var publication = new MetadataV2Publication
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-secondary", Name = "secondary" },
@@ -243,7 +291,16 @@ public sealed class ODataFeatureProviderResolverTests
             Services = [service],
             Resources = [resource],
             StorageBindings = [binding],
-            Connections = [connection],
+            Connections = connectionId is null
+                ? []
+                :
+                [
+                    new MetadataV2Connection
+                    {
+                        Metadata = new MetadataV2ObjectMetadata { Id = connectionId, Name = "secondary" },
+                        Provider = DataProviderNames.SqlServer
+                    }
+                ],
             Publications = [publication]
         };
         return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);

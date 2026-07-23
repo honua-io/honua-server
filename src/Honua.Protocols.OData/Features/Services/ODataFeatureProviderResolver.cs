@@ -30,7 +30,12 @@ internal sealed class ODataFeatureProviderResolver(
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        var router = RequireRoutingMetadata(service, publication);
+        if (!RequiresProviderRouting(snapshot, publication))
+        {
+            return _fallbackReader;
+        }
+
+        var router = RequireProviderRouter(service, publication);
 
         return await router.ResolveReaderAsync(
             snapshot,
@@ -51,7 +56,12 @@ internal sealed class ODataFeatureProviderResolver(
         bool requireCount,
         CancellationToken cancellationToken)
     {
-        var router = RequireRoutingMetadata(service, publication);
+        if (!RequiresProviderRouting(snapshot, publication))
+        {
+            return _fallbackReader;
+        }
+
+        var router = RequireProviderRouter(service, publication);
         var binding = await router.ResolveBindingAsync(
             snapshot,
             service!,
@@ -80,7 +90,12 @@ internal sealed class ODataFeatureProviderResolver(
         int storageLayerId,
         CancellationToken cancellationToken)
     {
-        var router = RequireRoutingMetadata(service, publication);
+        if (!RequiresProviderRouting(snapshot, publication))
+        {
+            return (true, null);
+        }
+
+        var router = RequireProviderRouter(service, publication);
         var binding = await router.ResolveBindingAsync(
             snapshot,
             service!,
@@ -100,7 +115,25 @@ internal sealed class ODataFeatureProviderResolver(
             : (false, "OData writes through secondary data providers are not supported.");
     }
 
-    private FeatureProviderQueryRouter RequireRoutingMetadata(
+    private static bool RequiresProviderRouting(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication? publication)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (publication is null || string.IsNullOrWhiteSpace(publication.StorageBindingId))
+        {
+            return false;
+        }
+
+        // A publication with an explicit but invalid binding must still fail closed in the
+        // router. Bindings without a connection describe the built-in provider's legacy
+        // layer-id partition and must keep using the primary reader/writer pipeline.
+        return !snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var binding)
+            || !string.IsNullOrWhiteSpace(binding.ConnectionId);
+    }
+
+    private FeatureProviderQueryRouter RequireProviderRouter(
         MetadataV2Service? service,
         MetadataV2Publication? publication)
     {
@@ -109,7 +142,7 @@ internal sealed class ODataFeatureProviderResolver(
             throw new InvalidOperationException("Feature provider routing is not configured.");
         }
 
-        if (service is null || publication is null || string.IsNullOrWhiteSpace(publication.StorageBindingId))
+        if (service is null || publication is null)
         {
             throw new InvalidOperationException(
                 "The authorized OData publication does not contain complete provider routing metadata.");
