@@ -658,6 +658,45 @@ public class OidcAuthenticationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/version")]
+    public async Task AdminEndpoint_MtlsCapabilityDisabled_ValidBearerToken_ReturnsCleanOk()
+    {
+        // honua-server#2958: native mTLS/client-certificate authentication is demoted to
+        // experimental and gated behind Capabilities:Experimental:security.mtls:Enabled
+        // (default off). Even when an operator has configured
+        // Authentication:ClientCertificates:Mode (here RequiredForAdmin, which — before
+        // #2958 — made the always-on cert-RBAC layer interpose on every admin request
+        // regardless of bearer-token validity) but has NOT opted into the experimental
+        // capability, the client-certificate scheme/policy-scheme entry/enforcement
+        // middleware must not be registered at all, so a valid bearer-token admin request
+        // is authenticated by the bearer scheme alone with a clean 200 — no interposed
+        // cert-RBAC 403 (the concrete failure #2945's OIDC hardening work surfaced).
+        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
+        {
+            // The ambient "Test" environment (appsettings.Test.json) turns every
+            // experimental capability on by default; override the global switch back off
+            // so this test exercises the production default posture.
+            ["Capabilities:Experimental:Enabled"] = "false",
+            ["Authentication:ClientCertificates:Mode"] = "RequiredForAdmin",
+            ["Authentication:ClientCertificates:EnvironmentId"] = "prod",
+        });
+        using var factory = CreateOidcTestFactory(oidcSettings: settings);
+        using var client = factory.CreateClient();
+        var token = GenerateTestJwtToken(roles: ["admin"]);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
+        request.Headers.Add("Authorization", $"Bearer {token}");
+        var response = await client.SendAsync(request);
+
+        if (response.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            _output.WriteLine($"Unexpected status {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+        }
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/version")]
     public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled()
     {
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>

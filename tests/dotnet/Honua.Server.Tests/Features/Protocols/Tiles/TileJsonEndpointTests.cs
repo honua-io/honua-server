@@ -72,7 +72,32 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
 
+        // honua-server#2945: /tiles is not an Esri protocol surface, so a real HTTP 404
+        // + problem+json body is expected here (AssertGeoServicesErrorAsync tolerates a
+        // genuine >=400 status, so this also documents the exact shape below).
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         await response.AssertGeoServicesErrorAsync(404);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    public async Task GetTileJson_NonExistentLayer_ReturnsRealNotFoundWithProblemJson()
+    {
+        // Regression test for honua-server#2945: unknown layer must be a real HTTP 404
+        // with an RFC 7807 problem+json body, not a 200-wrapped GeoServices error.
+        var response = await _fixture.Client.GetAsync("/tiles/999999/tile.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonDocument.Parse(content).RootElement;
+
+        problem.GetProperty("title").GetString().Should().Be("Not Found");
+        problem.GetProperty("status").GetInt32().Should().Be(404);
+        problem.GetProperty("detail").GetString().Should().Contain("999999");
     }
 
     [IntegrationTest]

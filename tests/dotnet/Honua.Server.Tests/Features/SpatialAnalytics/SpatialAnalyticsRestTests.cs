@@ -860,6 +860,79 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryDensity)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
+    public async Task QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints()
+    {
+        // Regression for honua-server#2945: prior density tests only asserted
+        // featureCount > 0 per cell, never a real cell-count against known geometry.
+        // Layer 0 has 5 seeded features (tests/seed/server.yaml); objectid 3 has a NULL
+        // geometry and is excluded by the density query's "geometry IS NOT NULL" filter,
+        // leaving 4 points: (-122.5,37.5) (-122.7,37.7) (-121.9,37.3) (-122.3,37.8).
+        // Projected to Web Mercator (EPSG:3857) and binned into a 20km ST_SquareGrid
+        // anchored at the fixed (0,0) origin PostGIS grid functions always use, each
+        // point falls in column/row (-682,225) (-683,226) (-679,224) (-681,227) — four
+        // distinct cells, each thousands of meters from its cell boundary (no
+        // floating-point edge risk), so exactly 4 cells of featureCount=1 are expected.
+        var payload = JsonSerializer.Serialize(new
+        {
+            mode = "square",
+            cellSize = 20000,
+            f = "json"
+        });
+
+        using var densityContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
+            densityContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var features = doc.RootElement.GetProperty("features");
+
+        features.GetArrayLength().Should().Be(4, "the 4 geometried seeded points each land in a distinct 20km grid cell");
+
+        foreach (var feature in features.EnumerateArray())
+        {
+            feature.GetProperty("properties").GetProperty("featureCount").GetInt64().Should().Be(1);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDensity)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
+    public async Task QueryDensity_HexGrid_TotalFeatureCountMatchesSeededPointCount()
+    {
+        // Hex-cell boundaries are non-trivial to hand-compute, but the total feature
+        // count summed across all returned cells must still equal exactly the number
+        // of geometried seeded points (4; objectid 3 has a NULL geometry and is excluded).
+        var payload = JsonSerializer.Serialize(new
+        {
+            mode = "hex",
+            cellSize = 20000,
+            f = "json"
+        });
+
+        using var densityContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDensity",
+            densityContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var features = doc.RootElement.GetProperty("features");
+
+        var totalFeatureCount = features.EnumerateArray()
+            .Sum(feature => feature.GetProperty("properties").GetProperty("featureCount").GetInt64());
+
+        totalFeatureCount.Should().Be(4);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDensity)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
     public async Task QueryDensity_MissingCellSize_ReturnsBadRequest()
     {
         var payload = JsonSerializer.Serialize(new

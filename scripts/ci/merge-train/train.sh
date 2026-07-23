@@ -11,7 +11,8 @@ HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Phases (also the resume points written to the state issue before each
 # side-effecting step):
 #   select -> assemble -> smart-ci -> [forward-fix] -> [pre-existing-filter] ->
-#   [classify-flake] -> [autofix (Bedrock fix-agent + surgical re-verify)] ->
+#   [classify-timeout -> classify-flake] ->
+#   [autofix (Bedrock fix-agent + surgical re-verify)] ->
 #   [attribute -> rebuild | escalate] -> land -> done
 #
 # Roll-forward auto-fix loop (autonomous): the ci-gate eval no longer dead-ends a
@@ -42,6 +43,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/smart-ci.sh"
 # shellcheck source=forward-fix.sh
 . "${TRAIN_DIR}/forward-fix.sh"
+# shellcheck source=classify-timeout.sh
+. "${TRAIN_DIR}/classify-timeout.sh"
 # shellcheck source=classify-flake.sh
 . "${TRAIN_DIR}/classify-flake.sh"
 # shellcheck source=surgical.sh
@@ -56,6 +59,8 @@ TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${TRAIN_DIR}/land.sh"
 # shellcheck source=state.sh
 . "${TRAIN_DIR}/state.sh"
+# shellcheck source=resume-retry.sh
+. "${TRAIN_DIR}/resume-retry.sh"
 
 train_require git jq gh || { train_err "missing prerequisites"; exit 2; }
 
@@ -151,7 +156,38 @@ train_run_batch_ci() {
       return 0
     fi
   fi
+
   train_smart_ci_run "${batch}"
+}
+
+# Restore the branch and scratch paths after an attribution probe.
+_train_restore_attribute_probe_state() {
+  local probe_inc="$1" probe_skp="$2" probe_run="$3" anchor_batch="$4"
+  local prev_batch="$5" prev_included="$6" prev_skipped="$7" prev_run_id="$8"
+
+  rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
+  git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
+  TRAIN_BATCH_BRANCH="${prev_batch}"
+  TRAIN_INCLUDED_FILE="${prev_included}"
+  TRAIN_SKIPPED_FILE="${prev_skipped}"
+  TRAIN_RUN_ID_FILE="${prev_run_id}"
+}
+
+# train_reset_rerun_state_for_fresh_run: every newly dispatched Actions run has
+# its own timeout retry budget and two-phase request identity. Resume paths do
+# not call this helper, so a restart of the same run preserves both.
+train_reset_rerun_state_for_fresh_run() {
+  timeout_reruns=0
+  TRAIN_RERUN_KIND=""
+  TRAIN_RERUN_BASE_ATTEMPT=""
+  export TRAIN_RERUN_KIND TRAIN_RERUN_BASE_ATTEMPT
+  : >"${TRAIN_RUN_ID_FILE}"
+}
+
+# A failed fresh dispatch is classifiable only when that dispatch wrote its own
+# Actions run id. An empty/non-numeric id can never fall back to a previous run.
+train_failure_has_current_run_id() {
+  [[ "$1" != "FAILURE" || "$2" =~ ^[0-9]+$ ]]
 }
 
 # train_attribute_probe_gate <comma-separated-prs> <trunk-sha7> <anchor-batch>:
@@ -192,25 +228,25 @@ train_attribute_probe_gate() {
 
   local probe_batch
   if ! probe_batch="$(train_assemble "${trunk_sha7}" "${probe_prs[@]}" )"; then
-    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
-    git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
-    TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+    _train_restore_attribute_probe_state \
+      "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
+      "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
     echo "NO_RUN"
     return 0
   fi
   include_count="$(cut -f1 "${probe_inc}" | sed '/^$/d' | wc -l | tr -d ' ')"
   if [[ "${include_count}" -eq 0 ]]; then
-    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
-    git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
-    TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+    _train_restore_attribute_probe_state \
+      "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
+      "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
     echo "NO_RUN"
     return 0
   fi
 
   gate="$(train_run_batch_ci "${probe_batch}")"
-  rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
-  git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
-  TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+  _train_restore_attribute_probe_state \
+    "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
+    "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
   echo "${gate:-FAILURE}"
 }
 
@@ -275,9 +311,85 @@ train_refine_attribute_candidates() {
 
   printf '%s\n' "${queue[@]}" | sort -u
 }
+
+# train_recover_terminal_batch: finish known terminal cleanup transactions after
+# a controller crashed before releasing the batch. Required label mutations
+# precede active-state clear, so any crash remains safely retryable. Every other
+# nonempty active phase fails closed rather than being overwritten by selection.
+# Returns 0=recovered, 1=no terminal recovery, 2=unknown/malformed/cleanup failure.
+train_recover_terminal_batch() {
+  local state phase branch trunk included included_count total last body pr reason escalate=1 state_rc=0
+  state="$(train_state_read 2>/dev/null)" || state_rc=$?
+  [[ "${state_rc}" == "0" ]] || return 2
+  [[ -n "${state}" ]] || return 1
+  jq -e . >/dev/null 2>&1 <<<"${state}" || return 2
+  phase="$(jq -r '.active_batch.phase // empty' <<<"${state}")"
+  branch="$(jq -r '.active_batch.branch // empty' <<<"${state}")"
+  included_count="$(jq -r '(.active_batch.included // []) | length' <<<"${state}" 2>/dev/null)" || return 2
+  if [[ -z "${branch}" && "${included_count}" == "0" ]]; then
+    # An empty "assemble" phase can only be the pre-assembly write (state is
+    # persisted BEFORE train_assemble runs, with no branch/included yet, purely
+    # local git ops with no GitHub side effects). A crash anywhere in that
+    # window — including "every selected PR conflicted" — leaves exactly this
+    # signature and has produced zero label/state mutations to undo, so it is
+    # always safe to treat as no-terminal-recovery-needed and let selection run.
+    case "${phase}" in select|done|assemble|"") return 1 ;; *) return 2 ;; esac
+  fi
+  case "${phase}" in
+    timeout-retry-rejected|flake-retry-rejected)
+      reason="Actions definitively rejected the failed-job rerun request; manual CI correction required"
+      ;;
+    ci-incomplete)
+      reason="Batch CI evidence was incomplete or unusable; fresh explicit validation is required"
+      ;;
+    rerun-command-failed)
+      reason="Failed-job rerun command failed before safe completion; manual CI correction required"
+      ;;
+    trunk-moved-reassemble)
+      reason="Trunk moved before FF-CAS landing; release members for fresh reassembly"
+      escalate=0
+      ;;
+    timeout-retry-requesting|timeout-retry-accepted|timeout-retry-intent|\
+    flake-retry-requesting|flake-retry-accepted|flake-retry-intent)
+      return 1
+      ;;
+    *) return 2 ;;
+  esac
+  jq -e '.active_batch.branch | type == "string" and startswith("train/batch/")' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.trunk_base | type == "string" and test("^[0-9a-fA-F]{40}$")' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.run_id == null or
+    ((.active_batch.run_id | type) == "number" and (.active_batch.run_id | floor) == .active_batch.run_id and .active_batch.run_id > 0)' >/dev/null <<<"${state}" || return 2
+  jq -e '.active_batch.included | type == "array" and length > 0
+    and all(.[]; type == "number" and floor == .) and (unique | length) == length' >/dev/null <<<"${state}" || return 2
+  jq -e '(.active_batch.timeout_reruns_total // 0) as $t
+    | ($t | type) == "number" and $t >= 0 and ($t | floor) == $t' >/dev/null <<<"${state}" || return 2
+  jq -e '.last_landed_trunk == null or
+    ((.last_landed_trunk | type) == "string" and (.last_landed_trunk | test("^[0-9a-fA-F]{40}$")))' >/dev/null <<<"${state}" || return 2
+
+  trunk="$(jq -r '.active_batch.trunk_base' <<<"${state}")"
+  included="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${state}")"
+  total="$(jq -r '.active_batch.timeout_reruns_total // 0' <<<"${state}")"
+  last="$(jq -r '.last_landed_trunk // "null"' <<<"${state}")"
+  body="$(mktemp)"
+  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" \
+    '[]' '' 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
+  for pr in $(tr ',' ' ' <<<"${included}"); do
+    if [[ "${escalate}" == "1" ]]; then
+      train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}" || { rm -f "${body}"; return 2; }
+    fi
+    train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}" || { rm -f "${body}"; return 2; }
+    train_decision "TERMINAL RECOVERY #${pr}: ${reason}"
+  done
+
+  train_state_write "${body}" || { rm -f "${body}"; return 2; }
+  rm -f "${body}"
+  train_notice "completed terminal ${phase} cleanup for batch members ${included}"
+}
 main() {
+  train_init_controller_deadline || { train_err "invalid controller polling budget"; return 2; }
   train_log "mode: $(_train_mode_label) MAX_BATCH=${MAX_BATCH} run=${TRAIN_RUN_TIMESTAMP}"
 
+  local resume_state="" resume_rc=1 resumed=0 rejected_rc=1
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
     local post_land_rc=1
     if train_restore_post_land; then post_land_rc=0; else post_land_rc=$?; fi
@@ -302,7 +414,33 @@ main() {
       train_err "durable state lookup failed; refusing selection or state overwrite"
       return 1
     fi
+
+    train_recover_terminal_batch || rejected_rc=$?
+    if [[ "${rejected_rc}" == "2" ]]; then
+      train_err "active merge-train state is unknown, malformed, or incompletely recovered; failing closed before selection"
+      return 1
+    fi
+    if resume_state="$(train_restore_retry_intent)"; then resume_rc=0; else resume_rc=$?; fi
+    if [[ "${resume_rc}" == "0" ]]; then
+      resumed=1
+      train_notice "restoring interrupted failed-job rerun before selection; no new batch or rerun will be dispatched"
+    elif [[ "${resume_rc}" == "2" ]]; then
+      train_err "persisted retry intent does not match its Actions run/batch; failing closed"
+      return 1
+    elif [[ "${resume_rc}" == "3" ]]; then
+      train_warn "accepted failed-job rerun is still pending at the controller deadline; preserving retry intent for the next controller"
+      return 1
+    elif [[ "${resume_rc}" == "4" ]]; then
+      train_warn "failed-job rerun remains in recoverable requesting state; preserving it for the next controller"
+      return 1
+    fi
   fi
+
+  # Offline fixture seam: proves startup selects the production resume path
+  # before selection/assembly without executing the remainder of a live land.
+  [[ "${resumed}" == "1" && "${TRAIN_RESUME_STARTUP_TEST_ONLY:-0}" == "1" ]] && return 0
+
+  if [[ "${resumed}" != "1" ]]; then
 
   # --- select ----------------------------------------------------------------
   train_group select "pick ready PRs (oldest-first, capped at ${MAX_BATCH})"
@@ -363,6 +501,7 @@ main() {
 
   if [[ -z "${included}" ]]; then
     train_annotate_warn "no PRs assembled cleanly; nothing to land"
+    _write_state "" "${trunk_sha}" "" "select" "" 0 0
     _emit_metrics "nothing-ready" "${trunk_sha}" "" ""
     _dashboard "${batch}" "${selected}" "${trunk_sha}" "" "all candidates skipped on conflict — nothing to land"
     return 0
@@ -381,14 +520,43 @@ main() {
   # landing the exact batch bytes.
   train_group smart-ci "compute shard subset for the batch's cumulative diff"
   train_step_begin smart-ci
-  local shard_descriptor gate fwdfix=0 flake_reruns=0
+  local shard_descriptor gate fwdfix=0 flake_reruns=0 timeout_reruns=0 timeout_reruns_total=0
   train_metric_set direct_merge 0
   shard_descriptor="$(train_smart_ci_shards "${batch}")"
   train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
   train_decision "smart-CI shard subset: ${shard_descriptor}"
+  train_reset_rerun_state_for_fresh_run
+  _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
   gate="$(train_run_batch_ci "${batch}")"
   train_step_end smart-ci >/dev/null
   train_endgroup
+
+  else
+    # Restore the existing batch directly into the common CI-gate loop. The
+    # startup helper already waited for attempt > baseline and validated the
+    # Actions run, batch branch, and trunk CAS base.
+    local batch trunk_sha trunk_sha7 included selected skipped="" shard_descriptor gate fwdfix flake_reruns timeout_reruns timeout_reruns_total
+    batch="$(jq -r '.active_batch.branch' <<<"${resume_state}")"
+    trunk_sha="$(jq -r '.active_batch.trunk_base' <<<"${resume_state}")"
+    trunk_sha7="${trunk_sha:0:7}"
+    jq -r '.active_batch.run_id' <<<"${resume_state}" >"${TRAIN_RUN_ID_FILE}"
+    included="$(jq -r '.active_batch.included | map(tostring) | join(",")' <<<"${resume_state}")"
+    fwdfix="$(jq -r '.active_batch.fwdfix_attempts // 0' <<<"${resume_state}")"
+    flake_reruns="$(jq -r '.active_batch.flake_reruns // 0' <<<"${resume_state}")"
+    timeout_reruns="$(jq -r '.active_batch.timeout_reruns // 0' <<<"${resume_state}")"
+    timeout_reruns_total="$(jq -r '.active_batch.timeout_reruns_total // .active_batch.timeout_reruns // 0' <<<"${resume_state}")"
+    gate="$(jq -r '.resume_gate' <<<"${resume_state}")"
+    shard_descriptor="$(jq -c '.resume_shard_descriptor' <<<"${resume_state}")"
+    selected="$(jq -c '.resume_selected' <<<"${resume_state}")"
+    [[ -s "${TRAIN_INCLUDED_FILE}" \
+      && "$(jq 'length' <<<"${selected}")" == "$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | wc -l | tr -d ' ')" ]] || {
+      train_err "resumed batch member snapshot is incomplete; failing closed"
+      return 1
+    }
+    train_metric_set included "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+    train_metric_set flake_reruns "${flake_reruns}"
+    train_metric_set timeout_reruns "${timeout_reruns_total}"
+  fi
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_log "dry-run: stopping before CI gate evaluation/land (no pushes happened)"
@@ -400,13 +568,20 @@ main() {
 
   # Live-mode gate handling. Roll-forward pipeline (each step independently
   # valuable, evaluated in this order):
-  #   forward-fix(format) -> PRE-EXISTING FILTER -> classify-flake ->
+  #   forward-fix(format) -> PRE-EXISTING FILTER -> classify-timeout -> classify-flake ->
   #   [AUTOFIX (Bedrock fix-agent + surgical re-verify)] -> attribute/escalate.
   train_group ci-gate "evaluate CI Gate; forward-fix / pre-existing filter / flake / autofix / attribute"
   train_step_begin ci-gate
   local autofix_attempts=0
   while [[ "${gate}" != "SUCCESS" ]]; do
     local run_id; run_id="$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null || echo "")"
+    if ! train_failure_has_current_run_id "${gate}" "${run_id}"; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "ci-incomplete" "" "${fwdfix}" "${flake_reruns}"
+      train_annotate_warn "fresh batch CI failed before publishing a new run id; refusing stale-run classification"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-incomplete" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
 
     # Only an ordinary FAILURE has actionable failed jobs. A cancelled,
     # missing, timed-out, stale, neutral, or otherwise incomplete gate must
@@ -458,6 +633,8 @@ main() {
         fwdfix=$((fwdfix + 1))
         train_metric_set forward_fixes "${fwdfix}"
         train_decision "forward-fix #${fwdfix} applied (dotnet format); re-running CI"
+        train_reset_rerun_state_for_fresh_run
+        _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
         gate="$(train_run_batch_ci "${batch}")"
         continue
       fi
@@ -481,30 +658,72 @@ main() {
     # From here on, evaluate only the BATCH-INTRODUCED failing jobs.
     failing="${introduced}"
 
-    # --- classify-flake (on the batch-introduced failures) -------------------
-    _write_state "${batch}" "${trunk_sha}" "${included}" "classify-flake" "${run_id}" "${fwdfix}" "${flake_reruns}"
-    local rc_cf=0
-    train_classify_flake "${run_id}" "${flake_reruns}" || rc_cf=$?
-    if [[ "${rc_cf}" == "0" ]]; then
-      flake_reruns=$((flake_reruns + 1))
-      train_metric_set flake_reruns "${flake_reruns}"
-      train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
-      # Re-poll the same run after rerun.
-      while :; do
-        local st; st="$(gh run view "${run_id}" --json status --jq '.status' 2>/dev/null || echo "")"
-        [[ "${st}" == "completed" ]] && break; sleep 30
-      done
-      gate="$(gh run view "${run_id}" --json jobs \
-        --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+    # --- timeout retry (on batch-introduced failures) ------------------------
+    # Timeout/exit-124 failures get one failed-job-only rerun. A second timeout
+    # is real and deliberately bypasses known-flake merge-through.
+    _write_state "${batch}" "${trunk_sha}" "${included}" "classify-timeout" "${run_id}" "${fwdfix}" "${flake_reruns}"
+    local rc_retry=0
+    train_classify_retry_candidate "${run_id}" "${timeout_reruns}" "${flake_reruns}" "${failing}" _persist_retry_intent || rc_retry=$?
+    if [[ "${rc_retry}" == "3" ]]; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "rerun-command-failed" "${run_id}" "${fwdfix}" "${flake_reruns}"
+      train_annotate_warn "failed-job rerun command failed; stopping without landing or attribution"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-failed" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
+    if [[ "${rc_retry}" == "4" ]]; then
+      train_annotate_warn "failed-job rerun request remains in recoverable requesting state; stopping without overwriting it"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-requesting" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
+    if [[ "${rc_retry}" == "6" ]]; then
+      train_annotate_warn "Actions rejected the rerun but terminal state persistence failed; stopping without cleanup or state overwrite"
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-rejection-persist-failed" "${trunk_sha}" "" "${shard_descriptor}"
+      return 1
+    fi
+    if [[ "${rc_retry}" == "5" ]]; then
+      train_annotate_warn "Actions definitively rejected the failed-job rerun; escalating this batch and clearing it so the queue can progress"
+      train_metric_inc escalated "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+      train_escalate_batch "${included}" "Actions definitively rejected the failed-job rerun request; manual CI correction required"
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
+      train_step_end ci-gate >/dev/null; train_endgroup
+      _emit_metrics "ci-rerun-rejected" "${trunk_sha}" "" "${shard_descriptor}"
+      return 0
+    fi
+    if [[ "${rc_retry}" == "0" ]]; then
+      if [[ "${TRAIN_RETRY_KIND}" == "timeout" ]]; then
+        train_decision "timeout/exit-124 signature matched; failed-job retry #${timeout_reruns}"
+      else
+        train_decision "flake signature matched; rerun #${flake_reruns} of failed jobs"
+      fi
+      # The same run id still exposes the old completed attempt briefly. Accept
+      # retry evidence only after its attempt strictly increases and completes.
+      if train_wait_for_new_run_attempt "${run_id}" "${TRAIN_RERUN_BASE_ATTEMPT}"; then
+        gate="$(gh run view "${run_id}" --json jobs \
+          --jq '[.jobs[] | select(.name=="CI Gate")][0].conclusion // "missing"' | tr '[:lower:]' '[:upper:]')"
+      else
+        # The rerun command was accepted and its intent is already durable.
+        # Never replace that resumable state with ci-incomplete merely because
+        # this controller's shared deadline expired while the attempt remained
+        # queued/running; the next controller must consume the same attempt.
+        train_annotate_warn "accepted failed-job rerun remains pending at the controller deadline; preserving retry intent for restart"
+        train_step_end ci-gate >/dev/null; train_endgroup
+        _emit_metrics "ci-rerun-pending" "${trunk_sha}" "" "${shard_descriptor}"
+        _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
+          "STOPPED: accepted failed-job rerun still pending; retry intent preserved for next controller"
+        return 1
+      fi
       continue
-    elif [[ "${rc_cf}" == "2" ]]; then
+    elif [[ "${rc_retry}" == "2" ]]; then
       # Recognized flake persisted across the rerun => consistent environmental
       # failure (e.g. the schema-setup race). Merge through: land the batch.
       train_metric_set flake_mergethrough 1
       train_notice "recognized environmental flake persisted across rerun; MERGING THROUGH — landing the batch (optimistic model)"
       gate="SUCCESS"; continue
     fi
-    # rc_cf == 1 => a real, non-flake failure: fall through to autofix/attribute.
+    # rc_retry == 1 => a real failure, including any persistent timeout.
 
     # --- (4) ROLL-FORWARD AI FIX-AGENT (capstone; gated TRAIN_AUTOFIX) -------
     # A REAL, batch-introduced, non-flake failure. With autofix enabled, ask the
@@ -529,18 +748,29 @@ main() {
         # full smart-CI is exactly the waste we're avoiding. If the fix
         # incidentally broke a previously-passing test, the optimistic model
         # catches it on trunk's next batch (accept-some-failure for throughput).
-        if [[ -n "$(printf '%s' "${fqns}" | sed '/^$/d')" ]] && train_surgical_rerun "${run_id}" "${fqns}"; then
-          train_metric_set autofix_fixes "$(( $(train_metric_get autofix_fixes 0) + 1 ))"
-          train_notice "autofix verified by surgical rerun of the failed tests; landing the batch (no full re-run)"
-          gate="SUCCESS"
-          continue
-        else
-          # Fix didn't hold: loop back to retry autofix against the SAME failed
-          # tests (gate is still non-SUCCESS) up to the cap, then escalate — still
-          # NO wasteful full re-run. The surgical rerun is the only re-check.
-          train_warn "autofix commit did not pass surgical re-verify; retrying autofix (no full re-run) up to the cap"
-          continue
-        fi
+        local verification_rc=0
+        train_autofix_verification_action "${run_id}" "${fqns}" || verification_rc=$?
+        case "${verification_rc}" in
+          0)
+            train_metric_set autofix_fixes "$(( $(train_metric_get autofix_fixes 0) + 1 ))"
+            train_notice "autofix verified by surgical rerun of the failed tests; landing the batch (no full re-run)"
+            gate="SUCCESS"
+            continue
+            ;;
+          1)
+            # Fix didn't hold: loop back to retry autofix against the SAME failed
+            # tests (gate is still non-SUCCESS) up to the cap, then escalate — still
+            # NO wasteful full re-run. The surgical rerun is the only re-check.
+            train_warn "autofix commit did not pass surgical re-verify; retrying autofix (no full re-run) up to the cap"
+            continue
+            ;;
+          2)
+            train_warn "autofix produced a commit but no failed test names were available for surgical re-verify; escalating"
+            ;;
+          *)
+            train_warn "autofix surgical verification returned an unexpected status; escalating"
+            ;;
+        esac
       fi
       # autofix declined / produced no commit / cap reached => escalate below.
       train_warn "autofix did not produce a landable fix; escalating as genuinely-hard"
@@ -602,10 +832,12 @@ main() {
       return 0
     fi
     included="${remaining}"
+    train_reset_rerun_state_for_fresh_run
     _write_state "" "${trunk_sha}" "${included}" "assemble" "" "${fwdfix}" "${flake_reruns}"
     # shellcheck disable=SC2086
     batch="$(train_assemble "${trunk_sha7}" $(tr ',' ' ' <<<"${included}"))"
     included="$(cut -f1 "${TRAIN_INCLUDED_FILE}" | tr '\n' ',' | sed 's/,$//')"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
     gate="$(train_run_batch_ci "${batch}")"
   done
   train_step_end ci-gate >/dev/null
@@ -624,6 +856,24 @@ main() {
       _write_state "" "${trunk_sha}" "" "select" "" 0 0
     fi
     train_annotate_warn "land deferred: trunk moved; the next scheduled run re-assembles"
+    # train_land's rc=10 is returned strictly BEFORE any push/merge (CAS
+    # precondition miss, or a rejected FF push) — zero side effects have
+    # happened yet, so it's safe to persist the recoverable phase immediately
+    # using the already-known (stale) trunk_sha. Do this BEFORE the refetch
+    # below: that fetch/rev-parse is only for an accurate informational trunk
+    # value and is itself fallible, and if it fails or the controller is
+    # cancelled here, state must already be at the recoverable
+    # "trunk-moved-reassemble" phase rather than stuck at "land" (which fails
+    # closed on restart).
+    _write_state "${batch}" "${trunk_sha}" "${included}" "trunk-moved-reassemble" "$(cat "${TRAIN_RUN_ID_FILE}" 2>/dev/null)" "${fwdfix}" "${flake_reruns}"
+    local moved_trunk="${trunk_sha}"
+    if git -C "${TRAIN_REPO_ROOT}" fetch --quiet "${TRAIN_REMOTE}" "${TRAIN_BASE_BRANCH}"; then
+      moved_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}" 2>/dev/null || echo "${trunk_sha}")"
+    fi
+    for pr in $(tr ',' ' ' <<<"${included}"); do
+      train_side_effect gh pr edit "${pr}" --remove-label "${TRAIN_LABEL_LANDING}"
+    done
+    _write_state "" "${moved_trunk}" "" "select" "" 0 0
     train_step_end land >/dev/null; train_endgroup
     _emit_metrics "trunk-moved-reassemble" "${trunk_sha}" "" "${shard_descriptor}"
     _dashboard "${batch}" "${selected}" "${trunk_sha}" "${shard_descriptor}" \
@@ -672,8 +922,31 @@ _write_state() {
     heads="$(jq -Rn '[inputs | split("\t") | {number:(.[0]|tonumber),head:.[1]}]' <"${TRAIN_INCLUDED_FILE}")"
     batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "$1" 2>/dev/null || echo '')"
   fi
-  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${heads}" "${batch_sha}" >"${body}"
+  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" \
+    "${heads}" "${batch_sha}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" \
+    "${TRAIN_RERUN_BASE_ATTEMPT:-null}" "${timeout_reruns_total:-0}" >"${body}"
   train_state_write "${body}"
+}
+
+# Persist two-phase rerun state around the Actions side effect. `rejected` is a
+# terminal, proven API response; unlike ambiguous `requesting`, startup does not
+# resume it as an in-flight side effect.
+_persist_retry_intent() {
+  local kind="$1" next_count="$2" base_attempt="$3" run_id="$4" request_phase="${5:-requesting}"
+  TRAIN_RERUN_KIND="${kind}"
+  TRAIN_RERUN_BASE_ATTEMPT="${base_attempt}"
+  if [[ "${kind}" == "timeout" ]]; then
+    timeout_reruns="${next_count}"
+    if [[ "${request_phase}" == "accepted" ]]; then
+      timeout_reruns_total=$(( ${timeout_reruns_total:-0} + 1 ))
+      train_metric_set timeout_reruns "${timeout_reruns_total}"
+    fi
+    _write_state "${batch}" "${trunk_sha}" "${included}" "timeout-retry-${request_phase}" "${run_id}" "${fwdfix}" "${flake_reruns}"
+  else
+    flake_reruns="${next_count}"
+    train_metric_set flake_reruns "${flake_reruns}"
+    _write_state "${batch}" "${trunk_sha}" "${included}" "flake-retry-${request_phase}" "${run_id}" "${fwdfix}" "${flake_reruns}"
+  fi
 }
 
 # _pr_decision <pr>: classify a candidate PR's outcome for the dashboard table.
@@ -772,6 +1045,7 @@ _dashboard() {
   train_summary "| Forward-fixes applied | $(train_metric_get forward_fixes 0) |"
   train_summary "| Pre-existing-only passes | $(train_metric_get preexisting_passes 0) |"
   train_summary "| Flake reruns | $(train_metric_get flake_reruns 0) |"
+  train_summary "| Timeout reruns | $(train_metric_get timeout_reruns 0) |"
   train_summary "| Autofix attempts | $(train_metric_get autofix_attempts 0) |"
   train_summary "| Autofix fixes landed | $(train_metric_get autofix_fixes 0) |"
   train_summary "| Attribution drops | $(train_metric_get attribution_drops 0) |"
@@ -796,4 +1070,6 @@ _dashboard() {
   train_summary "_Machine-readable metrics: \`merge-train-metrics.json\` (workflow artifact). Aggregate over-time dashboard: the **Merge Train State** issue._"
 }
 
-main "$@"
+if [[ "${TRAIN_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi

@@ -14,7 +14,7 @@ public static class SqlFragmentHelpers
 {
     /// <summary>
     /// Combines two SQL fragments with a logical <c>AND</c>, renumbering the right fragment's
-    /// <c>@pN</c> parameter placeholders so they follow the left fragment's parameters without
+    /// <c>@pN</c> or DuckDB <c>$N</c> parameter placeholders so they follow the left fragment's parameters without
     /// collision. Returns the non-null fragment when the other side is <see langword="null"/>,
     /// or <see langword="null"/> when both are <see langword="null"/>.
     /// </summary>
@@ -40,16 +40,24 @@ public static class SqlFragmentHelpers
     }
 
     /// <summary>
-    /// Shifts every <c>@pN</c> parameter placeholder in <paramref name="sql"/> by
+    /// Shifts every <c>@pN</c> or DuckDB <c>$N</c> parameter placeholder in <paramref name="sql"/> by
     /// <paramref name="offset"/> so it can be concatenated after an existing parameter list.
     /// </summary>
     /// <param name="sql">The SQL text whose placeholders should be renumbered.</param>
     /// <param name="offset">The number of leading parameters to skip past.</param>
     /// <returns>The SQL text with renumbered placeholders.</returns>
     public static string RenumberSqlFragmentParameters(string sql, int offset)
-        => Regex.Replace(
+    {
+        var namedSql = Regex.Replace(
             sql,
             @"@p(\d+)",
             match => "@p" + (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + offset).ToString(CultureInfo.InvariantCulture),
             RegexOptions.CultureInvariant);
+
+        return Regex.Replace(
+            namedSql,
+            @"\$(\d+)",
+            match => "$" + (int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) + offset).ToString(CultureInfo.InvariantCulture),
+            RegexOptions.CultureInvariant);
+    }
 }
