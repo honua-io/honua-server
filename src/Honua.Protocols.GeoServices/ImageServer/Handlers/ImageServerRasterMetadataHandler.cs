@@ -87,18 +87,23 @@ internal sealed class ImageServerRasterMetadataHandler
                 return (StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer."), 0);
             }
 
-            RasterHistogram[] histograms;
-            if (rasters.Length == 1)
-            {
-                histograms = await _rasterStore.GetHistogramsAsync(
-                    layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
-            }
-            else
-            {
-                var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
-                histograms = await _rasterStore.GetMosaicHistogramsAsync(
-                    layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
-            }
+            // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
+            // risk as statistics (#2991) — degrade to an empty histogram set rather than
+            // hang past the host's own request/function deadline.
+            var histograms = await ImageServerStatisticsBudget.ResolveAsync(
+                ct => rasters.Length == 1
+                    ? _rasterStore.GetHistogramsAsync(
+                        layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
+                    : _rasterStore.GetMosaicHistogramsAsync(
+                        layerId,
+                        rasters.Select(r => r.Id).ToArray(),
+                        ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null),
+                        bands: null,
+                        DefaultBinCount,
+                        cancellationToken: ct),
+                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
+                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+                cancellationToken);
 
             var entries = new BandHistogram[histograms.Length];
             for (var i = 0; i < histograms.Length; i++)
