@@ -85,8 +85,18 @@ train_recovery_trunk_head() {
 train_recovery_has_label() { tr ',' '\n' <<<"$1" | grep -Fxq "$2"; }
 
 train_recovery_write_state() {
-  local body; body="$(mktemp)"
-  train_state_render "$1" "$2" "$3" "$4" "$5" 0 0 "$6" >"${body}"
+  local branch="$1" trunk_base="$2" included="$3" phase="$4" run_id="$5" last="$6" \
+        records="${7:-}" batch_sha="${8:-}" body heads='[]'
+  if [[ -n "${records}" ]]; then
+    heads="$(jq -Rn '[inputs | split("\t") | {number:(.[0]|tonumber),head:.[1]}]' <<<"${records}")"
+  fi
+  if [[ "${phase}" == land && ( -z "${records}" || ! "${batch_sha}" =~ ^[0-9a-fA-F]{40}$ ) ]]; then
+    train_err "recovery land state requires immutable member heads and batch SHA"
+    return 2
+  fi
+  body="$(mktemp)"
+  train_state_render "${branch}" "${trunk_base}" "${included}" "${phase}" "${run_id}" 0 0 "${last}" \
+    "${heads}" "${batch_sha}" >"${body}"
   train_state_write "${body}"; rm -f "${body}"
 }
 
@@ -244,7 +254,8 @@ train_recover_green_batch_rerun() {
     fi
   done <<<"${records}"
 
-  train_recovery_write_state "${batch}" "${trunk_base}" "${included}" land "${run_id}" "${last}"
+  train_recovery_write_state "${batch}" "${trunk_base}" "${included}" land "${run_id}" "${last}" \
+    "${records}" "${event_sha}"
   local included_file rc=0; included_file="$(mktemp)"; printf '%s\n' "${records}" >"${included_file}"
   if [[ -n "${TRAIN_RECOVERY_LAND_CMD:-}" ]]; then
     "${TRAIN_RECOVERY_LAND_CMD}" "${batch}" "${trunk_base}" "${included_file}" || rc=$?
