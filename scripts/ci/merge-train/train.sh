@@ -158,6 +158,19 @@ train_run_batch_ci() {
   train_smart_ci_run "${batch}"
 }
 
+# Restore the branch and scratch paths after an attribution probe.
+_train_restore_attribute_probe_state() {
+  local probe_inc="$1" probe_skp="$2" probe_run="$3" anchor_batch="$4"
+  local prev_batch="$5" prev_included="$6" prev_skipped="$7" prev_run_id="$8"
+
+  rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
+  git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
+  TRAIN_BATCH_BRANCH="${prev_batch}"
+  TRAIN_INCLUDED_FILE="${prev_included}"
+  TRAIN_SKIPPED_FILE="${prev_skipped}"
+  TRAIN_RUN_ID_FILE="${prev_run_id}"
+}
+
 # train_reset_rerun_state_for_fresh_run: every newly dispatched Actions run has
 # its own timeout retry budget and two-phase request identity. Resume paths do
 # not call this helper, so a restart of the same run preserves both.
@@ -213,25 +226,25 @@ train_attribute_probe_gate() {
 
   local probe_batch
   if ! probe_batch="$(train_assemble "${trunk_sha7}" "${probe_prs[@]}" )"; then
-    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
-    git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
-    TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+    _train_restore_attribute_probe_state \
+      "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
+      "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
     echo "NO_RUN"
     return 0
   fi
   include_count="$(cut -f1 "${probe_inc}" | sed '/^$/d' | wc -l | tr -d ' ')"
   if [[ "${include_count}" -eq 0 ]]; then
-    rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
-    git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
-    TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+    _train_restore_attribute_probe_state \
+      "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
+      "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
     echo "NO_RUN"
     return 0
   fi
 
   gate="$(train_run_batch_ci "${probe_batch}")"
-  rm -f "${probe_inc}" "${probe_skp}" "${probe_run}"
-  git -C "${TRAIN_REPO_ROOT}" checkout -q "${anchor_batch}" || true
-  TRAIN_BATCH_BRANCH="${prev_batch}" TRAIN_INCLUDED_FILE="${prev_included}" TRAIN_SKIPPED_FILE="${prev_skipped}" TRAIN_RUN_ID_FILE="${prev_run_id}"
+  _train_restore_attribute_probe_state \
+    "${probe_inc}" "${probe_skp}" "${probe_run}" "${anchor_batch}" \
+    "${prev_batch}" "${prev_included}" "${prev_skipped}" "${prev_run_id}"
   echo "${gate:-FAILURE}"
 }
 
@@ -724,18 +737,29 @@ main() {
         # full smart-CI is exactly the waste we're avoiding. If the fix
         # incidentally broke a previously-passing test, the optimistic model
         # catches it on trunk's next batch (accept-some-failure for throughput).
-        if [[ -n "$(printf '%s' "${fqns}" | sed '/^$/d')" ]] && train_surgical_rerun "${run_id}" "${fqns}"; then
-          train_metric_set autofix_fixes "$(( $(train_metric_get autofix_fixes 0) + 1 ))"
-          train_notice "autofix verified by surgical rerun of the failed tests; landing the batch (no full re-run)"
-          gate="SUCCESS"
-          continue
-        else
-          # Fix didn't hold: loop back to retry autofix against the SAME failed
-          # tests (gate is still non-SUCCESS) up to the cap, then escalate — still
-          # NO wasteful full re-run. The surgical rerun is the only re-check.
-          train_warn "autofix commit did not pass surgical re-verify; retrying autofix (no full re-run) up to the cap"
-          continue
-        fi
+        local verification_rc=0
+        train_autofix_verification_action "${run_id}" "${fqns}" || verification_rc=$?
+        case "${verification_rc}" in
+          0)
+            train_metric_set autofix_fixes "$(( $(train_metric_get autofix_fixes 0) + 1 ))"
+            train_notice "autofix verified by surgical rerun of the failed tests; landing the batch (no full re-run)"
+            gate="SUCCESS"
+            continue
+            ;;
+          1)
+            # Fix didn't hold: loop back to retry autofix against the SAME failed
+            # tests (gate is still non-SUCCESS) up to the cap, then escalate — still
+            # NO wasteful full re-run. The surgical rerun is the only re-check.
+            train_warn "autofix commit did not pass surgical re-verify; retrying autofix (no full re-run) up to the cap"
+            continue
+            ;;
+          2)
+            train_warn "autofix produced a commit but no failed test names were available for surgical re-verify; escalating"
+            ;;
+          *)
+            train_warn "autofix surgical verification returned an unexpected status; escalating"
+            ;;
+        esac
       fi
       # autofix declined / produced no commit / cap reached => escalate below.
       train_warn "autofix did not produce a landable fix; escalating as genuinely-hard"
