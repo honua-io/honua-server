@@ -1817,12 +1817,14 @@
                   },
                   "TableName": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9_]+$",
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$",
                     "description": "Destination table name."
                   },
                   "TargetSchema": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9_]+$",
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
                     "description": "Optional destination schema."
                   },
                   "SourceSrid": {
