@@ -10,6 +10,14 @@ namespace Honua.Infrastructure.Authentication.ClientCertificates;
 internal static class ClientCertificateAuthenticationDefaults
 {
     public const string AuthenticationScheme = "HonuaClientCertificate";
+
+    /// <summary>
+    /// The unified capability-registry id gating native mTLS / client-certificate
+    /// authentication (#2958: demoted back to <c>Experimental</c>). See
+    /// <c>Honua.Core.Features.Capabilities.CapabilityRegistry</c> and
+    /// <see cref="ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled"/>.
+    /// </summary>
+    public const string CapabilityId = "security.mtls";
 }
 
 internal sealed class ClientCertificateAuthenticationHandler(

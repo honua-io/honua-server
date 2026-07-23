@@ -817,6 +817,14 @@ train_surgical_rerun some-run "${fqns}" && bad "surgical: failing rerun should b
 # No FQNs => rc2 (caller must fall back, never a full rerun).
 set +e; train_surgical_rerun some-run ""; rc_sr=$?; set -e
 assert_eq "surgical: no FQNs => rc2 (fall back, no full shard rerun)" "${rc_sr}" "2"
+set +e
+train_autofix_verification_action some-run "${fqns}"
+rc_verify_failed=$?
+train_autofix_verification_action some-run ""
+rc_verify_empty=$?
+set -e
+assert_eq "surgical: failed verification => retry autofix" "${rc_verify_failed}" "1"
+assert_eq "surgical: committed fix with no FQNs => escalate without retry" "${rc_verify_empty}" "2"
 unset TRAIN_SURGICAL_RUNNER TRAIN_TEST_PROJECT_FOR
 
 echo
