@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.SqlServer.Features.FeatureStore.Services;
 
@@ -333,10 +334,15 @@ internal static partial class SqlServerFeatureQueryBuilder
         // and rejects with error 24205 when that complement spans more than a hemisphere. Normalize
         // polygon/multipolygon winding to CCW-exterior before serialization so every geography
         // predicate sees the intended region. The geometry (planar) type is orientation-insensitive,
-        // so only its embedded EWKB SRID metadata is removed.
+        // so it skips winding normalization, but both STGeomFromWKB overloads still need their
+        // Z/M dimension flags translated from Honua's canonical EWKB high-bit flavor to the
+        // ISO/OGC type-code offset SQL Server expects (see SqlServerGeographyWinding's doc
+        // comments); WkbSridNormalizer only strips the SRID word and otherwise byte-preserves
+        // dimension flags as given, so it runs after the ISO-flavor translation as a final,
+        // idempotent SRID-removal pass.
         var wkb = isGeography
-            ? SqlServerGeographyWinding.NormalizeToCcwExterior(filter.Geometry)
-            : SqlServerGeographyWinding.NormalizeToPlainWkb(filter.Geometry);
+            ? WkbSridNormalizer.RemoveEmbeddedSrid(SqlServerGeographyWinding.NormalizeToCcwExterior(filter.Geometry))
+            : WkbSridNormalizer.RemoveEmbeddedSrid(SqlServerGeographyWinding.NormalizeToPlainWkb(filter.Geometry));
 
         var wkbParam = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
         parameters.Add(wkb);

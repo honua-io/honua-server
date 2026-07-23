@@ -29,7 +29,6 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="MySqlConnector" />
-    <PackageReference Include="NetTopologySuite" />
   </ItemGroup>
 
   <ItemGroup>
