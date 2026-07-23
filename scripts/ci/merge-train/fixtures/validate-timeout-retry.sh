@@ -26,7 +26,8 @@ train_side_effect() {
   printf '%s\n' "$*" >>"${record}"
 }
 export TRAIN_STATE_ISSUE_OVERRIDE=1
-export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"phase":"select"}}\n```'
+export TRAIN_STATE_BODY_OVERRIDE
+TRAIN_STATE_BODY_OVERRIDE="$(train_state_render '' '' '' select '' 0 0 null)"
 
 # One deadline is initialized once and never reset for a retry.
 now_value=10
@@ -554,12 +555,18 @@ train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reas
 gh() {
   if [[ "$*" == *'--json headBranch,headSha,attempt'* ]]; then printf 'train/batch/abc/1\t%s\t1\n' "${fixture_batch_sha}"
   elif [[ "$*" == 'pr view 101 --json number,state,headRefOid,createdAt,author' ]]; then printf '{"number":101,"state":"OPEN","headRefOid":"%s","createdAt":"2026-01-01T00:00:00Z","author":{"login":"alice"}}\n' "${fixture_member_sha}"
+  elif [[ "$*" == 'pr view 101 --json headRefOid,state --jq [.headRefOid,.state] | @tsv' ]]; then printf '%s\tMERGED\n' "${fixture_member_sha}"
   elif [[ "$*" == *'--json attempt,status'* ]]; then printf '2\tcompleted\n'
   elif [[ "$*" == *'--json jobs'* ]]; then printf 'success\n'
   else fail "restarted main attempted unexpected gh operation: $*"
   fi
 }
 fixture_pushed=0
+train_pr_admission() {
+  [[ "$1" == "101" && "$2" == "${fixture_member_sha}" ]] \
+    || fail "resumed land re-attested the wrong member head"
+}
+train_aggregate_update() { :; }
 git() {
   case "$*" in
     *'fetch --quiet origin trunk') return 0 ;;
@@ -567,6 +574,7 @@ git() {
       [[ "${fixture_pushed}" == "1" ]] && printf '%s\n' "${fixture_batch_sha}" \
         || printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       ;;
+    *'rev-parse train/batch/abc/1') printf '%s\n' "${fixture_batch_sha}" ;;
     *'push origin train/batch/abc/1:trunk') fixture_pushed=1 ;;
     *) fail "restarted main attempted unexpected git operation: $*" ;;
   esac
@@ -575,7 +583,7 @@ git() {
 unset TRAIN_CONTROLLER_DEADLINE_EPOCH
 now_value=100
 main || fail "restarted production main failed to consume retry intent"
-grep -Fqx 'gh pr merge 101 --merge' "${record}" || fail "resumed SUCCESS did not close the included PR"
+! grep -Fq 'gh pr merge' "${record}" || fail "resumed SUCCESS invoked a second merge authority"
 grep -Fqx "gh pr edit 101 --remove-label ${TRAIN_LABEL_LANDING}" "${record}" || fail "resumed SUCCESS did not remove the landing label"
 [[ "$(jq -r '.outcome' "${fixture_metrics}")" == "landed" ]] || fail "resumed SUCCESS did not emit landed metrics"
 [[ "$(jq -r '.counts.landed' "${fixture_metrics}")" == "1" ]] || fail "resumed SUCCESS metrics lost reconstructed membership"
@@ -636,7 +644,8 @@ train_reset_rerun_state_for_fresh_run
   || fail "fresh attribution run inherited run A retry state"
 [[ ! -s "${TRAIN_RUN_ID_FILE}" ]] || fail "fresh run transition retained run A id"
 [[ "$(train_metric_get timeout_reruns 0)" == "1" ]] || fail "fresh run reset decremented cumulative retry telemetry"
-fresh_state="$(train_state_render train/batch/abc/2 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 101 smart-ci '' 0 0 null "${timeout_reruns}" "${TRAIN_RERUN_KIND}" null "${timeout_reruns_total}")"
+fresh_state="$(train_state_render train/batch/abc/2 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 101 smart-ci '' 0 0 null \
+  '[]' '' "${timeout_reruns}" "${TRAIN_RERUN_KIND}" null "${timeout_reruns_total}")"
 fresh_state="$(awk '/^```json/{on=1;next}/^```/{if(on)exit}on' <<<"${fresh_state}")"
 jq -e '.active_batch.run_id == null and .active_batch.timeout_reruns == 0
   and .active_batch.timeout_reruns_total == 1

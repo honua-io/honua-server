@@ -6,14 +6,14 @@ on:
     types: [completed]
 
 permissions:
-  actions: read
-  contents: read
+  actions: write
+  contents: write
   issues: write
   pull-requests: write
   statuses: write
 
 concurrency:
-  group: merge-train-rerun-recovery-${{ github.event.workflow_run.id }}
+  group: merge-train
   cancel-in-progress: false
 
 jobs:
@@ -30,7 +30,12 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Recover escalated PRs from green rerun
+      - name: Configure git identity
+        run: |
+          git config --global user.name "Mike McDougall"
+          git config --global user.email "mike@honua.io"
+
+      - name: Recover active immutable batch from green rerun
         env:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -38,8 +43,12 @@ jobs:
         run: |
           set -euo pipefail
           . scripts/ci/merge-train/lib.sh
+          . scripts/ci/merge-train/select.sh
+          . scripts/ci/merge-train/land.sh
+          . scripts/ci/merge-train/state.sh
           . scripts/ci/merge-train/recovery.sh
           train_recover_green_batch_rerun \
             "${{ github.event.workflow_run.id }}" \
             "${{ github.event.workflow_run.head_branch }}" \
+            "${{ github.event.workflow_run.head_sha }}" \
             "${{ github.event.workflow_run.html_url }}"

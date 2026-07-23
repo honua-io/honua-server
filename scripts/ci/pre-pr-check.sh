@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
+HONUA_CR="$(printf '\rX')"; HONUA_CR="${HONUA_CR%X}"
 set -euo pipefail
 
 # Pre-PR validation with the SAME smart filters CI uses, so a local run only
@@ -121,7 +123,7 @@ fi
 # (the shard monolith fallback and `run_all` comparison below) and shard-field
 # env exports would carry a trailing CR. This wrapper strips it (no-op on Linux,
 # so CI is unaffected) and supersedes the earlier per-call-site `tr -d '\r'` /
-# `${var%$'\r'}` patches, which are now redundant. Sourced AFTER the presence
+# `${var%${HONUA_CR}}` patches, which are now redundant. Sourced AFTER the presence
 # guard above so that guard still probes the real jq binary, not this function.
 source "$(dirname "${BASH_SOURCE[0]}")/lib/jq-cr-safe.sh"
 
@@ -252,7 +254,16 @@ fi
 # ---------------------------------------------------------------------------
 CAPABILITY_SELECTION_JSON="{}"
 if [[ "${FULL}" != "1" ]]; then
-    CROSS_CUTTING_FULL_TRIGGERS=$'Directory.Build.props\nDirectory.Packages.props\ntests/dotnet/Honua.TestKit/\n.github/ci-shards.json\nscripts/ci/capability-impact.py\ndocs/gis/data/feature-catalog.json\ndocs/gis/data/capability-keys.v1.json\n.github/capability-impact-allowlist.json\n.github/workflows/'
+    CROSS_CUTTING_FULL_TRIGGERS="$(printf '%s\n' \
+        'Directory.Build.props' \
+        'Directory.Packages.props' \
+        'tests/dotnet/Honua.TestKit/' \
+        '.github/ci-shards.json' \
+        'scripts/ci/capability-impact.py' \
+        'docs/gis/data/feature-catalog.json' \
+        'docs/gis/data/capability-keys.v1.json' \
+        '.github/capability-impact-allowlist.json' \
+        '.github/workflows/')"
     cross_cutting_hit=""
     while IFS= read -r trigger_prefix; do
         [[ -z "${trigger_prefix}" ]] && continue
@@ -338,7 +349,10 @@ affected_contains() {
 # edited stays in the build (its compile IS the local signal), and FULL mode
 # keeps the build-everything behavior.
 # ---------------------------------------------------------------------------
-UNIT_TEST_PROJECTS=$'tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj\ntests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj\ntests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj\ntests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj'
+UNIT_TEST_PROJECTS='tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
+tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
+tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
+tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj'
 ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
@@ -360,7 +374,7 @@ while IFS= read -r shard_name; do
     [[ -z "${shard_name}" ]] && continue
     shard_csproj="$(jq -r --arg n "${shard_name}" \
         '.shards[] | select(.shard_name==$n) | .csproj // ""' .github/ci-shards.json)"
-    SHARD_TEST_PROJECTS+="${shard_csproj:-${MONOLITH_TEST_PROJECT}}"$'\n'
+    SHARD_TEST_PROJECTS+="${shard_csproj:-${MONOLITH_TEST_PROJECT}}"${HONUA_NL}
 done <<< "${SELECTED_SHARDS}"
 
 RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n' \
@@ -557,7 +571,7 @@ else
         while IFS= read -r proj; do
             [[ -z "${proj}" ]] && continue
             if grep -qxF "${proj}" <<< "${sln_members}"; then
-                candidates+="${proj}"$'\n'
+                candidates+="${proj}"${HONUA_NL}
             else
                 echo "   (skipping ${proj} — not a Honua.sln member; built by its own gate)"
             fi
@@ -568,13 +582,13 @@ else
     while IFS= read -r proj; do
         [[ -z "${proj}" ]] && continue
         if test_project_kept "${proj}"; then
-            kept+="${proj}"$'\n'
+            kept+="${proj}"${HONUA_NL}
         else
             pruned_count=$((pruned_count + 1))
         fi
     done <<< "${candidates}"
     # Architecture.Tests always runs, so it is always part of the build set.
-    kept+="${ARCHITECTURE_TEST_PROJECT}"$'\n'
+    kept+="${ARCHITECTURE_TEST_PROJECT}"${HONUA_NL}
     projects_json="$(printf '%s' "${kept}" \
         | sed '/^$/d' \
         | while IFS= read -r proj; do sln_literal_path "${proj}"; printf '\n'; done \

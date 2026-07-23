@@ -55,7 +55,11 @@ jobs:
           fi
           # Reject anything not in the known lane set so a typo can't silently
           # produce an empty matrix that "passes".
-          allowed=$'gdal\npyqgis\nopenlayers\ncesium\narcgis-stub'
+          allowed='gdal
+          pyqgis
+          openlayers
+          cesium
+          arcgis-stub'
           IFS=',' read -ra requested <<<"$raw"
           for lane in "${requested[@]}"; do
             if ! grep -Fxq "$lane" <<<"$allowed"; then

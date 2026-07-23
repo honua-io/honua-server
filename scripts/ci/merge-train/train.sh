@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+HONUA_TAB="$(printf '\tX')"; HONUA_TAB="${HONUA_TAB%X}"
+HONUA_NL="$(printf '\nX')"; HONUA_NL="${HONUA_NL%X}"
 # Orchestrator for the honua-server optimistic batch merge train (Phase 1).
 #
 # Wires the eight sourceable steps together. DRY-RUN BY DEFAULT (TRAIN_APPLY=0):
@@ -369,7 +371,8 @@ train_recover_terminal_batch() {
   total="$(jq -r '.active_batch.timeout_reruns_total // 0' <<<"${state}")"
   last="$(jq -r '.last_landed_trunk // "null"' <<<"${state}")"
   body="$(mktemp)"
-  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
+  train_state_render "" "${trunk}" "" select "" 0 0 "${last}" \
+    '[]' '' 0 "" null "${total}" >"${body}" || { rm -f "${body}"; return 2; }
   for pr in $(tr ',' ' ' <<<"${included}"); do
     if [[ "${escalate}" == "1" ]]; then
       train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_ESCALATED}" || { rm -f "${body}"; return 2; }
@@ -388,6 +391,30 @@ main() {
 
   local resume_state="" resume_rc=1 resumed=0 rejected_rc=1
   if [[ "${TRAIN_APPLY}" == "1" ]]; then
+    local post_land_rc=1
+    if train_restore_post_land; then post_land_rc=0; else post_land_rc=$?; fi
+    if [[ "${post_land_rc}" == "4" ]]; then
+      _write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "select" "" 0 0 null
+      train_notice "completed durable pre-land cleanup; returning to selection without recording a landing"
+      return 0
+    elif [[ "${post_land_rc}" == "0" || "${post_land_rc}" == "3" ]]; then
+      local recovered_phase=done
+      if [[ "${post_land_rc}" == "3" ]]; then
+        recovered_phase="${TRAIN_POST_LAND_RECOVERY_PHASE:-post-land-finalize}"
+        _write_state "${TRAIN_POST_LAND_BATCH}" "${TRAIN_POST_LAND_TRUNK_BASE}" "${TRAIN_POST_LAND_INCLUDED}" "${recovered_phase}" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
+      else
+        _write_state "" "${TRAIN_POST_LAND_OBSERVED_TRUNK}" "" "done" "" 0 0 "${TRAIN_POST_LAND_BATCH_SHA}"
+      fi
+      train_notice "reconciled durable post-land state before selection (phase=${recovered_phase})"
+      return 0
+    elif [[ "${post_land_rc}" == "2" ]]; then
+      train_err "durable post-land state mismatches trunk or batch; failing closed"
+      return 1
+    elif [[ "${post_land_rc}" == "5" ]]; then
+      train_err "durable state lookup failed; refusing selection or state overwrite"
+      return 1
+    fi
+
     train_recover_terminal_batch || rejected_rc=$?
     if [[ "${rejected_rc}" == "2" ]]; then
       train_err "active merge-train state is unknown, malformed, or incompletely recovered; failing closed before selection"
@@ -487,36 +514,20 @@ main() {
     train_side_effect gh pr edit "${pr}" --add-label "${TRAIN_LABEL_LANDING}"
   done
 
-  # --- direct-merge fast-path vs batch CI ------------------------------------
-  # Every PR select returned is already GREEN on its own (CI Gate SUCCESS) or
-  # FLAKE. If EVERY included PR is SUCCESS, a batch CI can prove nothing the PRs'
-  # own green CI didn't already — re-running the full suite on the combination is
-  # pure waste. Merge them directly (optimistic model: accept the rare
-  # combination-break + forward-fix on trunk). Batch CI runs ONLY when an
-  # included PR is FLAKE (its own CI is red-but-flaky) and needs verification.
-  local all_green=1 _pr_g _g_state
-  for _pr_g in $(tr ',' ' ' <<<"${included}"); do
-    _g_state="$(jq -r --argjson n "${_pr_g}" 'map(select(.number==$n))[0].gate // "UNKNOWN"' <<<"${selected}")"
-    [[ "${_g_state}" != "SUCCESS" ]] && all_green=0
-  done
-
-  # --- smart-ci (skipped on the all-green fast-path) -------------------------
+  # --- smart-ci ---------------------------------------------------------------
+  # PR Gate and Review Gate admit a PR, but are not integration evidence.
+  # Every assembled combination runs batch CI; only its CI Gate can authorize
+  # landing the exact batch bytes.
   train_group smart-ci "compute shard subset for the batch's cumulative diff"
   train_step_begin smart-ci
   local shard_descriptor gate fwdfix=0 flake_reruns=0 timeout_reruns=0 timeout_reruns_total=0
-  if [[ "${all_green}" == "1" ]]; then
-    shard_descriptor='{"reason":"direct-merge-all-green","run_all":false,"shards":[]}'
-    train_metric_set direct_merge 1
-    train_decision "all included PRs green on their own (CI Gate SUCCESS) — skipping batch CI; direct optimistic merge"
-    gate="SUCCESS"
-  else
-    shard_descriptor="$(train_smart_ci_shards "${batch}")"
-    train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
-    train_decision "smart-CI shard subset: ${shard_descriptor}"
-    train_reset_rerun_state_for_fresh_run
-    _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
-    gate="$(train_run_batch_ci "${batch}")"
-  fi
+  train_metric_set direct_merge 0
+  shard_descriptor="$(train_smart_ci_shards "${batch}")"
+  train_metric_set smartci_shard_count "$(jq -r '(.shards // []) | length' <<<"${shard_descriptor}" 2>/dev/null || echo 0)"
+  train_decision "smart-CI shard subset: ${shard_descriptor}"
+  train_reset_rerun_state_for_fresh_run
+  _write_state "${batch}" "${trunk_sha}" "${included}" "smart-ci" "" "${fwdfix}" "${flake_reruns}"
+  gate="$(train_run_batch_ci "${batch}")"
   train_step_end smart-ci >/dev/null
   train_endgroup
 
@@ -599,7 +610,7 @@ main() {
     local nonblocking_only=0
     train_nonblocking_failures_are_safe "${run_id}" "${shard_descriptor}" && nonblocking_only=1
     failing="$(train_subtract_lines "${TRAIN_NONBLOCKING_JOBS}" "${failing}")"
-    if [[ -z "${failing//[$'\n'$'\t' ]/}" ]]; then
+    if [[ -z "${failing//[${HONUA_NL}${HONUA_TAB} ]/}" ]]; then
       if [[ "${nonblocking_only}" == "1" ]]; then
         train_metric_set nonblocking_passes 1
         train_notice "only non-blocking aux/aggregator jobs failed and every selected shard explicitly succeeded; landing on shard results"
@@ -839,6 +850,11 @@ main() {
   local rc=0
   train_land "${batch}" "${trunk_sha}" "${TRAIN_INCLUDED_FILE}" || rc=$?
   if [[ "${rc}" == "10" ]]; then
+    if [[ -s "${TRAIN_LAND_PENDING_FILE:-}" ]]; then
+      _write_state "${batch}" "${trunk_sha}" "${included}" "pre-land-cleanup" "" "${fwdfix}" "${flake_reruns}"
+    else
+      _write_state "" "${trunk_sha}" "" "select" "" 0 0
+    fi
     train_annotate_warn "land deferred: trunk moved; the next scheduled run re-assembles"
     # train_land's rc=10 is returned strictly BEFORE any push/merge (CAS
     # precondition miss, or a rejected FF push) — zero side effects have
@@ -864,6 +880,12 @@ main() {
       "land deferred: trunk moved (FF-CAS) — next run re-assembles"
     return 0
   fi
+  if [[ "${rc}" == "11" ]]; then
+    train_annotate_warn "land outcome ambiguous; retaining durable phase=land for restart reconciliation"
+    train_step_end land >/dev/null; train_endgroup
+    _emit_metrics "land-ambiguous" "${trunk_sha}" "" "${shard_descriptor}"
+    return 1
+  fi
   if [[ "${rc}" != "0" ]]; then
     train_err "land failed (rc=${rc})"
     train_step_end land >/dev/null; train_endgroup
@@ -874,8 +896,15 @@ main() {
   fi
 
   local new_trunk; new_trunk="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "${TRAIN_REMOTE}/${TRAIN_BASE_BRANCH}")"
-  train_metric_set landed "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
-  _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
+  train_metric_set snapshot_landed "$(grep -c . "${TRAIN_INCLUDED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set landed "$(grep -c . "${TRAIN_LAND_FINALIZED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set advanced_after_snapshot "$(grep -c . "${TRAIN_LAND_ADVANCED_FILE}" 2>/dev/null || echo 0)"
+  train_metric_set finalization_pending "$(grep -c . "${TRAIN_LAND_PENDING_FILE}" 2>/dev/null || echo 0)"
+  if [[ -s "${TRAIN_LAND_PENDING_FILE}" ]]; then
+    _write_state "${batch}" "${trunk_sha}" "${included}" "post-land-finalize" "" 0 0 "${new_trunk}"
+  else
+    _write_state "" "${new_trunk}" "" "done" "" 0 0 "${batch_landed:-${new_trunk}}"
+  fi
   train_notice "LANDED batch ${batch} ($(tr ',' ' ' <<<"${included}")); trunk now ${new_trunk:0:7}"
   train_step_end land >/dev/null
   train_endgroup
@@ -888,8 +917,14 @@ main() {
 
 # _write_state branch trunk_base included-csv phase run_id fwdfix flake [last_landed]
 _write_state() {
-  local body="${TRAIN_WORK}/state.md"
-  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" "${TRAIN_RERUN_BASE_ATTEMPT:-null}" "${timeout_reruns_total:-0}" >"${body}"
+  local body="${TRAIN_WORK}/state.md" heads='[]' batch_sha=""
+  if [[ -n "$1" && -s "${TRAIN_INCLUDED_FILE:-}" ]]; then
+    heads="$(jq -Rn '[inputs | split("\t") | {number:(.[0]|tonumber),head:.[1]}]' <"${TRAIN_INCLUDED_FILE}")"
+    batch_sha="$(git -C "${TRAIN_REPO_ROOT}" rev-parse "$1" 2>/dev/null || echo '')"
+  fi
+  train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" \
+    "${heads}" "${batch_sha}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" \
+    "${TRAIN_RERUN_BASE_ATTEMPT:-null}" "${timeout_reruns_total:-0}" >"${body}"
   train_state_write "${body}"
 }
 
@@ -956,7 +991,7 @@ _dashboard() {
     train_summary "|---|---|---|---|"
     local rows; rows="$(jq -r '.[] | "\(.number)\t\(.author // "?")\t\(.gate)"' <<<"${selected}")"
     local num author gate decision
-    while IFS=$'\t' read -r num author gate; do
+    while IFS=${HONUA_TAB} read -r num author gate; do
       [[ -z "${num}" ]] && continue
       decision="$(_pr_decision "${num}")"
       train_summary "| #${num} | ${author} | ${gate} | ${decision} |"
@@ -1015,6 +1050,9 @@ _dashboard() {
   train_summary "| Autofix fixes landed | $(train_metric_get autofix_fixes 0) |"
   train_summary "| Attribution drops | $(train_metric_get attribution_drops 0) |"
   train_summary "| Escalated | $(train_metric_get escalated 0) |"
+  train_summary "| Validated member snapshots landed | $(train_metric_get snapshot_landed 0) |"
+  train_summary "| Heads advanced after snapshot | $(train_metric_get advanced_after_snapshot 0) |"
+  train_summary "| Finalization pending | $(train_metric_get finalization_pending 0) |"
   train_summary "| Landed | $(train_metric_get landed 0) |"
   train_summary ""
 
@@ -1025,7 +1063,7 @@ _dashboard() {
     train_summary "| Phase | Seconds |"
     train_summary "|---|---|"
     awk -F= 'NF>=2 {t[$1]=$2} END {for (k in t) print k"\t"t[k]}' "${TRAIN_TIMINGS_FILE}" \
-      | while IFS=$'\t' read -r ph secs; do train_summary "| ${ph} | ${secs} |"; done
+      | while IFS=${HONUA_TAB} read -r ph secs; do train_summary "| ${ph} | ${secs} |"; done
     train_summary ""
   fi
 

@@ -65,6 +65,17 @@ train_discover_dispatched_run() {
 train_smart_ci_run() {
   local batch="$1"
   local descriptor
+  # train/batch/* is the real batch namespace; train/attribute-probe/* is the
+  # disposable bisection namespace train_attribute_probe_gate mints (via
+  # TRAIN_BATCH_BRANCH) to isolate a suspect subset's CI result. Both are
+  # scratch refs this codebase itself creates through train_assemble and are
+  # never pushed toward trunk (only land.sh does that); anything else is
+  # refused.
+  if [[ "${batch}" != train/batch/* && "${batch}" != train/attribute-probe/* ]]; then
+    train_err "smart-ci refuses to push non-batch ref ${batch}"
+    echo "FAILURE"
+    return 0
+  fi
   descriptor="$(train_smart_ci_shards "${batch}")"
   train_log "smart-ci shard descriptor: ${descriptor}"
 
