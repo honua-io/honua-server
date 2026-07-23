@@ -31,6 +31,7 @@ public sealed class ImageServerStatisticsBudgetTests
 
         var result = await ImageServerStatisticsBudget.ResolveAsync(
             services.GetRequiredService<IServiceScopeFactory>(),
+            $"test:{Guid.NewGuid()}",
             (_, _) => Task.FromResult(Sample),
             onBudgetExceeded: () => budgetExceeded = true,
             budget: TimeSpan.FromSeconds(5),
@@ -55,6 +56,7 @@ public sealed class ImageServerStatisticsBudgetTests
 
         var result = await ImageServerStatisticsBudget.ResolveAsync(
             services.GetRequiredService<IServiceScopeFactory>(),
+            $"test:{Guid.NewGuid()}",
             (provider, ct) =>
             {
                 operationToken = ct;
@@ -94,6 +96,7 @@ public sealed class ImageServerStatisticsBudgetTests
 
         var act = () => ImageServerStatisticsBudget.ResolveAsync(
             services.GetRequiredService<IServiceScopeFactory>(),
+            $"test:{Guid.NewGuid()}",
             (provider, _) =>
             {
                 scopeStarted.SetResult(provider.GetRequiredService<ScopeLifetime>());
@@ -112,6 +115,49 @@ public sealed class ImageServerStatisticsBudgetTests
         backfill.SetResult(Sample);
         (await backfill.Task).Should().BeSameAs(Sample);
         await scopeLifetime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_ConcurrentSameKey_StartsOneOwnedBackfill()
+    {
+        var operationKey = $"test:{Guid.NewGuid()}";
+        var backfill = new TaskCompletionSource<RasterStatistics[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var operationCount = 0;
+        var scopeStarted = new TaskCompletionSource<ScopeLifetime>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var services = new ServiceCollection()
+            .AddScoped<ScopeLifetime>()
+            .BuildServiceProvider();
+        var scopeFactory = services.GetRequiredService<IServiceScopeFactory>();
+
+        Task<RasterStatistics[]> Resolve() => ImageServerStatisticsBudget.ResolveAsync(
+            scopeFactory,
+            operationKey,
+            (provider, _) =>
+            {
+                Interlocked.Increment(ref operationCount);
+                scopeStarted.TrySetResult(provider.GetRequiredService<ScopeLifetime>());
+                started.TrySetResult(true);
+                return backfill.Task;
+            },
+            onBudgetExceeded: () => { },
+            budget: TimeSpan.FromMilliseconds(100),
+            CancellationToken.None);
+
+        var first = Resolve();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = Resolve();
+        var results = await Task.WhenAll(first, second);
+
+        results.Should().OnlyContain(result => result.Length == 0);
+        operationCount.Should().Be(1, "waiters for one mosaic must share its owned backfill");
+
+        backfill.SetResult(Sample);
+        (await backfill.Task).Should().BeSameAs(Sample);
+        await (await scopeStarted.Task).Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [UnitTest]

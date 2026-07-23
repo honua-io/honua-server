@@ -50,10 +50,30 @@ internal sealed class ImageServerRasterMetadataHandler
     public Task<IResult> GetStatisticsAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "statistics", async resolved =>
         {
+            var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
+            if (rasters.Length == 0)
+            {
+                return (Results.Json(
+                    new StatisticsResourceResponse { Statistics = [] },
+                    ImageServerJsonContext.Default.StatisticsResourceResponse), 0);
+            }
+
+            var rasterIds = rasters.Select(r => r.Id).ToArray();
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
+                resolved.Resource, mosaicRule: null);
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-                (services, ct) => ResolveStatisticsAsync(
-                    services.GetRequiredService<IRasterStore>(), layerId, resolved, ct),
+                ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                    layerId, rasterIds, mergeStrategy),
+                (services, ct) =>
+                {
+                    var rasterStore = services.GetRequiredService<IRasterStore>();
+                    return rasterIds.Length == 1
+                        ? rasterStore.GetStatisticsAsync(
+                            layerId, rasterIds[0], bands: null, cancellationToken: ct)
+                        : rasterStore.GetMosaicStatisticsAsync(
+                            layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: ct);
+                },
                 onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
                     _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
                 cancellationToken);
@@ -329,28 +349,6 @@ internal sealed class ImageServerRasterMetadataHandler
                 e.Blue,
             })
             .ToArray();
-
-    private static async Task<RasterStatistics[]> ResolveStatisticsAsync(
-        IRasterStore rasterStore,
-        int layerId,
-        ImageServerV2Lookups.ResolvedImageLayer resolved,
-        CancellationToken cancellationToken)
-    {
-        var rasters = await rasterStore.ListRastersAsync(layerId, cancellationToken);
-        if (rasters.Length == 0)
-        {
-            return [];
-        }
-
-        if (rasters.Length == 1)
-        {
-            return await rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken: cancellationToken);
-        }
-
-        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
-        return await rasterStore.GetMosaicStatisticsAsync(
-            layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, cancellationToken: cancellationToken);
-    }
 
     private async Task<IResult> ExecuteAsync(
         HttpContext context,

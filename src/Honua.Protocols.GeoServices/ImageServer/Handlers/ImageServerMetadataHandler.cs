@@ -110,8 +110,11 @@ internal sealed class ImageServerMetadataHandler
             // over a large mosaic (many rasters, high resolution) can take far longer
             // than this request's own host-level deadline, which would otherwise hang
             // the whole metadata response instead of just omitting statistics (#2991).
+            var rasterIds = rasters.Select(r => r.Id).ToArray();
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                    layerId, rasterIds, mergeStrategy),
                 (services, ct) =>
                 {
                     var rasterStore = services.GetRequiredService<IRasterStore>();
@@ -119,7 +122,7 @@ internal sealed class ImageServerMetadataHandler
                         ? rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: ct)
                         : rasterStore.GetMosaicStatisticsAsync(
                             layerId,
-                            rasters.Select(r => r.Id).ToArray(),
+                            rasterIds,
                             mergeStrategy,
                             cancellationToken: ct);
                 },

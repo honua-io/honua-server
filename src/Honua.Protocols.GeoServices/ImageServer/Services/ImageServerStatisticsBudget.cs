@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,6 +26,12 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// </remarks>
 internal static class ImageServerStatisticsBudget
 {
+    private static class PersistedBackfills<T>
+    {
+        internal static readonly ConcurrentDictionary<string, Lazy<Task<T[]>>> ByKey =
+            new(StringComparer.Ordinal);
+    }
+
     /// <summary>
     /// Maximum time a single request will wait for raster statistics/histograms before
     /// falling back to an empty result. Comfortably below the platform's default
@@ -44,10 +51,11 @@ internal static class ImageServerStatisticsBudget
     /// </summary>
     public static Task<T[]> ResolveAsync<T>(
         IServiceScopeFactory scopeFactory,
+        string operationKey,
         Func<IServiceProvider, CancellationToken, Task<T[]>> operation,
         Action onBudgetExceeded,
         CancellationToken requestAborted)
-        => ResolveAsync(scopeFactory, operation, onBudgetExceeded, Timeout, requestAborted);
+        => ResolveAsync(scopeFactory, operationKey, operation, onBudgetExceeded, Timeout, requestAborted);
 
     /// <summary>
     /// Runs non-persisted work, such as histogram scans, within the response budget.
@@ -68,6 +76,7 @@ internal static class ImageServerStatisticsBudget
     /// </summary>
     internal static async Task<T[]> ResolveAsync<T>(
         IServiceScopeFactory scopeFactory,
+        string operationKey,
         Func<IServiceProvider, CancellationToken, Task<T[]>> operation,
         Action onBudgetExceeded,
         TimeSpan budget,
@@ -75,13 +84,31 @@ internal static class ImageServerStatisticsBudget
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(operation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationKey);
 
         // The backfill owns an independent scope so request completion cannot dispose its
         // Postgres provider or release query-admission slots while SQL is still running.
         // Do not pass the request/budget token into it: Postgres uses that token for both
         // ST_SummaryStats and transaction commit, and cancelling it at the response deadline
         // would roll back the single-flight backfill forever.
-        var operationTask = RunInOwnedScopeAsync(scopeFactory, operation);
+        // Share one owned operation per exact raster/mosaic key. Postgres serializes the
+        // persisted computation with an advisory lock, but that lock alone would leave
+        // every duplicate caller holding a scope and connection while queued. Only the
+        // dictionary winner starts work; all other callers wait on the same task.
+        var candidate = new Lazy<Task<T[]>>(
+            () => RunInOwnedScopeAsync(scopeFactory, operation),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        var shared = PersistedBackfills<T>.ByKey.GetOrAdd(operationKey, candidate);
+        var operationTask = shared.Value;
+        if (ReferenceEquals(shared, candidate))
+        {
+            _ = operationTask.ContinueWith(
+                _ => PersistedBackfills<T>.ByKey.TryRemove(
+                    new KeyValuePair<string, Lazy<Task<T[]>>>(operationKey, shared)),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
 
         try
         {
@@ -99,6 +126,12 @@ internal static class ImageServerStatisticsBudget
             throw;
         }
     }
+
+    internal static string CreateStatisticsOperationKey(
+        int layerId,
+        IEnumerable<long> rasterIds,
+        RasterMergeStrategy mergeStrategy)
+        => $"image-statistics:{layerId}:{(int)mergeStrategy}:{string.Join(",", rasterIds)}";
 
     /// <summary>Test seam for the cancellable, non-persisted operation policy.</summary>
     internal static async Task<T[]> ResolveCancellableAsync<T>(
