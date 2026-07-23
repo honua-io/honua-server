@@ -111,7 +111,7 @@ export TRAIN_REPO_ROOT="${WORK}"
 
 # Exact-head admission seam shared by selection and pre-land fixtures.
 __fixture_admission() {
-  local pr="$1" head state=OPEN draft=false labels='[]' gate=SUCCESS review=SUCCESS threads='[]' reviews
+  local pr="$1" head state=OPEN draft=false labels='[]' gate=SUCCESS review=SUCCESS threads='[]' reviews clean_comments='[]'
   head="$(awk -v n="${pr}" '$1==n{print $2}' "${TRAIN_INCLUDED_FILE}" 2>/dev/null || true)"
   if [[ -z "${head}" && -n "${TRAIN_PR_LIST_JSON:-}" ]]; then
     head="$(jq -r --argjson n "${pr}" '.[] | select(.number==$n) | .headRefOid' <<<"${TRAIN_PR_LIST_JSON}")"
@@ -122,6 +122,10 @@ __fixture_admission() {
     review-fail) review=FAILURE ;;
     unresolved) threads="[{\"isResolved\":false,\"comments\":{\"nodes\":[{\"author\":{\"login\":\"chatgpt-codex-connector[bot]\"},\"commit\":{\"oid\":\"${head}\"}}]}}]" ;;
     negative-review) reviews="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review\",\"submittedAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"state\":\"CHANGES_REQUESTED\",\"commit\":{\"oid\":\"${head}\"}}]" ;;
+    clean-comment)
+      reviews='[]'
+      clean_comments="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review: Didn't find any major issues.\\n\\n**Reviewed commit:** \`${head}\`\",\"createdAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"includesCreatedEdit\":false,\"resolvedCommitOid\":\"${head}\"}]"
+      ;;
     held) labels='[{"name":"train:hold"}]' ;;
     escalated) labels='[{"name":"train:escalated"}]' ;;
     draft) draft=true ;;
@@ -131,7 +135,8 @@ __fixture_admission() {
   jq -nc --argjson n "${pr}" --arg head "${head}" --arg state "${state}" \
     --argjson draft "${draft}" --argjson labels "${labels}" --arg gate "${gate}" \
     --arg review "${review}" --argjson threads "${threads}" --argjson reviews "${reviews}" \
-    '{number:$n,state:$state,isDraft:$draft,headRefOid:$head,labels:$labels,labelsTruncated:false,reviews:$reviews,reviewsTruncated:false,reviewThreads:$threads,reviewThreadsTruncated:false,checksTruncated:false,statusCheckRollup:[{__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:$gate},{__typename:"StatusContext",context:"Review Gate",state:$review}]}'
+    --argjson cleanComments "${clean_comments}" \
+    '{number:$n,state:$state,isDraft:$draft,headRefOid:$head,labels:$labels,labelsTruncated:false,reviews:$reviews,reviewsTruncated:false,cleanComments:$cleanComments,commentsTruncated:false,reviewThreads:$threads,reviewThreadsTruncated:false,checksTruncated:false,statusCheckRollup:[{__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:$gate},{__typename:"StatusContext",context:"Review Gate",state:$review}]}'
 }
 export -f __fixture_admission
 export TRAIN_ADMISSION_JSON_FOR_PR=__fixture_admission
@@ -837,6 +842,15 @@ for admission_case in gate-fail review-fail unresolved negative-review held esca
     && bad "admission: ${admission_case} must fail closed" \
     || ok "admission: ${admission_case} fails closed"
 done
+export ADMISSION_CASE=clean-comment
+admission_pr_list="${TRAIN_PR_LIST_JSON}"
+clean_comment_head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+TRAIN_PR_LIST_JSON="$(jq --arg head "${clean_comment_head}" 'map(if .number == 10 then .headRefOid = $head else . end)' <<<"${TRAIN_PR_LIST_JSON}")"
+train_pr_admission 10 "${clean_comment_head}" \
+  && ok "admission: exact-head clean Codex comment is accepted" \
+  || bad "admission: exact-head clean Codex comment was rejected"
+TRAIN_PR_LIST_JSON="${admission_pr_list}"
+unset ADMISSION_CASE
 status_record="${SCRATCH}/review-gate-status"; : >"${status_record}"
 export FIXTURE_REVIEW_STATUS_RECORD="${status_record}"
 export ADMISSION_CASE=review-fail TRAIN_APPLY=1
