@@ -2,7 +2,9 @@
 
 Register a database connection and publish its spatial tables through Honua's supported control-plane SDK. Each published layer is immediately available through every enabled protocol.
 
-**Prerequisites:** a running server, an admin API key, a reachable database, and Python with `honua-admin` installed.
+**Prerequisites:** a running server, an admin API key, a reachable database, and Python with
+[`honua-admin` installed from source](https://github.com/honua-io/honua-sdk-python#install)
+until the package's first PyPI release.
 
 ## Create a secure connection
 

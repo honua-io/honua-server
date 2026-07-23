@@ -50,7 +50,9 @@ EOF
 7. Register the compose database as a connection (publishing reads tables through named connections).
 
 ```bash
-python3 -m pip install honua-admin
+python3 -m pip install \
+  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
+  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
 python3 - <<'PY'
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
