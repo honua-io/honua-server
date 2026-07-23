@@ -145,7 +145,26 @@ Then start it with `docker compose up -d console`, or disable it with `docker co
 
 Expected output: `Ready`. Then confirm admin auth works:
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/config`.
+From an operator workstation with Python 3, install the pinned admin SDK and read
+the effective configuration through its authenticated client:
+
+```bash
+set -a
+. ./.env
+set +a
+python3 -m pip install \
+  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
+python3 - <<'PY'
+import os
+from honua_admin import HonuaAdminClient
+
+with HonuaAdminClient(
+    "http://127.0.0.1:8080",
+    api_key=os.environ["HONUA_ADMIN_PASSWORD"],
+) as admin:
+    print(admin.get_config())
+PY
+```
 
 If Console is enabled, confirm the ops dashboard responds:
 
