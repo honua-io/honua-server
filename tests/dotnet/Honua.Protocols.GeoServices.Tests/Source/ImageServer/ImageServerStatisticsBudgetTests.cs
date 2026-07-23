@@ -38,19 +38,18 @@ public sealed class ImageServerStatisticsBudgetTests
     }
 
     [UnitTest]
-    public async Task ResolveAsync_OperationExceedsBudget_ReturnsEmptyAndInvokesCallback()
+    public async Task ResolveAsync_OperationExceedsBudget_ReturnsEmptyWithoutCancellingBackfill()
     {
         var budgetExceeded = false;
+        var backfill = new TaskCompletionSource<RasterStatistics[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken operationToken = default;
 
-        // Simulates a statistics computation that never completes on its own (e.g. a
-        // cold-cache backfill still waiting on a large ST_SummaryStats pass): it only
-        // observes its own cancellation token, exactly like the real Postgres calls
-        // threaded through this budget.
         var result = await ImageServerStatisticsBudget.ResolveAsync(
-            async ct =>
+            ct =>
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
-                return Sample;
+                operationToken = ct;
+                return backfill.Task;
             },
             onBudgetExceeded: () => budgetExceeded = true,
             budget: TimeSpan.FromMilliseconds(50),
@@ -58,26 +57,32 @@ public sealed class ImageServerStatisticsBudgetTests
 
         result.Should().BeEmpty();
         budgetExceeded.Should().BeTrue();
+        operationToken.Should().Be(CancellationToken.None);
+        backfill.Task.IsCompleted.Should().BeFalse("the persistence backfill must outlive the response budget");
+
+        backfill.SetResult(Sample);
+        (await backfill.Task).Should().BeSameAs(Sample);
     }
 
     [UnitTest]
     public async Task ResolveAsync_RequestAborted_PropagatesCancellationWithoutInvokingCallback()
     {
         var budgetExceeded = false;
+        var backfill = new TaskCompletionSource<RasterStatistics[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         using var requestCts = new CancellationTokenSource();
         await requestCts.CancelAsync();
 
         var act = () => ImageServerStatisticsBudget.ResolveAsync(
-            async ct =>
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
-                return Sample;
-            },
+            _ => backfill.Task,
             onBudgetExceeded: () => budgetExceeded = true,
             budget: TimeSpan.FromSeconds(5),
             requestCts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         budgetExceeded.Should().BeFalse();
+
+        backfill.SetResult(Sample);
+        (await backfill.Task).Should().BeSameAs(Sample);
     }
 }

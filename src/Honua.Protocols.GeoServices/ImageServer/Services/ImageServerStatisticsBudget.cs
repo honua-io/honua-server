@@ -15,15 +15,11 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// <remarks>
 /// The Postgres raster store's statistics backfill already grants itself a generous
 /// compute budget (300s) so a big <c>ST_SummaryStats</c> pass can finish and persist for
-/// <em>future</em> requests rather than timing out mid-computation (#1649). That budget
-/// is only useful if something actually waits for it; a request-scoped host (Lambda,
-/// a reverse-proxy idle timeout, ...) is very often shorter than 300s, so the very first
-/// cold-cache request against a large mosaic can never finish in time and simply repeats
-/// the same expensive, never-completing computation forever. Capping the request-visible
-/// wait well under any realistic host deadline turns that infinite failure loop into a
-/// fast, predictable response (metadata without statistics/histograms) on the first few
-/// calls while the persisted-stats backfill keeps a chance to complete out from under the
-/// tighter budget on a request that happens to hit a warm cache.
+/// <em>future</em> requests rather than timing out mid-computation (#1649). The
+/// request-visible wait is deliberately decoupled from that operation: timing out this
+/// helper returns an empty response but does not cancel the single-flight backfill. Later
+/// requests can therefore hit the rows it persisted instead of repeatedly starting and
+/// rolling back the same expensive computation.
 /// </remarks>
 internal static class ImageServerStatisticsBudget
 {
@@ -61,17 +57,35 @@ internal static class ImageServerStatisticsBudget
         TimeSpan budget,
         CancellationToken requestAborted)
     {
-        using var budgetCts = new CancellationTokenSource(budget);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted, budgetCts.Token);
+        // Do not pass the request/budget token into the store operation. The Postgres
+        // implementation uses that token for ST_SummaryStats *and* transaction commit;
+        // cancelling it at the response deadline would roll back the single-flight
+        // backfill and force every later request to repeat it forever.
+        var operationTask = operation(CancellationToken.None);
 
         try
         {
-            return await operation(linkedCts.Token).ConfigureAwait(false);
+            return await operationTask.WaitAsync(budget, requestAborted).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!requestAborted.IsCancellationRequested && budgetCts.IsCancellationRequested)
+        catch (TimeoutException)
         {
+            ObserveBackgroundFault(operationTask);
             onBudgetExceeded();
             return [];
         }
+        catch (OperationCanceledException) when (requestAborted.IsCancellationRequested)
+        {
+            ObserveBackgroundFault(operationTask);
+            throw;
+        }
+    }
+
+    private static void ObserveBackgroundFault<T>(Task<T[]> operationTask)
+    {
+        _ = operationTask.ContinueWith(
+            static task => _ = task.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 }
