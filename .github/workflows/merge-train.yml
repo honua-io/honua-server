@@ -151,7 +151,13 @@ jobs:
           # live landing wants the PAT so the batch-branch CI actually fires.
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN || secrets.GITHUB_TOKEN }}
           TRAIN_APPLY: ${{ steps.mode.outputs.train_apply }}
+          # Pre-provisioned singleton state authority. Live mode never creates
+          # state issues, eliminating check-then-create races and duplicates.
+          TRAIN_STATE_ISSUE_NUMBER: 2044
           MAX_BATCH: ${{ steps.mode.outputs.max_batch }}
+          # One absolute 110m budget shared by initial CI and any failed-job
+          # retry, leaving 10m under this job's 120m cap for state persistence.
+          TRAIN_SMART_CI_POLL_TIMEOUT_SECONDS: 6600
           # Instrumentation: the run timestamp is injected here (not generated in
           # the script) so the Step Summary, metrics JSON, and state-issue
           # aggregate all agree on a single run instant.

@@ -61,7 +61,9 @@ public static class AuthenticationExtensions
     /// <summary>
     /// Adds API key authentication and authorization services
     /// </summary>
-    public static IServiceCollection AddApiKeyAuthentication(this IServiceCollection services)
+    public static IServiceCollection AddApiKeyAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         services.AddScoped<ApiKeyAuthenticationDependencies>();
 
@@ -84,15 +86,20 @@ public static class AuthenticationExtensions
                 ApiKeyScheme,
                 options => { });
 
+        // #2958: the client-certificate scheme is only ever a valid policy scheme
+        // reference when the security.mtls experimental capability is enabled — resolved
+        // once here (composition time) rather than per-policy-evaluation.
+        var mtlsCapabilityEnabled = ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration);
+
         // Add authorization policies
         _ = services.AddAuthorization(options =>
         {
-            options.AddPolicy(AdminPolicy, ConfigureAdminPolicy);
-            options.AddPolicy(AdminPolicyAlias, ConfigureAdminPolicy);
-            options.AddPolicy(OpsReadPolicy, ConfigureOpsReadPolicy);
-            options.AddPolicy(TemporalHistoryReadPolicy, ConfigureAdminPolicy);
-            options.AddPolicy(TemporalDiffReadPolicy, ConfigureAdminPolicy);
-            options.AddPolicy(TemporalRollbackExecutePolicy, ConfigureAdminPolicy);
+            options.AddPolicy(AdminPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(AdminPolicyAlias, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(OpsReadPolicy, policy => ConfigureOpsReadPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
         });
 
         return services;
@@ -104,13 +111,23 @@ public static class AuthenticationExtensions
     /// (#1985). The role check preserves the legacy gate; the permission requirement
     /// adds scoped-key enforcement so a read-only admin key cannot mutate.
     /// </summary>
-    private static void ConfigureAdminPolicy(AuthorizationPolicyBuilder policy)
+    /// <param name="policy">The policy builder to configure.</param>
+    /// <param name="mtlsCapabilityEnabled">
+    /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958). Only
+    /// then is the client-certificate scheme added to the policy's accepted schemes — while
+    /// disabled (the default), a valid bearer token authenticates admin requests with no
+    /// interposed cert-RBAC check.
+    /// </param>
+    private static void ConfigureAdminPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
         _ = policy.RequireRole("admin");
         _ = policy.AddRequirements(new AdminPermissionRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
-        policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+        if (mtlsCapabilityEnabled)
+        {
+            policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+        }
     }
 
     /// <summary>
@@ -120,12 +137,20 @@ public static class AuthenticationExtensions
     /// <see cref="OpsReadRequirement"/> (via <see cref="AdminApiKeyPermission.IsOpsReadAuthorized"/>):
     /// admin (any level) or ops:read for safe methods; full admin write for mutating methods.
     /// </summary>
-    private static void ConfigureOpsReadPolicy(AuthorizationPolicyBuilder policy)
+    /// <param name="policy">The policy builder to configure.</param>
+    /// <param name="mtlsCapabilityEnabled">
+    /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958); see
+    /// <see cref="ConfigureAdminPolicy"/>.
+    /// </param>
+    private static void ConfigureOpsReadPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
         _ = policy.AddRequirements(new OpsReadRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
-        policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+        if (mtlsCapabilityEnabled)
+        {
+            policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+        }
     }
 
     /// <summary>

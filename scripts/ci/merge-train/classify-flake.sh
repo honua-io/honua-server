@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Step 5: classify-flake — run BEFORE attribute. Scan the failing jobs' logs for
-# the flake signature regex (40P01 / deadlock detected / ryuk / Testcontainers
-# timeouts/connection-refused). On a match, do a SINGLE `gh run rerun <id>
-# --failed` (cap TRAIN_FLAKE_RERUN_CAP, default 1) — never a bisection. If the
-# same signature reproduces on the rerun, treat it as a REAL failure and fall
-# through to attribute.
+# Step 5: classify-flake runs only after generic timeout classification. It scans failing-job logs for known environmental signatures and reruns failed jobs once. A persistent known environmental signature retains the optimistic merge-through policy; generic timeout/exit-124 failures never reach that path and remain real.
 
 # train_run_logs_match_flake <run-id>: fetch the failed jobs' logs and test them
 # against the flake regex. Returns 0 (flake) / 1 (not). Test override:
@@ -64,7 +59,7 @@ train_failing_job_logs() {
 # Otherwise return 1 (treat as real -> attribute). The rerun is side-effecting
 # (gated by TRAIN_APPLY).
 train_classify_flake() {
-  local run_id="$1" rerun_count="${2:-0}"
+  local run_id="$1" rerun_count="${2:-0}" callback="${3:-}"
   if ! train_run_logs_match_flake "${run_id}"; then
     # Deterministic path found NO known flake signature. This is the ambiguous
     # condition for the Phase-2 unknown-signature gate: optionally ask Bedrock
@@ -75,8 +70,8 @@ train_classify_flake() {
         return 1
       fi
       train_log "llm[flake.unknown] classified TRANSIENT; issuing single rerun of failed jobs"
-      train_side_effect gh run rerun "${run_id}" --failed
-      return 0
+      train_request_failed_job_rerun "${run_id}" flake "$((rerun_count + 1))" "${callback}"
+      return $?
     fi
     train_log "no flake signature in failing logs; treating as real failure"
     return 1
@@ -94,8 +89,7 @@ train_classify_flake() {
     return 2
   fi
   train_log "flake signature matched; issuing single rerun of failed jobs"
-  train_side_effect gh run rerun "${run_id}" --failed
-  return 0
+  train_request_failed_job_rerun "${run_id}" flake "$((rerun_count + 1))" "${callback}"
 }
 
 # --- Phase 2 gate: unknown-signature judgment (gated LLM) ---------------------

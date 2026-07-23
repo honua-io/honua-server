@@ -7,6 +7,7 @@ using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.DuckDB.Features.FeatureStore;
 using Honua.DuckDB.Features.FeatureStore.Services;
@@ -59,7 +60,8 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
             )
             """);
 
-        for (var i = 1; i <= 10; i++)
+        int[] insertionOrder = [5, 1, 9, 2, 8, 3, 10, 4, 7, 6];
+        foreach (var i in insertionOrder)
         {
             var lon = -122.0 + i * 0.01;
             var lat = 37.0 + i * 0.01;
@@ -157,6 +159,49 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 
         Assert.Equal(3, result.Items.Length);
         Assert.True(result.HasMoreResults);
+    }
+
+    [Fact]
+    public async Task QueryAsync_PagedUnifiedQueryWithNonObjectIdPrimaryKey_ReturnsPrimaryKeyOrder()
+    {
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res.parcels", Name = "parcels" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "id",
+                    Type = MetadataV2FieldType.BigInteger,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field
+                {
+                    Name = "geom",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = false,
+                    SemanticRoles = ["geometry.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Point,
+                SpatialReference = MetadataV2SpatialReference.Wgs84
+            }
+        };
+        var processor = new QueryProcessor(
+            new UnusedFilterExpressionTranslator(),
+            _store,
+            NullLogger<QueryProcessor>.Instance);
+        var optimized = processor.OptimizeQuery(new UnifiedQuery { Limit = 3 }, resource);
+        var providerQuery = processor.ToFeatureQuery(optimized, resource);
+
+        var result = await _store.QueryAsync(LayerId, providerQuery);
+
+        Assert.Equal([1L, 2L, 3L], result.Items.Select(feature => feature.Id));
     }
 
     [Fact]
@@ -541,6 +586,15 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private sealed class UnusedFilterExpressionTranslator : IFilterExpressionTranslator
+    {
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+            => throw new InvalidOperationException("The ordering regression does not use filters.");
+
+        public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+            => throw new InvalidOperationException("The ordering regression does not use filters.");
     }
 
     private FeatureQuery QueryWithFilter(FilterExpression filter)

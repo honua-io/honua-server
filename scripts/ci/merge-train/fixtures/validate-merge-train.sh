@@ -98,6 +98,7 @@ export TRAIN_REPO_ROOT="${WORK}"
 . "${TRAIN_DIR}/assemble.sh"
 . "${TRAIN_DIR}/smart-ci.sh"
 . "${TRAIN_DIR}/forward-fix.sh"
+. "${TRAIN_DIR}/classify-timeout.sh"
 . "${TRAIN_DIR}/classify-flake.sh"
 . "${TRAIN_DIR}/surgical.sh"
 . "${TRAIN_DIR}/preexisting.sh"
@@ -353,17 +354,36 @@ assert_contains "derived artifacts: shell generators do not require executable b
 
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
+#
+# train_discover_dispatched_run requires an exact head/event/title match (not
+# just branch), so this stub must emit the same 5-column
+# databaseId/headBranch/event/headSha/displayTitle TSV shape for discovery
+# queries (identified by the --json list containing displayTitle) that
+# production now requires, and derive the nonce-based title from the captured
+# `gh workflow run ... -f merge_train_nonce=<value>` argument — the baseline
+# snapshot query (--json databaseId,headBranch only) still returns bare ids.
 smart_ci_dispatched=0
 smart_ci_mode=immediate
 smart_ci_dispatch_marker="${SCRATCH}/smart-ci-dispatched"
 smart_ci_baseline_calls="${SCRATCH}/smart-ci-baseline-calls"
+smart_ci_nonce_file="${SCRATCH}/smart-ci-nonce"
 gh() {
   if [[ "$1 $2" == "workflow run" ]]; then
     smart_ci_dispatched=1
     : >"${smart_ci_dispatch_marker}"
+    local arg prev=""
+    for arg in "$@"; do
+      if [[ "${prev}" == "-f" && "${arg}" == merge_train_nonce=* ]]; then
+        printf '%s' "${arg#merge_train_nonce=}" >"${smart_ci_nonce_file}"
+      fi
+      prev="${arg}"
+    done
     return 0
   fi
   if [[ "$1 $2" == "run list" ]]; then
+    local discovery=0
+    [[ "$*" == *"displayTitle"* ]] && discovery=1
+
     if [[ "${smart_ci_mode}" == "baseline-failure" ]]; then
       local baseline_calls=0
       [[ -f "${smart_ci_baseline_calls}" ]] && baseline_calls="$(cat "${smart_ci_baseline_calls}")"
@@ -374,7 +394,24 @@ gh() {
       return 0
     fi
     if [[ "${smart_ci_mode}" == "stale" ]]; then
-      echo "333"
+      if [[ "${discovery}" == "1" ]]; then
+        local head; head="$(git rev-parse smartci-batch 2>/dev/null || echo "")"
+        # Same run id as the baseline: a real (matching) row that the
+        # already-seen filter must still exclude, proving "no NEW run" rather
+        # than a field-shape mismatch.
+        printf '333\tsmartci-batch\tworkflow_dispatch\t%s\tCI stale-run\n' "${head}"
+      else
+        echo "333"
+      fi
+      return 0
+    fi
+    if [[ "${discovery}" == "1" ]]; then
+      if [[ "${smart_ci_dispatched}" == "1" ]]; then
+        local nonce head
+        nonce="$(cat "${smart_ci_nonce_file}" 2>/dev/null || echo "")"
+        head="$(git rev-parse smartci-batch 2>/dev/null || echo "")"
+        printf '222\tsmartci-batch\tworkflow_dispatch\t%s\tCI %s\n' "${head}" "${nonce}"
+      fi
       return 0
     fi
     if [[ "${smart_ci_dispatched}" == "1" ]]; then echo "222"; else echo "111"; fi
@@ -422,6 +459,13 @@ assert_eq "state: phase persisted" "$(jq -r '.active_batch.phase' <<<"${sj}")" "
 assert_eq "state: included persisted" "$(jq -rc '.active_batch.included' <<<"${sj}")" "[101,102]"
 assert_eq "state: max_batch in config" "$(jq -r '.config.max_batch' <<<"${sj}")" "${MAX_BATCH:-3}"
 assert_eq "state: last_landed_trunk" "$(jq -r '.last_landed_trunk' <<<"${sj}")" "cafef00d"
+
+aggregate='{"totals":{"batches":1,"prs_landed":1}}'
+state_dashboard="$(printf '%s\n\n```json aggregate\n%s\n```\n' "${body}" "${aggregate}")"
+parsed_state="$(TRAIN_STATE_ISSUE_OVERRIDE=2044 TRAIN_STATE_BODY_OVERRIDE="${state_dashboard}" train_state_read)"
+assert_eq "state: reader ignores aggregate JSON fence" "$(jq -r '.active_batch.phase' <<<"${parsed_state}")" "smart-ci"
+assert_eq "state: aggregate reader selects aggregate fence" \
+  "$(TRAIN_STATE_ISSUE_OVERRIDE=2044 TRAIN_AGG_BODY_OVERRIDE="${state_dashboard}" train_aggregate_block | jq -r '.totals.prs_landed')" "1"
 
 echo
 echo "== select: CI-Gate classification + ordering + hold/draft filters =="

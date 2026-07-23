@@ -426,8 +426,10 @@ internal static partial class SecureConnectionEndpoints
             {
                 // Create with secret reference. The resolved secret holds the full connection string and is the
                 // source of truth, so host/database/username are optional display metadata here; fall back to a
-                // neutral placeholder when the caller omits them.
-                const string secretMetadataPlaceholder = "(from secret reference)";
+                // neutral placeholder when the caller omits them. Consumers that treat a declared Host/Port as a
+                // security assertion (SecureConnectionResolver's tamper check) must recognize this same
+                // placeholder as "not declared" rather than compare it against the resolved secret's real host.
+                var secretMetadataPlaceholder = DataConnection.SecretReferenceMetadataPlaceholder;
                 connection = DataConnection.CreateWithSecretReference(
                     request.Name,
                     string.IsNullOrWhiteSpace(request.Host) ? secretMetadataPlaceholder : request.Host,
