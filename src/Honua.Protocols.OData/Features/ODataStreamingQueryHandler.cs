@@ -3,9 +3,11 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -30,6 +32,7 @@ internal sealed partial class ODataStreamingQueryHandler(
     ILogger<ODataStreamingQueryHandler> logger)
 {
     private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
+    private readonly ODataFeatureProviderResolver? _featureProviderResolver = dependencies.FeatureProviderResolver;
     private readonly IGeometryService _geometryService = dependencies.GeometryService;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly IStreamingFeatureStore _streamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
@@ -382,11 +385,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
             var resource = layerValidation.Resource!;
             var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
-            var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
-                context,
+            var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                layerValidation.Snapshot!,
                 layerValidation.Publication,
-                resource,
-                effectiveToken).ConfigureAwait(false);
+                resource);
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -395,6 +397,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                     "Layer storage binding is not configured.",
                     StatusCodes.Status500InternalServerError);
             }
+            var featureReader = await (_featureProviderResolver
+                ?? throw new InvalidOperationException("Feature provider routing is not configured."))
+                .ResolveQueryReaderAsync(
+                    layerValidation.Snapshot!,
+                    layerValidation.Service,
+                    resource,
+                    layerValidation.Publication,
+                    storageLayerId.Value,
+                    requireCount: countValue == true,
+                    effectiveToken).ConfigureAwait(false);
             var deltaDefinition = deltaState ?? new ODataDeltaService.DeltaQueryState
             {
                 Timestamp = DateTimeOffset.UtcNow,
@@ -522,7 +534,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             var streamQuery = featureQuery;
             if (countValue == true)
             {
-                totalCount = await _featureReader.CountAsync(storageLayerId.Value, featureQuery, effectiveToken);
+                totalCount = await featureReader.CountAsync(storageLayerId.Value, featureQuery, effectiveToken);
             }
             else if (streamQuery.Limit.HasValue && streamQuery.Limit.Value < int.MaxValue)
             {
@@ -547,8 +559,13 @@ internal sealed partial class ODataStreamingQueryHandler(
             var selectedFields = ODataUtilityService.ParseSelect(select);
 
             // Stream the OData response
+            var featureStream = featureReader is IStreamingFeatureStore routedStreamingStore
+                ? routedStreamingStore.StreamFeaturesAsync(storageLayerId.Value, streamQuery, effectiveToken)
+                : ReferenceEquals(featureReader, _featureReader)
+                    ? _streamingFeatureStore.StreamFeaturesAsync(storageLayerId.Value, streamQuery, effectiveToken)
+                    : QueryAsStreamAsync(featureReader, storageLayerId.Value, streamQuery, effectiveToken);
             await StreamODataFeaturesAsync(
-                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(storageLayerId.Value, streamQuery, effectiveToken),
+                featureStream,
                 context,
                 publicLayerId,
                 resource.ReadSrid() ?? 4326,
@@ -1022,11 +1039,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
             var resource = layerValidation.Resource!;
             var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
-            var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
-                context,
+            var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                layerValidation.Snapshot!,
                 layerValidation.Publication,
-                resource,
-                effectiveToken).ConfigureAwait(false);
+                resource);
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -1035,6 +1051,16 @@ internal sealed partial class ODataStreamingQueryHandler(
                     "Layer storage binding is not configured.",
                     StatusCodes.Status500InternalServerError);
             }
+            var featureReader = await (_featureProviderResolver
+                ?? throw new InvalidOperationException("Feature provider routing is not configured."))
+                .ResolveReaderAsync(
+                    layerValidation.Snapshot!,
+                    layerValidation.Service,
+                    resource,
+                    layerValidation.Publication,
+                    storageLayerId.Value,
+                    FeatureProviderReadOperation.Count,
+                    effectiveToken).ConfigureAwait(false);
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -1058,7 +1084,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
             }
 
-            var count = await _featureReader.CountAsync(storageLayerId.Value, featureQuery, effectiveToken);
+            var count = await featureReader.CountAsync(storageLayerId.Value, featureQuery, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
             HonuaTelemetry.SetSuccess(featureActivity, (int)Math.Min(count, int.MaxValue));
@@ -1088,6 +1114,20 @@ internal sealed partial class ODataStreamingQueryHandler(
         finally
         {
             featureActivity?.Dispose();
+        }
+    }
+
+    private static async IAsyncEnumerable<Feature> QueryAsStreamAsync(
+        IFeatureReader featureReader,
+        int storageLayerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var result = await featureReader.QueryAsync(storageLayerId, query, cancellationToken).ConfigureAwait(false);
+        foreach (var feature in result.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return feature;
         }
     }
 
