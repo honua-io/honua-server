@@ -59,7 +59,7 @@ internal sealed class ODataQueryParameterAdapter(
     /// <see cref="IFilterExpressionService.ParseAndNormalize"/> overload, validates $select against
     /// <see cref="MetadataV2Resource.SchemaFields"/>, and stores the filter as a
     /// <see cref="QueryFilter"/>. SQL translation is deferred to the downstream processor's
-    /// SQL last-mile bridge (#1035): see metadata-v2-cutover-plan.md.
+    /// SQL last-mile bridge (#1035): see ADR-0040, the Metadata v2 canonical graph.
     /// </summary>
     public Task<QueryAdapterResult> ConvertAsync(
         ODataQueryParameters parameters,

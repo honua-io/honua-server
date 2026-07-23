@@ -1,7 +1,7 @@
 # honua-worker-etl — heavyweight GP/ETL worker image
 
 This is the **optional, native-profile** worker image described by
-[ADR-0038](../../docs/contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md).
+[ADR-0038](../../docs/internal/contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md).
 It is the GDAL-equipped counterpart to the lean serving image (`/Dockerfile`).
 
 ## What it is

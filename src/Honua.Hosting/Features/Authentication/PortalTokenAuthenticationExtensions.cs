@@ -159,7 +159,7 @@ public static class PortalTokenAuthenticationExtensions
             sp => new InMemoryPortalGroupStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
 
-        // Optional JWT access-token format + RFC 7662 introspection (ADR-0054, #1890)
+        // Optional JWT access-token format + RFC 7662 introspection (ADR-0068, #1890)
         // and pluggable IdP/OIDC federation for client_credentials (ADR-0053
         // Increment 3, #1889). All strictly opt-in via options; registering the
         // services unconditionally keeps the flag-off path a no-op (the services

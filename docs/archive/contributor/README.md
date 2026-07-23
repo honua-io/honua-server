@@ -9,7 +9,7 @@ Sections:
 - [Esri migration platform plan](ESRI_MIGRATION_PLATFORM_PLAN.md) — archived migration strategy document
 - [Production audit playbook](PRODUCTION_AUDIT_PLAYBOOK.md) — superseded audit workflow notes
 - [Protocol parity audit](PROTOCOL_PARITY_305_310_AUDIT.md) — archived protocol parity findings
-- [GeoETL strategy spike](geoetl-spike.md) — one-time competitor/positioning spike (`#682`); superseded by the live [GeoETL roadmap](../../internal/contributor/geoetl-roadmap.md)
+- [GeoETL strategy spike](geoetl-spike.md) — one-time competitor/positioning spike (`#682`); superseded by [ADR-0038](../../internal/contributor/adr/0038-geoetl-pipeline-architecture-and-runtime-boundary.md)
 - [Metadata v2 backlog index](metadata-v2-backlog.md) and [roadmap](metadata-v2-roadmap.md) — superseded by [epic #1035](https://github.com/honua-io/honua-server/issues/1035) and its child issues
 - [Service registration consolidation](SERVICE_REGISTRATION_CONSOLIDATION.md) — refactor memo from an earlier DI-consolidation pass; partial set of described helpers no longer exists
 - [Unified response system](unified-response-system.md) — described an `IUnifiedResponseService` surface that was never landed in current form; kept only for historical context
