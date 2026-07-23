@@ -153,6 +153,16 @@ internal sealed class PMTilesProxyService
             return PMTilesRangeResult.Unsatisfiable(totalSize);
         }
 
+        // A Range response crosses the same synchronous serverless payload
+        // boundary as a no-Range response. Reject callers that spell a full
+        // oversized download as "bytes=0-" (and any other oversized range)
+        // before reading the object; normal PMTiles clients request small
+        // header, directory, and tile slices.
+        if (length > MaxDirectFullStreamBytes)
+        {
+            return PMTilesRangeResult.TooLarge(totalSize);
+        }
+
         var bucket = ResolveBucket(metadata.Provider);
         var reader = _rangeReaders.FirstOrDefault(r => r.Provider == metadata.Provider);
         byte[]? payload;

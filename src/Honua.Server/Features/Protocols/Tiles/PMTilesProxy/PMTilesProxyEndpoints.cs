@@ -29,7 +29,8 @@ internal static class PMTilesProxyEndpoints
             .WithDisplayName("PMTiles Range Proxy")
             .WithSummary("Range-proxied access to a published PMTiles artifact")
             .WithDescription("Streams a published PMTiles artifact via HTTP range requests for MapLibre/PMTiles browser clients in private-bucket deployments.")
-            .WithTags("Tiles", "PMTiles");
+            .WithTags("Tiles", "PMTiles")
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
         return endpoints;
     }
@@ -91,8 +92,8 @@ internal static class PMTilesProxyEndpoints
                 return StandardErrorHelpers.CreatePayloadTooLarge(
                     context,
                     $"Artifact '{artifactId}' is {rangeResult.TotalSize:N0} bytes, which exceeds the " +
-                    $"{PMTilesProxyService.MaxDirectFullStreamBytes:N0}-byte limit for a full, non-ranged download. " +
-                    "Request a byte range instead (this endpoint advertises Accept-Ranges: bytes).");
+                    $"{PMTilesProxyService.MaxDirectFullStreamBytes:N0}-byte limit for one proxy response. " +
+                    "Request a smaller byte range (this endpoint advertises Accept-Ranges: bytes).");
 
             case PMTilesRangeOutcome.Partial:
                 response.Headers[HeaderNames.ContentRange] = $"bytes {rangeResult.Start}-{rangeResult.End}/{rangeResult.TotalSize}";

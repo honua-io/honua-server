@@ -190,11 +190,10 @@ public sealed class PMTilesProxyServiceTests
     }
 
     [Fact]
-    public async Task ReadRangeAsync_RangeHeaderPresent_IgnoresDirectStreamBudget()
+    public async Task ReadRangeAsync_SmallRangeWithinDirectStreamBudget_ReturnsPartial()
     {
-        // A real byte-range request must never be rejected by the full-download
-        // budget, however large the underlying artifact is — range reads are the
-        // whole point of this proxy and are already bounded by MaxRangeLength.
+        // A small byte-range request is safe even when the underlying artifact is
+        // larger than the direct-response budget.
         var stub = new TestCloudStorage();
         var bytes = new byte[PMTilesProxyService.MaxDirectFullStreamBytes + 1];
         bytes[2] = 42;
@@ -206,6 +205,24 @@ public sealed class PMTilesProxyServiceTests
 
         result.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
         result.Payload.Should().Equal(42);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_FullObjectRangeExceedsDirectStreamBudget_ReturnsTooLarge()
+    {
+        // "bytes=0-" is still a full-object response. Letting it bypass the
+        // no-Range guard would hit the same Lambda/API Gateway payload failure
+        // while merely changing the success status from 200 to 206.
+        var stub = new TestCloudStorage();
+        var bytes = new byte[PMTilesProxyService.MaxDirectFullStreamBytes + 1];
+        var fileId = stub.AddFile(bytes);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=0-", CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.TooLarge);
+        result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes + 1);
     }
 
     [Fact]
