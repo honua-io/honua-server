@@ -127,7 +127,7 @@ jobs:
             const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
               if (!isCodex(comment.author?.login)) return comment;
               const matches = [...(comment.body || '').matchAll(
-                /\*\*Reviewed commit:\*\*\s*`([0-9a-f]{10,40})`/gi
+                /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
               )];
               if (matches.length !== 1) return comment;
               const ref = matches[0][1];

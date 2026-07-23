@@ -24,6 +24,16 @@ test('unedited Codex clean comment for exact head attests', () => {
     unresolvedCount: 0, head: fullHead,
   }).exactCleanComment, true);
 });
+test('unedited clean comment with a plain commit anchor attests', () => {
+  const fullHead = 'b'.repeat(40);
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment(fullHead.slice(0, 10), {
+      body: `Codex Review: Didn't find any major issues. Clear!\n\nReviewed commit: \`${fullHead.slice(0, 10)}\``,
+      resolvedCommitOid: fullHead,
+    })],
+    unresolvedCount: 0, head: fullHead,
+  }).exactCleanComment, true);
+});
 test('unresolved short SHA cannot attest', () => {
   const fullHead = 'a'.repeat(40);
   assert.equal(evaluateCodexEvidence({

@@ -213,7 +213,7 @@ train_resolve_clean_comment_commits() {
     login="$(jq -r '.author.login // ""' <<<"${comment}")"
     referenced="$(jq -r '
       try ((.body // "") |
-        capture("\\*\\*Reviewed commit:\\*\\*\\s*`(?<sha>[0-9a-fA-F]{10,40})`"; "i").sha)
+        capture("(?:\\*\\*Reviewed commit:\\*\\*|Reviewed commit:)\\s*`(?<sha>[0-9a-fA-F]{10,40})`"; "i").sha)
       catch ""
     ' <<<"${comment}")"
     resolved="$(jq -r '.resolvedCommitOid // ""' <<<"${comment}")"

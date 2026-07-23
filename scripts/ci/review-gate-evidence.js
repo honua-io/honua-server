@@ -12,7 +12,7 @@ function cleanCommentMatchesHead(comment, head) {
     return false;
   }
   const reviewedCommits = [...(comment.body || '').matchAll(
-    /\*\*Reviewed commit:\*\*\s*`([0-9a-f]{10,40})`/gi
+    /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
   )];
   if (reviewedCommits.length !== 1) return false;
   const referenced = reviewedCommits[0][1].toLowerCase();
