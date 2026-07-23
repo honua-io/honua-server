@@ -2,52 +2,74 @@
 
 Insert, update, and delete features over HTTP using whichever protocol your client already speaks: GeoServices FeatureServer, OGC API Features, or OData v4.
 
-**Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only). If the layer's access policy restricts writes, authorize the API explorer with the admin key or another credential carrying a write grant — see [Control access](../secure/access-control.md).
+**Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
 
-All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each step to the other two protocols.
+All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses the ArcGIS Maps SDK for JavaScript against FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
 
 ## Steps
 
-### 1. Insert a feature
+### 1. Connect to the layer
 
-In the [API explorer](../../reference/openapi-and-explorer.md), run `POST /rest/services/{service}/FeatureServer/{layerId}/addFeatures`, substituting `parks` and `0`, with this body:
+Create a `FeatureLayer` for the published layer and load its metadata:
 
-```json
-{
-  "features": [
-    {
-      "geometry": { "x": -157.8583, "y": 21.3069 },
-      "attributes": { "name": "Honolulu" }
-    }
-  ]
-}
+```javascript
+import Graphic from "@arcgis/core/Graphic.js";
+import Point from "@arcgis/core/geometry/Point.js";
+import FeatureLayer from "@arcgis/core/layers/FeatureLayer.js";
+
+const layer = new FeatureLayer({
+  url: "http://localhost:8080/rest/services/parks/FeatureServer/0",
+});
+await layer.load();
+const objectIdField = layer.objectIdField;
 ```
 
-The response's `addResults[0].objectId` is the new feature's id; note it for the next steps.
+### 2. Insert and update a feature
 
-### 2. Update the feature
+Call the SDK's `applyEdits` method. Keep the returned object id for later edits:
 
-Run `POST /rest/services/{service}/FeatureServer/{layerId}/updateFeatures` with this body, replacing `1` with the returned object id:
+```javascript
+const added = await layer.applyEdits({
+  addFeatures: [
+    new Graphic({
+      geometry: new Point({
+        longitude: -157.8583,
+        latitude: 21.3069,
+      }),
+      attributes: { name: "Honolulu" },
+    }),
+  ],
+});
 
-```json
-{
-  "features": [
-    { "attributes": { "OBJECTID": 1, "name": "Honolulu Hale" } }
-  ]
-}
+const objectId = added.addFeatureResults[0].objectId;
+
+await layer.applyEdits({
+  updateFeatures: [
+    new Graphic({
+      attributes: {
+        [objectIdField]: objectId,
+        name: "Honolulu Hale",
+      },
+    }),
+  ],
+});
 ```
 
-Updates are matched by `OBJECTID`; attributes you omit are left unchanged, and you may include a `geometry` to move the feature.
+Attributes you omit are left unchanged, and you may include a `geometry` to move the feature.
 
 ### 3. Delete the feature
 
-Run `POST /rest/services/{service}/FeatureServer/{layerId}/deleteFeatures` with form fields `objectIds=<object-id>` and `f=json`.
+Pass a graphic carrying the object id to the same SDK method:
 
-### 4. Or batch all three in one call
+```javascript
+await layer.applyEdits({
+  deleteFeatures: [
+    new Graphic({ attributes: { [objectIdField]: objectId } }),
+  ],
+});
+```
 
-Run `POST /rest/services/{service}/FeatureServer/{layerId}/applyEdits` with form fields `adds=[{"geometry":{"x":-157.86,"y":21.31},"attributes":{"name":"Ala Moana"}}]`, `updates=[]`, `deletes=`, and `f=json`.
-
-`applyEdits` accepts `adds`, `updates`, and `deletes` together and also exists at the service level (`/rest/services/{service}/FeatureServer/applyEdits`) for multi-layer edits. Set `rollbackOnFailure=true` to make the batch all-or-nothing.
+`applyEdits` also accepts `addFeatures`, `updateFeatures`, and `deleteFeatures` together. Set `rollbackOnFailureEnabled: true` in its options to make the batch all-or-nothing.
 
 ## Do the same with OGC API Features or OData
 
