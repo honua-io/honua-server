@@ -186,7 +186,7 @@ internal sealed class ImageServerCalculateVolumeHandler
         }
         // Intentionally generic: this is a top-level protocol request handler; any unexpected
         // failure must map to a generic 500 rather than crash the host or leak internals.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.CalculateVolumeFailed(_logger, ex, layerId);
             scope.RecordException(ex);
@@ -211,9 +211,8 @@ internal sealed class ImageServerCalculateVolumeHandler
         var elevationSum = 0d;
         var min = double.MaxValue;
         var max = double.MinValue;
-        foreach (var pixel in pixels)
+        foreach (var elevation in (pixels).Select(pixel => pixel[0]))
         {
-            var elevation = pixel[0];
             var delta = elevation - basePlane;
             if (delta > 0d)
             {

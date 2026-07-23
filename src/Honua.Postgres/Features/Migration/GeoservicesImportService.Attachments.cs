@@ -78,7 +78,7 @@ internal sealed partial class GeoservicesImportService
             // Intentionally broad: per-batch failure; log, record a warning for the import result,
             // and skip just this batch of parent features rather than aborting the whole
             // attachment copy.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.AttachmentQueryBatchFailed(_logger, request.LayerId, batch.Length, ex);
                 warnings.Add(
@@ -164,7 +164,7 @@ internal sealed partial class GeoservicesImportService
                     }
                     // Intentionally broad: per-attachment failure; log and count it as failed,
                     // letting the rest of the batch's attachments continue copying.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         failedAttachments++;
                         Log.AttachmentCopyFailed(

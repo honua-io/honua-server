@@ -88,7 +88,7 @@ public static class PerformanceAssertions
             {
                 await operation();
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Broad catch is intentional (see comment above): warmup failures are
                 // ignored here and surfaced by the measured iterations below instead.
@@ -105,7 +105,7 @@ public static class PerformanceAssertions
                 var (_, duration) = await MeasureAsync(operation);
                 durations.Add(duration);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Broad catch is intentional: any failure counts against SuccessRate/ErrorCount
                 // rather than aborting the whole benchmark run.

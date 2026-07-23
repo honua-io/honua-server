@@ -310,7 +310,7 @@ public sealed class ConfigurationDiscoveryService
                     // Intentional catch-all: per-property loop over reflected configuration
                     // properties for the admin diagnostics view. One property's getter
                     // throwing must not abort the rest of the properties being read.
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         ConfigurationDiscoveryLog.PropertyValueReadFailed(_logger, type.FullName ?? type.Name, prop.Name, ex);
                         values[prop.Name] = null;
@@ -334,7 +334,7 @@ public sealed class ConfigurationDiscoveryService
         // the admin discovery/diagnostics surface. A failure here (e.g. DI resolution or
         // configuration binding throwing) must not break the overall discovery listing;
         // log it and return whatever values were already collected.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.ValueExtractionError(_logger, type.FullName ?? type.Name, ex.Message);
         }
@@ -382,7 +382,7 @@ public sealed class ConfigurationDiscoveryService
             // Not attacker/user-controlled: assembly.GetName().Name comes from an already-loaded
             // .NET assembly, not external input, so it cannot be a rooted path that would cause
             // Path.Combine to silently discard AppContext.BaseDirectory.
-            var assemblyPath = Path.Combine(AppContext.BaseDirectory, $"{assembly.GetName().Name}.dll");
+            var assemblyPath = Path.Join(AppContext.BaseDirectory, $"{assembly.GetName().Name}.dll");
 
             if (File.Exists(assemblyPath))
             {
@@ -393,7 +393,7 @@ public sealed class ConfigurationDiscoveryService
                 ? Directory.GetLastWriteTimeUtc(AppContext.BaseDirectory)
                 : DateTimeOffset.UtcNow;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Best-effort display timestamp only; the type is still discovered and
             // documented normally, so a file-system lookup failure here is not
@@ -544,7 +544,7 @@ public sealed class ConfigurationDiscoveryService
                 }
                 // Intentional catch-all: per-secret-reference loop; one reference failing to
                 // resolve/validate must not abort validation of the remaining references.
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     ConfigurationDiscoveryLog.SecretReferenceValidationFailed(_logger, MaskSecretReference(secretRef), ex);
                     result.InvalidSecrets++;
@@ -560,7 +560,7 @@ public sealed class ConfigurationDiscoveryService
         // Intentional catch-all: this is a best-effort secret-validation summary for the
         // admin diagnostics surface. A failure here (e.g. scanning configuration or resolving
         // the secret provider) must not crash the caller; report it as an issue instead.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ConfigurationDiscoveryLog.SecretValidationFailed(_logger, ex);
             result.Issues.Add(new SecretValidationIssue

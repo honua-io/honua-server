@@ -93,7 +93,7 @@ internal static partial class GeoServerImportEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
@@ -150,7 +150,7 @@ internal static partial class GeoServerImportEndpoints
         // Intentionally generic: top-level endpoint boundary after the specific
         // InvalidOperationException case above; any remaining unexpected failure maps to a
         // generic 500 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.GeoServerRestUrl, ex);
             await AdminResponseWriter.WriteErrorAsync(context,
@@ -190,7 +190,7 @@ internal static partial class GeoServerImportEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);
@@ -354,7 +354,7 @@ internal static partial class GeoServerImportEndpoints
         // Intentionally generic: top-level endpoint boundary after the specific
         // coordination-unavailable and validation cases above; any remaining unexpected
         // failure rolls back the queued state and maps to a generic 500.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
 
@@ -424,7 +424,8 @@ internal static partial class GeoServerImportEndpoints
         }
         // Intentionally generic: best-effort rollback of queued job state after a failure;
         // any error here is swallowed because the state will still expire via TTL.
-        catch
+        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
         }
     }
@@ -482,7 +483,7 @@ internal static partial class GeoServerImportEndpoints
         }
         // Intentionally generic: top-level endpoint boundary; any unexpected failure reading
         // job status maps to a generic 500 rather than leaking exception details to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.JobStatusFailed(GetLogger(context), jobId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to retrieve import job", StatusCodes.Status500InternalServerError);
@@ -544,7 +545,7 @@ internal static partial class GeoServerImportEndpoints
         }
         // Intentionally generic: top-level endpoint boundary; any unexpected failure
         // cancelling the job maps to a generic 500 rather than leaking exception details.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.JobCancelFailed(GetLogger(context), jobId, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Failed to cancel import job", StatusCodes.Status500InternalServerError);

@@ -368,7 +368,7 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
             {
                 await _proxy.StopAsync();
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Best-effort proxy shutdown.
             }
@@ -452,7 +452,7 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
                     // Loop shutdown — not a served-request failure.
                     break;
                 }
-                catch
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     // Any other transport/deserialization error during rolling-deploy load generation
                     // just counts as a failed request; cancellation is already rethrown above.

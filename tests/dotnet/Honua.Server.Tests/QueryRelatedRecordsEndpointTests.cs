@@ -180,6 +180,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
             // Expression<Func<T, bool>> for FluentAssertions' Contain(...); expression trees
             // cannot contain an inline `out var` declaration.
             group.RelatedRecords.Should().Contain(r =>
+                // codeql[cs/inefficient-containskey] -- the predicate is an expression tree and cannot declare an out variable for TryGetValue.
                 r.Attributes.ContainsKey("objectid") &&
                 ReadAttributeAsInt64(r.Attributes["objectid"]) == childObjectId);
         }

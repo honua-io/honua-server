@@ -80,7 +80,7 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
             UpdateLeadershipStatus(acquired);
             return acquired;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: leadership acquisition must never throw to the caller;
             // treat any failure as "not leader" and log it.
@@ -107,7 +107,7 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
                 fallbackOperation: ct => Task.FromResult(true),
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: release is best-effort; the lease will still expire on its own,
             // so log and fall through to clearing local leadership state.
@@ -180,14 +180,14 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
             // Intentional: a failed renewal attempt must not stop the timer from firing
             // again — this node simply stays a non-leader (or loses leadership) until the
             // next renewal succeeds.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.LeadershipRenewalFailed(Logger, _nodeId, ex);
             }
         }
         // Intentional: outermost guard for the async void timer callback above — catches
         // anything the inner try/catch missed (including bugs in the disposed check itself).
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.UnhandledTimerException(Logger, nameof(OnRenewalTimer), ex);
         }
@@ -291,7 +291,7 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         {
             Log.DisposeReleaseTimedOut(Logger, _nodeId, DisposeReleaseTimeout);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional: this runs on a fire-and-forget Task.Run during Dispose(),
             // so any failure must be logged here rather than escape unobserved.

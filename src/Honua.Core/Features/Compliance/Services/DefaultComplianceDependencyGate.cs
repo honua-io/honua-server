@@ -154,7 +154,7 @@ internal sealed partial class DefaultComplianceDependencyGate : IComplianceDepen
     {
         // Authoritative signal: configuration. IOidcProviderStore is registered
         // unconditionally as an in-memory placeholder, so its presence is not a
-        // capability proof — see honua-server-admin tracker for the durable store.
+        // capability proof — see the honua-console tracker for the durable store.
         var configuration = _services.GetService<IConfiguration>();
         if (configuration is null)
         {

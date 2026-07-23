@@ -18,7 +18,7 @@ internal static class SceneFixtureRoots
             // `directory` is the only segment that can be absolute; the trailing
             // segments (including fixtureName, always a relative literal at call
             // sites) cannot be silently dropped by Path.Combine.
-            var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", fixtureName);
+            var candidate = Path.Join(directory, "tests", "fixtures", "scenes", fixtureName);
             if (Directory.Exists(candidate))
             {
                 return candidate;

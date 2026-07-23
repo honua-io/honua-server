@@ -49,12 +49,12 @@ public sealed class ClientCompatSeedSequenceTests
 
         snapshots.Keys.Should().BeEquivalentTo(["default", "Development", "Test", "Production"]);
 
-        // Not a straightforward .Select(...): each iteration runs assertions as a side effect
-        // (AssertContainsBrowserCompatibilityMetadata), it does not produce a value to project.
-        foreach (var snapshot in snapshots.Values)
+        foreach (var document in snapshots.Values.Select(snapshot => JsonDocument.Parse(snapshot)))
         {
-            using var document = JsonDocument.Parse(snapshot);
-            AssertContainsBrowserCompatibilityMetadata(document.RootElement);
+            using (document)
+            {
+                AssertContainsBrowserCompatibilityMetadata(document.RootElement);
+            }
         }
     }
 
@@ -92,54 +92,53 @@ public sealed class ClientCompatSeedSequenceTests
 
         var snapshots = await ReadCurrentSnapshotsAsync(dataSource);
 
-        // Not a straightforward .Select(...): each iteration runs a long chain of FluentAssertions
-        // checks against the parsed snapshot as a side effect, it does not produce a mapped value.
-        foreach (var snapshot in snapshots.Values)
+        foreach (var document in snapshots.Values.Select(snapshot => JsonDocument.Parse(snapshot)))
         {
-            using var document = JsonDocument.Parse(snapshot);
+            using (document)
+            {
+                var binding = document.RootElement
+                    .GetProperty("storageBindings")
+                    .EnumerateArray()
+                    .Single(b => b.GetProperty("metadata").GetProperty("id").GetString() == "storage-layer-0");
 
-            var binding = document.RootElement
-                .GetProperty("storageBindings")
-                .EnumerateArray()
-                .Single(b => b.GetProperty("metadata").GetProperty("id").GetString() == "storage-layer-0");
+                var options = binding.GetProperty("options");
 
-            var options = binding.GetProperty("options");
+                options.GetProperty("geometryColumn").GetString().Should().Be(
+                    "geometry",
+                    "the physical features table stores geometry in the `geometry` column, not the `shape` schema field");
+                options.GetProperty("attributesColumn").GetString().Should().Be(
+                    "attributes",
+                    "declared schema fields live in the shared features.attributes JSONB document");
+                options.GetProperty("layerDiscriminatorColumn").GetString().Should().Be(
+                    "layer_id",
+                    "the features table is shared across layers and reads must be constrained by layer_id");
+                options.GetProperty("primaryKeyColumn").GetString().Should().Be("objectid");
 
-            options.GetProperty("geometryColumn").GetString().Should().Be(
-                "geometry",
-                "the physical features table stores geometry in the `geometry` column, not the `shape` schema field");
-            options.GetProperty("attributesColumn").GetString().Should().Be(
-                "attributes",
-                "declared schema fields live in the shared features.attributes JSONB document");
-            options.GetProperty("layerDiscriminatorColumn").GetString().Should().Be(
-                "layer_id",
-                "the features table is shared across layers and reads must be constrained by layer_id");
-            options.GetProperty("primaryKeyColumn").GetString().Should().Be("objectid");
+                var resource = document.RootElement
+                    .GetProperty("resources")
+                    .EnumerateArray()
+                    .Single(r => r.GetProperty("metadata").GetProperty("id").GetString() == "res-layer-0");
 
-            var resource = document.RootElement
-                .GetProperty("resources")
-                .EnumerateArray()
-                .Single(r => r.GetProperty("metadata").GetProperty("id").GetString() == "res-layer-0");
-
-            resource.GetProperty("temporal").GetProperty("startTimeField").GetString().Should().Be(
-                "created_at",
+                resource.GetProperty("temporal").GetProperty("startTimeField").GetString().Should().Be(
+                    "created_at",
                 "the canonical client-compat layer must opt into FeatureServer time filtering (#2643)");
 
-            var featureService = document.RootElement
-                .GetProperty("services")
-                .EnumerateArray()
-                .Single(service =>
-                    service.GetProperty("metadata").GetProperty("name").GetString() == "test_service" &&
-                    service.GetProperty("serviceType").GetString() == "esri-feature-service");
-            var capabilities = featureService
-                .GetProperty("options")
-                .GetProperty("capabilities")
-                .EnumerateArray()
-                .Select(capability => capability.GetString())
-                .ToArray();
+                var featureService = document.RootElement
+                    .GetProperty("services")
+                    .EnumerateArray()
+                    .Single(service =>
+                        service.GetProperty("metadata").GetProperty("name").GetString() == "test_service" &&
+                        service.GetProperty("serviceType").GetString() == "esri-feature-service");
+                var capabilities = featureService
+                    .GetProperty("options")
+                    .GetProperty("capabilities")
+                    .EnumerateArray()
+                    .Select(capability => capability.GetString())
+                    .ToArray();
 
-            capabilities.Should().Contain("Sync",
-                "the client-compat service must advertise the replica/sync surface through Metadata V2");
+                capabilities.Should().Contain("Sync",
+                    "the client-compat service must advertise the replica/sync surface through Metadata V2");
+            }
         }
     }
 

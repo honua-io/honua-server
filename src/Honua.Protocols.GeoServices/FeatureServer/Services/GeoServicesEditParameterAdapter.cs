@@ -103,7 +103,7 @@ internal sealed class GeoServicesEditParameterAdapter(
         // boundary; any unexpected failure while translating caller-supplied geometry/
         // attributes must map to a validation failure result rather than crash the
         // shared edit pipeline or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             GeoServicesPreparedAdaptersLog.EditParameterConversionFailed(_logger, ex);
             return Task.FromResult(EditAdapterResult.Failure("Invalid edit request."));

@@ -91,7 +91,7 @@ internal static partial class RlsPolicyEndpoints
             IReadOnlyList<RlsPolicyResponse> readOnly = response.AsReadOnly();
             return TypedResults.Ok(ApiResponse<IReadOnlyList<RlsPolicyResponse>>.CreateSuccess(readOnly));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic problem response below.
@@ -120,7 +120,7 @@ internal static partial class RlsPolicyEndpoints
 
             return TypedResults.Ok(ApiResponse<RlsPolicyResponse>.CreateSuccess(ToResponse(policy)));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic problem response below.
@@ -176,7 +176,7 @@ internal static partial class RlsPolicyEndpoints
             // Duplicate scope (unique-constraint violation) is a client error.
             return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic problem response below.
@@ -206,7 +206,7 @@ internal static partial class RlsPolicyEndpoints
             RlsPolicyLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("RLS policy deleted"));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: logs and maps any failure
             // to a generic problem response below.

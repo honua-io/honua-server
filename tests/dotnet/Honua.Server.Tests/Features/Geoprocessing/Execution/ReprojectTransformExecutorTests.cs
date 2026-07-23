@@ -81,6 +81,7 @@ public sealed class ReprojectTransformExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         var geom = ReadFeatures(uri!)[0].Geometry as Point;
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         geom.Should().NotBeNull("the reprojected geometry must remain a Point");
         geom!.X.Should().BeApproximately(10, 1e-9);
         geom.Y.Should().BeApproximately(20, 1e-9);
@@ -101,6 +102,7 @@ public sealed class ReprojectTransformExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Succeeded);
         var geom = ReadFeatures(uri!)[0].Geometry as Point;
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         geom.Should().NotBeNull("the reprojected geometry must remain a Point");
         geom!.X.Should().BeApproximately(5009377.085, 1.0);
         double.IsFinite(geom.Coordinates[0].Z).Should().BeTrue("Z must survive reprojection (#2744)");

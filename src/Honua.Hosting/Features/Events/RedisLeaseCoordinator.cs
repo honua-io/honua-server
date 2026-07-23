@@ -64,7 +64,7 @@ internal sealed class RedisLeaseCoordinator(
 
             return acquired;
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Intentional: any Redis failure here (timeout, connection drop) is treated as a
             // lost lease rather than a fatal error — the caller (dispatcher loop) retries the
@@ -116,7 +116,7 @@ internal sealed class RedisLeaseCoordinator(
         {
             await _database.LockReleaseAsync(_leaseKey, _ownerId).ConfigureAwait(false);
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Ignore release failures; the lease will expire.
         }

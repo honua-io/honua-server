@@ -39,7 +39,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             : Path.TrimEndingDirectorySeparator(_options.BasePath);
         // ".metadata" is a compile-time relative literal, so it cannot be rooted and this
         // combine can never silently drop _basePath.
-        _metadataPath = Path.Combine(_basePath, ".metadata");
+        _metadataPath = Path.Join(_basePath, ".metadata");
         _fileIndex = new ConcurrentDictionary<string, CloudFile>();
 
         InitializeStorage();
@@ -60,6 +60,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // another request/thread) can look it up and cancel it. Ownership transfers to whichever
         // path removes it from the dictionary first; the finally block below disposes it once
         // this upload's own processing has removed its entry.
+        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -224,7 +225,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // (after the specific cancellation/argument catches above) and must convert any
         // remaining failure — filesystem, hashing, or downstream progress-store errors —
         // into a reported failed-upload result instead of throwing out of the API.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             if (progressWriter != null)
             {
@@ -315,7 +316,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // (local filesystem deletes and the external progress store), and any failure from
         // either must roll back the in-memory index consistently and report a single bool
         // result rather than throwing out of a best-effort delete.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
             // Re-add to index since deletion failed
@@ -419,6 +420,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // attempted for every expired file, not a pure predicate, so every element must still
         // be visited regardless of its outcome; only the counting is conditional.
         var cleanedCount = 0;
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var file in expiredFiles)
         {
             if (await DeleteAsync(file.FileId, cancellationToken))
@@ -481,7 +483,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             // Intentionally generic: this is best-effort startup metadata loading over every
             // file in the metadata directory; a single corrupt or unreadable metadata file
             // must not abort loading the rest or prevent storage from initializing.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 FileStorageLog.MetadataLoadFailed(Logger, ex, file);
             }
@@ -510,7 +512,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // POSIX-style traversal, but it does not prevent a rooted result on platforms
         // where a bare "C:" prefix (no separator) makes a path rooted. Resolve and
         // verify containment the same way GetSafeFullPath does for storage paths.
-        var candidate = Path.GetFullPath(Path.Combine(_metadataPath, $"{safeName}.json"));
+        var candidate = Path.GetFullPath(Path.Join(_metadataPath, $"{safeName}.json"));
         var root = Path.GetFullPath(_metadataPath) + Path.DirectorySeparatorChar;
         if (!candidate.StartsWith(root, StringComparison.Ordinal))
         {
@@ -559,7 +561,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
 
         // folder was just validated above to be relative (not rooted, no ".." segments),
         // so this combine cannot silently drop storageName.
-        return Path.Combine(folder, storageName);
+        return Path.Join(folder, storageName);
     }
 
     /// <summary>
@@ -571,7 +573,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     /// </summary>
     private string GetSafeFullPath(string storagePath)
     {
-        var combined = Path.GetFullPath(Path.Combine(_basePath, storagePath));
+        var combined = Path.GetFullPath(Path.Join(_basePath, storagePath));
         var root = Path.GetFullPath(_basePath) + Path.DirectorySeparatorChar;
         if (!combined.StartsWith(root, StringComparison.Ordinal))
         {

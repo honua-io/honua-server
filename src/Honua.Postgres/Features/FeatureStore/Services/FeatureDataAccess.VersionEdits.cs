@@ -142,7 +142,7 @@ internal sealed partial class FeatureDataAccess
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: unexpected failure outside the per-operation try/catch below
             // (e.g. transaction/GUC setup) must still log, roll back the whole versioned batch, and
@@ -241,7 +241,7 @@ internal sealed partial class FeatureDataAccess
             createResults.Add(EditOperationResult.Success(newId, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
             // via GetSafeEditOperationError and let the rest of the batch continue.
@@ -278,7 +278,7 @@ internal sealed partial class FeatureDataAccess
             updateResults.Add(EditOperationResult.Success(feature.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
             // via GetSafeEditOperationError and let the rest of the batch continue.
@@ -314,7 +314,7 @@ internal sealed partial class FeatureDataAccess
             deleteResults.Add(EditOperationResult.Success(objectId));
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
             // via GetSafeEditOperationError and let the rest of the batch continue.

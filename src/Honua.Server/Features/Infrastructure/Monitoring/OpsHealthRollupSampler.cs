@@ -114,7 +114,7 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         // Intentionally generic: this is a periodic background rollup flush. A single
         // failed iteration (snapshot/persist outage) must never disturb serving; fail
         // open by degrading to snapshot-only for this interval and keep sampling.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FlushFailed(_logger, ex);
         }
@@ -189,7 +189,7 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         }
         // Intentionally generic: this signals best-effort realtime subscribers after a
         // flush. A misbehaving subscriber must not break the background sampler loop.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FlushSubscriberFailed(_logger, ex);
         }

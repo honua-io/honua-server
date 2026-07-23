@@ -6,7 +6,7 @@ Proposed. Increments 1-4 are implemented: Increment 1 (opt-in / off-by-default
 `client_credentials` over the Admin API-key store), Increment 2 (first-class OAuth2
 client registry + scope catalogue, #1888), Increment 3 (optional pluggable IdP/OIDC
 federation for `client_credentials`, #1889), and Increment 4 (optional JWT access
-tokens + RFC 7662 introspection, #1890, recorded in its own ADR-0054). Phased
+tokens + RFC 7662 introspection, #1890, recorded in its own ADR-0068). Phased
 rollout below. The interactive named-user `authorization_code`+PKCE and
 `refresh_token` grants (#1242/#1484) remain shipped and unchanged.
 
@@ -216,12 +216,12 @@ A first-class client not authorized for the grant returns `unauthorized_client`.
    token store — ADR-0049; an empty role set grants nothing, never an escalation).
    A federation miss falls through to the in-tree path, so federation is purely
    additive. Requires HTTPS to the IdP by default.
-4. **Increment 4 (shipped, #1890, ADR-0054):** optional JWT access-token format +
+4. **Increment 4 (shipped, #1890, ADR-0068):** optional JWT access-token format +
    RFC 7662 introspection endpoint. JWT issuance keeps the single request-path
    validator by making the JWT's `jti` the opaque cache reference, so
    cache-eviction revocation is preserved; the introspection endpoint
    (`POST /sharing/rest/oauth2/introspect`) is admin-authorized and off by
-   default. See ADR-0054 for the full decision.
+   default. See ADR-0068 for the full decision.
 
 ## Consequences
 

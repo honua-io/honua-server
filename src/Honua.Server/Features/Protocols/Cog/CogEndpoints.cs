@@ -215,7 +215,7 @@ internal static class CogEndpoints
         }
         // Intentional catch-all: this is the request-handling boundary for the COG metadata
         // scan endpoint; the failure is logged and mapped to a generic error response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             CogLog.MetadataScanFailed(logger, ex, id);
             return StandardErrorHelpers.CreateInternalServerError(context, "Metadata scan failed for the specified COG.");

@@ -166,7 +166,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: this is the operation-proposal execution boundary.
             // An executor failure must terminate this proposal with a Failed status rather
@@ -683,7 +683,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: a failure verifying the post-action state must not
             // propagate and abort autonomy handling; it is mapped to an Indeterminate
@@ -762,7 +762,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: a failure running compensation must not propagate and
             // abort autonomy handling; it is mapped to an Indeterminate compensation result
@@ -882,7 +882,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     evidenceTimeout.Token)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional broad catch: never replace the caller's OperationCanceledException
             // with a secondary evidence persistence failure. The source-generated log is the

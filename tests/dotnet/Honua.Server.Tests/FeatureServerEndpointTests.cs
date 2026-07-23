@@ -2693,6 +2693,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var feature = geoJsonResponse.Features[0];
         Assert.NotNull(feature.Id);
         // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         feature.Id.Should().NotBeNull("GeoJSON features should include ID from objectid field");
         feature.Properties.Should().ContainKey("objectid");
 
@@ -2704,7 +2705,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         Assert.NotNull(objectidValue);
 
         // FluentAssertions' NotBeNullOrEmpty() is a null-safe extension method, not a dereference.
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         idValue.Should().NotBeNullOrEmpty("Feature ID should have a value");
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         objectidValue.Should().NotBeNullOrEmpty("Objectid property should have a value");
         idValue.Should().Be(objectidValue, "Feature ID should match the objectid property value");
 

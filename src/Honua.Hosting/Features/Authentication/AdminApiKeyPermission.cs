@@ -164,9 +164,8 @@ internal static class AdminApiKeyPermission
 
         // Not converted to LINQ Select/Where: the loop body has an early continue plus two
         // distinct return-true conditions, so a projection+filter chain would be less readable.
-        foreach (var claim in principal.FindAll(PermissionClaimType))
+        foreach (var trimmed in (principal.FindAll(PermissionClaimType)).Select(claim => claim.Value?.Trim()))
         {
-            var trimmed = claim.Value?.Trim();
             if (string.IsNullOrEmpty(trimmed))
             {
                 continue;

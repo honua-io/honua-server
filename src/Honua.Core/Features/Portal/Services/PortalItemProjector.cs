@@ -139,9 +139,8 @@ public sealed class PortalItemProjector : IPortalItemProjector
         // Not rewritten as a LINQ Select/Where pipeline: the loop body accumulates
         // three independent pieces of state (anyResource, anyVisible, and the first
         // visible resource) per iteration, so it is not a pure 1:1 filter/map.
-        foreach (var publication in publications)
+        foreach (var resource in (publications).Select(publication => snapshot.ResolveResource(publication)))
         {
-            var resource = snapshot.ResolveResource(publication);
             if (resource is null)
             {
                 continue;
@@ -302,6 +301,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
         // `spatial?.Bbox`), but the explicit check is kept so the compiler's nullable-flow
         // analysis narrows `spatial` to non-null below — dropping it would reintroduce a
         // possible-null-dereference warning on `spatial.SpatialReference` further down.
+        // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
         if (bbox is null || spatial is null)
         {
             return (Array.Empty<IReadOnlyList<double>>(), null);

@@ -383,7 +383,7 @@ internal static class ProcessEndpoints
         // Intentionally generic: this is the top-level process-execution endpoint
         // boundary; any unanticipated failure must map to a generic 500 rather than
         // crash the request or leak internals to the client.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcProcessesResults.RecordException(ex);
             return OgcProcessesResults.Error(
@@ -443,11 +443,10 @@ internal static class ProcessEndpoints
                 return false;
             }
 
-            foreach (var outputElement in outputsElement.EnumerateArray())
-            {
-                var outputValue = outputElement.ValueKind == JsonValueKind.String
+            foreach (var outputValue in (outputsElement.EnumerateArray()).Select(outputElement => outputElement.ValueKind == JsonValueKind.String
                     ? outputElement.GetString()
-                    : null;
+                    : null))
+            {
                 if (!TryParseArtifactKind(outputValue, out var outputKind))
                 {
                     error = $"Unsupported artifact kind '{outputValue}'.";

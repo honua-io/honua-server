@@ -231,7 +231,7 @@ internal static class ShapefileImportTestHelpers
     {
         var useBundled = bool.TryParse(Environment.GetEnvironmentVariable(UseBundledShapefileEnv), out var flag) && flag;
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-        var bundledPath = Path.Combine(AppContext.BaseDirectory, "TestData", ShapefileZipFileName);
+        var bundledPath = Path.Join(AppContext.BaseDirectory, "TestData", ShapefileZipFileName);
         if (useBundled && File.Exists(bundledPath))
         {
             return (File.ReadAllBytes(bundledPath), null);
@@ -342,13 +342,13 @@ internal static class ShapefileImportTestHelpers
     private static (byte[] payload, int? expectedFeatureCount) CreateSampleShapefileZip()
     {
         // Path.Combine args are a temp-root plus a generated relative folder name; no rooted-segment risk.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"honua-test-shp-{Guid.NewGuid():N}");
+        var tempDir = Path.Join(Path.GetTempPath(), $"honua-test-shp-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
             // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
-            var shpPath = Path.Combine(tempDir, "sample.shp");
+            var shpPath = Path.Join(tempDir, "sample.shp");
             var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
             var features = new List<IFeature>
             {
@@ -367,9 +367,8 @@ internal static class ShapefileImportTestHelpers
                 // Not rewritten as .Select(...): the loop has side effects (archive entry
                 // creation, stream copy) beyond the extension-to-path mapping, and an early
                 // skip for missing sidecar files.
-                foreach (var extension in new[] { ".shp", ".shx", ".dbf", ".prj" })
+                foreach (var path in (new[] { ".shp", ".shx", ".dbf", ".prj" }).Select(extension => Path.ChangeExtension(shpPath, extension)))
                 {
-                    var path = Path.ChangeExtension(shpPath, extension);
                     if (!File.Exists(path))
                     {
                         continue;

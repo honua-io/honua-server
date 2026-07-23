@@ -163,7 +163,7 @@ internal static class ODataV2Lookups
         return ResolveStorageLayerId(snapshot, publication, resource);
     }
 
-    private static int? ResolveStorageLayerId(
+    internal static int? ResolveStorageLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Publication? publication,
         MetadataV2Resource resource)

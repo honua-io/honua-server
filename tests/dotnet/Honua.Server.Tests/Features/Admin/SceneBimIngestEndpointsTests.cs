@@ -41,7 +41,7 @@ public class SceneBimIngestEndpointsTests : IAsyncLifetime
         // an end-to-end ingest never leaks artifacts into the source tree.
         // The second segment is a generated "honua-bim-it-{guid}" literal, so it
         // can never be rooted and silently discard Path.GetTempPath().
-        _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-bim-it-{Guid.NewGuid():N}");
+        _outputRoot = Path.Join(Path.GetTempPath(), $"honua-bim-it-{Guid.NewGuid():N}");
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .WithTestLicense(HonuaEdition.Enterprise)

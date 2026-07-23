@@ -94,7 +94,7 @@ internal static partial class FieldMaskPolicyEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the field-mask policy
         // list endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
@@ -123,7 +123,7 @@ internal static partial class FieldMaskPolicyEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the field-mask policy
         // get endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
@@ -172,7 +172,7 @@ internal static partial class FieldMaskPolicyEndpoints
         // Intentional broad catch: this is the request-handling boundary for the field-mask policy
         // create endpoint (after the more specific InvalidOperationException case above); the
         // failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(
@@ -202,7 +202,7 @@ internal static partial class FieldMaskPolicyEndpoints
         }
         // Intentional broad catch: this is the request-handling boundary for the field-mask policy
         // delete endpoint; the failure is logged and mapped to a generic problem response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             FieldMaskPolicyLog.OperationFailed(logger, ex);
             return TypedResults.Problem(

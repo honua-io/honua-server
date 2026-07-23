@@ -499,14 +499,10 @@ public sealed class EndpointRegistryDriftTests
             return true;
         }
 
-        foreach (var name in publicMapMethods.Select(match => match.Groups["name"].Value))
-        {
-            // Count call sites — the declaration adds exactly one occurrence
-            // because the host wiring slurp also contains this file. Anything
-            // above one indicates a real call elsewhere.
-            var pattern = new Regex(
+        foreach (var pattern in (publicMapMethods.Select(match => match.Groups["name"].Value)).Select(name => new Regex(
                 @"(?:^|[^\w])" + Regex.Escape(name) + @"\s*\(",
-                RegexOptions.CultureInvariant);
+                RegexOptions.CultureInvariant)))
+        {
             if (pattern.Count(hostWiring) >= 2)
             {
                 return true;

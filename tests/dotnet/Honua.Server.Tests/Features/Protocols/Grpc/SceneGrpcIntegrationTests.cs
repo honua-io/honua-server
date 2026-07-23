@@ -1170,7 +1170,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         // Every Path.Combine call below only ever joins a temp directory with
         // fixed/generated relative literal segments, so no later segment can be
         // rooted and silently discard the one before it.
-        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-missing-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-grpc-missing-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
         const string tilesetJson = """
@@ -1185,7 +1185,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
           }
         }
         """;
-        File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);
+        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
         return root;
     }
 
@@ -1198,7 +1198,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         // Second segment is a generated relative literal, so it can never be
         // rooted and silently discard Path.GetTempPath().
-        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-no-tileset-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-grpc-no-tileset-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
     }
@@ -1213,9 +1213,9 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         // Both Path.Combine calls below only join a temp directory with a fixed
         // or generated relative literal segment, so neither later segment can be
         // rooted and silently discard the one before it.
-        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Combine(root, "tileset.json"), "null");
+        File.WriteAllText(Path.Join(root, "tileset.json"), "null");
         return root;
     }
 
@@ -1232,7 +1232,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         // Every Path.Combine call below only joins a temp directory with fixed
         // or generated relative literal segments, so no later segment can be
         // rooted and silently discard the one before it.
-        var root = Path.Combine(Path.GetTempPath(), "honua-grpc-oversized-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Join(Path.GetTempPath(), "honua-grpc-oversized-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
 
         const string tilesetJson = """
@@ -1247,15 +1247,15 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
           }
         }
         """;
-        File.WriteAllText(Path.Combine(root, "tileset.json"), tilesetJson);
+        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
 
-        var tilesDir = Path.Combine(root, "tiles");
+        var tilesDir = Path.Join(root, "tiles");
         Directory.CreateDirectory(tilesDir);
         // 256 MiB + 1 byte: one byte over MaxTileContentBytes. SetLength on a
         // fresh file produces a sparse extent on the platforms CI runs on, so no
         // bytes are actually written.
         const long oversized = (256L * 1024 * 1024) + 1;
-        using (var fs = new FileStream(Path.Combine(tilesDir, "oversized.b3dm"), FileMode.CreateNew, FileAccess.Write))
+        using (var fs = new FileStream(Path.Join(tilesDir, "oversized.b3dm"), FileMode.CreateNew, FileAccess.Write))
         {
             fs.SetLength(oversized);
         }
@@ -1270,7 +1270,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         {
             // All later segments are fixed relative literals, so none can be
             // rooted and silently discard directory.
-            var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "fixture-tileset");
+            var candidate = Path.Join(directory, "tests", "fixtures", "scenes", "fixture-tileset");
             if (Directory.Exists(candidate))
             {
                 return candidate;
@@ -1504,7 +1504,7 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
         {
             // All later segments are fixed relative literals, so none can be
             // rooted and silently discard directory.
-            var candidate = Path.Combine(directory, "tests", "fixtures", "scenes", "fixture-tileset");
+            var candidate = Path.Join(directory, "tests", "fixtures", "scenes", "fixture-tileset");
             if (Directory.Exists(candidate))
             {
                 return candidate;

@@ -20,7 +20,7 @@ What we run, what passes, what the formal certification posture is.
 - **OGC CITE conformance evidence** — [`contributor/ogc-cite-conformance-evidence.md`](../contributor/ogc-cite-conformance-evidence.md). Stable, website-linkable summary of which suites are currently passing on trunk. Refreshed when a suite's state changes.
 - **OGC certification path** — [`contributor/ogc-certification-path.md`](../contributor/ogc-certification-path.md). Decision record: formal OGC certification is currently deferred. Includes the evidence baseline matrix and the criteria for reopening a submission.
 - **Legacy CITE (manual)** — [`archive/contributor/cite-legacy-ogc-conformance-testing.md`](../../archive/contributor/cite-legacy-ogc-conformance-testing.md). WMS 1.1.1, WFS 1.0, WFS 1.1 — manual procedures only, not part of the automated runbook.
-- **Per-spec coverage matrices** — [`gis/specifications/`](../../gis/specifications):
+- **Per-spec coverage references** — maintained in the active protocol documentation:
   - [OGC API Features](../../reference/protocols/ogc-apis.md) (umbrella + [Part 1 Core](../../reference/protocols/ogc-apis.md) / [Part 2 CRS](../../reference/protocols/ogc-apis.md) / [Part 3 Filtering](../../reference/protocols/ogc-apis.md))
   - [OGC API Tiles](../../reference/protocols/ogc-apis.md), [Records](../../reference/protocols/ogc-apis.md), [Coverages](../../reference/protocols/ogc-apis.md), [Processes](../../reference/protocols/ogc-apis.md)
   - [WCS 2.0.1](../../reference/protocols/wms-wfs-wcs-wmts.md), [OData v4](../../reference/protocols/odata.md)

@@ -66,7 +66,7 @@ public static class WkbValidation
         // a malformed-WKB exception here is just untrusted client input, not an operational
         // fault: the returned Invalid result is already the meaningful signal the caller
         // surfaces to the client.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return WkbValidationResult.Invalid("Invalid WKB format.");
         }

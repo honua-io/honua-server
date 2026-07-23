@@ -71,7 +71,7 @@ internal static class DatabasePerformanceEndpoints
         // Intentional catch-all request-handling boundary: this is the query
         // cache statistics endpoint; the failure is logged and mapped to a
         // generic error response below.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Monitoring");

@@ -97,7 +97,7 @@ internal sealed class LivePlanAnalysisService : IPlanAnalysisService
         // Messages API returning an error, a timeout, or malformed JSON) must not crash the
         // MCP tool. Surface it as a structured rejection so the SDK/console can
         // present it like any other non-success planner turn.
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             LivePlanAnalysisLog.ProviderFailed(_logger, exception);
             activity?.SetTag("planner.status", "error");

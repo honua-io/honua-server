@@ -176,9 +176,8 @@ internal sealed partial class MySqlFeatureQueryBuilder
         // Not rewritten as .Select(): each iteration is a multi-branch parser that can
         // throw, mutate the shared `paramIndex`/`parameters` accumulators, and `continue`
         // early per branch -- not a pure map of one iteration variable to another.
-        foreach (var raw in expressions)
+        foreach (var expr in (expressions).Select(raw => raw.Trim()))
         {
-            var expr = raw.Trim();
             if (expr.Length == 0)
             {
                 throw new ArgumentException("WHERE clause format not supported.");

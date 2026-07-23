@@ -86,9 +86,8 @@ public static class MigrationAcceptanceScanStageRunner
         // from each entry's inventory summary plus a classification breakdown (switch, not a
         // 1:1 map) in a single pass. Splitting it into per-field Sum() calls would re-enumerate
         // entries and FidelityClassifications multiple times for no clarity gain.
-        foreach (var entry in entries)
+        foreach (var inventory in (entries).Select(entry => entry.Inventory))
         {
-            var inventory = entry.Inventory;
             containerCount += inventory.Summary.ContainerCount;
             resourceCount += inventory.Summary.ResourceCount;
             styleCount += inventory.Summary.StyleCount;

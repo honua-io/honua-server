@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Sharing;
 /// <summary>
 /// Integration tests for the optional RFC 7662 token introspection endpoint
 /// (<c>POST /sharing/rest/oauth2/introspect</c>) and the optional JWT access-token
-/// format (ADR-0054, #1890). Both are off by default; these enable them explicitly
+/// format (ADR-0068, #1890). Both are off by default; these enable them explicitly
 /// and prove valid/expired/revoked introspection plus JWT signature validation.
 /// </summary>
 [Collection("Database")]

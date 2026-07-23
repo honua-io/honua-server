@@ -94,8 +94,10 @@ public sealed class GeoServerRestClientSecurityTests
         // Drain pending socket finalizers so the FD count reflects actual leaks rather
         // than queued finalizable state from cancelled ConnectAsync calls (mirrors the
         // ArcGisRestClientSecurityTests descriptor-leak check).
+        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
         GC.Collect();
         GC.WaitForPendingFinalizers();
+        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
         GC.Collect();
 
         var settledDescriptors = await WaitForDescriptorSettleAsync(
@@ -167,6 +169,7 @@ public sealed class GeoServerRestClientSecurityTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _requestCount);
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_jsonResponse, Encoding.UTF8, "application/json")

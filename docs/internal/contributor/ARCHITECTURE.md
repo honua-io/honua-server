@@ -30,7 +30,7 @@ Key points:
 - **Honua.SqlServer** implements `IFeatureReader` against SQL Server `geometry`/`geography` tables. Registered as an additional `IFeatureDataProvider` and selected per-layer when the layer's `DataConnection` resolves to provider `sqlserver`/`mssql`. Edits, native MVT/FlatGeobuf/Geobuf/GML, and statistics aggregates are deliberately disabled in this slice.
 - **Honua.MySql** implements Core read interfaces against user-managed MySQL 8.0.11+ / MariaDB 10.6+ tables. The provider declares `FeatureProviderCapabilities.ReadOnlyMySql` and throws `NotSupportedException` for unsupported paths (edits, statistics, native MVT/FlatGeobuf/Geobuf/GML, streaming GeoJSON, KNN, cross-SRID filters). The provider name resolves under `mysql` and the `mariadb` alias.
 - **Honua.Server** composes endpoints and handlers, selecting the active primary provider via `DataSource:Provider` configuration; additional read-only providers (DuckDB, SQL Server, Oracle, MySQL/MariaDB) plug in alongside or are selected through provider binding.
-- The Blazor admin UI lives in the separate `honua-server-admin` repo and talks to this server's Admin API.
+- The admin and Studio UI lives in the separate, active `honua-console` repo and talks to this server's Admin API. The former `honua-server-admin` repo is archived.
 
 ## Feature Slices (Server)
 

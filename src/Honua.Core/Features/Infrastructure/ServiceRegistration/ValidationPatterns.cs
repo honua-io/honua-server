@@ -123,7 +123,7 @@ public abstract class ConfigurationValidator<
         // SecurityException, UnauthorizedAccessException) for a malformed operator-supplied
         // path. This is startup configuration validation: any of them should surface as a
         // validation error, not crash the host, so catching broadly here is intentional.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             errors.Add($"{propertyName} path '{filePath}' is invalid: {ex.Message}");
         }
@@ -355,7 +355,7 @@ public abstract class ConfigurationValidator<
         // path. This is startup configuration validation, not a hot path: any failure should
         // become a validation error rather than crash the host, so catching broadly here is
         // intentional.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             errors.Add($"{propertyName} is not a valid path: {ex.Message}");
         }

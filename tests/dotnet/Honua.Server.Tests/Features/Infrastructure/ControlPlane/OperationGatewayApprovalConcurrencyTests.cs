@@ -70,7 +70,7 @@ public sealed class OperationGatewayApprovalConcurrencyTests
             var result = await Task.Run(action).ConfigureAwait(false);
             return (result, null);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             return (null, ex);
         }

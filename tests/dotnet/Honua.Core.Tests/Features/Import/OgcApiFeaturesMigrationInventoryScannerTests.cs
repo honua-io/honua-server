@@ -522,6 +522,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
             if (pathAndQuery == "/redirect")
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)
                 {
                     Headers = { Location = new Uri("/ogcapi/", UriKind.Relative) }
@@ -530,6 +531,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
             if (pathAndQuery == "/external-redirect")
             {
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)
                 {
                     Headers = { Location = new Uri("https://other.example/ogcapi/") }
@@ -537,7 +539,9 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
             }
 
             return Task.FromResult(json == null
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
                 : new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")

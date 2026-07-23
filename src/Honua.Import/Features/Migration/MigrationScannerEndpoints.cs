@@ -60,7 +60,7 @@ internal static partial class MigrationScannerEndpoints
         }
         // Intentionally generic: ReadFromJsonAsync can throw JsonException, NotSupportedException,
         // or IOException for malformed/unreadable request bodies; map all of them to a 400 response.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.RequestDeserializationFailed(GetLogger(context), ex);
             await AdminResponseWriter.WriteErrorAsync(context, "Invalid request body", StatusCodes.Status400BadRequest);

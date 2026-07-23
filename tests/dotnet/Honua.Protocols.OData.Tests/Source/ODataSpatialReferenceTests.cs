@@ -22,7 +22,7 @@ public sealed class ODataSpatialReferenceTests : IAsyncLifetime
     {
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
-        _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
+        _fixture.UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
 
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");

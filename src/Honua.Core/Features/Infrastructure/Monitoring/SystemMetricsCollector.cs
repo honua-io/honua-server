@@ -157,7 +157,7 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
                 Timestamp = DateTime.UtcNow
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Don't let metrics collection crash the application (this runs on a Timer
             // callback thread with no caller to observe an exception) — keep the previous
@@ -224,7 +224,7 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         // periodic system snapshot (see GatherMetrics, which already logs macro failures); a
         // defensive fallback here keeps one odd arithmetic/runtime result from losing the whole
         // snapshot.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return 0.0;
         }
@@ -239,7 +239,7 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         }
         // Intentional broad catch: best-effort GC runtime query for the periodic metrics
         // snapshot; a transient failure here should degrade to 0 rather than lose the snapshot.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return 0.0;
         }
@@ -259,7 +259,7 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         // Intentional broad catch: best-effort GC runtime query for the periodic metrics
         // snapshot; a transient failure here should degrade to defaults rather than lose the
         // snapshot.
-        catch (Exception)
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             return new GcCollectionInfo();
         }

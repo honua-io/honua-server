@@ -57,6 +57,7 @@ public sealed class FeatureDataAccessTimeoutTests
         moveNext.Should().NotBeNull();
 
         var il = moveNext!.GetMethodBody()?.GetILAsByteArray();
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         il.Should().NotBeNull();
         var ilBytes = il ?? throw new InvalidOperationException("Expected IL bytes for the async state machine's MoveNext method.");
 
@@ -82,7 +83,7 @@ public sealed class FeatureDataAccessTimeoutTests
                         return true;
                     }
                 }
-                catch
+                catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
                     // Ignore invalid metadata tokens while scanning.
                 }
