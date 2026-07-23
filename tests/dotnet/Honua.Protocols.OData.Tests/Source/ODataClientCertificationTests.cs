@@ -320,6 +320,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
     private const string ClientLane = "cli";
     private const string Protocol = "odata";
 
+    // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
     private HttpClient? _adminClient;
 
     public ODataClientCertificationFixture()
@@ -365,7 +366,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
     {
         // All segments are relative literal path fragments (not user input), so none can be
         // rooted and silently drop earlier arguments.
-        WebApp.UseSeed(Path.Combine("tests", "seed", "odata.yaml"));
+        WebApp.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
         await WebApp.InitializeAsync();
         _adminClient = WebApp.CreateAdminClient();
 
@@ -443,7 +444,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         // "Honua.sln" is a literal relative segment appended after the walked-up
         // directory root, so it can never be rooted and drop directory.FullName.
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
@@ -451,6 +452,6 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
         var root = directory?.FullName ?? AppContext.BaseDirectory;
         // "tests" and "TestResults" are literal relative segments; neither can be
         // rooted and drop the resolved repo root.
-        return Path.Combine(root, "tests", "TestResults");
+        return Path.Join(root, "tests", "TestResults");
     }
 }

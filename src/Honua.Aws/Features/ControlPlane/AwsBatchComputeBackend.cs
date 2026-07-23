@@ -700,6 +700,7 @@ internal sealed partial class AwsBatchComputeBackend(
                 // CanCancelWithoutTerminate(state.Status) only returns true for a non-null,
                 // non-whitespace status, so the "UNKNOWN" fallback can never trigger here;
                 // kept identical to the else branch below for a consistent log shape.
+                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
                 Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
             }
             else

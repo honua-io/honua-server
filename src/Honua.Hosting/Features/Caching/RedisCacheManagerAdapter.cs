@@ -35,7 +35,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         // Intentional: a Redis/deserialization failure on read is treated as a
         // cache miss — logged and swallowed rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheManagerAdapterLog.GetFailed(_logger, key, ex);
             return default;
@@ -75,7 +75,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         // Intentional: a Redis failure on removal is best-effort — logged and
         // reported as "not removed" rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheManagerAdapterLog.RemoveFailed(_logger, key, ex);
             return false;
@@ -98,7 +98,7 @@ internal sealed class RedisCacheManagerAdapter : ICacheManager
         }
         // Intentional: a Redis failure on existence check is treated as "does
         // not exist" — logged and swallowed rather than failing the caller.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheManagerAdapterLog.ExistsCheckFailed(_logger, key, ex);
             return false;

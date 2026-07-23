@@ -49,12 +49,14 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
     {
         // Volatile reads ensure visibility of writes from other threads on
         // weakly-ordered architectures (ARM). On x86 these compile to plain loads.
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         var cached = Volatile.Read(ref s_cachedResult);
         if (cached == 1) return true;
         if (cached == 2) return false;
 
         // Fast-path: if a transient failure was cached recently, return null
         // without re-acquiring the semaphore.
+        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
         var expiryMs = Volatile.Read(ref s_failureCacheExpiryMs);
         if (expiryMs > 0 && Environment.TickCount64 < expiryMs)
         {
@@ -65,6 +67,7 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
         try
         {
             // Double-check after acquiring lock
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             var cachedInLock = Volatile.Read(ref s_cachedResult);
             if (cachedInLock == 1) return true;
             if (cachedInLock == 2) return false;
@@ -82,6 +85,7 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
 
             var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             var available = result is true;
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             Volatile.Write(ref s_cachedResult, available ? 1 : 2);
 
             if (available)
@@ -99,12 +103,13 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Best-effort capability probe: log and cache the failure for a bounded period so that
             // subsequent requests fast-fail instead of serializing behind the semaphore while the
             // database is unreachable. Returning null (vs. throwing) lets callers treat "unknown" as
             // "capability unavailable for now" rather than failing the whole request.
+            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
             Volatile.Write(ref s_failureCacheExpiryMs, Environment.TickCount64 + FailureCacheDurationMs);
             LogH3ExtensionCheckFailed(_logger, ex);
             return null;

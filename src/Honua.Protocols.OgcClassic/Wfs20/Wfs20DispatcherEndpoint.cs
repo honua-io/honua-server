@@ -196,7 +196,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -312,7 +312,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -496,7 +496,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -577,7 +577,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -651,7 +651,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -704,7 +704,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -744,7 +744,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -785,7 +785,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -825,7 +825,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.
@@ -866,7 +866,7 @@ internal static class Wfs20DispatcherEndpoint
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all: outermost per-operation dispatcher boundary.
             // Already logged (with exception) and mapped to a WFS ExceptionReport.

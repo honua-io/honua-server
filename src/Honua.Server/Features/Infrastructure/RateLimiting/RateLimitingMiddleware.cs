@@ -217,7 +217,7 @@ internal sealed partial class RateLimitingMiddleware
         // Intentional catch-all: this is the request-handling boundary for the rate-limit
         // check (Redis/counter faults, etc.); allow the request through on failure rather
         // than blocking legitimate traffic.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             var (keyFamily, keyHash) = SplitRateLimitKey(rateLimitKey);
             RateLimitingLog.RateLimitCheckFailed(_logger, keyFamily, keyHash, ex);

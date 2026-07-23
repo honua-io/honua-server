@@ -384,7 +384,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
         var bytes = (byte[])(await command.ExecuteScalarAsync())!;
         // The filename segment is a fixed literal + GUID token and can never be rooted, so
         // Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
-        var filePath = Path.Combine(Path.GetTempPath(), $"honua-raster-import-{Guid.NewGuid():N}.png");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-raster-import-{Guid.NewGuid():N}.png");
         await File.WriteAllBytesAsync(filePath, bytes);
         return filePath;
     }

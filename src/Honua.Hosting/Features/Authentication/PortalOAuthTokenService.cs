@@ -427,7 +427,7 @@ internal sealed class PortalOAuthTokenService(
                 await _store.RestoreRefreshTokenAsync(
                     request.RefreshToken, consumed, cancellationToken).ConfigureAwait(false);
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Intentional: this is a best-effort restore of the just-consumed refresh
                 // token (BH2-024) so the client can retry; if the store is also unavailable

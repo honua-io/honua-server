@@ -131,13 +131,13 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
                 // literal drawn from the SourceExtensions allowlist above (or the
                 // ".dat" fallback), never user-supplied, so it can never be rooted and
                 // silently discard workspace.
-                ogrSourcePath = Path.Combine(workspace, "input" + extension);
+                ogrSourcePath = Path.Join(workspace, "input" + extension);
                 await File.WriteAllBytesAsync(ogrSourcePath, sourceBytes, cancellationToken).ConfigureAwait(false);
             }
 
             // Second segment is a fixed relative literal filename, so it can never be
             // rooted and silently discard workspace.
-            var outputPath = Path.Combine(workspace, "output.geojson");
+            var outputPath = Path.Join(workspace, "output.geojson");
 
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running ogr2ogr source canonicalization", cancellationToken).ConfigureAwait(false);
@@ -223,7 +223,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
     {
         // Second segment is a fixed relative literal, so it can never be rooted and
         // silently discard workspace.
-        var extractRoot = Path.Combine(workspace, "src");
+        var extractRoot = Path.Join(workspace, "src");
         Directory.CreateDirectory(extractRoot);
         var fullExtractRoot = Path.GetFullPath(extractRoot) + Path.DirectorySeparatorChar;
 
@@ -244,7 +244,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
                 // directly: it is re-anchored with Path.GetFullPath and validated
                 // against fullExtractRoot immediately below (zip-slip / extraction-root
                 // escape guard) before anything is written to disk.
-                var destinationPath = Path.GetFullPath(Path.Combine(extractRoot, entry.FullName));
+                var destinationPath = Path.GetFullPath(Path.Join(extractRoot, entry.FullName));
                 if (!destinationPath.StartsWith(fullExtractRoot, StringComparison.Ordinal))
                 {
                     // Zip-slip: entry escapes the extraction root — skip it.

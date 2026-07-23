@@ -133,7 +133,7 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
         // Intentionally broad: this is the top-level handler for a background corrective job run;
         // any failure from the work delegate must be recorded as a Failed transition rather than
         // crash the job runner.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogCorrectiveJobFailed(jobId, operationName, ex);
             await TryTransitionAsync(
@@ -186,7 +186,7 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
         }
         // Intentionally broad: this is a best-effort progress write; the corrective job itself must
         // keep running even if the progress store is unavailable or rejects the write.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogCorrectiveJobProgressWriteFailed(jobId, operationName, ex);
         }

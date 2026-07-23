@@ -62,6 +62,7 @@ internal static class CrossServerConsumeTestSupport
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, "consume image request should succeed: {0}", url);
         // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         contentType.Should().NotBeNull();
         contentType!.Should().StartWith("image/");
         body.Length.Should().BeGreaterThan(100, "source server should return a non-empty image payload");

@@ -390,6 +390,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         }
         finally
         {
+            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             foreach (var request in requests)
             {
                 request.Dispose();

@@ -130,7 +130,7 @@ public sealed class S3ArtifactRollbackCloudIntegrationTests : IClassFixture<Loca
 
             await client.DeleteBucketAsync(new DeleteBucketRequest { BucketName = bucket });
         }
-        catch
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // The LocalStack container is ephemeral CI infrastructure; cleanup is best-effort.
         }

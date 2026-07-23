@@ -254,7 +254,7 @@ internal static class FeatureStreamArtifact
 
         // Second segment is a fixed relative literal, so it can never be
         // rooted and silently discard outputRootDirectory.
-        var streamRoot = Path.Combine(outputRootDirectory, "streams");
+        var streamRoot = Path.Join(outputRootDirectory, "streams");
         Directory.CreateDirectory(streamRoot);
 
         var safeProcess = SanitizeForFileName(processId);
@@ -264,7 +264,7 @@ internal static class FeatureStreamArtifact
         // which keeps only [A-Za-z0-9-_] (everything else, including '/', '\', and ':',
         // becomes '_'), so the interpolated second segment can never be rooted or contain
         // a path separator.
-        return Path.Combine(streamRoot, $"{safeOperation}.{safeProcess}.{unique}.ndjson");
+        return Path.Join(streamRoot, $"{safeOperation}.{safeProcess}.{unique}.ndjson");
     }
 
     /// <summary>

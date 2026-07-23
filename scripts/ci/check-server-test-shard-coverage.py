@@ -271,7 +271,9 @@ def _eval(node, fqn: str) -> bool:
     # always the 4-tuple `("clause", prop, op, value)` from _parse_clause, never
     # the 2-tuple shape `_parse_or`/`_parse_and` use for their own nodes
     # (py/mismatched-multiple-assignment false positive).
-    _, prop, op, value = node
+    prop = node[1]
+    op = node[2]
+    value = node[3]
     if prop != "FullyQualifiedName":
         # Trait/DisplayName clauses don't constrain class-level claiming; treat
         # as neutral-true so a class isn't falsely orphaned by a Trait filter.

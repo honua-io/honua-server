@@ -1415,14 +1415,9 @@ public static class MetadataCompatibilityAnalyzer
         var severity = MetadataCompatibilityFindingSeverity.Info;
         // judgment call: predicate depends on `severity`, which the loop body mutates on each
         // iteration — not a clean .Where() candidate since the filter condition changes as it runs.
-        foreach (var finding in findings)
+        foreach (var finding in (findings).Where(finding => (string.Equals(finding.AffectedSemanticId, semanticId, StringComparison.Ordinal) || string.Equals(finding.AffectedParentSemanticId, semanticId, StringComparison.Ordinal)) && SeverityRank(finding.Severity) > SeverityRank(severity)))
         {
-            if ((string.Equals(finding.AffectedSemanticId, semanticId, StringComparison.Ordinal) ||
-                 string.Equals(finding.AffectedParentSemanticId, semanticId, StringComparison.Ordinal)) &&
-                SeverityRank(finding.Severity) > SeverityRank(severity))
-            {
-                severity = finding.Severity;
-            }
+            severity = finding.Severity;
         }
 
         return severity;

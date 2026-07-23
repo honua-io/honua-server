@@ -381,7 +381,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             // Intentionally generic: statement preparation is a best-effort optimization; on
             // failure, log and fall back to unprepared execution rather than failing the
             // caller's query.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 PreparedStatementCacheLog.PrepareFailed(_logger, statementHash, ex);
                 return null;
@@ -539,7 +539,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         // Intentionally generic: a malformed/unparseable connection string defaults to
         // "unsupported" so callers safely fall back to unprepared execution, but it is logged
         // since this otherwise hides a real config problem.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             PreparedStatementCacheLog.PreparationSupportDetectionFailed(_logger, ex);
             _prepareSupported = false;
@@ -712,6 +712,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         // Not rewritten as .Where(...): TryRemoveCachedStatement performs the actual removal (a
         // side effect) and yields the removed statement via 'out', which the loop body needs for
         // disposal — the condition here is the work, not a pure filter predicate.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in keysToRemove)
         {
             if (TryRemoveCachedStatement(key, out var statement) && statement != null)
@@ -953,6 +954,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
             // Not rewritten as .Where(...): TryRemoveCachedStatement performs the actual removal
             // (a side effect) and yields the removed statement via 'out', which the loop body
             // needs for disposal — the condition here is the work, not a pure filter predicate.
+            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var key in expiredKeys)
             {
                 if (TryRemoveCachedStatement(key, out var expired) && expired != null)
@@ -980,7 +982,7 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         // Intentionally generic: this runs on a background timer callback with no caller to
         // observe a thrown exception; logging and continuing preserves the next scheduled
         // cleanup tick.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             PreparedStatementCacheLog.CleanupFailed(_logger, ex);
         }

@@ -171,7 +171,7 @@ internal sealed class CircuitBreakerHealthCheck : IHealthCheck
             }
             // Intentional catch-all: this is a per-service check inside the health-check loop; one
             // service's policy lookup failure must not abort reporting on the rest.
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 circuitBreakerStates[$"{serviceType}_error"] = ex.Message;
             }

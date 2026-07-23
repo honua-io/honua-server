@@ -222,9 +222,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
             tiles.GetArrayLength().Should().BeGreaterThan(0);
             // Not a simple map: each iteration runs multiple assertions and sets
             // sawVectorTileTemplate, so a LINQ .Select() projection would obscure intent.
-            foreach (var tile in tiles.EnumerateArray())
+            foreach (var template in (tiles.EnumerateArray()).Select(tile => tile.GetString()))
             {
-                var template = tile.GetString();
                 template.Should().NotBeNullOrEmpty();
                 template.Should().Contain(
                     $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tile/{{z}}/{{y}}/{{x}}.pbf");

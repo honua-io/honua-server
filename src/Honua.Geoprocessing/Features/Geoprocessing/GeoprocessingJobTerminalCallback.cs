@@ -74,7 +74,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     await PersistAnalysisContentArtifactsWithScopedStoreAsync(job, package, cancellationToken)
                         .ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Intentionally broad: this is the job's terminal callback — it must
                     // never throw, so any persistence failure is captured and gates the
@@ -97,7 +97,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // PA-209: ensure the terminal-success gate sees the failure so a Succeeded job
             // whose result package was never written does not report Completed to callers.
@@ -155,7 +155,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     job.OperationId, updated, ProgressRetention, cancellationToken).ConfigureAwait(false);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: best-effort terminal progress sync — the job itself
             // has already reached a terminal state, so a sync failure here must be
@@ -182,7 +182,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
             await scopedJobTokenIssuer.RevokeAsync(token, cancellationToken).ConfigureAwait(false);
             Log.CustomCodeTokenRevoked(logger, job.OperationId);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: best-effort token revocation on job terminal — a
             // revoke failure must not fail the terminal callback, but it is logged so an

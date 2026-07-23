@@ -340,10 +340,10 @@ public sealed class AzureBatchDataPlaneClientTests
     // AzureBatchClient.cs), so it is disposed exactly once each test invokes an operation.
     private static AzureBatchDataPlaneClient CreateClient(HttpMessageHandler handler)
         => new(
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             new SingletonHttpClientFactory(new HttpClient(handler)),
             NullLogger<AzureBatchDataPlaneClient>.Instance,
             new StubTokenCredential());
-
     private static AzureBatchJobSubmission SampleSubmission()
         => new()
         {
@@ -366,6 +366,7 @@ public sealed class AzureBatchDataPlaneClientTests
         {
             // Ownership transfers to the eventual SendAsync caller: production code disposes
             // each dequeued response via its own `using var response = ...` (AzureBatchClient.cs).
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             _responses.Enqueue(new HttpResponseMessage(status)
             {
                 Content = new StringContent(body)

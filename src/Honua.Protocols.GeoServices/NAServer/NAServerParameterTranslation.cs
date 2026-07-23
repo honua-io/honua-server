@@ -730,6 +730,7 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("features", out var features) &&
                 features.ValueKind == JsonValueKind.Array)
             {
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var feature in features.EnumerateArray())
                 {
                     if (feature.ValueKind == JsonValueKind.Object &&
@@ -1059,6 +1060,7 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("features", out var features) &&
                 features.ValueKind == JsonValueKind.Array)
             {
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var feature in features.EnumerateArray())
                 {
                     if (feature.ValueKind == JsonValueKind.Object &&
@@ -1077,6 +1079,7 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("geometries", out var geometries) &&
                 geometries.ValueKind == JsonValueKind.Array)
             {
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var geometry in geometries.EnumerateArray())
                 {
                     if (TryReadXy(geometry, out var point))
@@ -1093,6 +1096,7 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("points", out var multipoint) &&
                 multipoint.ValueKind == JsonValueKind.Array)
             {
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var coordinate in multipoint.EnumerateArray())
                 {
                     if (TryReadCoordinatePair(coordinate, out var point))
@@ -1120,6 +1124,7 @@ internal static class NAServerParameterTranslation
                     return points;
                 }
 
+                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var coordinate in root.EnumerateArray())
                 {
                     if (TryReadCoordinatePair(coordinate, out var point))

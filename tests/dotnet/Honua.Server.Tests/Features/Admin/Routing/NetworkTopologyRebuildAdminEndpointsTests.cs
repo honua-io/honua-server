@@ -124,7 +124,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
     private async Task<long> MakeGenerationDirtyAsync(string datasetId, long generation, long rowVersion)
     {
         var body = new { AddEdges = new[] { EdgeDto($"e-{Guid.NewGuid():N}") } };
-        var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/edits")
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/edits")
         {
             Content = JsonContent.Create(body, options: _jsonOptions),
         };
@@ -145,7 +145,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var (generation, rowVersion) = await AllocateDraftAsync(datasetId);
         var dirtyRowVersion = await MakeGenerationDirtyAsync(datasetId, generation, rowVersion);
 
-        var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         message.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var response = await _client.SendAsync(message);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
@@ -167,10 +167,9 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var datasetId = await RegisterDatasetAsync("notdirty");
         var (generation, rowVersion) = await AllocateDraftAsync(datasetId);
 
-        var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         message.Headers.Add("If-Match", $"\"{rowVersion}\"");
         var response = await _client.SendAsync(message);
-
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
@@ -182,10 +181,9 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var (generation, rowVersion) = await AllocateDraftAsync(datasetId);
         await MakeGenerationDirtyAsync(datasetId, generation, rowVersion);
 
-        var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         message.Headers.Add("If-Match", $"\"{rowVersion}\""); // stale: pre-edit row version
         var response = await _client.SendAsync(message);
-
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
@@ -197,14 +195,14 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var (generation, rowVersion) = await AllocateDraftAsync(datasetId);
         var dirtyRowVersion = await MakeGenerationDirtyAsync(datasetId, generation, rowVersion);
 
-        var first = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var first = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         first.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var firstResponse = await _client.SendAsync(first);
         Assert.Equal(HttpStatusCode.Accepted, firstResponse.StatusCode);
 
         // The generation is now 'building', so a second submission is rejected both by the
         // generation-state fence and the active-attempt uniqueness constraint.
-        var second = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var second = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         second.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var secondResponse = await _client.SendAsync(second);
         Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
@@ -232,7 +230,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         {
             AddEdges = new[] { EdgeDto("e1", "v1", "v2"), EdgeDto("e2", "v2", "v3") },
         };
-        var editMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/edits")
+        using var editMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/edits")
         {
             Content = JsonContent.Create(addEdgesBody, options: _jsonOptions),
         };
@@ -243,7 +241,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         using var editDoc = JsonDocument.Parse(await editResponse.Content.ReadAsStringAsync());
         var dirtyRowVersion = editDoc.RootElement.GetProperty("rowVersion").GetInt64();
 
-        var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         submitMessage.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var submitResponse = await _client.SendAsync(submitMessage);
         Assert.Equal(HttpStatusCode.Accepted, submitResponse.StatusCode);
@@ -285,7 +283,7 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var (generation, rowVersion) = await AllocateDraftAsync(datasetId);
         var dirtyRowVersion = await MakeGenerationDirtyAsync(datasetId, generation, rowVersion);
 
-        var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         submitMessage.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var submitResponse = await _client.SendAsync(submitMessage);
         Assert.Equal(HttpStatusCode.Accepted, submitResponse.StatusCode);
@@ -324,11 +322,10 @@ public class NetworkTopologyRebuildAdminEndpointsTests : IAsyncLifetime
         var (generation, rowVersion) = await AllocateDraftAsync(datasetId);
         var dirtyRowVersion = await MakeGenerationDirtyAsync(datasetId, generation, rowVersion);
 
-        var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
+        using var submitMessage = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/network-datasets/{datasetId}/generations/{generation}/rebuild");
         submitMessage.Headers.Add("If-Match", $"\"{dirtyRowVersion}\"");
         var submitResponse = await _client.SendAsync(submitMessage);
         var submission = await submitResponse.Content.ReadFromJsonAsync<NetworkTopologyRebuildSubmissionDto>(_jsonOptions);
-
         var rebuildStore = _fixture.Services.GetRequiredService<INetworkTopologyRebuildStore>();
         // Acquire and immediately expire the lease (simulate a crashed worker).
         await rebuildStore.TryAcquireOrTakeoverLeaseAsync(

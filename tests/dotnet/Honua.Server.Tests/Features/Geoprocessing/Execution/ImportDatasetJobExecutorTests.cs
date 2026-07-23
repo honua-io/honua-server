@@ -171,7 +171,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
     /// </summary>
     // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
     private static readonly string StagingDirectory =
-        Path.Combine(Path.GetTempPath(), "honua-import-staging");
+        Path.Join(Path.GetTempPath(), "honua-import-staging");
 
     private static string StageGeoJsonSource()
     {
@@ -189,7 +189,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         // BH3-027: files must be placed under the configured staging root.
         Directory.CreateDirectory(StagingDirectory);
         // Path.Combine args are a staging root plus a generated relative file name; no rooted-segment risk.
-        var path = Path.Combine(StagingDirectory, $"import_dataset_{Guid.NewGuid():N}.geojson");
+        var path = Path.Join(StagingDirectory, $"import_dataset_{Guid.NewGuid():N}.geojson");
         File.WriteAllText(path, geoJson, Encoding.UTF8);
         return path;
 

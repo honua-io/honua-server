@@ -260,6 +260,7 @@ public sealed class MigrationRequestCountingHandlerTests
 
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
+            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)

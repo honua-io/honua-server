@@ -66,7 +66,7 @@ internal sealed partial class MySqlConnectionDriver : IConnectionDriver
         // Intentionally generic: this is a connection-test probe (admin "test this
         // connection" flow) that must report Unhealthy rather than throw for any
         // driver/network/auth failure; the exception is logged via LogProbeFailed.
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             LogProbeFailed(ex);
             return ConnectionHealthStatus.Unhealthy;

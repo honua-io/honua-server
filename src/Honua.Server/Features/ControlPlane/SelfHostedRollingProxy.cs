@@ -366,7 +366,7 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Intentional broad catch: per-attempt loop probing replica health; one
                 // probe's failure is counted and the loop continues to the next attempt

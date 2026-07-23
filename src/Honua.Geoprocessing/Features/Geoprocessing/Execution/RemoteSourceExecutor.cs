@@ -182,7 +182,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: any streaming-read failure must become a Failed job
             // result rather than crash the worker; the full exception is logged and only
@@ -408,7 +408,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Preserve the original failure as InnerException (never surfaced to the
             // caller — only PublicMessage is) so BuildRequestAsync's catch can log the

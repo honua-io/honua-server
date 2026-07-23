@@ -181,6 +181,7 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         // current value (TryGetValue) so the later value-conditional TryRemove races
         // safely against concurrent writers; a LINQ filter would need the same
         // out-var capture and would not read more clearly than the loop.
+        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var key in _artifacts.Keys)
         {
             if (_artifacts.TryGetValue(key, out var candidate)

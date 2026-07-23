@@ -145,7 +145,7 @@ internal sealed partial class JobExecutionService(
                                 CancellationToken.None, forceRequeue: true).ConfigureAwait(false);
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
                         // Deliberately broad: this is best-effort shutdown cleanup for a
                         // single claimed job; a failure here must not prevent the worker
@@ -159,7 +159,7 @@ internal sealed partial class JobExecutionService(
 
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: one failed claim attempt (store/queue outage) must
                 // not crash the worker's claim loop; log and retry after the poll delay.
@@ -292,7 +292,7 @@ internal sealed partial class JobExecutionService(
             {
                 // Expected when cancellation reaches the pump.
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: the heartbeat pump is a background side effect of
                 // execution; a fault here must not prevent finalization from proceeding
@@ -382,7 +382,7 @@ internal sealed partial class JobExecutionService(
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Cancelled,
                 "Cancelled by operator.", CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Deliberately broad: any unhandled executor exception must be caught here so
             // one job's failure routes through the retry/abandon policy instead of
@@ -450,7 +450,7 @@ internal sealed partial class JobExecutionService(
         {
             await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.QueueRemovalFailed(logger, operationId, ex);
         }
@@ -461,7 +461,7 @@ internal sealed partial class JobExecutionService(
             {
                 await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.LogRetentionFailed(logger, operationId, ex);
             }
@@ -517,7 +517,7 @@ internal sealed partial class JobExecutionService(
         {
             await jobQueue.RemoveAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.QueueRemovalFailed(logger, operationId, ex);
         }
@@ -528,7 +528,7 @@ internal sealed partial class JobExecutionService(
             {
                 await logStore.SetRetentionAsync(operationId, LogRetention, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.LogRetentionFailed(logger, operationId, ex);
             }
@@ -584,7 +584,7 @@ internal sealed partial class JobExecutionService(
             {
                 await jobQueue.RemoveAsync(current.OperationId, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.QueueRemovalFailed(logger, current.OperationId, ex);
             }
@@ -595,7 +595,7 @@ internal sealed partial class JobExecutionService(
                 {
                     await logStore.SetRetentionAsync(current.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.LogRetentionFailed(logger, current.OperationId, ex);
                 }
@@ -630,7 +630,7 @@ internal sealed partial class JobExecutionService(
                         }, cancellationToken).ConfigureAwait(false);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.WarningLogAppendFailed(logger, current.OperationId, ex);
                 }
@@ -738,7 +738,7 @@ internal sealed partial class JobExecutionService(
             {
                 await jobQueue.RemoveAsync(latestBeforeFail.OperationId, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.QueueRemovalFailed(logger, latestBeforeFail.OperationId, ex);
             }
@@ -749,7 +749,7 @@ internal sealed partial class JobExecutionService(
                 {
                     await logStore.SetRetentionAsync(latestBeforeFail.OperationId, LogRetention, cancellationToken).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     Log.LogRetentionFailed(logger, latestBeforeFail.OperationId, ex);
                 }
@@ -767,7 +767,7 @@ internal sealed partial class JobExecutionService(
             {
                 await callback.OnTerminalAsync(job, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: one misbehaving terminal callback must not stop the
                 // remaining callbacks from running, and the job's own terminal transition
@@ -1049,7 +1049,7 @@ internal sealed partial class JobExecutionContext(
             {
                 break;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // Deliberately broad: a single failed heartbeat write must not stop the
                 // pump loop; log and retry on the next interval.

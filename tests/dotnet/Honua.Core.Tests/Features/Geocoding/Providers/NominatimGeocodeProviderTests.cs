@@ -321,11 +321,11 @@ public sealed class NominatimGeocodeProviderTests
 
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
+            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
             };
-
             return Task.FromResult(response);
         }
     }
@@ -345,11 +345,11 @@ public sealed class NominatimGeocodeProviderTests
 
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
+            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
             };
-
             return Task.FromResult(response);
         }
     }
@@ -363,6 +363,7 @@ public sealed class NominatimGeocodeProviderTests
             SendCount++;
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
+            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
@@ -381,6 +382,7 @@ public sealed class NominatimGeocodeProviderTests
         {
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
+            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(

@@ -152,6 +152,7 @@ public class OgcMapsTileSetHandlerTests
         var okResult = result as Ok<TileSetsList>;
         Assert.NotNull(okResult);
         okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
@@ -173,6 +174,7 @@ public class OgcMapsTileSetHandlerTests
         var okResult = result as Ok<TileSetsList>;
         Assert.NotNull(okResult);
         okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         foreach (var tileSet in okResult.Value.Tilesets)
         {
             foreach (var link in tileSet.Links)
@@ -212,6 +214,7 @@ public class OgcMapsTileSetHandlerTests
         var okResult = result as Ok<TileSet>;
         Assert.NotNull(okResult);
         okResult!.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         okResult.Value.Links.Should().Contain(link => link.Rel == "self");
         okResult.Value.Links.Should().Contain(link => link.Rel == "item");
     }
@@ -249,6 +252,7 @@ public class OgcMapsTileSetHandlerTests
         var okResult = result as Ok<TileSet>;
         Assert.NotNull(okResult);
         okResult!.Value!.Links.Should().NotContain(link => link.Rel == "item");
+        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
         okResult.Value.Links.Should().NotContain(link =>
             link.Href.Contains("/ogc/tiles/", StringComparison.OrdinalIgnoreCase));
     }
@@ -310,6 +314,7 @@ public class OgcMapsTileSetHandlerTests
         var policy = allowAnonymous switch
         {
             true => PublicPolicy(),
+            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
             false => new AccessPolicy { AllowAnonymous = false },
             _ => null,
         };

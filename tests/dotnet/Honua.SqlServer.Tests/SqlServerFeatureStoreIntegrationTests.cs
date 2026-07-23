@@ -92,7 +92,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
                 await connection.OpenAsync();
                 await Execute(connection, $"DROP TABLE IF EXISTS [dbo].[{_tableName}]");
             }
-            catch
+            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
             {
                 // Best-effort cleanup; the test database may already have been dropped.
             }

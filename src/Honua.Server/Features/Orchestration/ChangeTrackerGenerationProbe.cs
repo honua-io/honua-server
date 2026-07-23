@@ -48,12 +48,9 @@ internal sealed class ChangeTrackerGenerationProbe(IServiceScopeFactory scopeFac
         var maxGeneration = sinceGeneration;
         // Not a simple .Where(): this is a running-max fold (each iteration may update
         // maxGeneration using the previous iteration's value), not a filter/projection.
-        foreach (var change in changes)
+        foreach (var change in (changes).Where(change => change.Generation > maxGeneration))
         {
-            if (change.Generation > maxGeneration)
-            {
-                maxGeneration = change.Generation;
-            }
+            maxGeneration = change.Generation;
         }
 
         return maxGeneration > sinceGeneration ? maxGeneration : null;

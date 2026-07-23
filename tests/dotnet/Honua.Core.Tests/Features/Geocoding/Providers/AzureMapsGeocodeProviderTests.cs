@@ -111,7 +111,6 @@ public sealed class AzureMapsGeocodeProviderTests
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
-
             return Task.FromResult(response);
         }
     }

@@ -130,16 +130,18 @@ public sealed class DocumentationMatrixDriftTests
         foreach (var document in Directory.EnumerateFiles(evidenceRoot, "*.cert.json", SearchOption.AllDirectories)
                      .Select(path => JsonDocument.Parse(File.ReadAllText(path))))
         {
-            using var ownedDocument = document;
-            var lane = ownedDocument.RootElement.GetProperty("client_lane").GetString()!;
-            if (!result.TryGetValue(lane, out var ids))
+            using (document)
             {
-                ids = new HashSet<string>(StringComparer.Ordinal);
-                result.Add(lane, ids);
-            }
+                var lane = document.RootElement.GetProperty("client_lane").GetString()!;
+                if (!result.TryGetValue(lane, out var ids))
+                {
+                    ids = new HashSet<string>(StringComparer.Ordinal);
+                    result.Add(lane, ids);
+                }
 
-            AddEvidenceIds(ownedDocument.RootElement.GetProperty("results"), ids);
-            AddEvidenceIds(ownedDocument.RootElement.GetProperty("extensions"), ids);
+                AddEvidenceIds(document.RootElement.GetProperty("results"), ids);
+                AddEvidenceIds(document.RootElement.GetProperty("extensions"), ids);
+            }
         }
 
         return result;
