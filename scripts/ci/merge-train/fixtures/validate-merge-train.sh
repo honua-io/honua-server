@@ -124,7 +124,7 @@ __fixture_admission() {
     negative-review) reviews="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review\",\"submittedAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"state\":\"CHANGES_REQUESTED\",\"commit\":{\"oid\":\"${head}\"}}]" ;;
     clean-comment)
       reviews='[]'
-      clean_comments="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review: Didn't find any major issues.\\n\\n**Reviewed commit:** \`${head}\`\",\"createdAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"includesCreatedEdit\":false}]"
+      clean_comments="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review: Didn't find any major issues.\\n\\n**Reviewed commit:** \`${head}\`\",\"createdAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"includesCreatedEdit\":false,\"resolvedCommitOid\":\"${head}\"}]"
       ;;
     held) labels='[{"name":"train:hold"}]' ;;
     escalated) labels='[{"name":"train:escalated"}]' ;;
@@ -844,8 +844,9 @@ for admission_case in gate-fail review-fail unresolved negative-review held esca
 done
 export ADMISSION_CASE=clean-comment
 admission_pr_list="${TRAIN_PR_LIST_JSON}"
-TRAIN_PR_LIST_JSON="$(jq 'map(if .number == 10 then .headRefOid = "aaaaaaaaaa" else . end)' <<<"${TRAIN_PR_LIST_JSON}")"
-train_pr_admission 10 aaaaaaaaaa \
+clean_comment_head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+TRAIN_PR_LIST_JSON="$(jq --arg head "${clean_comment_head}" 'map(if .number == 10 then .headRefOid = $head else . end)' <<<"${TRAIN_PR_LIST_JSON}")"
+train_pr_admission 10 "${clean_comment_head}" \
   && ok "admission: exact-head clean Codex comment is accepted" \
   || bad "admission: exact-head clean Codex comment was rejected"
 TRAIN_PR_LIST_JSON="${admission_pr_list}"

@@ -124,8 +124,27 @@ jobs:
                 isCodex(comment.author?.login) && comment.commit?.oid === head));
             if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
 
+            const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
+              if (!isCodex(comment.author?.login)) return comment;
+              const matches = [...(comment.body || '').matchAll(
+                /\*\*Reviewed commit:\*\*\s*`([0-9a-f]{10,40})`/gi
+              )];
+              if (matches.length !== 1) return comment;
+              const ref = matches[0][1];
+              if (ref.length === 40) return { ...comment, resolvedCommitOid: ref };
+              try {
+                const { data: commit } = await github.rest.repos.getCommit({
+                  ...context.repo, ref,
+                });
+                return { ...comment, resolvedCommitOid: commit.sha };
+              } catch (error) {
+                core.warning(`Could not uniquely resolve reviewed commit ${ref}: ${error.message}`);
+                return comment;
+              }
+            }));
+
             const { exactReview, exactCleanComment } = evaluateCodexEvidence({
-              reviews: pr.reviews.nodes, cleanComments: pr.comments.nodes,
+              reviews: pr.reviews.nodes, cleanComments,
               unresolvedCount: unresolved.length, head,
             });
 

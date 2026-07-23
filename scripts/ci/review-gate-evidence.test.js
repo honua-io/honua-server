@@ -16,11 +16,29 @@ test('active exact-head Codex review attests', () => {
   assert.equal(evaluateCodexEvidence({ reviews: [review('COMMENTED')], unresolvedCount: 0, head }).exactReview, true);
 });
 test('unedited Codex clean comment for exact head attests', () => {
-  const fullHead = 'abc1234567890abcdef1234567890abcdef1234';
+  const fullHead = 'a'.repeat(40);
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment(fullHead.slice(0, 10), {
+      resolvedCommitOid: fullHead,
+    })],
+    unresolvedCount: 0, head: fullHead,
+  }).exactCleanComment, true);
+});
+test('unresolved short SHA cannot attest', () => {
+  const fullHead = 'a'.repeat(40);
   assert.equal(evaluateCodexEvidence({
     reviews: [], cleanComments: [cleanComment(fullHead.slice(0, 10))],
     unresolvedCount: 0, head: fullHead,
-  }).exactCleanComment, true);
+  }).exactCleanComment, false);
+});
+test('short SHA resolving to another full commit cannot attest', () => {
+  const fullHead = 'a'.repeat(40);
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment(fullHead.slice(0, 10), {
+      resolvedCommitOid: `${'a'.repeat(10)}${'f'.repeat(30)}`,
+    })],
+    unresolvedCount: 0, head: fullHead,
+  }).exactCleanComment, false);
 });
 test('clean comment for another head cannot attest', () => {
   assert.equal(evaluateCodexEvidence({

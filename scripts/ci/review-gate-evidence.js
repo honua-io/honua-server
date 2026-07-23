@@ -14,8 +14,14 @@ function cleanCommentMatchesHead(comment, head) {
   const reviewedCommits = [...(comment.body || '').matchAll(
     /\*\*Reviewed commit:\*\*\s*`([0-9a-f]{10,40})`/gi
   )];
-  return reviewedCommits.length === 1 &&
-    head.toLowerCase().startsWith(reviewedCommits[0][1].toLowerCase());
+  if (reviewedCommits.length !== 1) return false;
+  const referenced = reviewedCommits[0][1].toLowerCase();
+  const resolved = referenced.length === 40
+    ? referenced
+    : (comment.resolvedCommitOid || '').toLowerCase();
+  return resolved.length === 40 &&
+    resolved === head.toLowerCase() &&
+    resolved.startsWith(referenced);
 }
 function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, head }) {
   const codexReviews = reviews
@@ -32,7 +38,8 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
     cleanCommentMatchesHead(comment, head) && Date.parse(comment.createdAt) > negativeAt);
   // Generic reactions remain insufficient because they carry no reviewed SHA.
   // A clean connector comment is accepted only when it is unedited, names one
-  // sufficiently long current-head prefix, and no connector finding is open.
+  // commit whose uniquely resolved full OID equals the head, and no connector
+  // finding is open.
   const freshCleanReaction = false;
   return { exactReview, exactCleanComment, freshCleanReaction };
 }

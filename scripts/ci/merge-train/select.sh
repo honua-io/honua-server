@@ -206,15 +206,47 @@ train_publish_review_gate_status() {
     -f target_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/pull/${pr}" >/dev/null
 }
 
+train_resolve_clean_comment_commits() {
+  local comments="$1" comment login referenced resolved annotated output='[]'
+  while IFS= read -r comment; do
+    [[ -z "${comment}" ]] && continue
+    login="$(jq -r '.author.login // ""' <<<"${comment}")"
+    referenced="$(jq -r '
+      try ((.body // "") |
+        capture("\\*\\*Reviewed commit:\\*\\*\\s*`(?<sha>[0-9a-fA-F]{10,40})`"; "i").sha)
+      catch ""
+    ' <<<"${comment}")"
+    resolved="$(jq -r '.resolvedCommitOid // ""' <<<"${comment}")"
+    if [[ -z "${resolved}" &&
+          ("${login}" == "chatgpt-codex-connector" ||
+           "${login}" == "chatgpt-codex-connector[bot]") ]]; then
+      if [[ "${#referenced}" == "40" ]]; then
+        resolved="${referenced}"
+      elif [[ -n "${referenced}" ]]; then
+        resolved="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${referenced}" \
+          --jq '.sha' 2>/dev/null || true)"
+      fi
+    fi
+    if [[ -n "${resolved}" ]]; then
+      annotated="$(jq -c --arg resolved "${resolved}" '. + {resolvedCommitOid:$resolved}' <<<"${comment}")"
+    else
+      annotated="${comment}"
+    fi
+    output="$(jq -c --argjson item "${annotated}" '. + [$item]' <<<"${output}")"
+  done < <(jq -c '.[]?' <<<"${comments}")
+  printf '%s' "${output}"
+}
+
 # Re-evaluate current exact-head Codex evidence rather than trusting a cached
 # Review Gate status. API/truncation/negative evidence fails closed. In live mode
 # publish the result so branch protection and subsequent controllers see it.
 train_refresh_review_gate() {
-  local pr="$1" head="$2" snapshot="$3" unresolved payload result state description
+  local pr="$1" head="$2" snapshot="$3" unresolved clean_comments payload result state description
   unresolved="$(jq --arg restBot 'chatgpt-codex-connector[bot]' --arg graphBot 'chatgpt-codex-connector' --arg head "${head}" \
     '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login == $restBot or .author.login == $graphBot) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
+  clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")")" || return 1
   payload="$(jq -nc --argjson reviews "$(jq -c '.reviews // []' <<<"${snapshot}")" \
-    --argjson cleanComments "$(jq -c '.cleanComments // []' <<<"${snapshot}")" \
+    --argjson cleanComments "${clean_comments}" \
     --argjson unresolvedCount "${unresolved}" --arg head "${head}" \
     '{reviews:$reviews,cleanComments:$cleanComments,unresolvedCount:$unresolvedCount,head:$head}')" || return 1
   result="$(printf '%s' "${payload}" | node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}")" || return 1
