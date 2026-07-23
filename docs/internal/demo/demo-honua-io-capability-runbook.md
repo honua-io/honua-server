@@ -374,7 +374,13 @@ curl -fsS -X POST "$BASE/elevation/maui-terrain/sun-shadow" -H 'content-type: ap
   | jq '.shadowCast'
 
 # Catalog cleanup — layer 68823 / test_service must NOT be publicly visible
-curl -fsS "$BASE/rest/services?f=json" | jq -r '.services[].name' | grep -qi test_service && echo "FAIL: test_service still public" || echo "OK: not public"
+service_names="$(curl -fsS "$BASE/rest/services?f=json" | jq -er '.services | map(.name) | .[]')"
+if grep -qi test_service <<<"$service_names"; then
+  echo "FAIL: test_service still public"
+  exit 1
+else
+  echo "OK: not public"
+fi
 curl -s -o /dev/null -w '%{http_code}\n' "$BASE/rest/services/test_service/FeatureServer?f=json"   # expect 499 (or 403), not 200
 
 # Geocoding — known-broken; documents the failure, does not assert success
@@ -403,10 +409,13 @@ which is explicitly out of this issue's scope (see *Non-goals*). Recorded here s
 decision and rollback are visible in one place when an operator picks it up in the
 owning repo.
 
-- **Option A — NAT Gateway egress.** Add a NAT Gateway + route in the demo VPC's private
-  subnets (or a NAT instance, cost-dependent) so outbound HTTPS to the public Nominatim
-  endpoint succeeds. Standard `honua-terraform` change; review there for cost/blast
-  radius before applying.
+- **Option A — NAT Gateway egress.** Add a public NAT Gateway with an Elastic IP in a
+  public subnet whose route table sends `0.0.0.0/0` to the VPC Internet Gateway. Then
+  update each private Lambda subnet's route table to send `0.0.0.0/0` to that NAT
+  Gateway (or use a correctly routed NAT instance, cost-dependent). Lambda ENIs remain
+  in the private subnets; placing the NAT Gateway there, or merely adding an Internet
+  Gateway route to those private subnets, does not provide internet egress. This is a
+  standard `honua-terraform` change; review there for cost/blast radius before applying.
 - **Option B — in-VPC-reachable provider.** Point `Geocoding__Providers__*` at a
   provider reachable via a VPC endpoint / PrivateLink (or a self-hosted Photon/Pelias
   instance inside the VPC) instead of the public internet. Avoids a NAT Gateway but is a
