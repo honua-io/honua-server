@@ -1791,6 +1791,420 @@
         }
       }
     },
+    "/import/formats": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Get Supported Import Formats",
+        "description": "Returns the geospatial file extensions supported by this server build and a description of each format.",
+        "operationId": "getImportFormats",
+        "responses": {
+          "200": {
+            "description": "Supported import formats.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "supportedExtensions",
+                    "formatDescriptions"
+                  ],
+                  "properties": {
+                    "supportedExtensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "formatDescriptions": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/preview": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Preview a Geospatial File",
+        "description": "Inspects one supported geospatial file without importing or mutating data.",
+        "operationId": "previewImportFile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "One supported geospatial file."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Detected file structure and sample metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFilePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/preview-url": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Preview a Geospatial File from a URL",
+        "description": "Downloads and inspects a supported public geospatial object without importing or mutating data.",
+        "operationId": "previewImportFileFromUrl",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sourceUrl"
+                ],
+                "properties": {
+                  "sourceUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "fileName": {
+                    "type": "string",
+                    "description": "Optional filename hint when the URL path does not contain a usable extension."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Detected file structure and sample metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFilePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/upload-url": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import a Geospatial File from a URL",
+        "description": "Downloads one supported public geospatial object and imports it into PostgreSQL. Large imports may return a background job.",
+        "operationId": "uploadImportFileFromUrl",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportFileFromUrlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/limits": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Get Import Limits",
+        "description": "Returns the configured preview, upload, memory, and background-job limits.",
+        "operationId": "getImportLimits",
+        "responses": {
+          "200": {
+            "description": "Current import limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/jobs": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "List Active Import Jobs",
+        "description": "Returns the active background import jobs.",
+        "operationId": "getActiveImportJobs",
+        "responses": {
+          "200": {
+            "description": "Active import jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Import job service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Get Import Job Status",
+        "description": "Returns progress and result metadata for one background import job.",
+        "operationId": "getImportJobStatus",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Import job service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/jobs/{jobId}/cancel": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Cancel an Import Job",
+        "description": "Requests cancellation of one active background import job.",
+        "operationId": "cancelImportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job cancellation was requested.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobId",
+                    "message"
+                  ],
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Import job service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/import/upload": {
       "post": {
         "tags": [
@@ -4723,6 +5137,109 @@
       }
     },
     "schemas": {
+      "ImportFilePreview": {
+        "type": "object",
+        "required": [
+          "format",
+          "totalFeatureCount",
+          "sampleProperties",
+          "availableLayers",
+          "warnings"
+        ],
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "GeoJson",
+              "Shapefile",
+              "GeoPackage",
+              "Gpx",
+              "Kml",
+              "Gml",
+              "Wkt",
+              "Csv",
+              "FileGdb",
+              "FlatGeobuf",
+              "GeoParquet",
+              "EsriJson",
+              "Wkb"
+            ]
+          },
+          "totalFeatureCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "detectedSrid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "sampleProperties": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "availableLayers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ImportFileFromUrlRequest": {
+        "type": "object",
+        "required": [
+          "sourceUrl",
+          "tableName"
+        ],
+        "properties": {
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "fileName": {
+            "type": "string",
+            "description": "Optional filename hint when the URL path does not contain a usable extension."
+          },
+          "tableName": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "targetSchema": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "sourceSrid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetSrid": {
+            "type": "integer",
+            "format": "int32",
+            "default": 4326
+          },
+          "overwriteExisting": {
+            "type": "boolean",
+            "default": false
+          },
+          "forceBackground": {
+            "type": "boolean",
+            "default": false
+          },
+          "trackProgress": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
       "ConfigurationResponse": {
         "type": "object",
         "properties": {
