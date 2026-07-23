@@ -428,11 +428,12 @@ public class ImageServerMetadataHandlerTests
         tileInfo.Lods[^1].Level.Should().Be(18);
     }
 
-    private static DefaultHttpContext CreateImageServerContext(
+    private DefaultHttpContext CreateImageServerContext(
         ImageServerTileMetadataOptions? tileMetadataOptions = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddSingleton(_rasterStore);
         services.AddOptions();
         services.Configure<ImageServerTileMetadataOptions>(options =>
         {

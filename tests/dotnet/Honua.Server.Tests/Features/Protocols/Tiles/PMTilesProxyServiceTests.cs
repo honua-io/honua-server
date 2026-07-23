@@ -151,6 +151,81 @@ public sealed class PMTilesProxyServiceTests
     }
 
     [Fact]
+    public async Task ReadRangeAsync_NoRangeHeader_ArtifactExceedsDirectStreamBudget_ReturnsTooLarge()
+    {
+        // A no-Range GET falls back to streaming the whole artifact. Above
+        // MaxDirectFullStreamBytes that response can't reliably fit through a
+        // single serverless (Lambda/API Gateway) invocation, which fails opaquely
+        // rather than with a clean error (#2991). The service must reject this
+        // case up front — purely from the already-fetched metadata size, without
+        // ever touching the underlying object — rather than attempting the
+        // full download.
+        var stub = new TestCloudStorage();
+        var bytes = new byte[PMTilesProxyService.MaxDirectFullStreamBytes + 1];
+        var fileId = stub.AddFile(bytes);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, rangeHeader: null, CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.TooLarge);
+        result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes + 1);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_NoRangeHeader_ArtifactAtDirectStreamBudget_ReturnsFull()
+    {
+        // Exactly at the budget must still take the existing fast (small-file) path;
+        // only artifacts strictly larger are rejected.
+        var stub = new TestCloudStorage();
+        var bytes = new byte[PMTilesProxyService.MaxDirectFullStreamBytes];
+        var fileId = stub.AddFile(bytes);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, rangeHeader: null, CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.Full);
+        result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_SmallRangeWithinDirectStreamBudget_ReturnsPartial()
+    {
+        // A small byte-range request is safe even when the underlying artifact is
+        // larger than the direct-response budget.
+        var stub = new TestCloudStorage();
+        var bytes = new byte[PMTilesProxyService.MaxDirectFullStreamBytes + 1];
+        bytes[2] = 42;
+        var fileId = stub.AddFile(bytes);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=2-2", CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.Partial);
+        result.Payload.Should().Equal(42);
+    }
+
+    [Fact]
+    public async Task ReadRangeAsync_FullObjectRangeExceedsDirectStreamBudget_ReturnsTooLarge()
+    {
+        // "bytes=0-" is still a full-object response. Letting it bypass the
+        // no-Range guard would hit the same Lambda/API Gateway payload failure
+        // while merely changing the success status from 200 to 206.
+        var stub = new TestCloudStorage();
+        var bytes = new byte[PMTilesProxyService.MaxDirectFullStreamBytes + 1];
+        var fileId = stub.AddFile(bytes);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
+
+        var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
+        var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=0-", CancellationToken.None);
+
+        result.Outcome.Should().Be(PMTilesRangeOutcome.TooLarge);
+        result.TotalSize.Should().Be(PMTilesProxyService.MaxDirectFullStreamBytes + 1);
+    }
+
+    [Fact]
     public async Task ReadRangeAsync_PartialRange_ReturnsRequestedBytes_ViaDownloadFallback()
     {
         var stub = new TestCloudStorage();
