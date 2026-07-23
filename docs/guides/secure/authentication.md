@@ -46,7 +46,7 @@ Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; O
 
 Esri clients (ArcGIS Pro, Maps SDKs) authenticate against the portal token endpoint, which is always on:
 
-Run `POST /sharing/rest/generateToken` in the explorer with form fields `username=admin`, `password=<admin-password>`, `client=referer`, `referer=https://app.example.com`, `expiration=60`, and `f=json`.
+Use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat` with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. ArcGIS Pro and other Esri clients discover the same endpoint automatically when they prompt for credentials.
 
 The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer`. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400). An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider — register every redirect URI in `Authentication__PortalToken__OAuth2__AllowedRedirectUris` before enabling it.
 

@@ -127,7 +127,7 @@ Restore the database only when a destructive migration already ran or data was c
 
 ## Verify
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /healthz/ready`; `GET /api/v1/admin/deploy/preflight`.
+> Open `/healthz/ready` in a browser, then run `GET /api/v1/admin/deploy/preflight` in the authorized [API explorer](../../reference/openapi-and-explorer.md).
 
 Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: true` and no pending migrations. Rehearse rollback/canary behavior before production with `./scripts/scale/scale-test.sh --test rollback` and `--test canary`.
 

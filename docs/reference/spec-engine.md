@@ -50,7 +50,7 @@ All warnings and errors carry a stable `code`. Errors: `version-skew`, `dag-cycl
 
 ## Example
 
-In the [API explorer](openapi-and-explorer.md), run `POST /v1/spec/apply` and select the event-stream response with this body:
+Open Honua Console's Spec IDE, paste the following spec, and choose **Apply**. The Spec IDE consumes the `/v1/spec/apply` event stream; that route is not exposed by the OpenAPI explorer.
 
 ```json
 {

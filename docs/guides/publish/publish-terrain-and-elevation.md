@@ -42,7 +42,7 @@ Coordinates default to WGS 84; pass `srid` for projected input and `mosaicRule` 
 
 ### 5. Sample an elevation profile
 
-Run `GET /elevation/{layerId}/profile` in the explorer with query values `geometry=LINESTRING(-122.45 37.76, -122.40 37.80)` and `sampleCount=100`.
+Use `SceneView.elevationProfile` from `@honua/sdk-js/scene-workspace` with the published layer id, the line from `[-122.45, 37.76]` to `[-122.40, 37.80]`, and `sampleCount: 100`.
 
 Returns ordered distance/elevation samples along the line (geodesic distances, PostGIS 3.4+ required). `sampleCount` defaults to 100, capped by `Limits:Elevation:MaxSampleCount`.
 

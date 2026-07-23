@@ -74,7 +74,7 @@ Key knobs per profile/override: `MaxRetryAttempts`, `BaseDelayMs`, `BackoffExpon
 
 ## Verify
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /monitoring/metrics/connection-pool`.
+> Inspect the connection-pool panel in Honua Console's Operate view; the underlying monitoring route is not exposed by the OpenAPI explorer.
 
 Expected: JSON with pool utilization well below 100% and zero (or near-zero) timeouts under normal load. Rehearse multi-instance behavior with the scale-test stack at [`docker/scale-test/compose.yml`](../../../docker/scale-test/compose.yml) (`./scripts/scale/scale-test.sh`).
 

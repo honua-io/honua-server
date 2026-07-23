@@ -152,7 +152,7 @@ Features within 5 km of a point:
 https://server.example.com/odata/Layers(0)/Features?$filter=geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000
 ```
 
-To create a feature, run `POST /odata/Layers(0)/Features` in the [API explorer](../openapi-and-explorer.md) with this body:
+To create a feature, bind an `@honua/sdk-js` OData source to `Layers(0)/Features` and call `source.applyEdits({ adds: [...] })` using this entity shape:
 
 ```json
 {

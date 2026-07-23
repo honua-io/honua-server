@@ -89,7 +89,7 @@ Adaptive sampling automatically integrates with .NET Aspire Dashboard:
 
 Check adaptive sampling status:
 
-> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/config` and `GET /healthz/metrics`.
+> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/config`, then inspect `/healthz/metrics` through Honua Console's **Operate → Health** view.
 
 ## Production Deployment
 

@@ -65,7 +65,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check connection pool metrics**:
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/metrics/connection-pool`.
+> Inspect connection-pool health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review database connection configuration**:
    ```bash
@@ -112,7 +112,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check cache metrics**:
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/metrics/cache`.
+> Inspect cache health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review cache configuration**:
    ```bash
@@ -163,7 +163,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check memory metrics**:
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/metrics/resources`.
+> Inspect resource health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review GC statistics**:
    ```bash
@@ -175,7 +175,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 
 #### Immediate Actions
 1. **Force garbage collection** (temporary relief):
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `POST https://honua-server/admin/gc/collect`.
+> This archived manual-GC route is not exposed by the OpenAPI explorer. Use the current Operate workflow and its approval controls instead.
 
 2. **Restart application** (if memory leak suspected):
    ```bash
@@ -210,7 +210,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check rate limiting metrics**:
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/alerts`.
+> Inspect active alerts in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review rate limiting configuration**:
    ```bash
@@ -255,7 +255,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check upload queue metrics**:
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/metrics/upload-queue`.
+> Inspect upload-queue health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review file upload configuration**:
    ```bash

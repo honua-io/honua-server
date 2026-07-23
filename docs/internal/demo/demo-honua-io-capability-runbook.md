@@ -211,7 +211,7 @@ Open these demo URLs in a browser and inspect the named fields:
 - `/rest/services/maui/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului` — `candidates` is non-empty.
 - `/api/v1/capabilities/manifest` — `license.edition` is `"Pro"`.
 
-For REQ-005, make an authenticated edit with the generated admin client or API explorer and confirm it persists on re-read; keep write credentials server-side.
+For REQ-005, make an authenticated edit with the `@honua/sdk-js` FeatureLayer client and confirm it persists on re-read; keep write credentials server-side.
 
 Acceptance (#1688): Public Safety Ops connects a live incident feed; dispatch geocoding
 resolves live; Inspection & Editing persists an edit; the four probes pass from the

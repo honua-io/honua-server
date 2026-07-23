@@ -10,7 +10,7 @@ Attachments are keyed by integer object IDs (`globalIds` filters are rejected) a
 
 ### 1. Add an attachment
 
-In the [API explorer](../../reference/openapi-and-explorer.md), run `POST /rest/services/{service}/FeatureServer/{layerId}/{objectId}/addAttachment`. Attach `photo.jpg` and set `keywords` to `site-photo`.
+Use `FeatureLayer.addAttachment` from `@honua/sdk-js/esri-compat` with the target `objectId`, the `photo.jpg` blob, its file name, and content type. Pass `keywords: "site-photo"` through `extraParams`.
 
 The body must be `multipart/form-data` (or form-urlencoded); the response returns the new `attachmentId`.
 
@@ -52,7 +52,7 @@ Relationships are defined per layer by the publisher (`GET /rest/services/{servi
 
 | Symptom | Fix |
 |---|---|
-| `415 Unsupported Media Type` on add/update | Use the file field in the API explorer or an SDK-generated multipart request; do not send raw JSON. |
+| `415 Unsupported Media Type` on add/update | Use `FeatureLayer.addAttachment` / `updateAttachment`, which generate the multipart request; do not send raw JSON. |
 | Upload rejected by size or type | Raise `Limits__Attachments__MaxAttachmentSize` / `MaxAttachmentsPerFeature` / `MaxTotalAttachmentSize` or extend `Limits__Attachments__AllowedMimeTypes`. |
 | `globalIds is not supported` | Honua attachments are keyed by integer object IDs only; query with `objectIds`. |
 | `401` / `403` on mutation | Attachment writes require write access to the layer, same as feature edits — see [Control access](../secure/access-control.md). |

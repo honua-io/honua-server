@@ -59,7 +59,7 @@ Desktop and native SDK clients need no compat layer — paste the Honua `Feature
 
 ### 5. Update token authentication
 
-Use the [API explorer](../../reference/openapi-and-explorer.md) for `POST /sharing/rest/generateToken`; supply `username`, `password`, `client`, `referer`, `expiration`, and `f` as form fields.
+Use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat`, or let ArcGIS Pro prompt for credentials and discover `/sharing/rest/generateToken` automatically. Supply the username, password, client binding, referer, and expiration through the client API.
 
 Clients that fetched tokens from an ArcGIS Server `/arcgis/tokens/` or Portal `generateToken` URL must point at Honua's `/sharing/rest/generateToken` instead; Esri clients that prompt for credentials discover it automatically. The opaque token is accepted on `/rest/services/*` requests as `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer`. Token issuance is HTTPS-only by default.
 

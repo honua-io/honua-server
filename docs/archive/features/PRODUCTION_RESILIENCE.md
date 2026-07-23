@@ -433,7 +433,7 @@ Comprehensive test coverage for all resilience patterns:
 
 ### Debug Commands
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET https://honua-server/monitoring/alerts`; `GET https://honua-server/monitoring/metrics/connection-pool`.
+> Inspect alerts and connection-pool health in Honua Console's Operate view; these monitoring routes are not exposed by the OpenAPI explorer.
 
 ## Performance Impact
 

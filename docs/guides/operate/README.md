@@ -15,7 +15,7 @@ explicitly so “runs itself” never means “may mutate anything unattended.�
 The loop starts with a server-computed posture instead of a dashboard-specific
 guess:
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/operate/status`.
+> Open Honua Console's **Operate → Health** view. It reads `/api/v1/operate/status`; Console/Operate routes are not exposed by the OpenAPI explorer.
 
 `GET /api/v1/operate/status` returns one `healthy`, `degraded`, or `unhealthy`
 verdict plus rollups for deploys, jobs, alerts, migrations, findings, telemetry

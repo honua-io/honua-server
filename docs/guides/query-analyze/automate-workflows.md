@@ -10,7 +10,7 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
 
 1. Browse the node registry to see what you can chain — every entry mirrors a geoprocessing catalog process:
 
-   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/console/workflow-node-registry`.
+   Open Honua Console's Workflow Builder and inspect the node palette. It reads `/api/v1/console/workflow-node-registry`; Console routes are not exposed by the OpenAPI explorer.
 
 2. Create a package with a two-step graph: buffer a geometry, then simplify the buffered result. The data edge's `targetPort` names the downstream input (`wkb`) that the upstream artifact fills; node `parameters` are strings:
 

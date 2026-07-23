@@ -38,7 +38,7 @@ named "operator surface" ships in this repo.
 
 1. Confirm the endpoint answers:
 
-   In the [API explorer](../../reference/openapi-and-explorer.md), run `POST /mcp` with this body:
+   Connect an MCP client to the Streamable HTTP endpoint at `/mcp`. The client performs the initialize handshake; the equivalent protocol payload is:
 
    ```json
    {

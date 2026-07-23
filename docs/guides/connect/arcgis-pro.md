@@ -19,9 +19,18 @@ Honua exposes each published service as:
 
 ### Token auth (if authentication is enabled)
 
-Honua implements the ArcGIS Portal token endpoint at `/sharing/rest/generateToken` (GET or POST form-encoded). Esri clients that prompt for credentials when adding a secured service use it automatically. To request a token manually:
+Honua implements the ArcGIS Portal token endpoint at `/sharing/rest/generateToken` (GET or POST form-encoded). Esri clients that prompt for credentials when adding a secured service use it automatically. For an application-managed credential, use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat`:
 
-In the [API explorer](../../reference/openapi-and-explorer.md), run `POST /sharing/rest/generateToken` with form fields `username`, `password`, `client=referer`, `referer=http://localhost:8080`, and `f=json`. The response contains `token`, `expires`, and `ssl`.
+```js
+const credential = await portal.generateToken({
+  username,
+  password,
+  client: "referer",
+  referer: "http://localhost:8080",
+});
+```
+
+The credential contains `token`, `expires`, and `ssl`.
 
 Reuse the token on any `/rest/services/*` request as `?token=<opaque>`, `Authorization: Bearer <opaque>`, or `X-Esri-Authorization: Bearer <opaque>`. Token issuance is HTTPS-only by default; see your deployment's auth configuration if you need it on plain HTTP for local testing.
 

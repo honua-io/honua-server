@@ -38,7 +38,7 @@ Registered but **not implemented** (return a spec-shaped not-implemented error):
 
 > Open `https://server.example.com/rest/services/roads/FeatureServer/0/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json` in a browser.
 
-In the [API explorer](../openapi-and-explorer.md), run `POST /rest/services/roads/FeatureServer/0/applyEdits` with form fields `adds=[{"geometry":{"x":-122.4,"y":37.8},"attributes":{"name":"New point"}}]` and `f=json`.
+Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geometry: { x: -122.4, y: 37.8 }, attributes: { name: "New point" } }] })`.
 
 ## MapServer
 

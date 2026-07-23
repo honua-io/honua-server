@@ -71,7 +71,7 @@ adapter-driven `licenses_*` series populate only after the AWS /
 Azure marketplace adapter child tickets land — see § "Status /
 Prerequisites" above):
 
-> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /metrics` and `GET /api/v1/admin/license/status`.
+> Verify the Prometheus target is **UP** for `/metrics`, then use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/license/status`.
 
 A flat reconciler success rate or rising metering-buffer depth is the
 earliest sign of trouble. Page the licensing on-call when any of these

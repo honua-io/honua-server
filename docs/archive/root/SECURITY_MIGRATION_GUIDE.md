@@ -170,10 +170,10 @@ dotnet test tests/dotnet/Honua.Server.Tests/ --filter="Category=Security"
 > Open `http://your-server/ogc/features/v1/collections/test/items?filter=name=` in a browser.
 
 #### 3. CORS Test
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `OPTIONS https://evil.com`.
+> Verify the preflight in browser developer tools or an automated CORS integration test; `OPTIONS` requests for arbitrary origins are not an API-explorer operation.
 
 #### 4. Information Disclosure Test
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET http://your-server/admin/health`.
+> Open `http://your-server/admin/health` in a browser from the permitted network.
 
 ## Rollback Plan
 

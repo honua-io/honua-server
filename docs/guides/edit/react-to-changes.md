@@ -31,7 +31,7 @@ printf '%s.%s' "$TIMESTAMP" "$RAW_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_H
 
 ### 3. Stream over SSE
 
-> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/streaming/features?layers=0`.
+> Use `createHonuaServerRealtimeSubscription` from `@honua/sdk-js/realtime` and subscribe with `layerId: 0`; the SDK handles the SSE endpoint and event decoding.
 
 SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly).
 

@@ -98,7 +98,7 @@ Bedrock needs `bedrock:InvokeModel` on the chosen model / inference profile.
 With the profile applied and credentials present, call the tool with a novel intent that is not
 in the fixture set:
 
-In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /mcp` with this body:
+Use the connected MCP client to call `honua_plan_analysis`. The equivalent `tools/call` payload is:
 
 ```json
 {

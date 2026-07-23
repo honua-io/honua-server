@@ -71,7 +71,7 @@ Use the environment id from `Metadata__Environment` for `METADATA_ENV`; if neith
 | Redis from Compose | `docker compose exec redis redis-cli ping` | `PONG` |
 | Honua cache/Redis view | Run `GET /api/v1/admin/cache/status` in the authorized [API explorer](../../reference/openapi-and-explorer.md) | `isHealthy: true`; `isUsingFallback: false` when Redis is required |
 | Runtime config | Run `GET /api/v1/admin/config` in the authorized API explorer | Effective env-derived config is visible |
-| Performance and license health | Run `GET /healthz/metrics` in the authorized API explorer | JSON status is `healthy` |
+| Performance and license health | Open Honua Console's **Operate → Health** view (backed by `/healthz/metrics`) | JSON status is `healthy` |
 
 If `/healthz/ready` returns `503` and the body is `Not Ready`, use `/api/v1/admin/cache/status`, database logs, and server logs to identify whether the failing check is migrations, PostGIS, or cache/Redis.
 

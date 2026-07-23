@@ -105,7 +105,7 @@ GET /my-layers/tiles/z/x/y.mvt     # Vector tiles
 
 **Client-Aware Protocol Selection:**
 
-> Use the [API explorer](../reference/openapi-and-explorer.md) for `GET https://api.honua.io/my-layers/features`; `GET https://api.honua.io/my-layers/map`.
+> This is an archived design example, not a current OpenAPI surface. Use the current `honua services`, `honua layers`, `honua query`, and `honua map export` commands instead.
 
 ### 3. **Unified Documentation**
 

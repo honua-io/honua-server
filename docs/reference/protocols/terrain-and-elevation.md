@@ -70,7 +70,7 @@ Misconfigured limits fail validation at startup.
 
 > Open `https://server.example.com/elevation/dem/profile?line=LINESTRING(-122.5%2037.7,-122.3%2037.9)&interval=50` in a browser.
 
-In the [API explorer](../openapi-and-explorer.md), run `POST /elevation/dem/line-of-sight` with `{"observerLon":-122.42,"observerLat":37.77,"observerHeight":2,"targetLon":-122.40,"targetLat":37.79,"targetHeight":0}`.
+Use `SceneView.lineOfSight` from `@honua/sdk-js/scene-workspace` with dataset `dem`, observer `{-122.42, 37.77, height 2}`, and target `{-122.40, 37.79, height 0}`. The SDK invokes the elevation endpoint and decodes the result.
 
 ## Conformance
 

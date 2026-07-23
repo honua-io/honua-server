@@ -15,7 +15,7 @@ export HONUA_BASE_URL=http://localhost:8080
 # export HONUA_API_KEY=... # only if the service requires auth
 ```
 
-The three HTTP surfaces answer the same questions with different syntax: OGC items take `filter` (CQL2 text or JSON), FeatureServer takes SQL-like `where` clauses, and OData takes `$filter`. The CLI maps onto the FeatureServer surface; the generated [OpenAPI and API explorer](../../reference/openapi-and-explorer.md) documents protocol-specific request shapes. The full filter-language reference is in [CQL2 and filtering](../../reference/cql2-and-filtering.md). To create or change features, see [edit features](../edit/edit-features.md).
+The three HTTP surfaces answer the same questions with different syntax: OGC items take `filter` (CQL2 text or JSON), FeatureServer takes SQL-like `where` clauses, and OData takes `$filter`. The CLI maps onto the FeatureServer surface; the [OpenAPI explorer](../../reference/openapi-and-explorer.md) documents OGC API Features, while `@honua/sdk-js` supplies the OData client. The full filter-language reference is in [CQL2 and filtering](../../reference/cql2-and-filtering.md). To create or change features, see [edit features](../edit/edit-features.md).
 
 ## Steps
 
@@ -26,7 +26,7 @@ The three HTTP surfaces answer the same questions with different syntax: OGC ite
    honua query my_service/0 --where "population > 10000" --format geojson
    ```
 
-   Use the API explorer when you need the equivalent OGC API Features or OData request.
+   Use the API explorer for the equivalent OGC API Features request, or the `@honua/sdk-js` OData source for its `$filter` equivalent.
 
 2. Filter spatially with a bounding box (lon,lat order: `minLon,minLat,maxLon,maxLat`):
 
