@@ -263,7 +263,7 @@ jobs:
             --json number,isDraft,mergeable,labels \
             --jq '[.[] | select(.isDraft == false)
                        | select((.mergeable // "MERGEABLE") != "CONFLICTING")
-                       | select([.labels[].name] | (index("train:hold") or index("train:escalated")) | not)]
+                       | select([.labels[].name] | (index("hold") or index("train:hold") or index("train:escalated")) | not)]
                   | length')"
           echo "Selectable PRs remaining after this run: ${ready:-0}"
           if [[ "${ready:-0}" -gt 0 ]]; then
