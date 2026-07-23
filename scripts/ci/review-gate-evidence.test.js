@@ -4,8 +4,64 @@ const assert = require('node:assert/strict');
 const { evaluateCodexEvidence } = require('./review-gate-evidence');
 const head = 'abc123';
 const review = (state, submittedAt = '2026-01-02T00:00:00Z', updatedAt = submittedAt) => ({ author: { login: 'chatgpt-codex-connector' }, body: '### Codex Review\nReviewed commit', submittedAt, updatedAt, commit: { oid: head }, state });
+const cleanComment = (commit = head, overrides = {}) => ({
+  author: { login: 'chatgpt-codex-connector' },
+  body: `Codex Review: Didn't find any major issues. Hooray!\n\n**Reviewed commit:** \`${commit}\``,
+  createdAt: '2026-01-02T00:00:00Z',
+  updatedAt: '2026-01-02T00:00:00Z',
+  includesCreatedEdit: false,
+  ...overrides,
+});
 test('active exact-head Codex review attests', () => {
   assert.equal(evaluateCodexEvidence({ reviews: [review('COMMENTED')], unresolvedCount: 0, head }).exactReview, true);
+});
+test('unedited Codex clean comment for exact head attests', () => {
+  const fullHead = 'abc1234567890abcdef1234567890abcdef1234';
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment(fullHead.slice(0, 10))],
+    unresolvedCount: 0, head: fullHead,
+  }).exactCleanComment, true);
+});
+test('clean comment for another head cannot attest', () => {
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment('def4567890')],
+    unresolvedCount: 0, head: 'abc1234567890abcdef1234567890abcdef1234',
+  }).exactCleanComment, false);
+});
+test('edited clean comment cannot attest', () => {
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment('abc1234567', {
+      updatedAt: '2026-01-03T00:00:00Z',
+    })], unresolvedCount: 0, head: 'abc1234567890abcdef1234567890abcdef1234',
+  }).exactCleanComment, false);
+});
+test('clean comment created with an edit cannot attest', () => {
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment('abc1234567', {
+      includesCreatedEdit: true,
+    })], unresolvedCount: 0, head: 'abc1234567890abcdef1234567890abcdef1234',
+  }).exactCleanComment, false);
+});
+test('non-Codex clean comment cannot attest', () => {
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment('abc1234567', {
+      author: { login: 'contributor' },
+    })], unresolvedCount: 0, head: 'abc1234567890abcdef1234567890abcdef1234',
+  }).exactCleanComment, false);
+});
+test('clean comment with multiple reviewed SHAs cannot attest', () => {
+  const comment = cleanComment('abc1234567');
+  comment.body += '\n**Reviewed commit:** `abc1234568`';
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [comment],
+    unresolvedCount: 0, head: 'abc1234567890abcdef1234567890abcdef1234',
+  }).exactCleanComment, false);
+});
+test('unresolved finding overrides an exact-head clean comment', () => {
+  assert.equal(evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment('abc1234567')],
+    unresolvedCount: 1, head: 'abc1234567890abcdef1234567890abcdef1234',
+  }).exactCleanComment, false);
 });
 test('dismissed exact-head Codex review cannot attest', () => {
   assert.equal(evaluateCodexEvidence({ reviews: [review('DISMISSED')], unresolvedCount: 0, head }).exactReview, false);
