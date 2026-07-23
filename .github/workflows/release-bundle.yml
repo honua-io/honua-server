@@ -305,7 +305,23 @@ jobs:
           jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
-            [ -n "$pub" ] && gh workflow run "$pub" -R "$repo" --ref trunk -f dry_run=false || true
+            case "${repo}:${pub}" in
+              honua-io/honua-sdk-dotnet:publish-dotnet-sdk.yml)
+                gh workflow run publish-dotnet-sdk.yml -R honua-io/honua-sdk-dotnet --ref trunk -f dry_run=false ;;
+              honua-io/honua-sdk-js:publish-js-sdk.yml)
+                gh workflow run publish-js-sdk.yml -R honua-io/honua-sdk-js --ref trunk -f dry_run=false ;;
+              honua-io/honua-sdk-python:publish-python-sdk.yml)
+                gh workflow run publish-python-sdk.yml -R honua-io/honua-sdk-python --ref trunk -f dry_run=false ;;
+              honua-io/honua-mobile:publish-dotnet-mobile.yml)
+                gh workflow run publish-dotnet-mobile.yml -R honua-io/honua-mobile --ref trunk -f dry_run=false ;;
+              honua-io/geospatial-grpc:publish-dotnet-protocol.yml)
+                gh workflow run publish-dotnet-protocol.yml -R honua-io/geospatial-grpc --ref trunk -f dry_run=false ;;
+              :)
+                ;;
+              *)
+                echo "::error::Unallowlisted SDK publish workflow ${repo}:${pub}"
+                exit 1 ;;
+            esac
           done
           # Retag the immutable RC image to the channel + latest-aot.
           ref='${{ needs.rc-image.outputs.image_ref }}'

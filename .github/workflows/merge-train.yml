@@ -1,4 +1,5 @@
 name: Merge Train
+run-name: Merge Train [${{ inputs.recovery_key || 'ordinary' }}]
 
 # Optimistic batch merge train (Phase 1). DRY-RUN BY DEFAULT.
 #
@@ -47,6 +48,11 @@ on:
         default: false
       autofix_model:
         description: 'Bedrock model id for the AI fix-agent (code edits). Default a Sonnet-class model; override per your account entitlement.'
+        type: string
+        required: false
+        default: ''
+      recovery_key:
+        description: 'Internal idempotency key for durable recovery dispatches.'
         type: string
         required: false
         default: ''
