@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Raster.Domain;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
@@ -16,10 +17,11 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// The Postgres raster store's statistics backfill already grants itself a generous
 /// compute budget (300s) so a big <c>ST_SummaryStats</c> pass can finish and persist for
 /// <em>future</em> requests rather than timing out mid-computation (#1649). The
-/// request-visible wait is deliberately decoupled from that operation: timing out this
-/// helper returns an empty response but does not cancel the single-flight backfill. Later
-/// requests can therefore hit the rows it persisted instead of repeatedly starting and
-/// rolling back the same expensive computation.
+/// request-visible wait is deliberately decoupled from that operation, which runs in an
+/// independently owned dependency-injection scope. Timing out this helper returns an empty
+/// response but does not cancel or prematurely dispose the single-flight backfill or its
+/// database-admission lease. Later requests can therefore hit the rows it persisted instead
+/// of repeatedly starting and rolling back the same expensive computation.
 /// </remarks>
 internal static class ImageServerStatisticsBudget
 {
@@ -41,27 +43,33 @@ internal static class ImageServerStatisticsBudget
     /// budget timeout and still propagates as a normal cancellation.
     /// </summary>
     public static Task<T[]> ResolveAsync<T>(
-        Func<CancellationToken, Task<T[]>> operation,
+        IServiceScopeFactory scopeFactory,
+        Func<IServiceProvider, CancellationToken, Task<T[]>> operation,
         Action onBudgetExceeded,
         CancellationToken requestAborted)
-        => ResolveAsync(operation, onBudgetExceeded, Timeout, requestAborted);
+        => ResolveAsync(scopeFactory, operation, onBudgetExceeded, Timeout, requestAborted);
 
     /// <summary>
-    /// Test seam: identical to <see cref="ResolveAsync{T}(Func{CancellationToken,Task{T[]}},Action,CancellationToken)"/>
+    /// Test seam: identical to the public <c>ResolveAsync</c> overload
     /// but with an explicit budget, so tests can exercise the timeout/fallback path in
     /// milliseconds instead of waiting out the real <see cref="Timeout"/>.
     /// </summary>
     internal static async Task<T[]> ResolveAsync<T>(
-        Func<CancellationToken, Task<T[]>> operation,
+        IServiceScopeFactory scopeFactory,
+        Func<IServiceProvider, CancellationToken, Task<T[]>> operation,
         Action onBudgetExceeded,
         TimeSpan budget,
         CancellationToken requestAborted)
     {
-        // Do not pass the request/budget token into the store operation. The Postgres
-        // implementation uses that token for ST_SummaryStats *and* transaction commit;
-        // cancelling it at the response deadline would roll back the single-flight
-        // backfill and force every later request to repeat it forever.
-        var operationTask = operation(CancellationToken.None);
+        ArgumentNullException.ThrowIfNull(scopeFactory);
+        ArgumentNullException.ThrowIfNull(operation);
+
+        // The backfill owns an independent scope so request completion cannot dispose its
+        // Postgres provider or release query-admission slots while SQL is still running.
+        // Do not pass the request/budget token into it: Postgres uses that token for both
+        // ST_SummaryStats and transaction commit, and cancelling it at the response deadline
+        // would roll back the single-flight backfill forever.
+        var operationTask = RunInOwnedScopeAsync(scopeFactory, operation);
 
         try
         {
@@ -78,6 +86,14 @@ internal static class ImageServerStatisticsBudget
             ObserveBackgroundFault(operationTask);
             throw;
         }
+    }
+
+    private static async Task<T[]> RunInOwnedScopeAsync<T>(
+        IServiceScopeFactory scopeFactory,
+        Func<IServiceProvider, CancellationToken, Task<T[]>> operation)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        return await operation(scope.ServiceProvider, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static void ObserveBackgroundFault<T>(Task<T[]> operationTask)

@@ -6,6 +6,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -26,9 +27,11 @@ public sealed class ImageServerStatisticsBudgetTests
     public async Task ResolveAsync_OperationCompletesWithinBudget_ReturnsComputedStatistics()
     {
         var budgetExceeded = false;
+        using var services = new ServiceCollection().BuildServiceProvider();
 
         var result = await ImageServerStatisticsBudget.ResolveAsync(
-            _ => Task.FromResult(Sample),
+            services.GetRequiredService<IServiceScopeFactory>(),
+            (_, _) => Task.FromResult(Sample),
             onBudgetExceeded: () => budgetExceeded = true,
             budget: TimeSpan.FromSeconds(5),
             CancellationToken.None);
@@ -43,12 +46,19 @@ public sealed class ImageServerStatisticsBudgetTests
         var budgetExceeded = false;
         var backfill = new TaskCompletionSource<RasterStatistics[]>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var scopeStarted = new TaskCompletionSource<ScopeLifetime>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         CancellationToken operationToken = default;
+        using var services = new ServiceCollection()
+            .AddScoped<ScopeLifetime>()
+            .BuildServiceProvider();
 
         var result = await ImageServerStatisticsBudget.ResolveAsync(
-            ct =>
+            services.GetRequiredService<IServiceScopeFactory>(),
+            (provider, ct) =>
             {
                 operationToken = ct;
+                scopeStarted.SetResult(provider.GetRequiredService<ScopeLifetime>());
                 return backfill.Task;
             },
             onBudgetExceeded: () => budgetExceeded = true,
@@ -59,9 +69,13 @@ public sealed class ImageServerStatisticsBudgetTests
         budgetExceeded.Should().BeTrue();
         operationToken.Should().Be(CancellationToken.None);
         backfill.Task.IsCompleted.Should().BeFalse("the persistence backfill must outlive the response budget");
+        var scopeLifetime = await scopeStarted.Task;
+        scopeLifetime.Disposed.Task.IsCompleted.Should().BeFalse(
+            "the background scope must retain its database admission until the backfill finishes");
 
         backfill.SetResult(Sample);
         (await backfill.Task).Should().BeSameAs(Sample);
+        await scopeLifetime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [UnitTest]
@@ -70,19 +84,45 @@ public sealed class ImageServerStatisticsBudgetTests
         var budgetExceeded = false;
         var backfill = new TaskCompletionSource<RasterStatistics[]>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var scopeStarted = new TaskCompletionSource<ScopeLifetime>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         using var requestCts = new CancellationTokenSource();
+        using var services = new ServiceCollection()
+            .AddScoped<ScopeLifetime>()
+            .BuildServiceProvider();
         await requestCts.CancelAsync();
 
         var act = () => ImageServerStatisticsBudget.ResolveAsync(
-            _ => backfill.Task,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            (provider, _) =>
+            {
+                scopeStarted.SetResult(provider.GetRequiredService<ScopeLifetime>());
+                return backfill.Task;
+            },
             onBudgetExceeded: () => budgetExceeded = true,
             budget: TimeSpan.FromSeconds(5),
             requestCts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         budgetExceeded.Should().BeFalse();
+        var scopeLifetime = await scopeStarted.Task;
+        scopeLifetime.Disposed.Task.IsCompleted.Should().BeFalse(
+            "request cancellation must not release admission while the backfill is still running");
 
         backfill.SetResult(Sample);
         (await backfill.Task).Should().BeSameAs(Sample);
+        await scopeLifetime.Disposed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private sealed class ScopeLifetime : IDisposable
+    {
+        public ScopeLifetime()
+        {
+        }
+
+        public TaskCompletionSource<bool> Disposed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Dispose() => Disposed.TrySetResult(true);
     }
 }

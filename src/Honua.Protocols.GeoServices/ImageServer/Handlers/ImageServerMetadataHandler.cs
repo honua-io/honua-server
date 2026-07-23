@@ -111,13 +111,18 @@ internal sealed class ImageServerMetadataHandler
             // than this request's own host-level deadline, which would otherwise hang
             // the whole metadata response instead of just omitting statistics (#2991).
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
-                ct => rasters.Length == 1
-                    ? _rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: ct)
-                    : _rasterStore.GetMosaicStatisticsAsync(
-                        layerId,
-                        rasters.Select(r => r.Id).ToArray(),
-                        mergeStrategy,
-                        cancellationToken: ct),
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                (services, ct) =>
+                {
+                    var rasterStore = services.GetRequiredService<IRasterStore>();
+                    return rasters.Length == 1
+                        ? rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: ct)
+                        : rasterStore.GetMosaicStatisticsAsync(
+                            layerId,
+                            rasters.Select(r => r.Id).ToArray(),
+                            mergeStrategy,
+                            cancellationToken: ct);
+                },
                 onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
                     _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
                 cancellationToken);
