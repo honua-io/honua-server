@@ -34,7 +34,6 @@ jobs:
       - name: Dispatch to honua-evidence
         env:
           GH_TOKEN: ${{ secrets.HONUA_EVIDENCE_DISPATCH_TOKEN }}
-        continue-on-error: true
         run: |
           if [ -z "${GH_TOKEN}" ]; then
             echo "::warning::HONUA_EVIDENCE_DISPATCH_TOKEN is not set; skipping repository_dispatch to honua-evidence. Add a fine-grained PAT with write access to honua-io/honua-evidence to enable event-driven re-aggregation (honua-io/honua-evidence#3). honua-evidence's daily schedule will still pick this up."
