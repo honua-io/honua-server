@@ -344,7 +344,7 @@ re-runnable end-to-end without reconstructing it from scratch. All read-only; sa
 run anytime.
 
 ```bash
-set -e
+set -euo pipefail
 BASE=https://demo.honua.io
 
 # Track 1 — STAC
