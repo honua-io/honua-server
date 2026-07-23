@@ -2,7 +2,7 @@
 
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
-**Prerequisites:** Docker with Compose v2, `git`, and Python 3.
+**Prerequisites:** Docker with Compose v2, `git`, Python 3, and Node.js with npm.
 
 ## Steps
 
@@ -63,6 +63,7 @@ with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-passwor
         username="honua_user",
         password="honua_password",
         ssl_mode="Prefer",
+        ssl_required=False,
     ))
     print(connection)
 PY

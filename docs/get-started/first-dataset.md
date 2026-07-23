@@ -38,6 +38,7 @@ with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-passwor
         username="honua_user",
         password="honua_password",
         ssl_mode="Prefer",
+        ssl_required=False,
     ))
     print(connection)
 PY
