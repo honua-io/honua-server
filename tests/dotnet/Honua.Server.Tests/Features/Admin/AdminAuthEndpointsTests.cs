@@ -1282,11 +1282,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static RsaSecurityKey CreateOidcSigningKey()
     {
-        // Ownership transfer: the RSA instance is held by the returned RsaSecurityKey
-        // for the lifetime of the static _oidcSigningKey field (process lifetime), so
-        // it must not be disposed here.
         using var rsa = RSA.Create(2048);
-        return new RsaSecurityKey(rsa)
+        return new RsaSecurityKey(rsa.ExportParameters(includePrivateParameters: true))
         {
             KeyId = "test-admin-auth-jwk"
         };
@@ -1294,7 +1291,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static string CreateJwksDocument()
     {
-        var parameters = _oidcSigningKey.Rsa!.ExportParameters(false);
+        var parameters = _oidcSigningKey.Parameters;
         var modulus = Base64UrlEncoder.Encode(parameters.Modulus);
         var exponent = Base64UrlEncoder.Encode(parameters.Exponent);
 
