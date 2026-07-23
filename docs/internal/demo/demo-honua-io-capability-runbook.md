@@ -110,18 +110,20 @@ activates it. Existing graph entities (the 11 `maui-*` layers) are preserved.
 
 ### Run it
 
-> **Confirmed live environment id: `Production`, not `default`.** The demo Lambda's
-> `deploymentEnvironment` (visible unauthenticated in
-> `GET /api/v1/capabilities/manifest` → `server.deploymentEnvironment`) is `Production`.
-> This runbook's own default of `default` is wrong for this deployment — the actual
-> seed apply against demo.honua.io used `HONUA_SEED_ENV=Production` (2026-07-20/21),
-> which is why it is visible live today. Always confirm the live value before reusing
-> this seed against any other environment.
+> **Do not derive the metadata environment from `server.deploymentEnvironment`.**
+> The manifest field reports `IWebHostEnvironment.EnvironmentName` (`Production` on
+> the demo), while the metadata graph independently reads `Metadata__Environment`,
+> then `Environment`, with a `default` fallback. Operator records say the successful
+> 2026-07-20/21 seed apply used `HONUA_SEED_ENV=Production`, and the live catalog
+> confirms those rows are active, but the manifest alone does not prove that mapping.
+> Before any repeat apply, inspect `Metadata__Environment` / `Environment` on the
+> serving Lambda version or query the active environment in `metadata_v2_current`.
 
 **[OPERATOR]** Set `HONUA_SEED_ENV` to the env id the demo Lambda is configured with —
 this MUST match the server's `Metadata__Environment` / `Environment` setting (it defaults
-to `default`; confirm against the Lambda's environment variables, or read it from the
-capabilities manifest as above):
+to `default`; confirm against the serving Lambda's environment variables or the active
+`metadata_v2_current` row — the capabilities manifest's host-environment field is not
+the metadata environment):
 
 ```bash
 # Local / direct-psql target:
