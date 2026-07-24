@@ -1143,7 +1143,7 @@ internal static class StudioPackageEndpoints
             // hide (the list is empty either way), so the ownership check only runs when the
             // item actually exists.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
-            var isOwnerOrAdmin = true;
+            Guid? nonOwnerVisibleVersionId = null;
             if (pointers is not null)
             {
                 var authResult = await EnsureAuthorizedAsync(
@@ -1156,17 +1156,19 @@ internal static class StudioPackageEndpoints
                     return authResult;
                 }
 
-                isOwnerOrAdmin = IsOwnerOrAdmin(authorizationService, context, pointers.OwnerId);
+                // honua-server#3001: a published pointer only admits a non-owner into this
+                // endpoint at all (via isPubliclyReadable above) -- it must not expose the
+                // item's entire immutable history. Remember the single version a non-owner
+                // may see; GetVersion is already scoped identically (isPubliclyReadable
+                // requires versionId == PublishedVersionId).
+                if (!IsOwnerOrAdmin(authorizationService, context, pointers.OwnerId))
+                {
+                    nonOwnerVisibleVersionId = pointers.PublishedVersionId;
+                }
             }
 
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
-
-            // honua-server#3001: a published pointer only admits a non-owner into this endpoint
-            // at all (via isPubliclyReadable above) -- it must not expose the item's entire
-            // immutable history. Filter the response down to the single published version for
-            // every caller who isn't the owner (or admin); GetVersion is already scoped
-            // identically (isPubliclyReadable requires versionId == PublishedVersionId).
-            if (!isOwnerOrAdmin && pointers?.PublishedVersionId is { } publishedVersionId)
+            if (nonOwnerVisibleVersionId is { } publishedVersionId)
             {
                 versions = versions.Where(v => v.VersionId == publishedVersionId).ToArray();
             }
