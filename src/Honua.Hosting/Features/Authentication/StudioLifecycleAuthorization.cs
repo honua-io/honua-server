@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -27,11 +29,13 @@ internal sealed class StudioLifecycleRequirement : IAuthorizationRequirement;
 /// </summary>
 internal sealed class StudioLifecycleAuthorizationHandler(
     IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
+    IOptionsMonitor<AdminRoleOptions> adminRoleOptions,
     IHttpContextAccessor httpContextAccessor,
     ILogger<StudioLifecycleAuthorizationHandler> logger)
     : AuthorizationHandler<StudioLifecycleRequirement>
 {
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options = options;
+    private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions = adminRoleOptions;
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<StudioLifecycleAuthorizationHandler> _logger = logger;
 
@@ -40,16 +44,23 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         AuthorizationHandlerContext context,
         StudioLifecycleRequirement requirement)
     {
-        if (context.User.IsInRole("admin"))
+        if (IsRecognizedAdmin(context.User))
         {
-            // Preserve the scoped admin-permission boundary this policy replaced (#1985): the
-            // prior RequireAdminAuthorization() gate for this group also ran
-            // AdminPermissionRequirement, so an admin:read-scoped key could read but never
-            // mutate Studio resources. Widening this policy to admit non-admin end users below
-            // must not silently drop that check for admin-tier callers -- enforce the identical
-            // method-scoped grant here, unconditionally and independent of the end-user flag
-            // (admin behavior must stay byte-for-byte unchanged; see AdminPermissionAuthorizationHandler,
-            // whose requirement this policy previously ran via RequireAdminAuthorization()).
+            // Preserve the scoped admin-permission boundary this policy replaced (#1985) --
+            // but only for API-key principals. The prior RequireAdminAuthorization() gate ran
+            // AdminPermissionRequirement so an admin:read-scoped key could read but never
+            // mutate Studio resources; that grammar classifies the "permission" claims the
+            // ApiKey scheme stamps. OIDC/session/cert admin principals never went through it
+            // under OIDC deployments (UpdateRolePolicy rebuilds the admin policies as
+            // role-assertion-only), and an IdP may attach unrelated "permission" claims that
+            // the grammar would misclassify as a scoped key and deny -- so the grammar applies
+            // exactly to identities authenticated by the ApiKey scheme and no others.
+            if (!IsApiKeyPrincipal(context.User))
+            {
+                context.Succeed(requirement);
+                return Task.CompletedTask;
+            }
+
             var httpContext = context.Resource as HttpContext ?? _httpContextAccessor.HttpContext;
             var method = httpContext?.Request.Method;
             if (AdminApiKeyPermission.IsAuthorized(context.User, method))
@@ -75,4 +86,38 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         // handlers/requirements report their own outcome, matching the admin handler.
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Recognizes the admin family the pre-#3001 policies admitted: the literal <c>admin</c>
+    /// role plus the configured <c>Oidc:AdminRoles</c> aliases (see <see cref="AdminRoleOptions"/>,
+    /// the same set <c>StudioAuthorizationService.IsAdmin</c> resolves), so an OIDC admin via
+    /// an alias role keeps admin-tier Studio access rather than degrading to end-user scoping.
+    /// </summary>
+    private bool IsRecognizedAdmin(ClaimsPrincipal principal)
+    {
+        if (principal.IsInRole("admin"))
+        {
+            return true;
+        }
+
+        var aliases = _adminRoleOptions.CurrentValue.AdminRoles;
+        if (aliases is null)
+        {
+            return false;
+        }
+
+        foreach (var alias in aliases)
+        {
+            if (!string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
+        => principal.Identities.Any(identity =>
+            string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
 }
