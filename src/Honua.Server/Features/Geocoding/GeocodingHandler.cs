@@ -4,6 +4,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
@@ -18,6 +20,7 @@ namespace Honua.Server.Features.Geocoding;
 internal sealed class GeocodingHandler(
     IGeocodeCoordinatorService coordinatorService,
     IGeocodeProviderRegistry providerRegistry,
+    ILicenseEntitlementService licenseEntitlementService,
     IOptions<GeocodingOptions> options,
     ILogger<GeocodingLogCategory> logger)
 {
@@ -34,6 +37,8 @@ internal sealed class GeocodingHandler(
 
     private readonly IGeocodeCoordinatorService _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
     private readonly IGeocodeProviderRegistry _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
+    private readonly ILicenseEntitlementService _licenseEntitlementService =
+        licenseEntitlementService ?? throw new ArgumentNullException(nameof(licenseEntitlementService));
     private readonly GeocodingOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<GeocodingLogCategory> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -63,6 +68,12 @@ internal sealed class GeocodingHandler(
             }
 
             var capabilities = provider.Capabilities;
+            if (!_licenseEntitlementService
+                    .CheckEntitlement(FeatureCatalog.BatchGeocodingKey)
+                    .IsActive)
+            {
+                capabilities = capabilities with { SupportsBatch = false };
+            }
 
             var response = new GeocodeServerInfoResponse
             {
