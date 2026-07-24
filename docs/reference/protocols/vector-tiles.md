@@ -39,21 +39,11 @@ Scheduled invalidation: `TileCacheExpiry` (`Enabled`, `IntervalSeconds`, `Target
 
 ## Examples
 
-```bash
-# TileJSON metadata, then a tile
-curl "https://server.example.com/tiles/0/tile.json"
-curl -o tile.mvt "https://server.example.com/tiles/0/12/655/1586.mvt?where=status%3D'active'"
-```
+> Open `https://server.example.com/tiles/0/tile.json`, `https://server.example.com/tiles/0/12/655/1586.mvt?where=status%3D` in a browser.
 
-```bash
-# H3-aggregated tile at resolution 7
-curl -o h3.mvt "https://server.example.com/tiles/0/h3/8/40/98.mvt?resolution=7"
-```
+> Open `https://server.example.com/tiles/0/h3/8/40/98.mvt?resolution=7` in a browser.
 
-```bash
-# MapLibre style for the layer
-curl "https://server.example.com/api/styles/0.json"
-```
+> Open `https://server.example.com/api/styles/0.json` in a browser.
 
 ## Conformance
 

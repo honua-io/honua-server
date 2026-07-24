@@ -28,13 +28,7 @@ Contract notes:
 - Published versions are immutable at the persistence layer; `reopen` creates a new draft with `reopenedFromVersion` set.
 - Failures: `400` invalid package JSON or failed publish validation, `404` unknown package/version, `409` stale `ETag` or non-draft target, `428` missing `If-Match` on `PUT`.
 
-```bash
-HONUA_URL=https://honua.example.com
-API_KEY=your-admin-key
-FORM_ID=inspection-form
-curl -X POST "$HONUA_URL/api/v1/admin/forms/packages/$FORM_ID/versions/1/publish" \
-  -H "X-API-Key: $API_KEY"
-```
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/forms/packages/{formId}/versions/1/publish`, substituting `inspection-form`.
 
 ## Runtime (published packages and submissions)
 
@@ -46,10 +40,20 @@ curl -X POST "$HONUA_URL/api/v1/admin/forms/packages/$FORM_ID/versions/1/publish
 | GET | `/api/v1/forms/packages/{formId}/compatibility` | Get the offline compatibility and migration manifest for a published version (optional `?clientVersion=`) |
 | POST | `/api/v1/forms/packages/{formId}/submissions` | Submit field data against a published version |
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/forms/packages/$FORM_ID/submissions" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"idempotencyKey":"device-42-0001","operation":"create","clientId":"device-42","values":{"name":"Inspection A"},"geometry":{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}}'
+Run `POST /api/v1/forms/packages/{formId}/submissions` with this body:
+
+```json
+{
+  "idempotencyKey": "device-42-0001",
+  "operation": "create",
+  "clientId": "device-42",
+  "values": { "name": "Inspection A" },
+  "geometry": {
+    "x": -157.8583,
+    "y": 21.3069,
+    "spatialReference": { "wkid": 4326 }
+  }
+}
 ```
 
 ### Submissions

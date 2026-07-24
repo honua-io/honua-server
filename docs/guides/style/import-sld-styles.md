@@ -10,14 +10,7 @@ The conversion is best-effort and never silent: everything that cannot be transl
 
 1. Import an SLD file (SLD 1.0 or SE 1.1, max 1 MiB) against the target layer:
 
-   ```bash
-   BASE=http://localhost:8080
-   KEY=my-admin-api-key
-   LAYER=1
-   curl -s -X POST "$BASE/api/v1/admin/metadata/layers/$LAYER/style/import-sld" \
-     -H "X-API-Key: $KEY" -H "Content-Type: application/xml" \
-     --data-binary @my-style.sld
-   ```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld`.
 
    A 200 response persists the converted style and returns `detectedVersion`, `layerCount`, the resulting `mapLibreStyle`, and a `diagnostics` array. A 422 means no convertible symbolizers — diagnostics explain why, and no partial style is stored.
 
@@ -25,10 +18,7 @@ The conversion is best-effort and never silent: everything that cannot be transl
 
 3. Export the stored style back to SLD 1.0 for round-trip validation or use in other tools:
 
-   ```bash
-   curl -s "$BASE/api/v1/admin/metadata/layers/$LAYER/style/export-sld" \
-     -H "X-API-Key: $KEY" -o exported.sld
-   ```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/metadata/layers/{layerId}/style/export-sld`.
 
    The `X-Sld-Diagnostic-Count` response header reports how many export diagnostics were emitted (`X-Sld-Diagnostics` carries them as JSON when non-zero). A 422 means the stored style has no SLD-expressible layers.
 
@@ -52,9 +42,7 @@ On export, data-driven MapLibre expressions (`match`, `step`, `interpolate`, `ca
 
 ## Verify
 
-```bash
-curl -s "$BASE/api/v1/admin/metadata/layers/$LAYER/style" -H "X-API-Key: $KEY"
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/metadata/layers/{layerId}/style`.
 
 Expected (trimmed): the converted document with a bumped revision.
 

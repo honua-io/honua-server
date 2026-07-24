@@ -31,10 +31,7 @@ printf '%s.%s' "$TIMESTAMP" "$RAW_BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_H
 
 ### 3. Stream over SSE
 
-```bash
-BASE=http://localhost:8080
-curl -N -H "Accept: text/event-stream" "$BASE/api/v1/streaming/features?layers=0"
-```
+> Use `createHonuaServerRealtimeSubscription` from `@honua/sdk-js/realtime` and subscribe with `layerId: 0`; the SDK handles the SSE endpoint and event decoding.
 
 SSE subscriptions are fixed by query parameters (`serviceId`, `layers`, `bbox`, `filter` CQL2, `datetime`) at connect time; each `feature-change` event's SSE `id:` is a cursor, so `EventSource` reconnects resume automatically (or pass `cursor=` explicitly).
 
@@ -50,26 +47,19 @@ One socket carries many subscriptions; the server answers with `status`, `heartb
 
 ### 5. Replay missed events (recovery)
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$BASE/api/v1/admin/feature-events/replay?limit=100"
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
 Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Retention is in-memory and capped by `FeatureChangeEvents__MaxRetainedEvents` (default 20000); on PostgreSQL a transactional outbox makes publication atomic with the row mutation.
 
 ### 6. Manage live sessions (admin)
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" "$BASE/api/v1/admin/streaming/features/sessions"
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/streaming/features/sessions`.
 
 `DELETE /api/v1/admin/streaming/features/sessions/{sessionId}` force-disconnects one.
 
 ## Verify
 
-```bash
-curl "$BASE/api/v1/streaming/features/capabilities"
-```
+> Open `/api/v1/streaming/features/capabilities` in a browser.
 
 ```json
 { "enabled": true, "transports": ["websocket", "sse"], "replay": { "supported": true }, "layers": [ { "layerId": 0, "canSubscribe": true } ] }

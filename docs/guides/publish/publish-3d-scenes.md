@@ -10,12 +10,14 @@ Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves e
 
 ### 1. Generate a tileset from a PostGIS layer
 
-```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"layerId": 7, "sceneId": "downtown-buildings", "displayName": "Downtown buildings"}' \
-  "$HONUA_URL/api/v1/admin/scenes/generate"
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/scenes/generate` with this body:
+
+```json
+{
+  "layerId": 7,
+  "sceneId": "downtown-buildings",
+  "displayName": "Downtown buildings"
+}
 ```
 
 Returns `201 Created` with `tilesetUrl`, `featureCount`, and any `warnings`. The run is synchronous, supports polygon/point/linestring layers in any PostGIS-transformable CRS, auto-registers the output with the scene registry, and forwards the source layer's access policy onto the scene. Optional fields: `description`, `includeAttributes` (attribute allowlist for the tileset metadata), `maxFeatureCount`, `cacheMaxAgeSeconds` (0–86400).
@@ -76,9 +78,7 @@ For protected scenes, mint a short-lived token with `POST /scenes/{sceneId}/acce
 
 ## Verify
 
-```bash
-curl -s "$HONUA_URL/scenes/downtown-buildings/tileset.json" | head -c 200
-```
+Open `http://localhost:8080/scenes/downtown-buildings/tileset.json` in a browser and compare the first fields with this response:
 
 ```json
 {"asset":{"version":"1.1","generator":"honua-3dtiles-generator/1.0"},"geometricError":…

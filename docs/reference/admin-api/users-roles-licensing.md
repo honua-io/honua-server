@@ -14,13 +14,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/api-keys/{id}/revoke` | Revoke an API key |
 | GET | `/api/v1/admin/api-keys/{id}/effective-permissions` | Get the key's effective permissions |
 
-```bash
-HONUA_URL=https://honua.example.com
-API_KEY=your-admin-key
-curl -X POST "$HONUA_URL/api/v1/admin/api-keys" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"name":"ci-publisher","roles":["publisher"]}'
-```
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","roles":["publisher"]}`.
 
 ## Roles and permissions
 
@@ -34,10 +28,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/api-keys" \
 | GET | `/api/v1/admin/roles/{id}/permissions` | Get role permissions |
 | PUT | `/api/v1/admin/roles/{id}/permissions` | Set role permissions |
 
-```bash
-ROLE_ID=editor
-curl "$HONUA_URL/api/v1/admin/roles/$ROLE_ID/permissions" -H "X-API-Key: $API_KEY"
-```
+Run `GET /api/v1/admin/roles/{roleId}/permissions`, substituting `editor` or another role id.
 
 ## Users
 
@@ -60,9 +51,7 @@ curl "$HONUA_URL/api/v1/admin/roles/$ROLE_ID/permissions" -H "X-API-Key: $API_KE
 | DELETE | `/api/v1/admin/oidc/providers/{id}` | Delete an OIDC provider |
 | POST | `/api/v1/admin/oidc/providers/{id}/test` | Test an OIDC provider connection |
 
-```bash
-curl "$HONUA_URL/api/v1/admin/oidc/providers" -H "X-API-Key: $API_KEY"
-```
+Run `GET /api/v1/admin/oidc/providers`.
 
 ## License
 
@@ -79,12 +68,7 @@ Runtime licensing loads an offline Ed25519-signed JSON envelope from `Licensing:
 
 Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. Rejected uploads return `400` and do not replace the current license. Paid-feature gates return `402 Payment Required`.
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/license/upload" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/octet-stream" \
-  --data-binary @company.honua-license.json
-curl "$HONUA_URL/api/v1/admin/license/status" -H "X-API-Key: $API_KEY"
-```
+Run `POST /api/v1/admin/license/upload` and attach `company.honua-license.json` as the binary request body, then verify it with `GET /api/v1/admin/license/status`.
 
 ### Trusted-key rotation
 
