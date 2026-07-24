@@ -2,7 +2,7 @@
 
 The Honua SDKs are typed clients for the same server you run from the [quickstart](../get-started/quickstart.md). They wrap the protocols Honua already speaks — GeoServices REST (FeatureServer), OGC API Features, STAC, OData, vector tiles, and the admin control plane — so you call methods instead of hand-building URLs. Everything an SDK does, the [HTTP API](../reference/README.md) can do too; the SDKs add types, paging, retries, and authentication handling.
 
-There are three first-party SDKs, plus a .NET MAUI mobile SDK. They are generated and tested against the same admin OpenAPI contract and released as a coordinated set — see [Ecosystem & SDKs](../concepts/ecosystem.md) for the repository map and the [SDK-to-server compatibility rules](../concepts/ecosystem.md#sdk-to-server-compatibility).
+The three first-party server SDKs are generated and tested against the same admin OpenAPI contract and released as a coordinated set. Separate experimental mobile projects provide a reusable MAUI control foundation and a complete field app — see [Ecosystem & SDKs](../concepts/ecosystem.md) for the repository map and the [SDK-to-server compatibility rules](../concepts/ecosystem.md#sdk-to-server-compatibility).
 
 ## Pick your SDK
 
@@ -11,7 +11,8 @@ There are three first-party SDKs, plus a .NET MAUI mobile SDK. They are generate
 | **.NET** | `Honua.Sdk` (NuGet) | 1.2.1 | net10.0 | [.NET getting started](dotnet/getting-started.md) |
 | **Python** | `honua-sdk` (PyPI) | 0.1.4 | Python ≥ 3.11 | [Python getting started](python/getting-started.md) |
 | **JavaScript / TypeScript** | `@honua/sdk-js` (npm) | 0.0.14-alpha | Node ≥ 20 | [JavaScript getting started](javascript/getting-started.md) |
-| Mobile (.NET MAUI) | [honua-mobile](https://github.com/honua-io/honua-mobile) | — | — | repo README |
+| Mobile controls (.NET MAUI) | [honua-mobile](https://github.com/honua-io/honua-mobile) | Experimental (Apache-2.0) | .NET MAUI | Reusable SDK and map/control foundation; repo README |
+| Field collection app | [honua-collect](https://github.com/honua-io/honua-collect) | Experimental (ELv2) | .NET MAUI | Full end-user app built on `honua-mobile`; repo README |
 
 The SDK package lines are pre-release. Pin exact versions and validate against your target server before broad rollout. All three SDKs expose a runtime capability handshake (`GET /api/v1/admin/capabilities`) so clients negotiate features instead of inferring them from version numbers.
 
@@ -25,10 +26,14 @@ Every SDK authenticates the same way the server does — see [Authenticate clien
 
 Mint a scoped key once and reuse it across SDKs:
 
-```bash
-curl -X POST "$BASE/api/v1/admin/api-keys" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"name":"sdk-quickstart","permissions":[],"expiresAt":null}'
+In the authorized [API explorer](../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
+
+```json
+{
+  "name": "sdk-quickstart",
+  "permissions": [],
+  "expiresAt": null
+}
 ```
 
 The response's `data.key` is shown once — store it as the API key your SDK client uses.
@@ -50,4 +55,4 @@ Each SDK has a short common-tasks page covering the two most common reads — qu
 - [Python common tasks](python/common-tasks.md)
 - [JavaScript common tasks](javascript/common-tasks.md)
 
-The underlying protocols are documented under [Reference → Protocols](../reference/README.md): [GeoServices REST](../reference/protocols/geoservices-rest.md), [OGC APIs](../reference/protocols/ogc-apis.md), and [STAC](../reference/protocols/stac.md). For the raw HTTP equivalents of these calls, see [Query features](../guides/query-analyze/query-features.md).
+The underlying protocols are documented under [Reference → Protocols](../reference/README.md): [GeoServices REST](../reference/protocols/geoservices-rest.md), [OGC APIs](../reference/protocols/ogc-apis.md), and [STAC](../reference/protocols/stac.md). For generated OpenAPI equivalents of these calls, see [Query features](../guides/query-analyze/query-features.md).

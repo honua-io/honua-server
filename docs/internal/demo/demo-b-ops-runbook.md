@@ -34,8 +34,8 @@
     --secret-id honua-demo-demo/admin-password --query SecretString --output text)"
   ```
 
-  Then every key-gated `curl` uses `-H "X-API-Key: $HONUA_DEMO_API_KEY"` and the
-  key never appears in the capture.
+  The bundled probe helper reads this variable and supplies the key off-camera,
+  so the key never appears in the capture.
 
 ## Pre-flight (off-camera, ~2 min before recording)
 
@@ -83,10 +83,7 @@ liveness/readiness contract their existing tooling already knows how to probe.
 **What to show on screen:** a terminal running two health probes, then the one
 Prometheus line that proves it's literally running on Lambda.
 
-```bash
-curl -i https://demo.honua.io/healthz/live
-curl -i https://demo.honua.io/healthz/ready
-```
+Run `./docs/internal/demo/scripts/demo-b-probes.sh` and keep its Beat 1 section on screen. It checks both `/healthz/live` and `/healthz/ready` and prints their status without exposing the admin key.
 
 **Expected output (verified live 2026-06-17):**
 
@@ -126,9 +123,7 @@ supply-chain scan — without anyone toggling anything on.
 
 **Show 1 — security headers + TLS:**
 
-```bash
-curl -I https://demo.honua.io/
-```
+Use the Beat 2 section of `demo-b-probes.sh` for the on-screen proof. It inspects the root response and reports each required security header.
 
 **Expected output (verified live 2026-06-17 — abridged):**
 
@@ -151,13 +146,7 @@ context, MIME-sniffing off.) Headers come from
 
 **Show 2 — the admin gate (401 → 200):**
 
-```bash
-# No key → rejected
-curl -s -o /dev/null -w "%{http_code}\n" https://demo.honua.io/metrics
-# With key → allowed   (key is in $HONUA_DEMO_API_KEY, never on screen)
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -H "X-API-Key: $HONUA_DEMO_API_KEY" https://demo.honua.io/metrics
-```
+Use the Beat 2 section of `demo-b-probes.sh`; it makes the unauthenticated and authenticated checks and reports `401` then `200` without printing the key.
 
 **Expected output (verified live 2026-06-17):**
 
@@ -191,9 +180,7 @@ want it.
 
 **Show 1 — Prometheus (key-gated):**
 
-```bash
-curl -s -H "X-API-Key: $HONUA_DEMO_API_KEY" https://demo.honua.io/metrics | head -20
-```
+Use the Beat 3 section of `demo-b-probes.sh`. It fetches `/metrics` with the key off-camera and prints the first `honua_lambda_memory_limit` series.
 
 **Expected output (verified live 2026-06-17 — sample):**
 
@@ -211,10 +198,7 @@ in `honua-server/src/Honua.ServiceDefaults/Extensions.cs`.
 
 **Show 2 — structured admin metrics API:**
 
-```bash
-curl -s -H "X-API-Key: $HONUA_DEMO_API_KEY" \
-  https://demo.honua.io/api/v1/metrics/health | jq .
-```
+The same Beat 3 probe calls `GET /api/v1/metrics/health` with the protected key and reports whether it returned `200`.
 
 **Expected output (verified live 2026-06-17):**
 
@@ -402,12 +386,7 @@ This is the honest framing of "actuation": the agent never pokes prod directly �
 it goes **plan → approve → execute via the server's admin deploy-control
 endpoints**, which are gated by the same `X-API-Key`.
 
-```bash
-# Coordinated-deploy readiness probe (gated; 401 without key)
-curl -s -o /dev/null -w "%{http_code}\n" https://demo.honua.io/api/v1/admin/deploy/preflight
-curl -s -H "X-API-Key: $HONUA_DEMO_API_KEY" \
-  https://demo.honua.io/api/v1/admin/deploy/preflight | jq .
-```
+Use the Beat 6 section of `demo-b-probes.sh`. It verifies that `GET /api/v1/admin/deploy/preflight` returns `401` without a key, then prints the authenticated readiness payload.
 
 **Expected output (verified live 2026-06-17):**
 

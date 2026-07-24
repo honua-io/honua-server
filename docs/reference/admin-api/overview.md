@@ -26,10 +26,7 @@ Console control-plane surfaces (`/api/v1/console/*`, including workflow packages
 
 `GET /api/v1/capabilities/manifest` returns a neutral runtime capability manifest for Console, MCP, QGIS, native hosts, and SDK clients. Authentication is optional; anonymous callers receive the public/default view. Optional `environment` and `workspaceId` query parameters scope the result.
 
-```bash
-HONUA_URL=https://honua.example.com
-curl "$HONUA_URL/api/v1/capabilities/manifest?environment=prod"
-```
+> Open `/api/v1/capabilities/manifest?environment=prod` in a browser.
 
 Each capability record reports:
 

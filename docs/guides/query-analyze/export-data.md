@@ -10,21 +10,11 @@ Which formats are available depends on the surface: OGC API Features items serve
 
 1. Export GeoJSON or CSV from OGC API Features with the `f` parameter (an `Accept` header works too):
 
-   ```bash
-   BASE=http://localhost:8080
-   COLL=my_layer
-   SVC=my_service
-   curl -s "$BASE/ogc/features/collections/$COLL/items?limit=1000&f=geojson" -o features.geojson
-   curl -s "$BASE/ogc/features/collections/$COLL/items?limit=1000&f=csv" -o features.csv
-   ```
+   Open `/ogc/features/collections/{collectionId}/items?limit=1000&f=geojson` or the same URL with `f=csv` at the deployment origin. Save the response as `features.geojson` or `features.csv`.
 
 2. Check which encoded formats your layer advertises, then export GeoParquet or GeoArrow from the FeatureServer query endpoint. Any `where`/`outFields`/geometry filter from [query features](query-features.md) applies:
 
-   ```bash
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/0?f=json" | grep -o '"supportedQueryFormats":"[^"]*"'
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/0/query?where=1%3D1&outFields=*&f=parquet" -o layer.parquet
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/0/query?where=1%3D1&outFields=*&f=arrow" -o layer.arrows
-   ```
+   Open `/rest/services/{service}/FeatureServer/0?f=json` and inspect the response's `supportedQueryFormats`. To download encoded data, open `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&outFields=*&f=parquet` or the same URL with `f=arrow`.
 
    GeoParquet output follows GeoParquet 1.1.0 (XY and XYZ geometries; `returnM=true` is rejected). The Arrow output is an IPC stream (`application/vnd.apache.arrow.stream`) with GeoArrow metadata.
 
@@ -40,25 +30,19 @@ Which formats are available depends on the surface: OGC API Features items serve
 
 4. Export FlatGeobuf the same way (PostGIS-backed layers):
 
-   ```bash
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/0/query?where=1%3D1&f=fgb" -o layer.fgb
-   ```
+   Open `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&f=fgb` at the deployment origin and save the response as `layer.fgb`.
 
 5. Use the admin bulk export for Shapefile or GeoPackage. It accepts optional `where`, `bbox`, `outFields`, and `outSR` parameters:
 
-   ```bash
-   KEY=my-admin-api-key
-   LAYER=1
-   curl -s "$BASE/api/v1/admin/services/$SVC/layers/$LAYER/export?format=gpkg" \
-     -H "X-API-Key: $KEY" -o layer.gpkg
-   ```
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/services/{service}/layers/{layerId}/export?format=gpkg` and save the response as `layer.gpkg`.
 
    Valid formats are `csv`, `shapefile`, and `gpkg`. Small exports stream back directly; large exports return `202 Accepted` with an `operationId` and a `statusUrl` (`/api/v1/admin/operations/{id}`) to poll — the async path requires cloud storage to be configured.
 
 ## Verify
 
+Save `/rest/services/{service}/FeatureServer/0/query?where=1%3D1&resultRecordCount=5&f=parquet` as `sample.parquet`, then inspect it:
+
 ```bash
-curl -s "$BASE/rest/services/$SVC/FeatureServer/0/query?where=1%3D1&resultRecordCount=5&f=parquet" -o sample.parquet
 python -c "import geopandas; print(geopandas.read_parquet('sample.parquet').shape)"
 ```
 

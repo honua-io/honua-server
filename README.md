@@ -21,8 +21,10 @@ Honua Server is open core under the [Elastic License 2.0](LICENSE), heading to a
 ```bash
 git clone https://github.com/honua-io/honua-server.git && cd honua-server
 docker compose up -d
-curl http://localhost:8080/healthz/ready
+docker compose ps
 ```
+
+Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
 PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a published [honua-console](https://github.com/honua-io/honua-console) image; Operate serves at `http://localhost:5174/operate`).
 
@@ -160,7 +162,8 @@ Honua is a family of repos around this server — the full map is in [Ecosystem]
 - [honua-console](https://github.com/honua-io/honua-console) — web console (Studio, Catalog, Operate, Share) over the admin API; the admin/UI home
 - [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path
 - [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) — client SDKs generated from the same admin contract
-- [honua-mobile](https://github.com/honua-io/honua-mobile) — .NET MAUI mobile SDK with GeoPackage/offline foundation
+- [honua-mobile](https://github.com/honua-io/honua-mobile) — **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0)
+- [honua-collect](https://github.com/honua-io/honua-collect) — **Experimental** full end-user field-collection app built on `honua-mobile` (ELv2)
 - [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) — open gRPC protocol standard the server's `geospatial.v1` surface implements
 - [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) — open geospatial MCP standard behind `/mcp`
 

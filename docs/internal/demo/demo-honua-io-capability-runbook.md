@@ -79,10 +79,7 @@ deployed to `honua-demo-demo-honua`:
 Health gate (Redis is required for a healthy server; STAC needs a current v2 snapshot —
 the seed below activates one):
 
-```bash
-curl -fsS https://demo.honua.io/healthz/live    # 200
-curl -fsS https://demo.honua.io/healthz/ready   # 200 (Redis up)
-```
+> Open `https://demo.honua.io/healthz/live`, `https://demo.honua.io/healthz/ready` in a browser.
 
 ---
 
@@ -152,14 +149,7 @@ two collections without duplicating features or publications.
 
 ### Verify (REQ-001)
 
-```bash
-curl -s https://demo.honua.io/stac/collections | jq '.collections | length'   # >= 2
-curl -s https://demo.honua.io/stac/collections | jq -r '.collections[].id'     # 90810, 90820
-curl -s -X POST https://demo.honua.io/stac/search \
-  -H 'content-type: application/json' \
-  -d '{"bbox":[-156.70,20.60,-156.30,20.96],"collections":["90810"]}' \
-  | jq '.features | length'   # > 0
-```
+Open `https://demo.honua.io/stac/collections` in a browser and confirm it contains at least two collections, including `90810` and `90820`. Then use the [API explorer workflow](../../reference/openapi-and-explorer.md) for `POST /stac/search` with `{"bbox":[-156.70,20.60,-156.30,20.96],"collections":["90810"]}` and confirm the response contains features.
 
 Acceptance: Imagery & Terrain Studio (`demo-imagery-terrain.html`) shows a live STAC
 catalog instead of the bundled sample lane.
@@ -293,25 +283,19 @@ OData/FeatureServer layer with CORS/If-Match/ETag already fixed (#1629/#1653).
 `terraform apply` (or update the Lambda env + `update-function-code`) and re-run the
 probes:
 
-```bash
-# REQ-004 streaming
-curl -s https://demo.honua.io/api/v1/streaming/features/capabilities \
-  | jq '{enabled, edition}'                       # {"enabled": true, "edition": "Pro"}
+Open these demo URLs in a browser and inspect the named fields:
 
-# REQ-003 geocoding (locator is `World`, not `maui` — see Step 4 callout)
-curl -s 'https://demo.honua.io/rest/services/World/GeocodeServer?f=json' \
-  | jq '.currentVersion'                          # present (no 404) — confirmed live
-curl -s 'https://demo.honua.io/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului' \
-  | jq '.candidates | length'                     # > 0 once the VPC egress fix lands (currently 500 after ~15.8s)
+- `/api/v1/streaming/features/capabilities` — `enabled: true`, `edition: "Pro"`.
+- `/rest/services/World/GeocodeServer?f=json` — `currentVersion` is present. The
+  deployed locator is `World`, not `maui` (see the Step 4 callout).
+- `/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului`
+  — `candidates` is non-empty once the VPC egress fix lands; as verified on
+  2026-07-23, this request still returns 500 after about 15.8 seconds.
+- `/api/v1/capabilities/manifest` — `policies.currentEdition` is `"Pro"`; the
+  manifest has no top-level `license` object.
 
-# Edition / capability manifest (confirmed field path as of 2026-07-23; the manifest
-# has no top-level `license` object)
-curl -s https://demo.honua.io/api/v1/capabilities/manifest \
-  | jq '.policies.currentEdition'                  # "Pro" — confirmed live
-
-# REQ-005 editing — authenticated PATCH/POST to a writable layer should persist
-#   (round-trips on re-read). NFR-001: write creds stay server-side, never in client pages.
-```
+For REQ-005, make an authenticated edit with the `@honua/sdk-js` FeatureLayer
+client and confirm it persists on re-read; keep write credentials server-side.
 
 Acceptance (#1688): Public Safety Ops connects a live incident feed; dispatch geocoding
 resolves live; Inspection & Editing persists an edit; the four probes pass from the
@@ -340,65 +324,59 @@ node scripts/site-demo-smoke.mjs    # the four affected pages leave their fixtur
 | SensorThings GA promotion                     | Out of scope for this issue — tracked in #2434 |
 | Demo image redeploy (picks up #2993 + migrations 083-088) | **[OPERATOR]** — live env, standard versioned-alias deploy |
 
-## Verification probe script (read-only, run against `https://demo.honua.io`)
+## Verification workflow (read-only, run against `https://demo.honua.io`)
 
-The exact commands used for the 2026-07-23 as-verified pass, kept here so the probe is
-re-runnable end-to-end without reconstructing it from scratch. All read-only; safe to
-run anytime.
+Use the `honua` CLI for the protocol surfaces it supports. The `jq -e` assertions
+fail closed if a response is missing or has the wrong shape.
 
 ```bash
 set -euo pipefail
-BASE=https://demo.honua.io
+export HONUA_BASE_URL=https://demo.honua.io
 
 # Track 1 — STAC
-curl -fsS "$BASE/stac/collections" | jq -r '.collections[].id'          # expect 90810, 90820
-curl -fsS -X POST "$BASE/stac/search" -H 'content-type: application/json' \
-  -d '{"bbox":[-156.70,20.60,-156.30,20.96],"collections":["90810"]}' \
-  | jq '.features | length'                                             # expect > 0
+honua stac collections --json \
+  | jq -e '([.collections[].id] | index("90810")) != null and
+           ([.collections[].id] | index("90820")) != null'
+honua stac search --bbox=-156.70,20.60,-156.30,20.96 \
+  --collections 90810 --limit 25 --json \
+  | jq -e '.features | type == "array" and length > 0'
 
-# Track 2 — Pro license + entitlements
-curl -fsS "$BASE/api/v1/capabilities/manifest" \
-  | jq '.policies | {currentEdition, licenseValid, licenseValidationState}'
-  # expect {"currentEdition":"Pro","licenseValid":true,"licenseValidationState":"Valid"}
+# Catalog cleanup — test_service must not be publicly discoverable.
+honua services --json \
+  | jq -e '(.services | type == "array") and
+           ([.services[].name | ascii_downcase] | index("test_service") | not)'
 
-# Elevation / terrain (maui-terrain, layerId 8)
-curl -fsS "$BASE/elevation/maui-terrain/value?x=-156.5&y=20.8" | jq '.elevation'
-curl -fsS -G "$BASE/elevation/maui-terrain/profile" \
-  --data-urlencode 'line=LINESTRING(-156.55 20.80, -156.45 20.85)' --data-urlencode 'sampleCount=10' \
-  | jq '.samples | length'
-curl -fsS -X POST "$BASE/elevation/maui-terrain/viewshed" -H 'content-type: application/json' \
-  -d '{"observerLon":-156.5,"observerLat":20.8,"observerHeight":10,"radiusMeters":2000,"rayCount":8,"samplesPerRay":10}' \
-  | jq '.visibleSampleCount'
-curl -fsS -X POST "$BASE/elevation/maui-terrain/line-of-sight" -H 'content-type: application/json' \
-  -d '{"observerLon":-156.55,"observerLat":20.80,"observerHeight":10,"targetLon":-156.45,"targetLat":20.85,"targetHeight":2}' \
-  | jq '.visible'
-curl -fsS -X POST "$BASE/elevation/maui-terrain/sun-shadow" -H 'content-type: application/json' \
-  -d '{"observerLon":-156.5,"observerLat":20.8,"observerHeight":10,"timestamp":"2026-07-23T22:00:00Z","maxShadowLengthMeters":500}' \
-  | jq '.shadowCast'
-
-# Catalog cleanup — layer 68823 / test_service must NOT be publicly visible
-service_names="$(curl -fsS "$BASE/rest/services?f=json" | jq -er '.services | map(.name) | .[]')"
-if grep -qi test_service <<<"$service_names"; then
-  echo "FAIL: test_service still public"
-  exit 1
+# Geocoding is the one known-broken CLI check until the VPC egress fix lands.
+if time honua geocode "Kahului" --locator World --limit 1 --json \
+  | jq -e 'type == "array" and length > 0'; then
+  echo "OK: geocoding returned a candidate"
 else
-  echo "OK: not public"
+  echo "KNOWN: geocoding still fails after about 15.8 seconds; see remediation item 1"
 fi
-curl -s -o /dev/null -w '%{http_code}\n' "$BASE/rest/services/test_service/FeatureServer?f=json"   # expect 499 (or 403), not 200
-
-# Geocoding — known-broken; documents the failure, does not assert success
-curl -s -o /dev/null -w 'geocode locator meta: %{http_code}\n' "$BASE/rest/services/World/GeocodeServer?f=json"
-time curl -s -o /dev/null -w 'geocode candidates: %{http_code} in %{time_total}s\n' \
-  "$BASE/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului"
-
-# SensorThings — expected 404 (intentional, #2434)
-curl -s -o /dev/null -w 'sta: %{http_code}\n' "$BASE/sta/v1.1/"
-
-# Adjacent regression checks (server#2991/#2993)
-curl -s -o /dev/null -w 'scenes: %{http_code}\n' "$BASE/api/scenes"                                  # expect 200
-curl -s -o /dev/null -w 'imageserver (expect timeout until #2993 deploys): %{http_code}\n' \
-  --max-time 70 "$BASE/rest/services/maui-imagery/ImageServer?f=json" || echo "still hanging (expected pre-#2993-deploy)"
 ```
+
+There is no released CLI command for capability manifests, elevation analysis,
+SensorThings, scene catalogs, or ImageServer metadata. Do not invent one. Verify
+those surfaces through their native clients:
+
+- Read the deployment manifest with
+  `HonuaControlPlaneClient.getCapabilityManifest()` from `@honua/sdk-js/control-plane`.
+  Require `policies.currentEdition == "Pro"`, `licenseValid == true`, and
+  `licenseValidationState == "Valid"`.
+- Use `SceneView.elevationProfile()`, `SceneView.viewshed()`, and
+  `SceneView.lineOfSight()` from `@honua/sdk-js/scene-workspace` for
+  `maui-terrain`. Use the generated API explorer for point elevation and
+  sun-shadow until typed SDK methods ship. The expected results are 10 profile
+  samples, a numeric `visibleSampleCount`, a boolean `visible`, and a boolean
+  `shadowCast`.
+- Use `SceneView.listScenes()` for the scene-catalog regression check; it must
+  return a scene list.
+- Open `/sta/v1.1/` in a browser and confirm 404 (intentional, #2434).
+- Open `/rest/services/test_service/FeatureServer?f=json` in a browser and
+  confirm 499 or 403, never 200.
+- Open `/rest/services/maui-imagery/ImageServer?f=json` in an ArcGIS-compatible
+  client or browser. It is expected to time out before #2993 is deployed and to
+  return metadata within the bounded budget afterward.
 
 ## Remediation plan for open items (operator approval required before any step below)
 

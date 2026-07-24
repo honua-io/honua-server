@@ -19,15 +19,18 @@ Honua exposes each published service as:
 
 ### Token auth (if authentication is enabled)
 
-Honua implements the ArcGIS Portal token endpoint at `/sharing/rest/generateToken` (GET or POST form-encoded). Esri clients that prompt for credentials when adding a secured service use it automatically. To request a token manually:
+Honua implements the ArcGIS Portal token endpoint at `/sharing/rest/generateToken` (GET or POST form-encoded). Esri clients that prompt for credentials when adding a secured service use it automatically. For an application-managed credential, use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat`:
 
-```bash
-BASE=http://localhost:8080
-curl -s -X POST "$BASE/sharing/rest/generateToken" \
-  -d "username=$HONUA_USER" -d "password=$HONUA_PASSWORD" \
-  -d "client=referer" -d "referer=$BASE" -d "f=json"
-# => { "token": "<opaque>", "expires": 1735689600000, "ssl": true }
+```js
+const credential = await portal.generateToken({
+  username,
+  password,
+  client: "referer",
+  referer: "http://localhost:8080",
+});
 ```
+
+The credential contains `token`, `expires`, and `ssl`.
 
 Reuse the token on any `/rest/services/*` request as `?token=<opaque>`, `Authorization: Bearer <opaque>`, or `X-Esri-Authorization: Bearer <opaque>`. Token issuance is HTTPS-only by default; see your deployment's auth configuration if you need it on plain HTTP for local testing.
 
@@ -45,18 +48,13 @@ const layer = new FeatureLayer({
 
 Confirm the service metadata and a query respond before blaming the client:
 
-```bash
-BASE=http://localhost:8080
-SERVICE=my-service
-curl -s "$BASE/rest/services/$SERVICE/FeatureServer?f=json" | head
-curl -s "$BASE/rest/services/$SERVICE/FeatureServer/0/query?where=1%3D1&resultRecordCount=1&f=json" | head
-```
+Open `http://localhost:8080/rest/services/{service}/FeatureServer?f=json` and `http://localhost:8080/rest/services/{service}/FeatureServer/0/query?where=1%3D1&resultRecordCount=1&f=json` in a browser, substituting the service id. The first response describes the service and the second returns one feature.
 
 In ArcGIS Pro, the layer should draw, the attribute table should open, and a definition query should change the feature count.
 
 ## Troubleshoot
 
-- **"Cannot add data" / 404 on the URL** — check the service id: `curl http://localhost:8080/rest/services?f=json` lists published services. See [troubleshooting](../deploy/troubleshooting.md).
+- **"Cannot add data" / 404 on the URL** — check the service id with `honua services`. See [troubleshooting](../deploy/troubleshooting.md).
 - **Credential prompt loops or 401** — verify the account works against `/sharing/rest/generateToken` directly (command above). Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
 - **`generateToken` returns 402 Payment Required** — the `identity.portal-token` entitlement is not active in your edition configuration.
 - **Layer draws but some operations fail** — Honua implements broad but not total GeoServices parity; check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md) before debugging further.

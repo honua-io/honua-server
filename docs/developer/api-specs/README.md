@@ -202,22 +202,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 3. **Live server**: Point to your running Honua instance
 
 ### **Getting API Specs at Runtime**
-```bash
-# OGC API Features
-curl https://your-honua-server.com/openapi.json
-
-# OGC API Tiles
-curl https://your-honua-server.com/ogc/tiles/openapi.json
-
-# OGC API Coverages
-curl https://your-honua-server.com/ogc/coverages/openapi.json
-
-# OGC API Processes
-curl https://your-honua-server.com/ogc/processes/openapi.json
-
-# Server Management API
-curl https://your-honua-server.com/api/v1/admin/openapi.json
-```
+> Open `https://your-honua-server.com/openapi.json`, `https://your-honua-server.com/ogc/tiles/openapi.json`, `https://your-honua-server.com/ogc/coverages/openapi.json`, `https://your-honua-server.com/ogc/processes/openapi.json`, `https://your-honua-server.com/api/v1/admin/openapi.json` in a browser.
 
 ### **Generate SDK Clients**
 ```bash

@@ -14,11 +14,7 @@ Honua serves per-layer vector tiles and metadata:
 
 1. Confirm the layer's TileJSON responds:
 
-   ```bash
-   BASE=http://localhost:8080
-   LAYER=1
-   curl -s "$BASE/tiles/$LAYER/tile.json"
-   ```
+   Open `http://localhost:8080/tiles/{layerId}/tile.json` in a browser, substituting the published layer id. The response contains the vector-tile URL template, bounds, and supported zoom range.
 
 2. Save this as `map.html` (replace the layer id if yours differs):
 
@@ -77,19 +73,14 @@ Honua serves per-layer vector tiles and metadata:
 
 ## Verify
 
-```bash
-BASE=http://localhost:8080
-LAYER=1
-curl -s "$BASE/tiles/$LAYER/tile.json" | grep -o '"tiles":[^]]*]'
-curl -s -o /dev/null -w "%{http_code} %{content_type}\n" "$BASE/tiles/$LAYER/0/0/0.mvt"
-```
+Open `/tiles/{layerId}/tile.json` and verify the returned `tiles` template. Then load the page and confirm in browser developer tools that a request such as `/tiles/{layerId}/0/0/0.mvt` returns `200` with a Mapbox vector-tile content type.
 
 The page should render features over an empty background; the browser dev-tools network tab should show `.mvt` requests returning 200.
 
 ## Troubleshoot
 
 - **Blank map, tile requests fail with CORS errors** — the page origin is not allowed by the server's CORS configuration; serve the page from an allowed origin or adjust the CORS settings. See [troubleshooting](../deploy/troubleshooting.md).
-- **Tiles return 404** — wrong layer id, or the layer is not tile-enabled; `curl $BASE/tiles/$LAYER/tile.json` should return metadata, not an error.
+- **Tiles return 404** — wrong layer id, or the layer is not tile-enabled; `/tiles/{layerId}/tile.json` should return metadata, not an error.
 - **Tiles load but nothing draws** — the style's `source-layer` must be `layer`, and the layer `type` (`circle`/`line`/`fill`) must match the geometry type; also check the TileJSON `bounds` and pan there.
 - **Features missing at low zoom** — requests outside the configured zoom range return no data; respect `minzoom`/`maxzoom` from the TileJSON.
 

@@ -140,36 +140,46 @@ which is still valid (`mod` is supported) but emits the bin's lower bound rather
 
 ## Examples
 
-```bash
-# Filtered, projected, paged query
-curl "https://server.example.com/odata/Layers(0)/Features?\$filter=population ge 1000000&\$select=name,population&\$orderby=population desc&\$top=10"
+Filtered, projected, and paged query:
+
+```text
+https://server.example.com/odata/Layers(0)/Features?$filter=population ge 1000000&$select=name,population&$orderby=population desc&$top=10
 ```
 
-```bash
-# Spatial filter: features within 5 km of a point
-curl "https://server.example.com/odata/Layers(0)/Features?\$filter=geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000"
+Features within 5 km of a point:
+
+```text
+https://server.example.com/odata/Layers(0)/Features?$filter=geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000
 ```
 
-```bash
-# Create a feature
-curl -X POST "https://server.example.com/odata/Layers(0)/Features" \
-  -H "Content-Type: application/json" \
-  -d '{"Geometry":{"type":"Point","coordinates":[-122.4,37.8]},"name":"New point"}'
+To create a feature, bind an `@honua/sdk-js` OData source to `Layers(0)/Features` and call `source.applyEdits({ adds: [...] })` using this entity shape:
+
+```json
+{
+  "Geometry": {
+    "type": "Point",
+    "coordinates": [-122.4, 37.8]
+  },
+  "name": "New point"
+}
 ```
 
-```bash
-# Aggregation
-curl "https://server.example.com/odata/Layers(0)/Features?\$apply=groupby((state),aggregate(population with sum as totalPopulation))"
+Aggregation:
+
+```text
+https://server.example.com/odata/Layers(0)/Features?$apply=groupby((state),aggregate(population with sum as totalPopulation))
 ```
 
-```bash
-# Histogram binning: bucket population into 1,000,000-wide bins with floor()
-curl "https://server.example.com/odata/Layers(0)/Features?\$apply=compute(floor(population div 1000000) as popBin)"
+Histogram binning into 1,000,000-wide buckets:
+
+```text
+https://server.example.com/odata/Layers(0)/Features?$apply=compute(floor(population div 1000000) as popBin)
 ```
 
-```bash
-# Pipeline: filter then group and aggregate
-curl "https://server.example.com/odata/Layers(0)/Features?\$apply=filter(population gt 500000)/groupby((state),aggregate(\$count as cityCount))"
+Filter, then group and aggregate:
+
+```text
+https://server.example.com/odata/Layers(0)/Features?$apply=filter(population gt 500000)/groupby((state),aggregate($count as cityCount))
 ```
 
 ## Conformance

@@ -54,16 +54,7 @@ Denials are also logged as structured events (licensing event ids `10000`–`100
 
 ## License status and upload via the admin API
 
-```bash
-# Current edition, validation state, expiry, and entitlements
-curl -H "X-API-Key: <admin-key>" https://<host>/api/v1/admin/license/status
-
-# Upload a new license (requires Licensing__AllowAdminUpload=true)
-curl -X POST -H "X-API-Key: <admin-key>" \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @license.honua-license.json \
-  https://<host>/api/v1/admin/license/upload
-```
+In the authorized [API explorer](../reference/openapi-and-explorer.md), run `GET /api/v1/admin/license/status` to inspect the current edition, validation state, expiry, and entitlements. To replace the license when `Licensing__AllowAdminUpload=true`, run `POST /api/v1/admin/license/upload` and attach `license.honua-license.json` as the binary request body.
 
 Upload runs the same validator as startup load and atomically replaces the file at `LicensePath`; it returns `400` when `AllowAdminUpload` is `false`. The status response reports a `validationState` of `Valid`, `NoLicenseConfigured`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, or `Expired` — anything other than `Valid` means the server is effectively in Community mode.
 
