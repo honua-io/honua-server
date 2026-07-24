@@ -185,6 +185,30 @@ public class ExpressionEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_MatchExpressionWithArrayLabel_ReturnsMatchedValue()
+    {
+        var expr = MapLibreExpressionParser.Parse(
+            """["match", ["get", "type"], ["road", "building"], "blue", "gray"]""");
+        var props = Props(("type", "building"));
+
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
+
+        result.Should().Be("blue");
+    }
+
+    [UnitTest]
+    public void Evaluate_MatchExpressionWithNestedArrayLabel_ReturnsMatchedValue()
+    {
+        var expr = MapLibreExpressionParser.Parse(
+            """["match", ["get", "type"], [["road"], ["building"]], "blue", "gray"]""");
+        var props = Props(("type", "building"));
+
+        var result = ExpressionEvaluator.Evaluate(expr, props, _noZoom);
+
+        result.Should().Be("blue");
+    }
+
+    [UnitTest]
     public void Evaluate_CaseExpression_ReturnsFirstMatchingBranch()
     {
         var expr = MapLibreExpressionParser.Parse("""["case", ["==", ["get", "type"], "road"], "blue", "gray"]""");

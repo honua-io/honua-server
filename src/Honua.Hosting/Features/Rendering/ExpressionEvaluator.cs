@@ -293,7 +293,7 @@ internal static class ExpressionEvaluator
             var label = array[i];
             if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
             {
-                if (label.Items.Any(item => MatchesLabel(inputStr, input, item)))
+                if (MatchesAnyLabel(inputStr, input, label.Items))
                 {
                     return Evaluate(array[i + 1], properties, zoom);
                 }
@@ -312,7 +312,7 @@ internal static class ExpressionEvaluator
     {
         if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
         {
-            return label.Items.Any(item => MatchesLabel(inputStr, inputObj, item));
+            return MatchesAnyLabel(inputStr, inputObj, label.Items);
         }
 
         switch (label.Kind)
@@ -342,6 +342,25 @@ internal static class ExpressionEvaluator
             default:
                 return false;
         }
+    }
+
+    private static bool MatchesAnyLabel(
+        string? inputStr,
+        object? inputObj,
+        MapLibreExpression[] labels)
+    {
+        var index = 0;
+        while (index < labels.Length)
+        {
+            if (MatchesLabel(inputStr, inputObj, labels[index]))
+            {
+                return true;
+            }
+
+            index++;
+        }
+
+        return false;
     }
 
     private static object? EvaluateStep(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
