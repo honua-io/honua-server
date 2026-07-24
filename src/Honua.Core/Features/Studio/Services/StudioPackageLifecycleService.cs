@@ -186,7 +186,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             return null;
         }
 
-        var requiresJob = draft.Family is StudioPackageFamily.Geoprocessing or StudioPackageFamily.Etl or StudioPackageFamily.Workflow;
+        var requiresJob = RequiresBackgroundJob(draft.Family);
         var steps = requiresJob
             ? new[] { "validate-envelope", "plan-background-preview-job" }
             : new[] { "validate-envelope", "prepare-inline-preview" };
@@ -201,6 +201,20 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             Validation = validation,
         };
     }
+
+    /// <summary>
+    /// Whether <paramref name="family"/> requires a background job to preview
+    /// (gp/etl/workflow) rather than an inline preview. Extracted as a pure,
+    /// non-persisting helper so callers that need this classification without
+    /// the mutating side effects of <see cref="PreviewPlanAsync"/> (which
+    /// persists a refreshed validation summary through
+    /// <see cref="ValidateDraftAsync"/>) — e.g. a genuinely read-only MCP tool
+    /// — can compute it without going through the store (honua-server#3002 PR
+    /// review: preview/validate must not silently mutate draft state behind a
+    /// <c>readOnlyHint: true</c> advertisement).
+    /// </summary>
+    public static bool RequiresBackgroundJob(StudioPackageFamily family)
+        => family is StudioPackageFamily.Geoprocessing or StudioPackageFamily.Etl or StudioPackageFamily.Workflow;
 
     /// <inheritdoc />
     public async Task<StudioContentVersion?> SaveDraftAsVersionAsync(
@@ -244,6 +258,34 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         using var activity = ActivitySource.StartActivity("studio.package.version.list");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
         return await _store.ListVersionsAsync(itemId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioContentItemListResult> ListContentItemsAsync(
+        StudioContentItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        using var activity = ActivitySource.StartActivity("studio.package.content-item.list");
+        activity?.SetTag("studio.list.limit", query.Limit);
+        var result = await _store.ListContentItemsAsync(query, cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("studio.list.count", result.Items.Count);
+        activity?.SetTag("studio.list.total", result.Total);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioPackageDraftListResult> ListDraftsAsync(
+        StudioPackageDraftQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        using var activity = ActivitySource.StartActivity("studio.package.draft.list");
+        activity?.SetTag("studio.list.limit", query.Limit);
+        var result = await _store.ListDraftsAsync(query, cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("studio.list.count", result.Items.Count);
+        activity?.SetTag("studio.list.total", result.Total);
+        return result;
     }
 
     /// <inheritdoc />

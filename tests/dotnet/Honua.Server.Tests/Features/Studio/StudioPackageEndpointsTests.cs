@@ -6,6 +6,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
+using Honua.Core.Features.Publishing.Content.Abstractions;
+using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -40,6 +42,13 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             {
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                // The content-items list endpoint joins publication-registry lifecycle badges
+                // (REQ-004); use the in-memory store here (like ContentPublicationEndpointsTests)
+                // so the HTTP + join path is exercised without a migrated Postgres schema. The
+                // Postgres store's join query has dedicated integration coverage in
+                // PostgresContentPublicationStoreTests.
+                services.RemoveAll<IContentPublicationStore>();
+                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
             });
     }
 
@@ -205,6 +214,143 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             StudioApiJsonContext.Default.ApiResponseStudioRollbackRequest);
         rollback.Pointers.CurrentVersionId.Should().Be(version.VersionId);
         rollback.Pointers.PublishedVersionId.Should().Be(version.VersionId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    [Endpoint("GET /api/v1/studio/package-drafts")]
+    public async Task ListContentItemsAndDrafts_FiltersByFamilyOwnerAndState_JoinsPublicationBadge()
+    {
+        // Draft-only item (bob), never saved to a version.
+        var draftOnly = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = "list-draft-only",
+                WorkspaceId = "studio",
+                OwnerId = "bob",
+                Envelope = BuildEnvelope("1=1"),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        draftOnly.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draftOnlyDraft = await ReadAsync<StudioPackageDraft>(draftOnly, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        // Published item (alice), saved to a version and published so it carries a "current"-and-
+        // "published" state; used to exercise the family/state/owner filters and (indirectly,
+        // since no publication registry entry exists for it here) the absence of a badge.
+        var publishedCreate = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = "list-published",
+                WorkspaceId = "studio",
+                OwnerId = "alice",
+                Envelope = BuildEnvelope("1=1"),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        publishedCreate.StatusCode.Should().Be(HttpStatusCode.Created);
+        var publishedDraft = await ReadAsync<StudioPackageDraft>(publishedCreate, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        var publishedSave = await PostAsync(
+            $"/api/v1/studio/package-drafts/{publishedDraft.DraftId:D}/content-versions",
+            new SaveStudioContentVersionRequest { ChangeNote = "list fixture" },
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+        publishedSave.StatusCode.Should().Be(HttpStatusCode.Created);
+        var publishedVersion = await ReadAsync<StudioContentVersion>(publishedSave, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+        var publishRequest = await PostAsync(
+            $"/api/v1/studio/content-items/{publishedVersion.ItemId:D}/versions/{publishedVersion.VersionId:D}/publish-requests",
+            new CreateStudioPublicationRequest(),
+            StudioApiJsonContext.Default.CreateStudioPublicationRequest);
+        publishRequest.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // GET /content-items: family filter.
+        var byFamily = await _client.GetAsync("/api/v1/studio/content-items?family=query");
+        byFamily.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byFamilyItems = await ReadAsync<StudioContentItemListResponse>(byFamily, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        byFamilyItems.Items.Should().Contain(row => row.ItemId == draftOnlyDraft.ItemId);
+        byFamilyItems.Items.Should().Contain(row => row.ItemId == publishedVersion.ItemId);
+
+        // GET /content-items: state=draft returns only the never-saved item.
+        var byState = await _client.GetAsync("/api/v1/studio/content-items?state=draft");
+        byState.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byStateItems = await ReadAsync<StudioContentItemListResponse>(byState, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        byStateItems.Items.Should().Contain(row => row.ItemId == draftOnlyDraft.ItemId && row.State == StudioContentItemState.Draft);
+        byStateItems.Items.Should().NotContain(row => row.ItemId == publishedVersion.ItemId);
+
+        // GET /content-items: state=published returns the published item, whose recorded
+        // creator (the authenticated admin actor, not the request's `ownerId` field) is then
+        // used to exercise the `owner` filter below.
+        var byPublishedState = await _client.GetAsync("/api/v1/studio/content-items?state=published");
+        byPublishedState.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byPublishedStateItems = await ReadAsync<StudioContentItemListResponse>(byPublishedState, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        var publishedRow = byPublishedStateItems.Items.Should().ContainSingle(row => row.ItemId == publishedVersion.ItemId).Subject;
+        publishedRow.State.Should().Be(StudioContentItemState.Published);
+        publishedRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
+
+        // `owner` filters the item's recorded creator (createdBy) as an ownership stand-in
+        // until honua-server#3001 adds a dedicated per-item ownership column; see
+        // docs/internal/admin-api/studio-package-lifecycle.md.
+        var byOwner = await _client.GetAsync($"/api/v1/studio/content-items?owner={Uri.EscapeDataString(publishedRow.CreatedBy!)}");
+        byOwner.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byOwnerItems = await ReadAsync<StudioContentItemListResponse>(byOwner, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        byOwnerItems.Items.Should().Contain(row => row.ItemId == publishedVersion.ItemId);
+
+        var byUnknownOwner = await _client.GetAsync("/api/v1/studio/content-items?owner=no-such-owner");
+        byUnknownOwner.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byUnknownOwnerItems = await ReadAsync<StudioContentItemListResponse>(byUnknownOwner, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        byUnknownOwnerItems.Items.Should().NotContain(row => row.ItemId == publishedVersion.ItemId || row.ItemId == draftOnlyDraft.ItemId);
+
+        // GET /content-items: unknown family/state values are rejected.
+        var badFamily = await _client.GetAsync("/api/v1/studio/content-items?family=not-a-family");
+        badFamily.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var badState = await _client.GetAsync("/api/v1/studio/content-items?state=not-a-state");
+        badState.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // GET /content-items: q substring search against packageKey.
+        var byQuery = await _client.GetAsync("/api/v1/studio/content-items?q=list-publish");
+        byQuery.StatusCode.Should().Be(HttpStatusCode.OK);
+        var byQueryItems = await ReadAsync<StudioContentItemListResponse>(byQuery, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        byQueryItems.Items.Should().ContainSingle(row => row.ItemId == publishedVersion.ItemId);
+
+        // GET /content-items: cursor pagination pages through exactly the two fixture items.
+        var page1 = await _client.GetAsync("/api/v1/studio/content-items?limit=1&q=list-");
+        page1.StatusCode.Should().Be(HttpStatusCode.OK);
+        var page1Items = await ReadAsync<StudioContentItemListResponse>(page1, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        page1Items.Items.Should().HaveCount(1);
+        page1Items.Total.Should().Be(2);
+        page1Items.NextCursor.Should().NotBeNull();
+
+        var page2 = await _client.GetAsync($"/api/v1/studio/content-items?limit=1&q=list-&cursor={Uri.EscapeDataString(page1Items.NextCursor!)}");
+        page2.StatusCode.Should().Be(HttpStatusCode.OK);
+        var page2Items = await ReadAsync<StudioContentItemListResponse>(page2, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        page2Items.Items.Should().HaveCount(1);
+        page2Items.NextCursor.Should().BeNull();
+        page1Items.Items[0].ItemId.Should().NotBe(page2Items.Items[0].ItemId);
+
+        // GET /package-drafts: owner filter uses the real owner_id column.
+        var draftsByOwner = await _client.GetAsync("/api/v1/studio/package-drafts?owner=bob");
+        draftsByOwner.StatusCode.Should().Be(HttpStatusCode.OK);
+        var draftsByOwnerItems = await ReadAsync<StudioPackageDraftListResponse>(draftsByOwner, StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        draftsByOwnerItems.Items.Should().ContainSingle(d => d.DraftId == draftOnlyDraft.DraftId);
+
+        // GET /package-drafts: q substring search against packageKey.
+        var draftsByQuery = await _client.GetAsync("/api/v1/studio/package-drafts?q=draft-only");
+        draftsByQuery.StatusCode.Should().Be(HttpStatusCode.OK);
+        var draftsByQueryItems = await ReadAsync<StudioPackageDraftListResponse>(draftsByQuery, StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        draftsByQueryItems.Items.Should().ContainSingle(d => d.DraftId == draftOnlyDraft.DraftId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    [Endpoint("GET /api/v1/studio/package-drafts")]
+    public async Task ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized()
+    {
+        using var unauthenticatedClient = _fixture.CreateClient();
+
+        var itemsResponse = await unauthenticatedClient.GetAsync("/api/v1/studio/content-items");
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var draftsResponse = await unauthenticatedClient.GetAsync("/api/v1/studio/package-drafts");
+        draftsResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [IntegrationTest]

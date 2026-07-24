@@ -544,6 +544,144 @@ public sealed record StudioPreviewPlan
 }
 
 /// <summary>
+/// Filter/cursor parameters for paginated Studio content item enumeration.
+/// </summary>
+public sealed record StudioContentItemQuery
+{
+    /// <summary>Restrict results to one or more package families.</summary>
+    public IReadOnlyList<StudioPackageFamily>? Families { get; init; }
+
+    /// <summary>Restrict results to a specific workspace.</summary>
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>
+    /// Restrict results to items created by this actor. <c>studio_content_items</c> does not
+    /// yet carry a dedicated ownership/scoping column — honua-server#3001 introduces per-item
+    /// ownership and policy-based visibility. Until then, this filters on the item's
+    /// recorded creator (<c>createdBy</c>) as an ownership stand-in.
+    /// </summary>
+    public string? OwnerId { get; init; }
+
+    /// <summary>Restrict results to one or more derived lifecycle states.</summary>
+    public IReadOnlyList<StudioContentItemState>? States { get; init; }
+
+    /// <summary>Optional case-insensitive substring match against the package key.</summary>
+    public string? SearchTerm { get; init; }
+
+    /// <summary>Opaque cursor returned by a previous query.</summary>
+    public string? Cursor { get; init; }
+
+    /// <summary>Maximum items per page. Implementations clamp to a sensible upper bound.</summary>
+    public int Limit { get; init; } = 25;
+}
+
+/// <summary>
+/// One row in a Studio content item listing.
+/// </summary>
+public sealed record StudioContentItemSummary
+{
+    /// <summary>Content item identifier.</summary>
+    [JsonPropertyName("itemId")]
+    public required Guid ItemId { get; init; }
+
+    /// <summary>Machine-friendly package key.</summary>
+    [JsonPropertyName("packageKey")]
+    public required string PackageKey { get; init; }
+
+    /// <summary>Workspace identifier.</summary>
+    [JsonPropertyName("workspaceId")]
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>Package family.</summary>
+    [JsonPropertyName("family")]
+    public required StudioPackageFamily Family { get; init; }
+
+    /// <summary>Derived lifecycle state (see <see cref="StudioContentItemState"/>).</summary>
+    [JsonPropertyName("state")]
+    public required StudioContentItemState State { get; init; }
+
+    /// <summary>Current version identifier.</summary>
+    [JsonPropertyName("currentVersionId")]
+    public Guid? CurrentVersionId { get; init; }
+
+    /// <summary>Published version identifier.</summary>
+    [JsonPropertyName("publishedVersionId")]
+    public Guid? PublishedVersionId { get; init; }
+
+    /// <summary>Identifier of the actor that created the item (used as an ownership stand-in; see <see cref="StudioContentItemQuery.OwnerId"/>).</summary>
+    [JsonPropertyName("createdBy")]
+    public string? CreatedBy { get; init; }
+
+    /// <summary>Identifier of the actor that last updated the item.</summary>
+    [JsonPropertyName("updatedBy")]
+    public string? UpdatedBy { get; init; }
+
+    /// <summary>Timestamp when the item was created.</summary>
+    [JsonPropertyName("createdAt")]
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Timestamp when the item was last updated.</summary>
+    [JsonPropertyName("updatedAt")]
+    public required DateTimeOffset UpdatedAt { get; init; }
+}
+
+/// <summary>
+/// Paginated Studio content item listing result. Ordered by <c>updatedAt</c> descending with
+/// <c>itemId</c> descending as a stable tiebreak.
+/// </summary>
+public sealed record StudioContentItemListResult
+{
+    /// <summary>Items in this page.</summary>
+    public IReadOnlyList<StudioContentItemSummary> Items { get; init; } = Array.Empty<StudioContentItemSummary>();
+
+    /// <summary>Total items matching the query across all pages.</summary>
+    public int Total { get; init; }
+
+    /// <summary>Opaque cursor for the next page, or null when no more items remain.</summary>
+    public string? NextCursor { get; init; }
+}
+
+/// <summary>
+/// Filter/cursor parameters for paginated Studio package draft enumeration.
+/// </summary>
+public sealed record StudioPackageDraftQuery
+{
+    /// <summary>Restrict results to one or more package families.</summary>
+    public IReadOnlyList<StudioPackageFamily>? Families { get; init; }
+
+    /// <summary>Restrict results to a specific workspace.</summary>
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>Restrict results to a specific owner principal (<c>studio_package_drafts.owner_id</c>).</summary>
+    public string? OwnerId { get; init; }
+
+    /// <summary>Optional case-insensitive substring match against the package key.</summary>
+    public string? SearchTerm { get; init; }
+
+    /// <summary>Opaque cursor returned by a previous query.</summary>
+    public string? Cursor { get; init; }
+
+    /// <summary>Maximum items per page. Implementations clamp to a sensible upper bound.</summary>
+    public int Limit { get; init; } = 25;
+}
+
+/// <summary>
+/// Paginated Studio package draft listing result. Ordered by <c>updatedAt</c> descending with
+/// <c>draftId</c> descending as a stable tiebreak.
+/// </summary>
+public sealed record StudioPackageDraftListResult
+{
+    /// <summary>Drafts in this page.</summary>
+    public IReadOnlyList<StudioPackageDraft> Items { get; init; } = Array.Empty<StudioPackageDraft>();
+
+    /// <summary>Total drafts matching the query across all pages.</summary>
+    public int Total { get; init; }
+
+    /// <summary>Opaque cursor for the next page, or null when no more drafts remain.</summary>
+    public string? NextCursor { get; init; }
+}
+
+/// <summary>
 /// Durable rollback request and resulting pointer state.
 /// </summary>
 public sealed record StudioRollbackRequest

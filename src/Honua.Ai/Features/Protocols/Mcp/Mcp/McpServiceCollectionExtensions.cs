@@ -5,6 +5,7 @@ using Honua.Ai.AiBuilder;
 using Honua.Ai.AiBuilder.Planning;
 using Honua.Ai.Grounding;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -105,6 +106,52 @@ internal static class McpServiceCollectionExtensions
         // transport-symmetric.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateMapPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateAppPackageTool>());
+
+        // Studio draft lifecycle + composition tools (honua-server#3002, AD-8:
+        // composition state IS a lifecycle draft; the browser is a projection).
+        // Every tool authorizes against the OperatorResourceType.StudioDraft
+        // grant family ("studio-compose") so #3001 can scope it independently
+        // of the existing package-review/authoring grants, and delegates all
+        // state changes to IStudioPackageLifecycleService — no lifecycle logic
+        // is reimplemented here. Registered unconditionally (PR #3016 review):
+        // AddStudioPackageLifecycle registers IStudioPackageLifecycleService /
+        // IStudioPackageValidator as Scoped and, in the real host composition
+        // (FeatureRegistrationExtensions.AddServerFeatures), runs AFTER this
+        // method — the same ordering CreateMapPackageTool/CreateAppPackageTool
+        // already handle for their own later-registered generation services.
+        // A descriptor-list gate here would therefore never see the lifecycle
+        // service and silently drop the tools; instead, each tool resolves it
+        // per-request from httpContext.RequestServices (never via constructor
+        // injection, which would make a singleton tool a captive dependency
+        // on a scoped service) and throws a structured, retryable
+        // GeoprocessingStoreUnavailableException if the host never composed
+        // Studio persistence at all.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CreateStudioDraftTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStudioDraftTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, UpdateStudioDraftTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidateStudioDraftTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewStudioDraftTool>());
+
+        // Composition mutation (REQ-002): a small, bounded set of tools for
+        // map/app-family drafts, taxonomy-aligned with the honua-sdk-js
+        // agent-tools vocabulary (src/agent-tools/index.ts: addLayer,
+        // setViewport) plus style/widget verbs that vocabulary does not
+        // (yet) expose client-side. Each tool patches the draft envelope
+        // through StudioCompositionBodyEditor (a pure, side-effect-free
+        // transform) and pushes the result through the same
+        // generation-checked UpdateDraftAsync path as honua_studio_update_draft.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioLayerTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioLayerTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioLayerStyleTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SetStudioViewTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, AddStudioWidgetTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RemoveStudioWidgetTool>());
+
+        // Publication intent ONLY (REQ-003/REQ-009): no publish/share/embed
+        // execution tool exists on the agent surface. This is the sole
+        // publish-adjacent tool and it never moves a current/published
+        // pointer — see ProposeStudioPublicationTool's doc comment.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeStudioPublicationTool>());
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GroundCandidatesTool>());
