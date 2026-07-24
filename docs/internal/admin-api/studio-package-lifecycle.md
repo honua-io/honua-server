@@ -6,10 +6,11 @@ workflow, GP, and ETL artifacts. Console, MCP, QGIS, SDKs, and generated apps
 should use this API instead of storing package drafts or published package JSON
 in UI-local or protocol-specific shapes.
 
-All endpoints live under `/api/v{version:apiVersion}/studio`, require admin
-authorization in the MVP, and use source-generated JSON contracts from
-`StudioApiJsonContext` / `StudioJsonContext`. This is a sibling control-plane
-surface to `/api/v1/admin`; it is not included in the bundled
+All endpoints live under `/api/v{version:apiVersion}/studio` and use
+source-generated JSON contracts from `StudioApiJsonContext` / `StudioJsonContext`.
+Authorization defaults to admin-only and widens to ownership-scoped end users
+behind a feature flag — see [Authorization](#authorization). This is a sibling
+control-plane surface to `/api/v1/admin`; it is not included in the bundled
 `/api/v1/admin/openapi.json` snapshot. Until a dedicated Studio OpenAPI snapshot
 is published, this document and the source-generated JSON contexts are the
 contract reference. Successful responses are wrapped in the standard
@@ -51,6 +52,65 @@ payload.
 | `POST` | `/content-items/{itemId}/versions/{versionId}/publish-requests` | `201 ApiResponse<StudioPublicationRequest>` | Persist a publication request and move the published pointer when validation permits. |
 | `POST` | `/content-items/{itemId}/versions/{versionId}/reopen` | `201 ApiResponse<StudioPackageDraft>` | Copy an immutable version into a new mutable draft with `baseVersionId`. |
 | `POST` | `/content-items/{itemId}/rollback-requests` | `201 ApiResponse<StudioRollbackRequest>` | Persist a rollback request and move the current, published, or both pointers to an earlier immutable version. |
+
+## Authorization
+
+Every endpoint requires the admin role by default. Non-admin, ownership-scoped
+access (honua-server#3001) is available behind the
+`Studio:EndUserAuthorization:Enabled` feature flag (default `false`); with the
+flag off, behavior is byte-for-byte unchanged from the MVP admin-only posture
+(NFR-001).
+
+With the flag on:
+
+- **Baseline tier** — draft create/read/update/delete/validate/preview,
+  save-as-version, reopen, and reads of an item's versions: an authenticated
+  non-admin caller may act on resources they own. Ownership is recorded once at
+  create time from the caller's resolved identity (`ownerId` on
+  `StudioPackageDraft` and `studio_content_items.owner_id`) and is immutable
+  thereafter — a later update cannot transfer ownership, and a non-admin caller's
+  own `ownerId` field on create/update is ignored rather than trusted (it always
+  resolves to the caller). Reading a *published* version is additionally allowed
+  regardless of ownership. Cross-user access to a non-owned, non-published
+  resource is denied by default. No operator grant is required for the baseline
+  tier — the flag itself is the widening switch (REQ-002).
+- **Elevated tier** — publish-request and rollback: always policy-gated, even for
+  the resource's own owner (REQ-003). The caller must additionally hold a
+  matching `StudioDraft` operator grant (`Publish` or `Rollback` operation)
+  through the platform's existing role/grant model
+  (`IOperatorAuthorizationEvaluator`). An operator provisions self-service
+  publish/rollback rights with a role grant
+  `{ "service": "StudioDraft", "layer": "own", "operation": "Publish" }` — the
+  `own` sentinel layer authorizes every resource the principal owns; a grant
+  scoped to a concrete draft/item id instead authorizes an operator-provisioned
+  delegate on that one resource, independent of ownership. See
+  [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md#studio-package-lifecycle-grants-honua-server3001)
+  for the equivalent `/mcp` grant story.
+- **Enumeration** (`GET /content-items`, `GET /package-drafts`) — with the flag
+  on, a non-admin caller's effective `owner` filter is always forced server-side
+  to their own resolved id, regardless of any `owner` query value the client
+  supplies: the list is scoped to "my content," never trusting a client-supplied
+  owner parameter. Admins (and every caller with the flag off) keep today's
+  unscoped-by-default behavior.
+
+Admin principals retain full, unscoped access in both flag states; nothing above
+changes existing admin client behavior.
+
+Authorization denials return the shared `https://honua.io/problems/studio` RFC
+7807 problem with `status: 403` and a machine-readable `code` extension member
+(REQ-004) the SDK client can branch on:
+
+| `code` | Meaning |
+| --- | --- |
+| `studio_authorization/end_user_mode_disabled` | The flag is off and the caller is not admin. |
+| `studio_authorization/authentication_required` | No authenticated principal. |
+| `studio_authorization/cross_user_denied` | The caller does not own the resource (and, for reads, it is not publicly readable; for the elevated tier, the caller also holds no delegate grant for it). |
+| `studio_authorization/elevated_grant_required` | Publish-request or rollback on the caller's own resource without a matching `StudioDraft` operator grant. |
+
+Every denial is recorded to the audit log (`AuditEventType.Authorization`,
+`AuditOutcome.Denied`); every *allowed* elevated-tier decision is also recorded
+(`AuditOutcome.Success`), so publish/rollback policy decisions are independently
+auditable per REQ-003.
 
 ## Package Envelope
 
@@ -200,19 +260,20 @@ Both endpoints order results by `updatedAt` descending with the row id (`itemId`
 `draftId`) descending as a stable tiebreak (REQ-001), so pages stay stable even as
 other rows are concurrently created or updated.
 
-### Ownership Filter And #3001
+### Ownership Filter (honua-server#3001)
 
-`studio_content_items` does not yet carry a dedicated ownership/scoping column.
-`GET /content-items`'s `owner` parameter is accepted and validated today, but it
-filters on the item's recorded creator (`createdBy`) as a stand-in. `GET
-/package-drafts`'s `owner` parameter filters the real `owner_id` column that already
-exists on `studio_package_drafts`. Once honua-server#3001 lands per-item ownership
-and policy-based visibility, `content-items`' `owner` filter should be re-pointed at
-the new column and both endpoints should additionally scope results to the
-requesting principal for non-admin callers (REQ-003); the query parameter shape is
-designed to slot that in without a breaking change. Both endpoints require admin
-authorization today, matching every other Studio package lifecycle endpoint — the
-MVP has no owner-scoped, non-admin access path yet.
+`studio_content_items.owner_id` (migration `090_AddStudioContentItemOwner.sql`)
+carries the item's real owner, populated once at create time from the owning
+draft's `ownerId` (itself defaulted to the authenticated creator when not
+explicitly assigned — see [Authorization](#authorization)) and immutable
+thereafter. `GET /content-items`'s `owner` parameter filters this column
+directly; it no longer stands in for `createdBy`. `GET /package-drafts`'s
+`owner` parameter filters `studio_package_drafts.owner_id`, unchanged.
+
+With `Studio:EndUserAuthorization:Enabled` on, both endpoints additionally
+force-scope the effective owner filter to the requesting principal for
+non-admin callers — see [Authorization](#authorization). The `owner` query
+parameter is honored as supplied only for admins, or while the flag is off.
 
 ### Publication-Registry Lifecycle Badge (REQ-004)
 
@@ -314,7 +375,10 @@ Migration `089_AddStudioContentEnumerationIndexes.sql` adds the keyset-paginatio
 indexes `GET /content-items` and `GET /package-drafts` rely on (`updated_at DESC,
 <id> DESC`, plus per-filter composites on `family`, `created_by`/`owner_id`, and
 `workspace_id`) and a `content_publication_versions (source_content_id, created_at
-DESC, revision DESC)` index supporting the publication-badge join.
+DESC, revision DESC)` index supporting the publication-badge join. Migration
+`090_AddStudioContentItemOwner.sql` adds `studio_content_items.owner_id`
+(backfilled from `created_by` for pre-existing rows) and its keyset-pagination
+owner index (honua-server#3001).
 
 The package lifecycle service emits OpenTelemetry activities under
 `Honua.Studio.PackageLifecycle` with stable tags such as `studio.item.id`,
