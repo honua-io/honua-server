@@ -195,6 +195,49 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
+    public async Task GetLatestRouteStatesBySourceContentIds_JoinsNewestVersionsRouteAndOmitsUnmatchedIds()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresContentPublicationStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresContentPublicationStore(provider, schema);
+
+            var studioItemA = Guid.NewGuid().ToString("D");
+            var studioItemB = Guid.NewGuid().ToString("D");
+            var unrelated = Guid.NewGuid().ToString("D");
+            var publicationIdA = Guid.NewGuid().ToString("D");
+            var publicationIdB = Guid.NewGuid().ToString("D");
+            var publicationIdC = Guid.NewGuid().ToString("D");
+
+            var (v1, route1, e1) = BuildPublish(publicationIdA, "slug-a", "h1", sourceContentId: studioItemA);
+            await store.AppendVersionAndSetRouteAsync(v1, route1, e1, expectedEtag: null);
+            var (v2, route2, e2) = BuildRepublish(route1, "h2", sourceContentId: studioItemA);
+            await store.AppendVersionAndSetRouteAsync(v2, route2, e2, expectedEtag: route1.Etag);
+
+            var (vb, routeb, eb) = BuildPublish(publicationIdB, "slug-b", "hb", sourceContentId: studioItemB);
+            await store.AppendVersionAndSetRouteAsync(vb, routeb, eb, expectedEtag: null);
+
+            var (vc, routec, ec) = BuildPublish(publicationIdC, "slug-c", "hc", sourceContentId: unrelated);
+            await store.AppendVersionAndSetRouteAsync(vc, routec, ec, expectedEtag: null);
+
+            var badges = await store.GetLatestRouteStatesBySourceContentIdsAsync([studioItemA, studioItemB, "no-such-item"]);
+
+            badges.Should().HaveCount(2);
+            badges[studioItemA].RouteSlug.Should().Be("slug-a");
+            badges[studioItemA].ActiveRevision.Should().Be(2, "the newest (republished) version's route must win");
+            badges[studioItemB].RouteSlug.Should().Be("slug-b");
+            badges.Should().NotContainKey("no-such-item");
+            badges.Should().NotContainKey(unrelated);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ReadMethods_MalformedPublicationId_ReturnStableEmptyResults()
     {
         var store = new PostgresContentPublicationStore(new ThrowingConnectionProvider(), schemaName: "unused");
@@ -208,7 +251,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
     }
 
     private static (ContentPublicationVersion, ContentPublicationRouteState, ContentPublicationEvent) BuildPublish(
-        string publicationId, string slug, string contentHash, ContentPublicationPolicy? policy = null)
+        string publicationId, string slug, string contentHash, ContentPublicationPolicy? policy = null, string? sourceContentId = null)
     {
         var now = DateTimeOffset.UtcNow;
         var versionId = Guid.NewGuid().ToString("D");
@@ -222,6 +265,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
             Kind = ContentPublicationKind.Map,
             RouteSlug = slug,
             RoutePath = routePath,
+            SourceContentId = sourceContentId,
             ContentHash = contentHash,
             Policy = effectivePolicy,
             Dependencies = [new ContentPublicationDependencyRef { Kind = ContentPublicationDependencyKind.MapPackage, RefId = "pkg-1" }],
@@ -247,7 +291,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
     }
 
     private static (ContentPublicationVersion, ContentPublicationRouteState, ContentPublicationEvent) BuildRepublish(
-        ContentPublicationRouteState route, string contentHash)
+        ContentPublicationRouteState route, string contentHash, string? sourceContentId = null)
     {
         var now = DateTimeOffset.UtcNow;
         var versionId = Guid.NewGuid().ToString("D");
@@ -259,6 +303,7 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
             Kind = route.Kind,
             RouteSlug = route.RouteSlug,
             RoutePath = route.RoutePath,
+            SourceContentId = sourceContentId,
             ContentHash = contentHash,
             Policy = route.Policy,
             CreatedBy = "u",

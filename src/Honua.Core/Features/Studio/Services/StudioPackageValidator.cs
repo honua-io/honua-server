@@ -420,4 +420,10 @@ public static class StudioPackageEnumHelpers
         => status is StudioPublicationRequestStatus.Accepted
             or StudioPublicationRequestStatus.Pending
             or StudioPublicationRequestStatus.Rejected;
+
+    /// <summary>Returns true when the derived content item state enum value is defined by the contract.</summary>
+    public static bool IsDefined(StudioContentItemState state)
+        => state is StudioContentItemState.Draft
+            or StudioContentItemState.Current
+            or StudioContentItemState.Published;
 }

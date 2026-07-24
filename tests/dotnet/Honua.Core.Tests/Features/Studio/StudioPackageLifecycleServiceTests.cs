@@ -416,6 +416,191 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task ListContentItems_FiltersByFamilyOwnerAndState_OrdersByUpdatedAtDescWithIdTiebreak()
+    {
+        var timeProvider = new MutableTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var service = BuildServiceProvider(timeProvider: timeProvider).GetRequiredService<IStudioPackageLifecycleService>();
+
+        // Dashboard is envelope-validated only (no family-specific body shape), so the generic
+        // `{"where":"1=1"}` body from BuildEnvelope stays valid and the publication request
+        // below is accepted rather than rejected.
+        var dashboardDraft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-dashboard",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels") with { Family = StudioPackageFamily.Dashboard, Format = "studio_dashboard_package.v1" },
+            ActorId = "alice",
+        });
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var dashboardVersion = await service.SaveDraftAsVersionAsync(dashboardDraft.DraftId, "first save", "alice");
+        Assert.NotNull(dashboardVersion);
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var publication = await service.CreatePublicationRequestAsync(dashboardVersion!.ItemId, dashboardVersion.VersionId, intent: null, warningAcknowledgement: null, actorId: "alice");
+        Assert.NotNull(publication);
+        Assert.Equal(StudioPublicationRequestStatus.Accepted, publication!.Status);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var queryDraft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "bob",
+        });
+
+        var familyFiltered = await service.ListContentItemsAsync(new StudioContentItemQuery
+        {
+            Families = [StudioPackageFamily.Dashboard],
+        });
+        Assert.Single(familyFiltered.Items);
+        Assert.Equal(dashboardVersion.ItemId, familyFiltered.Items[0].ItemId);
+        Assert.Equal(StudioContentItemState.Published, familyFiltered.Items[0].State);
+
+        var ownerFiltered = await service.ListContentItemsAsync(new StudioContentItemQuery { OwnerId = "bob" });
+        Assert.Single(ownerFiltered.Items);
+        Assert.Equal(queryDraft.ItemId, ownerFiltered.Items[0].ItemId);
+        Assert.Equal(StudioContentItemState.Draft, ownerFiltered.Items[0].State);
+
+        var stateFiltered = await service.ListContentItemsAsync(new StudioContentItemQuery
+        {
+            States = [StudioContentItemState.Draft],
+        });
+        Assert.Single(stateFiltered.Items);
+        Assert.Equal(queryDraft.ItemId, stateFiltered.Items[0].ItemId);
+
+        var all = await service.ListContentItemsAsync(new StudioContentItemQuery { Limit = 25 });
+        Assert.Equal(2, all.Total);
+        Assert.Equal(2, all.Items.Count);
+        // Most recently updated (bob's query item) first.
+        Assert.Equal(queryDraft.ItemId, all.Items[0].ItemId);
+        Assert.Equal(dashboardVersion.ItemId, all.Items[1].ItemId);
+        Assert.Null(all.NextCursor);
+    }
+
+    [UnitTest]
+    public async Task ListContentItems_WithPageSizeOne_PagesThroughAllItemsViaNextCursor()
+    {
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var first = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "item-a",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        var second = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "item-b",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        var page1 = await service.ListContentItemsAsync(new StudioContentItemQuery { Limit = 1 });
+        Assert.Single(page1.Items);
+        Assert.Equal(2, page1.Total);
+        Assert.NotNull(page1.NextCursor);
+
+        var page2 = await service.ListContentItemsAsync(new StudioContentItemQuery { Limit = 1, Cursor = page1.NextCursor });
+        Assert.Single(page2.Items);
+        Assert.Null(page2.NextCursor);
+
+        var seen = new[] { page1.Items[0].ItemId, page2.Items[0].ItemId };
+        Assert.Contains(first.ItemId, seen);
+        Assert.Contains(second.ItemId, seen);
+        Assert.NotEqual(page1.Items[0].ItemId, page2.Items[0].ItemId);
+    }
+
+    [UnitTest]
+    public async Task ListDrafts_FiltersByOwnerAndSearchTerm()
+    {
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            OwnerId = "alice",
+            ActorId = "alice",
+        });
+        await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "buildings-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            OwnerId = "bob",
+            ActorId = "bob",
+        });
+
+        var ownerFiltered = await service.ListDraftsAsync(new StudioPackageDraftQuery { OwnerId = "alice" });
+        Assert.Single(ownerFiltered.Items);
+        Assert.Equal("parcels-query", ownerFiltered.Items[0].PackageKey);
+
+        var searchFiltered = await service.ListDraftsAsync(new StudioPackageDraftQuery { SearchTerm = "building" });
+        Assert.Single(searchFiltered.Items);
+        Assert.Equal("buildings-query", searchFiltered.Items[0].PackageKey);
+
+        var all = await service.ListDraftsAsync(new StudioPackageDraftQuery());
+        Assert.Equal(2, all.Total);
+    }
+
+    [UnitTest]
+    public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
+    {
+        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
+        // version is ever saved, must not linger as an unopenable orphan in
+        // GET /content-items (no draft, no version, nothing to show or open).
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "orphan-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        var deleted = await service.DeleteDraftAsync(draft.DraftId);
+        Assert.True(deleted);
+
+        var items = await service.ListContentItemsAsync(new StudioContentItemQuery());
+        Assert.DoesNotContain(items.Items, i => i.ItemId == draft.ItemId);
+        Assert.Equal(0, items.Total);
+
+        // The package key must be reusable now that the orphan item is gone.
+        var recreated = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "orphan-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        Assert.NotEqual(draft.ItemId, recreated.ItemId);
+    }
+
+    [UnitTest]
+    public async Task DeleteDraft_AfterVersionSaved_KeepsContentItemListed()
+    {
+        // A draft deleted after its content was saved as a version must not remove the item:
+        // the item has openable history (the saved version) even with no remaining draft.
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "kept-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        var version = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(version);
+
+        var deleted = await service.DeleteDraftAsync(draft.DraftId);
+        Assert.True(deleted);
+
+        var items = await service.ListContentItemsAsync(new StudioContentItemQuery());
+        var row = Assert.Single(items.Items, i => i.ItemId == draft.ItemId);
+        Assert.Equal(StudioContentItemState.Current, row.State);
+
+        // Reopen semantics: a new draft on the existing item must still be possible after the
+        // original draft was deleted, and must not be treated as creating a fresh item.
+        var reopened = await service.ReopenVersionAsync(version!.ItemId, version.VersionId, "tester");
+        Assert.NotNull(reopened);
+        Assert.Equal(draft.ItemId, reopened!.ItemId);
+    }
+
+    [UnitTest]
     public void PackageFamilyCapabilities_AdvertisesAllFamiliesAndLifecycleOperations()
     {
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
@@ -657,6 +842,16 @@ public sealed class StudioPackageLifecycleServiceTests
 
         public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
             => Task.FromException<StudioContentItemPointers?>(new NotSupportedException());
+
+        public Task<StudioContentItemListResult> ListContentItemsAsync(
+            StudioContentItemQuery query,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentItemListResult>(new NotSupportedException());
+
+        public Task<StudioPackageDraftListResult> ListDraftsAsync(
+            StudioPackageDraftQuery query,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioPackageDraftListResult>(new NotSupportedException());
 
         public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
             StudioPublicationRequest request,
