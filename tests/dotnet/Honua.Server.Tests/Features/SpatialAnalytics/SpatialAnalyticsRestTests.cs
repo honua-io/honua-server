@@ -581,6 +581,88 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(404);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.SpatialJoin)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin")]
+    public async Task SpatialJoin_DWithinOverKnownGeometry_ReturnsExactRowLevelMatchCountsAndAggregates()
+    {
+        // Depth pack 2 (honua-server#2982): prior spatial-join coverage only asserted
+        // matchCount >= 0 / "some row has X" (the same "shape, not value" gap class depth
+        // pack 1 (#2960) closed for viewshed/line-of-sight/sun-shadow). This test inserts its
+        // own deterministic target/join points at lat=0 so every pairwise distance is an exact,
+        // hand-computable equatorial geodesic (radius * deltaLonRadians on the WGS84 ellipsoid —
+        // the equator is a great circle, so this is exact, not an approximation), with wide
+        // safety margins around the 1000m dwithin threshold (no floating-point/geodesic-rounding
+        // edge risk):
+        //   Target A (lon 0.000) <-> Join J1 (lon 0.005): ~556.6m  -> WITHIN  1000m
+        //   Target A (lon 0.000) <-> Join J2 (lon 0.020): ~2226.4m -> outside 1000m
+        //   Target A (lon 0.000) <-> Join J3 (lon 0.095): ~10575m  -> outside 1000m
+        //   Target B (lon 0.100) <-> Join J1: ~10575m -> outside; J2: ~8906m -> outside
+        //   Target B (lon 0.100) <-> Join J3 (lon 0.095): ~556.6m  -> WITHIN  1000m
+        // So target A must match exactly {J1}, target B must match exactly {J3} — matchCount 1
+        // each, with the carried label/weight identifying precisely which join row matched.
+        const double earthEquatorialRadiusMeters = 6378137.0;
+        double LonDelta(double degrees) => earthEquatorialRadiusMeters * degrees * Math.PI / 180.0;
+
+        await _fixture.Postgres.ExecuteAsync(
+            """
+            DELETE FROM features WHERE objectid IN (9001, 9002, 9101, 9102, 9103);
+
+            INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
+                (9001, 0, ST_SetSRID(ST_MakePoint(0.000, 0.0), 4326), jsonb_build_object('objectid', 9001, 'name', 'depth-pack-2-target-a', 'category', 'join-fixture')),
+                (9002, 0, ST_SetSRID(ST_MakePoint(0.100, 0.0), 4326), jsonb_build_object('objectid', 9002, 'name', 'depth-pack-2-target-b', 'category', 'join-fixture'));
+
+            INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
+                (9101, 1, ST_SetSRID(ST_MakePoint(0.005, 0.0), 4326), jsonb_build_object('objectid', 9101, 'name', 'J1', 'weight', 100)),
+                (9102, 1, ST_SetSRID(ST_MakePoint(0.020, 0.0), 4326), jsonb_build_object('objectid', 9102, 'name', 'J2', 'weight', 999)),
+                (9103, 1, ST_SetSRID(ST_MakePoint(0.095, 0.0), 4326), jsonb_build_object('objectid', 9103, 'name', 'J3', 'weight', 7));
+            """,
+            _fixture.CurrentSchema);
+
+        // Sanity-check the fixture's own geometry against the margins the comment above claims,
+        // so a future edit that moves these coordinates fails loudly instead of silently
+        // drifting onto an ambiguous boundary.
+        LonDelta(0.005).Should().BeLessThan(1000, "J1 must sit well inside the 1000m threshold of target A");
+        LonDelta(0.020).Should().BeGreaterThan(1000 + 1000, "J2 must sit well outside the threshold of target A, with margin");
+        LonDelta(0.005).Should().BeGreaterThan(1000 - 1000 + 1, "the margin itself must be wide, not a coincidence");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            joinLayerId = 1,
+            predicate = "dwithin",
+            distance = 1000,
+            objectIds = "9001,9002",
+            carryFields = "name",
+            outStatistics = "[{\"statisticType\":\"sum\",\"onStatisticField\":\"weight\",\"outStatisticFieldName\":\"total_weight\"}]",
+            f = "json"
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/spatialJoin",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var features = doc.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        features.Should().HaveCount(2, "the objectIds filter narrows the target rows to exactly the two fixture points");
+
+        var byObjectId = features.ToDictionary(
+            f => f.GetProperty("properties").GetProperty("objectId").GetInt64(),
+            f => f.GetProperty("properties"));
+
+        byObjectId[9001].GetProperty("matchCount").GetInt64().Should().Be(1, "target A is within 1000m of exactly J1");
+        byObjectId[9001].GetProperty("total_weight").GetDecimal().Should().Be(100m);
+        byObjectId[9001].GetProperty("name").EnumerateArray().Select(n => n.GetString()).Should().BeEquivalentTo(["J1"]);
+
+        byObjectId[9002].GetProperty("matchCount").GetInt64().Should().Be(1, "target B is within 1000m of exactly J3");
+        byObjectId[9002].GetProperty("total_weight").GetDecimal().Should().Be(7m);
+        byObjectId[9002].GetProperty("name").EnumerateArray().Select(n => n.GetString()).Should().BeEquivalentTo(["J3"]);
+    }
+
     // ---------- Buffer Aggregate ----------
 
     [IntegrationTest]
@@ -645,6 +727,69 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         // Seed layer 0 has two categories with geometry: 'test' and 'sample'.
         features.GetArrayLength().Should().BeGreaterOrEqualTo(1);
         features.GetArrayLength().Should().BeLessThanOrEqualTo(3);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task QueryBufferAggregate_GroupByCategoryWithNumericOutStatistics_ReturnsExactAggregatesPerBand()
+    {
+        // Depth pack 2 (honua-server#2982): prior buffer-aggregate coverage only asserted
+        // featureCount > 0 / row-count ranges (the same "shape, not value" gap class depth
+        // pack 1 (#2960) closed for viewshed/line-of-sight/sun-shadow). Layer 0's 5 seeded
+        // features (tests/seed/server.yaml) split into exactly two geometried "bands" by
+        // category: 'test' = {objectid 1, 5} and 'sample' = {objectid 2, 4} (objectid 3 has a
+        // NULL geometry and is excluded by every spatial-analytics query). A known numeric
+        // 'score' attribute is stamped onto each so SUM/AVG per band are exact, hand-computable
+        // values: test = {10, 30} -> sum 40, avg 20; sample = {5, 15} -> sum 20, avg 10.
+        await _fixture.Postgres.ExecuteAsync(
+            """
+            UPDATE features SET attributes = jsonb_set(attributes, '{score}', '10'::jsonb) WHERE layer_id = 0 AND objectid = 1;
+            UPDATE features SET attributes = jsonb_set(attributes, '{score}', '30'::jsonb) WHERE layer_id = 0 AND objectid = 5;
+            UPDATE features SET attributes = jsonb_set(attributes, '{score}', '5'::jsonb) WHERE layer_id = 0 AND objectid = 2;
+            UPDATE features SET attributes = jsonb_set(attributes, '{score}', '15'::jsonb) WHERE layer_id = 0 AND objectid = 4;
+            """,
+            _fixture.CurrentSchema);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            distance = 10000,
+            unit = "meters",
+            dissolve = true,
+            groupByFields = "category",
+            outStatistics = "[" +
+                "{\"statisticType\":\"sum\",\"onStatisticField\":\"score\",\"outStatisticFieldName\":\"total_score\"}," +
+                "{\"statisticType\":\"avg\",\"onStatisticField\":\"score\",\"outStatisticFieldName\":\"avg_score\"}" +
+                "]",
+            f = "json"
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBufferAggregate",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var features = doc.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        features.Should().HaveCount(2, "exactly two categories ('test', 'sample') have geometried features");
+
+        var byCategory = features.ToDictionary(
+            f => f.GetProperty("properties").GetProperty("category").GetString()!,
+            f => f.GetProperty("properties"));
+
+        byCategory.Should().ContainKey("test");
+        byCategory["test"].GetProperty("featureCount").GetInt64().Should().Be(2);
+        byCategory["test"].GetProperty("total_score").GetDecimal().Should().Be(40m);
+        byCategory["test"].GetProperty("avg_score").GetDecimal().Should().Be(20m);
+
+        byCategory.Should().ContainKey("sample");
+        byCategory["sample"].GetProperty("featureCount").GetInt64().Should().Be(2);
+        byCategory["sample"].GetProperty("total_score").GetDecimal().Should().Be(20m);
+        byCategory["sample"].GetProperty("avg_score").GetDecimal().Should().Be(10m);
     }
 
     [IntegrationTest]
