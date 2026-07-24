@@ -137,7 +137,7 @@ public sealed class StudioAiChatHttpRequest
     public string? System { get; init; }
 
     [JsonPropertyName("messages")]
-    public List<StudioAiChatHttpMessage> Messages { get; init; } = [];
+    public List<StudioAiChatHttpMessage>? Messages { get; init; } = [];
 
     [JsonPropertyName("tools")]
     public List<StudioAiChatHttpTool>? Tools { get; init; }

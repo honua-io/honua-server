@@ -16,13 +16,13 @@ public static class StudioAiChatRequestMapper
     {
         ArgumentNullException.ThrowIfNull(http);
 
-        if (http.Messages.Count == 0)
+        if (http.Messages is not { Count: > 0 } sourceMessages)
         {
             return (null, "At least one message is required.");
         }
 
-        var messages = new List<StudioAiMessage>(http.Messages.Count);
-        foreach (var message in http.Messages)
+        var messages = new List<StudioAiMessage>(sourceMessages.Count);
+        foreach (var message in sourceMessages)
         {
             if (!TryParseRole(message.Role, out var role))
             {

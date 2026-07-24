@@ -22,6 +22,16 @@ public sealed class StudioAiChatRequestMapperTests
     }
 
     [UnitTest]
+    public void ToDomain_NullMessages_IsRejected()
+    {
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(
+            new StudioAiChatHttpRequest { Messages = null });
+
+        request.Should().BeNull();
+        error.Should().Be("At least one message is required.");
+    }
+
+    [UnitTest]
     public void ToDomain_UnknownRole_IsRejected()
     {
         var (request, error) = StudioAiChatRequestMapper.ToDomain(new StudioAiChatHttpRequest

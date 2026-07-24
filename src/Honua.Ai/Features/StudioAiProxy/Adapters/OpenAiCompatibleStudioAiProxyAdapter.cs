@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
@@ -270,7 +271,8 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
                 StudioAiRole.Tool => "tool",
                 _ => "user"
             },
-            Content = m.Content
+            Content = m.Content,
+            ToolCallId = m.Role == StudioAiRole.Tool ? m.ToolCallId : null
         }));
 
         var proxyRequest = new OpenAiProxyRequest
@@ -294,14 +296,37 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             proxyRequest.ToolChoice = mode switch
             {
-                StudioAiToolChoiceMode.Required => JsonSerializer.SerializeToElement("required"),
-                StudioAiToolChoiceMode.Specific => JsonSerializer.SerializeToElement(
-                    new { type = "function", function = new { name = request.ToolChoice!.ToolName } }),
-                _ => JsonSerializer.SerializeToElement("auto")
+                StudioAiToolChoiceMode.Required => BuildToolChoice("required", toolName: null),
+                StudioAiToolChoiceMode.Specific => BuildToolChoice("specific", request.ToolChoice!.ToolName),
+                _ => BuildToolChoice("auto", toolName: null)
             };
         }
 
         return proxyRequest;
+    }
+
+    private static JsonElement BuildToolChoice(string mode, string? toolName)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            if (mode == "specific")
+            {
+                writer.WriteStartObject();
+                writer.WriteString("type", "function");
+                writer.WriteStartObject("function");
+                writer.WriteString("name", toolName);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteStringValue(mode);
+            }
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return document.RootElement.Clone();
     }
 
     private static StudioAiStopReason MapStopReason(string finishReason) => finishReason switch

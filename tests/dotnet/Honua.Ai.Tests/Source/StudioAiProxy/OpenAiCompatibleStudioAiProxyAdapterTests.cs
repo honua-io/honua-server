@@ -136,6 +136,44 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     }
 
     [UnitTest]
+    public async Task StreamAsync_SpecificToolChoiceAndToolResult_UsesOpenAiWireShape()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+        var request = new StudioAiChatRequest
+        {
+            Messages =
+            [
+                new StudioAiMessage
+                {
+                    Role = StudioAiRole.Tool,
+                    Content = """{"status":"open"}""",
+                    ToolCallId = "call_123",
+                    ToolName = "list_incidents"
+                }
+            ],
+            Tools = ToolRequest().Tools,
+            ToolChoice = new StudioAiToolChoice
+            {
+                Mode = StudioAiToolChoiceMode.Specific,
+                ToolName = "list_incidents"
+            }
+        };
+
+        await CollectAsync(adapter, request);
+
+        using var payload = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var root = payload.RootElement;
+        root.GetProperty("messages")[0].GetProperty("tool_call_id").GetString().Should().Be("call_123");
+        root.GetProperty("tool_choice").GetProperty("type").GetString().Should().Be("function");
+        root.GetProperty("tool_choice").GetProperty("function").GetProperty("name").GetString()
+            .Should().Be("list_incidents");
+    }
+
+    [UnitTest]
     public void IsConfigured_RequiresEndpointAndModel()
     {
         var adapter = new OpenAiCompatibleStudioAiProxyAdapter(

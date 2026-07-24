@@ -51,6 +51,10 @@ internal sealed class OpenAiProxyMessage
 
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("tool_call_id")]
+    public string? ToolCallId { get; set; }
 }
 
 internal sealed class OpenAiProxyTool

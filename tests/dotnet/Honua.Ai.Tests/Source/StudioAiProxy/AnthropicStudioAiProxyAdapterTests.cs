@@ -154,17 +154,40 @@ public sealed class AnthropicStudioAiProxyAdapterTests
     }
 
     [UnitTest]
-    public void IsConfigured_RequiresEndpointAndModel()
+    public void IsConfigured_RequiresEndpointModelAndApiKey()
     {
         var adapter = new AnthropicStudioAiProxyAdapter(
             new StudioAiProxyMockHttpClientFactory(new StudioAiProxyMockHttpMessageHandler(string.Empty)),
             new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
 
-        adapter.Kind.Should().Be(StudioAiProxyConfiguration.AnthropicKind);
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Endpoint = "https://api.anthropic.com", Model = "claude" }).Should().BeTrue();
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Endpoint = "https://api.anthropic.com" }).Should().BeFalse();
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Model = "claude" }).Should().BeFalse();
+        var envVar = StudioAiProxyApiKeyResolver.EnvVarName("anthropic");
+        var previous = Environment.GetEnvironmentVariable(envVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(envVar, null);
+            adapter.Kind.Should().Be(StudioAiProxyConfiguration.AnthropicKind);
+            adapter.IsConfigured(new StudioAiProxyProviderOptions
+            {
+                Endpoint = "https://api.anthropic.com",
+                Model = "claude",
+                ApiKey = "secret-ref-or-key"
+            }).Should().BeTrue();
+            adapter.IsConfigured(new StudioAiProxyProviderOptions
+            {
+                Endpoint = "https://api.anthropic.com",
+                Model = "claude"
+            }).Should().BeFalse();
+            adapter.IsConfigured(new StudioAiProxyProviderOptions
+            {
+                Endpoint = "https://api.anthropic.com",
+                ApiKey = "key"
+            }).Should().BeFalse();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envVar, previous);
+        }
     }
 
     private static AnthropicStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)

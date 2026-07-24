@@ -39,7 +39,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
     public string Kind => StudioAiProxyConfiguration.AnthropicKind;
 
     public bool IsConfigured(StudioAiProxyProviderOptions options)
-        => !string.IsNullOrWhiteSpace(options.Endpoint) && !string.IsNullOrWhiteSpace(options.Model);
+        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
+            !string.IsNullOrWhiteSpace(options.Model) &&
+            (!string.IsNullOrWhiteSpace(options.ApiKey) ||
+             !string.IsNullOrWhiteSpace(
+                 Environment.GetEnvironmentVariable(StudioAiProxyApiKeyResolver.EnvVarName(ProviderLabel))));
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,
