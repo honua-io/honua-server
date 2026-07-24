@@ -22,24 +22,7 @@ Stabilize first, diagnose second, document after. Prefer safe, reversible change
 
 Use these during any incident:
 
-```bash
-# Health
-curl -f https://<host>/healthz/live
-curl -f https://<host>/healthz/ready
-
-# Performance & database (admin)
-curl https://<host>/api/v1/metrics/performance
-curl https://<host>/api/v1/metrics/database
-curl https://<host>/api/v1/metrics/cache
-curl https://<host>/api/v1/metrics/memory
-
-# Error history and tracing status (admin)
-curl https://<host>/api/v1/admin/observability/errors
-curl https://<host>/api/v1/admin/observability/telemetry
-
-# Effective configuration
-curl https://<host>/api/v1/admin/config
-```
+> Open `https://<host>/healthz/live`, `https://<host>/healthz/ready`, `https://<host>/api/v1/metrics/performance`, `https://<host>/api/v1/metrics/database`, `https://<host>/api/v1/metrics/cache`, `https://<host>/api/v1/metrics/memory`, `https://<host>/api/v1/admin/observability/errors`, `https://<host>/api/v1/admin/observability/telemetry`, `https://<host>/api/v1/admin/config` in a browser.
 
 ---
 

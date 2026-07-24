@@ -141,23 +141,34 @@ Then start it with `docker compose up -d console`, or disable it with `docker co
 
 ## Verify
 
-```bash
-curl -s http://127.0.0.1:8080/healthz/ready
-```
+> Open `http://127.0.0.1:8080/healthz/ready` in a browser.
 
 Expected output: `Ready`. Then confirm admin auth works:
 
+From an operator workstation with Python 3, install the pinned admin SDK and read
+the effective configuration through its authenticated client:
+
 ```bash
-source .env && curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:8080/api/v1/admin/config | head -c 200
+set -a
+. ./.env
+set +a
+python3 -m pip install \
+  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
+python3 - <<'PY'
+import os
+from honua_admin import HonuaAdminClient
+
+with HonuaAdminClient(
+    "http://127.0.0.1:8080",
+    api_key=os.environ["HONUA_ADMIN_PASSWORD"],
+) as admin:
+    print(admin.get_config())
+PY
 ```
 
 If Console is enabled, confirm the ops dashboard responds:
 
-```bash
-curl -fsS http://127.0.0.1:5174/operate >/dev/null
-curl -fsS http://127.0.0.1:5174/operate/health >/dev/null
-curl -fsS http://127.0.0.1:5174/operate/copilot >/dev/null
-```
+> Open `http://127.0.0.1:5174/operate`, `http://127.0.0.1:5174/operate/health`, `http://127.0.0.1:5174/operate/copilot` in a browser.
 
 CI can run the same root-compose smoke through `scripts/ci/smoke-quickstart-console.sh`.
 Set the repository variable `HONUA_CONSOLE_IMAGE` or pass the `console_image`
@@ -180,11 +191,7 @@ A single-node compose deployment cannot upgrade with zero downtime — there is 
 
 1. Preflight against the running instance before pulling anything. Proceed only when `readyForCoordinatedDeploy` is `true` and no unexpected migrations are pending.
 
-```bash
-source .env
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:8080/api/v1/admin/deploy/preflight?includeDiagnostics=true
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" http://127.0.0.1:8080/api/v1/admin/observability/migrations
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` and `GET /api/v1/admin/observability/migrations`.
 
 2. Back up the database (this is your rollback floor for any destructive migration).
 
@@ -202,10 +209,7 @@ docker compose up -d honua
 
 4. Verify readiness, then confirm no migration failure in the logs.
 
-```bash
-curl -s http://127.0.0.1:8080/healthz/ready   # expect: Ready
-docker compose logs --tail=50 honua
-```
+> Open `http://127.0.0.1:8080/healthz/ready` in a browser.
 
 **Roll back:** re-pin `HONUA_TAG` to the previous version and `docker compose up -d honua`. Additive (expand) migrations leave the schema backward-compatible, so the previous image runs against it unchanged. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous tag.
 

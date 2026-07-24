@@ -41,29 +41,28 @@ Auth is the admin `X-API-Key` everywhere.
 
 ## Quick start
 
-```bash
-# 0. deps: curl (always) + GDAL's ogr2ogr (for clip/convert of shapefile/OSM)
-#    Ubuntu/WSL:  sudo apt-get install gdal-bin
-#    macOS:       brew install gdal
-export HONUA_ADMIN_API_KEY=...           # admin key for the target server
-export HONUA_SERVER=http://localhost:8080
+The provisioner needs Python 3. Install GDAL's `ogr2ogr` for clipping and converting shapefile or OSM sources (`sudo apt-get install gdal-bin` on Ubuntu/WSL or `brew install gdal` on macOS). Then set `HONUA_ADMIN_API_KEY` for the target server and run:
 
-# list the curated catalog
+```bash
+# List the curated catalog.
 python3 scripts/provisioner/provision_area.py --list
 
-# end-to-end: load San Francisco County (GEOID 06075) roads, publish + tile
+# Load San Francisco County roads, publish them, and queue tiling.
 python3 scripts/provisioner/provision_area.py \
   --source census-tiger --product roads --area geoid:06075 --tile
 
-# end-to-end: load OSM buildings for a downtown bbox (lon/lat envelope)
+# Load OSM buildings for a downtown bounding box.
 python3 scripts/provisioner/provision_area.py \
   --source osm-geofabrik --product buildings \
   --area bbox:-122.42,37.77,-122.40,37.79 --tile
 
-# just fetch + clip and write the GeoJSON locally (no server needed)
+# Fetch and clip locally without contacting a Honua server.
 python3 scripts/provisioner/provision_area.py \
-  --source census-tiger --product county-boundaries --area geoid:06075 --fetch-only
+  --source census-tiger --product county-boundaries \
+  --area geoid:06075 --fetch-only
 ```
+
+The server defaults to `http://localhost:8080`; pass `--server` to target another deployment.
 
 ### AREA forms
 

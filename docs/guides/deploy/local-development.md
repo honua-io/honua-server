@@ -35,9 +35,7 @@ If you don't want the .NET SDK in the loop, the repo-root `docker-compose.yml` b
 
 ## Verify
 
-```bash
-curl -s http://localhost:8080/healthz/ready
-```
+> Open `http://localhost:8080/healthz/ready` in a browser.
 
 Expected output: `Ready`.
 

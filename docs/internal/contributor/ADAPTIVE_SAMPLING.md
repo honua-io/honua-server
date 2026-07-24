@@ -8,11 +8,7 @@ Honua Server includes intelligent adaptive sampling that automatically adjusts O
 
 Adaptive sampling is **enabled by default** in the shipped `Honua.Server` configuration with sensible settings for self-hosted installations:
 
-```bash
-# Check current configuration
-curl -H "Authorization: Bearer your-admin-token" \
-  http://localhost:5000/api/v1/admin/config
-```
+> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/config`.
 
 ## Key Benefits
 
@@ -93,14 +89,7 @@ Adaptive sampling automatically integrates with .NET Aspire Dashboard:
 
 Check adaptive sampling status:
 
-```bash
-# View current sampling configuration
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  http://localhost:5000/api/v1/admin/config | jq '.Sections[] | select(.Name == "AdaptiveSampling")'
-
-# Monitor via health endpoint
-curl http://localhost:5000/healthz/metrics
-```
+> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/config`, then inspect `/healthz/metrics` through Honua Console's **Operate → Health** view.
 
 ## Production Deployment
 

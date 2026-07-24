@@ -19,12 +19,7 @@ Honua's support for the cloud-native geospatial format family: what each format 
 
 Register a raster that already lives in object storage — no copy, no conversion:
 
-```bash
-HONUA_URL=http://localhost:8080
-curl -s -H "X-API-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
-  -d '{"layerId":"imagery","name":"Imagery 2026","provider":"AwsS3","bucket":"my-rasters","objectKey":"imagery/2026.tif"}' \
-  $HONUA_URL/api/v1/admin/cloud-rasters
-```
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/cloud-rasters` with `{"layerId":"imagery","name":"Imagery 2026","provider":"AwsS3","bucket":"my-rasters","objectKey":"imagery/2026.tif"}`.
 
 The registered raster serves through the same pipeline as imported rasters: GeoServices ImageServer, WCS 2.0.1, and OGC API Coverages. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 

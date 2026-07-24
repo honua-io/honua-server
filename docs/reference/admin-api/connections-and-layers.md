@@ -20,12 +20,18 @@ All endpoints require admin authentication — see [Authentication](../../guides
 
 Validation rules: supply either `password` or `secretReference` (+ `secretType`), not both. `sslMode` accepts `Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`; `sslMode=Disable` is rejected when `sslRequired=true`.
 
-```bash
-HONUA_URL=https://honua.example.com
-API_KEY=your-admin-key
-curl -X POST "$HONUA_URL/api/v1/admin/connections" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"name":"primary-db","host":"db.internal","port":5432,"databaseName":"honua","username":"postgres","password":"secure-password","sslMode":"Require"}'
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/connections` with this body:
+
+```json
+{
+  "name": "primary-db",
+  "host": "db.internal",
+  "port": 5432,
+  "databaseName": "honua",
+  "username": "postgres",
+  "password": "secure-password",
+  "sslMode": "Require"
+}
 ```
 
 ## Table discovery
@@ -36,9 +42,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/connections" \
 | POST | `/api/v1/admin/connections/{id}/tables/validate` | Validate a table before publishing |
 | GET | `/api/v1/admin/connections/tables` | Discover tables across all connections |
 
-```bash
-curl "$HONUA_URL/api/v1/admin/connections/primary-db/tables" -H "X-API-Key: $API_KEY"
-```
+Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer.
 
 ## Layer publishing
 
@@ -50,11 +54,7 @@ curl "$HONUA_URL/api/v1/admin/connections/primary-db/tables" -H "X-API-Key: $API
 | PUT | `/api/v1/admin/connections/{id}/layers/enabled` | Enable or disable all layers on a connection (bulk) |
 | POST | `/api/v1/admin/connections/{id}/layers/extents/refresh` | Recompute published layer extents from current data |
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/connections/primary-db/layers" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"schema":"public","table":"parcels","layerName":"city-parcels","geometryColumn":"geom","srid":4326}'
-```
+Run `POST /api/v1/admin/connections/primary-db/layers` with `{"schema":"public","table":"parcels","layerName":"city-parcels","geometryColumn":"geom","srid":4326}`.
 
 ## Service and layer settings
 
@@ -70,11 +70,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/connections/primary-db/layers" \
 
 Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive). An empty string clears the layer default; a missing or `null` field preserves the existing value; unknown values return `400`.
 
-```bash
-curl -X PUT "$HONUA_URL/api/v1/admin/services/city/access-policy" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"readRole":"viewer","writeRole":"editor","allowAnonymousRead":false}'
-```
+Run `PUT /api/v1/admin/services/city/access-policy` with `{"readRole":"viewer","writeRole":"editor","allowAnonymousRead":false}`.
 
 ## Related guides
 

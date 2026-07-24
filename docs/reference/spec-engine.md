@@ -50,20 +50,28 @@ All warnings and errors carry a stable `code`. Errors: `version-skew`, `dag-cycl
 
 ## Example
 
-```bash
-curl -N -X POST http://localhost:8080/v1/spec/apply \
-  -H "Accept: text/event-stream" -H "Content-Type: application/json" \
-  -d '{
-    "grammarVersion": "1.0.0",
-    "processFamilyVersion": "2026.4",
-    "nodes": [
-      { "id": "parks", "kind": "compute", "op": "source.layer",
-        "parameters": { "layerId": "42" } },
-      { "id": "buffered", "kind": "compute", "op": "compute.buffer",
-        "inputs": { "source": "@parks" },
-        "parameters": { "distanceMeters": "100" } }
-    ]
-  }'
+Open Honua Console's Spec IDE, paste the following spec, and choose **Apply**. The Spec IDE consumes the `/v1/spec/apply` event stream; that route is not exposed by the OpenAPI explorer.
+
+```json
+{
+  "grammarVersion": "1.0.0",
+  "processFamilyVersion": "2026.4",
+  "nodes": [
+    {
+      "id": "parks",
+      "kind": "compute",
+      "op": "source.layer",
+      "parameters": { "layerId": "42" }
+    },
+    {
+      "id": "buffered",
+      "kind": "compute",
+      "op": "compute.buffer",
+      "inputs": { "source": "@parks" },
+      "parameters": { "distanceMeters": "100" }
+    }
+  ]
+}
 ```
 
 ## Scope and limits (current stage)
