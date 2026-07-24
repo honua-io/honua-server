@@ -33,13 +33,7 @@ Database migrations run automatically on first boot. The root compose stack also
 
 ## 2. Verify it works
 
-```bash
-# Health check (should return 200)
-curl http://localhost:8080/healthz/ready
-
-# List configured services (empty on a fresh install)
-curl http://localhost:8080/rest/services?f=json
-```
+> Open `http://localhost:8080/healthz/ready`, `http://localhost:8080/rest/services?f=json` in a browser.
 
 ## 3. Optional services
 

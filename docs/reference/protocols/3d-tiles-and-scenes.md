@@ -23,11 +23,7 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 `{sceneId}` is the registered URL slug (`[a-z0-9-]{1,64}`). Protected datasets (`requiresAuth`) refuse anonymous access; caching follows the dataset's `cachePolicy` (`maxAgeSeconds` bounded to `[0, 86400]`, or `noStore`).
 
-```bash
-# Resolve a scene, then load its tileset
-curl "https://server.example.com/api/scenes/downtown/resolve"
-curl "https://server.example.com/scenes/downtown/tileset.json"
-```
+> Open `https://server.example.com/api/scenes/downtown/resolve`, `https://server.example.com/scenes/downtown/tileset.json` in a browser.
 
 ## Scene dataset registry (admin)
 
@@ -45,11 +41,7 @@ All routes require admin authorization and return `application/problem+json` err
 
 Key record fields: `id` (URL slug), `name` (globally unique), `assetRoot` (server-side directory; traversal and shell metacharacters rejected), `tilesetFileName` (default `tileset.json`), `datasetType` (`hosted_tiles` or `terrain`), `extent` (WGS 84 bbox, all four bounds or none), `crs`, `cachePolicy`, `requiresAuth`/`isPublic` (exactly one true), `allowedRoles`, `status`, `revision`. Full field and validation contract: [scene dataset registry](../../internal/admin-api/scene-dataset-registry.md).
 
-```bash
-curl -X POST "https://server.example.com/api/v1/admin/scenes" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"id":"downtown","name":"Downtown massing model","assetRoot":"/data/scenes/downtown","isPublic":true}'
-```
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/scenes` with `{"id":"downtown","name":"Downtown massing model","assetRoot":"/data/scenes/downtown","isPublic":true}`.
 
 ## Scene ingest (admin, Enterprise)
 
@@ -70,12 +62,7 @@ Decodes a LAS point cloud into a quadtree of `.pnts` tiles plus `tileset.json`, 
 - **CRS:** geographic source coordinates only (EPSG:4326 / 4979 / OGC CRS84). Axis order is selected by the optional `sourceCrsAxisOrder` field (`lonlat` default, or `latlon`). Projected source CRS are rejected with a `400`; reproject to geographic before ingest.
 - **Limits:** upload capped at 256 MiB; total point count capped (default 250 M) to bound worst-case memory. Per-tile point budget and LOD depth follow the shared `SceneGeneration` tiling options.
 
-```bash
-curl -X POST "https://server.example.com/api/v1/admin/scenes/ingest/pointcloud" \
-  -H "X-API-Key: $ADMIN_KEY" \
-  -F "file=@cloud.las" -F "sceneId=lidar-survey" -F "sourceCrsAxisOrder=lonlat"
-# → 201 { "sceneId": "lidar-survey", "tilesetUrl": ".../scenes/lidar-survey/tileset.json", ... }
-```
+Run `POST /api/v1/admin/scenes/ingest/pointcloud` with form values `file=cloud.las`, `sceneId=lidar-survey`, and `sourceCrsAxisOrder=lonlat`. Success returns `201` with the scene id and tileset URL.
 
 The registered tileset serves through the standard [hosted serving](#hosted-3d-tiles-serving) routes and loads in CesiumJS like any other point tileset.
 

@@ -60,9 +60,7 @@ GET /my-layers/tiles/z/x/y.mvt     # Vector tiles
 
 ### 1. **Single Entry Point Discovery**
 
-```bash
-curl https://api.honua.io/my-layers/
-```
+> Open `https://api.honua.io/my-layers/` in a browser.
 
 ```json
 {
@@ -107,31 +105,7 @@ curl https://api.honua.io/my-layers/
 
 **Client-Aware Protocol Selection:**
 
-```bash
-# QGIS automatically gets modern OGC API Features
-curl -H "User-Agent: QGIS/3.28" https://api.honua.io/my-layers/features
-# → Redirects to /my-layers/ogcapi/features
-
-# But QGIS map requests get legacy OGC WMS
-curl -H "User-Agent: QGIS/3.28" https://api.honua.io/my-layers/map
-# → Redirects to /my-layers/ogc/wms
-
-# ArcGIS automatically gets GeoServices  
-curl -H "User-Agent: ArcGIS Pro" https://api.honua.io/my-layers/features
-# → Redirects to /my-layers/geoservices/query
-
-# Power BI automatically gets OData
-curl -H "User-Agent: PowerBI" https://api.honua.io/my-layers/features  
-# → Redirects to /my-layers/odata/Features
-
-# Web app with GeoJSON preference gets modern OGC API
-curl -H "Accept: application/geo+json" https://api.honua.io/my-layers/features
-# → Redirects to /my-layers/ogcapi/features
-
-# Desktop GIS requesting images gets legacy OGC WMS
-curl -H "Accept: image/png" https://api.honua.io/my-layers/map
-# → Redirects to /my-layers/ogc/wms
-```
+> This is an archived design example, not a current OpenAPI surface. Use the current `honua services`, `honua layers`, `honua query`, and `honua map export` commands instead.
 
 ### 3. **Unified Documentation**
 
@@ -149,8 +123,8 @@ GET /docs/my-layers/sdk                 # Available SDKs
   "autoNegotiation": {
     "description": "Smart endpoints that automatically choose the best protocol",
     "examples": {
-      "getFeatures": "curl https://api.honua.io/my-layers/features",
-      "getData": "curl https://api.honua.io/my-layers/data"
+      "getFeatures": "https://api.honua.io/my-layers/features",
+      "getData": "https://api.honua.io/my-layers/data"
     }
   },
   "protocols": {

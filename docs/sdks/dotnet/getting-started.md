@@ -71,7 +71,7 @@ Print how many features came back:
 Console.WriteLine($"Returned {response.Features.Count} features.");
 ```
 
-A wrong or missing API key surfaces as an unauthenticated error from the client — confirm `HONUA_API_KEY` is set and matches a key the server accepts (test it with `curl -H "X-API-Key: $HONUA_API_KEY" http://localhost:8080/api/v1/admin/version`).
+A wrong or missing API key surfaces as an unauthenticated error from the client. Confirm `HONUA_API_KEY` is set, then rerun the authenticated SDK query above.
 
 ## Available clients
 
@@ -88,7 +88,7 @@ A wrong or missing API key surfaces as an unauthenticated error from the client 
 
 | Symptom | Fix |
 |---|---|
-| Unauthenticated / 401 from the client | `ApiKey` unset or wrong; verify with `curl -H "X-API-Key: $KEY" .../api/v1/admin/version`. |
+| Unauthenticated / 401 from the client | `ApiKey` is unset or wrong; set it and rerun the authenticated SDK query above. |
 | `IHonuaFeatureServerClient` / `IHonuaStacClient` not resolvable | Enable the surface — `AddHonua(o => { o.UseGeoServices = true; o.UseStac = true; })` or call the per-package `AddHonua*` method. |
 | Empty result set | The `Where` clause filtered everything out, or the layer is empty; try `Where = "1=1"` and check the layer in [the console](../../concepts/ecosystem.md) or via the HTTP API. |
 

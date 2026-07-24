@@ -34,9 +34,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 
 Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon for EPSG:4326); WMS 1.1.1 always uses lon,lat. Honua applies the correct order per negotiated version.
 
-```bash
-curl -o map.png "https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png"
-```
+> Open `https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png` in a browser.
 
 ### GetLegendGraphic
 
@@ -87,9 +85,7 @@ All WFS versions share `GET/POST /wfs`. WFS 2.0 operations:
 | `Transaction` | Insert/Update/Delete (CITE-validated transactional slice). |
 | `ListStoredQueries`, `DescribeStoredQueries`, `CreateStoredQuery`, `DropStoredQuery` | Stored query management. |
 
-```bash
-curl "https://server.example.com/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=roads&COUNT=10"
-```
+> Open `https://server.example.com/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=roads&COUNT=10` in a browser.
 
 ## WCS 2.0.1 operations
 
@@ -112,9 +108,7 @@ Two intentional divergences apply to the Zarr slice path (they are covered by de
 
 When the coverage's native grid exceeds the per-axis pixel limit and no scaling operator is supplied, the oversize `InvalidParameterValue` reports locator `COVERAGEID` (the coverage must be down-scaled); when a scaling operator produced the oversize, it reports `SCALESIZE`.
 
-```bash
-curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)"
-```
+> Open `https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)` in a browser.
 
 ## WMTS operations
 
@@ -124,9 +118,7 @@ curl -o coverage.tif "https://server.example.com/rest/services/0/ImageServer/WCS
 | `GetTile` | `LAYER`, `STYLE`, `TILEMATRIXSET`, `TILEMATRIX`, `TILEROW`, `TILECOL`, `FORMAT`, optional `TIME` (temporal layers) and `ELEVATION` (elevation-aware layers); serves built-in and custom gridsets. RESTful tile paths also supported. |
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
-```bash
-curl -o tile.png "https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png"
-```
+> Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
 
 ## Conformance
 

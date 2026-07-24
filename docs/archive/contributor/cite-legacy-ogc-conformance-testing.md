@@ -24,11 +24,7 @@ WFS 1.0.0:
 
 ## Preflight Checks
 
-```bash
-curl -fsS "http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1" > wms-111-capabilities.xml
-curl -fsS "http://localhost:8080/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.1.0" > wfs-110-capabilities.xml
-curl -fsS "http://localhost:8080/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.0.0" > wfs-100-capabilities.xml
-```
+> Open `http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1`, `http://localhost:8080/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.1.0`, `http://localhost:8080/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.0.0` in a browser.
 
 Verify the expected roots before invoking Team Engine:
 

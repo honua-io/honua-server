@@ -8,10 +8,12 @@ Honua is developed as a family of repositories around this server. This page map
 |---|---|
 | [honua-server](https://github.com/honua-io/honua-server) | The server runtime (this repo): protocol adapters, canonical pipelines, admin API, conformance and test infrastructure |
 | [honua-console](https://github.com/honua-io/honua-console) | Web admin UI — Studio (map building and styling), Catalog, Operate, and Share surfaces over the admin API. UI documentation coming soon. |
-| [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) | JavaScript/TypeScript SDKs, including the MCP server package, an ArcGIS compatibility layer, and the `honua-migrate` codemod for porting ArcGIS JS code |
+| [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) | JavaScript/TypeScript SDKs, including multiple renderers, the MCP server package, and the ArcGIS compatibility layer |
+| [honua-migrate](https://github.com/honua-io/honua-migrate) | Assessment, service and content migration, codemods, durable execution, and reconciliation CLIs |
 | [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) | .NET SDKs (`Honua.Sdk.*` packages, admin + gRPC clients) |
 | [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) | Python SDK for the control plane and data APIs |
-| [honua-mobile](https://github.com/honua-io/honua-mobile) | .NET MAUI-first mobile SDK with GeoPackage/offline field-collection foundation |
+| [honua-mobile](https://github.com/honua-io/honua-mobile) | **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0) |
+| [honua-collect](https://github.com/honua-io/honua-collect) | **Experimental** full end-user field-collection app built on `honua-mobile` (ELv2) |
 | [honua-helm](https://github.com/honua-io/honua-helm) | Helm chart for Kubernetes deployment |
 | honua-iac (private) | Terraform modules, environments, and validation CI — available to customers through support |
 | [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) | Open gRPC protocol definitions (`geospatial.v1`) for feature services, spatial types, and forms — the canonical `.proto` source the server consumes |

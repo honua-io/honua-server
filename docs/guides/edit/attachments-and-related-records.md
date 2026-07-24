@@ -10,62 +10,39 @@ Attachments are keyed by integer object IDs (`globalIds` filters are rejected) a
 
 ### 1. Add an attachment
 
-```bash
-BASE=http://localhost:8080
-SERVICE=parks
-LAYER=0
-OBJECTID=1
-curl -X POST "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/$OBJECTID/addAttachment" \
-  -F "attachment=@photo.jpg" -F "keywords=site-photo"
-```
+Use `FeatureLayer.addAttachment` from `@honua/sdk-js/esri-compat` with the target `objectId`, the `photo.jpg` blob, its file name, and content type. Pass `keywords: "site-photo"` through `extraParams`.
 
 The body must be `multipart/form-data` (or form-urlencoded); the response returns the new `attachmentId`.
 
 ### 2. List a feature's attachments
 
-```bash
-curl "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/$OBJECTID/attachments?f=json"
-```
+Open `/rest/services/{service}/FeatureServer/{layerId}/{objectId}/attachments?f=json` at the deployment origin in a browser.
 
 ### 3. Download attachment content
 
-```bash
-ATTACHMENT_ID=1
-curl -o photo.jpg "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/$OBJECTID/attachments/$ATTACHMENT_ID"
-```
+Open `/rest/services/{service}/FeatureServer/{layerId}/{objectId}/attachments/{attachmentId}` at the deployment origin; the browser downloads the file.
 
 ### 4. Query attachments across features
 
-```bash
-curl "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/queryAttachments?objectIds=1,2&f=json"
-```
+Open `/rest/services/{service}/FeatureServer/{layerId}/queryAttachments?objectIds=1,2&f=json` at the deployment origin.
 
 Optional facets: `attachmentTypes` (MIME list), `keywords`, `size` (inclusive `lower,upper` byte range), `definitionExpression` (SQL WHERE that narrows the parent features), and `returnUrl=true` to include download URLs.
 
 ### 5. Update or delete attachments
 
-```bash
-curl -X POST "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/$OBJECTID/updateAttachment" \
-  -F "attachmentId=$ATTACHMENT_ID" -F "keywords=updated" -F "attachment=@photo-v2.jpg"
-curl -X POST "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/$OBJECTID/deleteAttachments" \
-  -d "attachmentIds=$ATTACHMENT_ID"
-```
+To replace it, run `POST /rest/services/{service}/FeatureServer/{layerId}/{objectId}/updateAttachment` with `attachmentId`, `keywords=updated`, and `attachment=photo-v2.jpg`. To delete it, run the sibling `deleteAttachments` operation with `attachmentIds={attachmentId}`.
 
 `updateAttachment` replaces keywords and, when a file is supplied, the content; `deleteAttachments` takes a comma-separated `attachmentIds` list.
 
 ### 6. Query related records
 
-```bash
-curl "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/queryRelatedRecords?objectIds=$OBJECTID&relationshipId=0&outFields=*&f=json"
-```
+> Open `/rest/services/{service}/FeatureServer/{layerId}/queryRelatedRecords?objectIds={objectId}&relationshipId=0&outFields=*&f=json` in a browser.
 
-Relationships are defined per layer by the publisher (`GET /rest/services/$SERVICE/FeatureServer/relationships` lists them; admins manage them via `PUT /api/v1/admin/metadata/layers/{layerId}/relationships`). The same operation is available on MapServer layers.
+Relationships are defined per layer by the publisher (`GET /rest/services/{service}/FeatureServer/relationships` lists them; admins manage them via `PUT /api/v1/admin/metadata/layers/{layerId}/relationships`). The same operation is available on MapServer layers.
 
 ## Verify
 
-```bash
-curl "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/queryAttachments?objectIds=$OBJECTID&f=json"
-```
+> Open `/rest/services/{service}/FeatureServer/{layerId}/queryAttachments?objectIds={objectId}&f=json` in a browser.
 
 ```json
 { "attachmentGroups": [ { "parentObjectId": 1, "attachmentInfos": [ { "id": 1, "name": "photo.jpg", "contentType": "image/jpeg", "size": 48211, "keywords": "site-photo" } ] } ] }
@@ -75,7 +52,7 @@ curl "$BASE/rest/services/$SERVICE/FeatureServer/$LAYER/queryAttachments?objectI
 
 | Symptom | Fix |
 |---|---|
-| `415 Unsupported Media Type` on add/update | Send `multipart/form-data` (curl `-F`), not raw JSON. |
+| `415 Unsupported Media Type` on add/update | Use `FeatureLayer.addAttachment` / `updateAttachment`, which generate the multipart request; do not send raw JSON. |
 | Upload rejected by size or type | Raise `Limits__Attachments__MaxAttachmentSize` / `MaxAttachmentsPerFeature` / `MaxTotalAttachmentSize` or extend `Limits__Attachments__AllowedMimeTypes`. |
 | `globalIds is not supported` | Honua attachments are keyed by integer object IDs only; query with `objectIds`. |
 | `401` / `403` on mutation | Attachment writes require write access to the layer, same as feature edits — see [Control access](../secure/access-control.md). |

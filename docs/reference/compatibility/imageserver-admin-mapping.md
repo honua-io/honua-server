@@ -43,24 +43,11 @@ ArcGIS-client users migrating to Honua.
 
 Delete an imported raster:
 
-```bash
-curl -X DELETE \
-  -H "Authorization: Bearer $HONUA_ADMIN_TOKEN" \
-  https://host/api/v1/admin/import/raster/42
-# 204 No Content on success, 404 when the raster id does not exist
-```
+In the authorized [API explorer](../openapi-and-explorer.md), run `DELETE /api/v1/admin/import/raster/42`. Success returns `204`; an unknown raster id returns `404`.
 
 Update an imported raster's descriptive metadata:
 
-```bash
-curl -X PATCH \
-  -H "Authorization: Bearer $HONUA_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Maui 2024 mosaic","acquisitionDate":"2024-06-01T00:00:00Z"}' \
-  https://host/api/v1/admin/import/raster/42
-# 200 with the updated metadata; 400 when no recognised field is provided;
-# 404 when the raster id does not exist.
-```
+Run `PATCH /api/v1/admin/import/raster/42` with `{"name":"Maui 2024 mosaic","acquisitionDate":"2024-06-01T00:00:00Z"}`. Success returns the updated metadata; an empty recognized patch returns `400`, and an unknown id returns `404`.
 
 PATCH semantics: a field omitted from the JSON body is left unchanged. To clear
 `description` or `acquisitionDate`, send an empty string for that field.

@@ -44,17 +44,13 @@ QGIS negotiates the WFS version automatically. Honua also answers WFS 1.1.0 and 
 
 Confirm the endpoints QGIS uses respond outside QGIS:
 
-```bash
-BASE=http://localhost:8080
-curl -s "$BASE/ogc/features/collections" | head
-curl -s "$BASE/wfs?service=WFS&request=GetCapabilities" | head
-```
+Open `http://localhost:8080/ogc/features/collections` and `http://localhost:8080/wfs?service=WFS&request=GetCapabilities` in a browser. Both should return a capabilities document rather than an error.
 
 In QGIS, the layer should draw on the canvas and the attribute table should list features.
 
 ## Troubleshoot
 
-- **Connection refused** — the server is not running or port 8080 is blocked. Check `curl http://localhost:8080/healthz/ready`. See [troubleshooting](../deploy/troubleshooting.md).
+- **Connection refused** — the server is not running or port 8080 is blocked. Open `http://localhost:8080/healthz/ready` and expect `Ready`. See [troubleshooting](../deploy/troubleshooting.md).
 - **No collections listed** — no layers are published yet, or the layer's protocols exclude OGC API Features. Re-check [publish layers](../publish/publish-layers.md).
 - **401/403 when connecting** — your deployment requires auth. Add credentials under **Authentication** in the QGIS connection dialog (API key header or Basic, matching your server config).
 - **WMS/WMTS connection fails with 404** — the URL must include a service id: `/ogc/services/{serviceId}/wms`, not `/wms`.

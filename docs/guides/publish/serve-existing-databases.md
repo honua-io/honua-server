@@ -22,56 +22,53 @@ For the read-only providers, follow the linked reference page to configure the p
 
 ### 1. Register a connection to your PostGIS database
 
-```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{
-    "name": "city-gis",
-    "host": "db.example.internal",
-    "port": 5432,
-    "databaseName": "citygis",
-    "username": "honua_reader",
-    "password": "db-password",
-    "sslMode": "Require"
-  }' \
-  "$HONUA_URL/api/v1/admin/connections"
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/connections` with this body:
+
+```json
+{
+  "name": "city-gis",
+  "host": "db.example.internal",
+  "port": 5432,
+  "databaseName": "citygis",
+  "username": "honua_reader",
+  "password": "db-password",
+  "sslMode": "Require"
+}
 ```
 
 Credentials are encrypted at rest and never returned by the API. Use `secretReference` + `secretType` instead of `password` to pull credentials from a secret manager.
 
 ### 2. Test the connection
 
-```bash
-CONNECTION_ID=paste-id-from-step-1
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/test"
-```
+Run `POST /api/v1/admin/connections/{connectionId}/test`, substituting the id returned in step 1.
 
 `POST /api/v1/admin/connections/test` tests a draft payload before saving it.
 
 ### 3. Discover tables
 
-```bash
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/tables"
-```
+Run `GET /api/v1/admin/connections/{connectionId}/tables`.
 
 Lists spatial tables with schema, geometry column, geometry type, and SRID. The `{id}` segment accepts the connection GUID or its name.
 
 ### 4. Publish a table as a layer
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"schema":"public","table":"parcels","layerName":"city-parcels","geometryColumn":"geom","srid":4326}' \
-  "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/layers"
+Run `POST /api/v1/admin/connections/{connectionId}/layers` with this body:
+
+```json
+{
+  "schema": "public",
+  "table": "parcels",
+  "layerName": "city-parcels",
+  "geometryColumn": "geom",
+  "srid": 4326
+}
 ```
 
 Returns `201 Created` with the new `layerId`. See [Publish layers](publish-layers.md) for the full request options and protocol checks.
 
 ## Verify
 
-```bash
-curl "$HONUA_URL/ogc/features/collections"
-```
+Open `http://localhost:8080/ogc/features/collections` in a browser and confirm the collection is present:
 
 ```json
 {"collections": [{"id": "…", "title": "city-parcels", …}], …}
