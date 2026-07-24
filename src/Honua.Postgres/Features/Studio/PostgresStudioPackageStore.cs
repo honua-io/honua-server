@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
@@ -16,6 +17,10 @@ namespace Honua.Postgres.Features.Studio;
 
 internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 {
+    private const int MinListLimit = 1;
+    private const int DefaultListLimit = 25;
+    private const int MaxListLimit = 200;
+
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _itemsTable;
     private readonly string _draftsTable;
@@ -426,6 +431,261 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             ? ReadPointers(reader)
             : null;
     }
+
+    public async Task<StudioContentItemListResult> ListContentItemsAsync(
+        StudioContentItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var limit = ClampLimit(query.Limit);
+        var filter = BuildContentItemFilter(query);
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = lease.Connection;
+
+        var total = await CountAsync(connection, _itemsTable, filter, cancellationToken).ConfigureAwait(false);
+
+        var sql = new StringBuilder();
+        sql.Append("SELECT item_id, package_key, workspace_id, family, current_version_id, published_version_id, ");
+        sql.Append("created_by, updated_by, created_at, updated_at FROM ").Append(_itemsTable).Append(' ').Append(filter.Sql);
+
+        await using var command = new NpgsqlCommand { Connection = connection };
+        ApplyFilterParameters(command, filter.Parameters);
+
+        var hasWhere = filter.Sql.Length > 0;
+        if (StudioListCursor.TryDecode(query.Cursor, out var cursorUpdatedAt, out var cursorId))
+        {
+            sql.Append(hasWhere ? " AND " : " WHERE ");
+            sql.Append("(updated_at, item_id) < (@cursor_updated_at, @cursor_item_id)");
+            command.Parameters.Add(new NpgsqlParameter("@cursor_updated_at", NpgsqlDbType.TimestampTz) { Value = cursorUpdatedAt });
+            command.Parameters.Add(new NpgsqlParameter("@cursor_item_id", NpgsqlDbType.Uuid) { Value = cursorId });
+        }
+
+        sql.Append(" ORDER BY updated_at DESC, item_id DESC LIMIT @limit");
+        command.Parameters.Add(new NpgsqlParameter("@limit", NpgsqlDbType.Integer) { Value = limit + 1 });
+        command.CommandText = sql.ToString();
+
+        var rows = new List<StudioContentItemSummary>(limit);
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(ReadContentItemSummary(reader));
+            }
+        }
+
+        string? nextCursor = null;
+        if (rows.Count > limit)
+        {
+            var lastKept = rows[limit - 1];
+            rows.RemoveAt(rows.Count - 1);
+            nextCursor = StudioListCursor.Encode(lastKept.UpdatedAt, lastKept.ItemId);
+        }
+
+        return new StudioContentItemListResult { Items = rows, Total = total, NextCursor = nextCursor };
+    }
+
+    public async Task<StudioPackageDraftListResult> ListDraftsAsync(
+        StudioPackageDraftQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var limit = ClampLimit(query.Limit);
+        var filter = BuildDraftFilter(query);
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = lease.Connection;
+
+        var total = await CountAsync(connection, _draftsTable, filter, cancellationToken).ConfigureAwait(false);
+
+        var sql = new StringBuilder();
+        sql.Append("""
+            SELECT draft_id, item_id, package_key, workspace_id, owner_id, family,
+                   envelope, validation, base_version_id, generation,
+                   created_by, updated_by, created_at, updated_at
+            FROM
+            """);
+        sql.Append(' ').Append(_draftsTable).Append(' ').Append(filter.Sql);
+
+        await using var command = new NpgsqlCommand { Connection = connection };
+        ApplyFilterParameters(command, filter.Parameters);
+
+        var hasWhere = filter.Sql.Length > 0;
+        if (StudioListCursor.TryDecode(query.Cursor, out var cursorUpdatedAt, out var cursorId))
+        {
+            sql.Append(hasWhere ? " AND " : " WHERE ");
+            sql.Append("(updated_at, draft_id) < (@cursor_updated_at, @cursor_draft_id)");
+            command.Parameters.Add(new NpgsqlParameter("@cursor_updated_at", NpgsqlDbType.TimestampTz) { Value = cursorUpdatedAt });
+            command.Parameters.Add(new NpgsqlParameter("@cursor_draft_id", NpgsqlDbType.Uuid) { Value = cursorId });
+        }
+
+        sql.Append(" ORDER BY updated_at DESC, draft_id DESC LIMIT @limit");
+        command.Parameters.Add(new NpgsqlParameter("@limit", NpgsqlDbType.Integer) { Value = limit + 1 });
+        command.CommandText = sql.ToString();
+
+        var rows = new List<StudioPackageDraft>(limit);
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(ReadDraft(reader));
+            }
+        }
+
+        string? nextCursor = null;
+        if (rows.Count > limit)
+        {
+            var lastKept = rows[limit - 1];
+            rows.RemoveAt(rows.Count - 1);
+            nextCursor = StudioListCursor.Encode(lastKept.UpdatedAt, lastKept.DraftId);
+        }
+
+        return new StudioPackageDraftListResult { Items = rows, Total = total, NextCursor = nextCursor };
+    }
+
+    private static int ClampLimit(int requested)
+    {
+        if (requested <= 0)
+        {
+            return DefaultListLimit;
+        }
+
+        return Math.Min(MaxListLimit, Math.Max(MinListLimit, requested));
+    }
+
+    private static async Task<int> CountAsync(
+        NpgsqlConnection connection,
+        string table,
+        SqlFilter filter,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {table} {filter.Sql}", connection);
+        ApplyFilterParameters(command, filter.Parameters);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is long count ? (int)Math.Clamp(count, 0, int.MaxValue) : 0;
+    }
+
+    private static void ApplyFilterParameters(
+        NpgsqlCommand command,
+        IReadOnlyList<(string Name, NpgsqlDbType Type, object Value)> parameters)
+    {
+        foreach (var (name, type, value) in parameters)
+        {
+            command.Parameters.Add(new NpgsqlParameter(name, type) { Value = value });
+        }
+    }
+
+    private static SqlFilter BuildContentItemFilter(StudioContentItemQuery query)
+    {
+        var clauses = new List<string>();
+        var parameters = new List<(string, NpgsqlDbType, object)>();
+
+        if (query.Families is { Count: > 0 } families)
+        {
+            clauses.Add("family = ANY(@families)");
+            parameters.Add(("@families", NpgsqlDbType.Array | NpgsqlDbType.Text, families.Select(ToDbFamily).ToArray()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.WorkspaceId))
+        {
+            clauses.Add("workspace_id = @workspace_id");
+            parameters.Add(("@workspace_id", NpgsqlDbType.Text, query.WorkspaceId));
+        }
+
+        // See StudioContentItemQuery.OwnerId: filters on the item's creator until
+        // honua-server#3001 introduces dedicated per-item ownership.
+        if (!string.IsNullOrWhiteSpace(query.OwnerId))
+        {
+            clauses.Add("created_by = @owner_id");
+            parameters.Add(("@owner_id", NpgsqlDbType.Text, query.OwnerId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchTerm))
+        {
+            clauses.Add("package_key ILIKE @search_term");
+            parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{EscapeLike(query.SearchTerm.Trim())}%"));
+        }
+
+        if (query.States is { Count: > 0 } states)
+        {
+            var stateClauses = states.Select(StateSqlPredicate).ToArray();
+            clauses.Add("(" + string.Join(" OR ", stateClauses) + ")");
+        }
+
+        return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
+    }
+
+    private static SqlFilter BuildDraftFilter(StudioPackageDraftQuery query)
+    {
+        var clauses = new List<string>();
+        var parameters = new List<(string, NpgsqlDbType, object)>();
+
+        if (query.Families is { Count: > 0 } families)
+        {
+            clauses.Add("family = ANY(@families)");
+            parameters.Add(("@families", NpgsqlDbType.Array | NpgsqlDbType.Text, families.Select(ToDbFamily).ToArray()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.WorkspaceId))
+        {
+            clauses.Add("workspace_id = @workspace_id");
+            parameters.Add(("@workspace_id", NpgsqlDbType.Text, query.WorkspaceId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.OwnerId))
+        {
+            clauses.Add("owner_id = @owner_id");
+            parameters.Add(("@owner_id", NpgsqlDbType.Text, query.OwnerId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchTerm))
+        {
+            clauses.Add("package_key ILIKE @search_term");
+            parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{EscapeLike(query.SearchTerm.Trim())}%"));
+        }
+
+        return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
+    }
+
+    private static string StateSqlPredicate(StudioContentItemState state) => state switch
+    {
+        StudioContentItemState.Draft => "current_version_id IS NULL",
+        StudioContentItemState.Current => "current_version_id IS NOT NULL AND published_version_id IS NULL",
+        StudioContentItemState.Published => "published_version_id IS NOT NULL",
+        _ => "FALSE",
+    };
+
+    private static string EscapeLike(string value)
+        => value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+
+    private static StudioContentItemSummary ReadContentItemSummary(NpgsqlDataReader reader)
+    {
+        var currentVersionId = reader.IsDBNull(4) ? (Guid?)null : reader.GetGuid(4);
+        var publishedVersionId = reader.IsDBNull(5) ? (Guid?)null : reader.GetGuid(5);
+        return new StudioContentItemSummary
+        {
+            ItemId = reader.GetGuid(0),
+            PackageKey = reader.GetString(1),
+            WorkspaceId = reader.IsDBNull(2) ? null : reader.GetString(2),
+            Family = FromDbFamily(reader.GetString(3)),
+            State = publishedVersionId is not null
+                ? StudioContentItemState.Published
+                : currentVersionId is not null
+                    ? StudioContentItemState.Current
+                    : StudioContentItemState.Draft,
+            CurrentVersionId = currentVersionId,
+            PublishedVersionId = publishedVersionId,
+            CreatedBy = reader.IsDBNull(6) ? null : reader.GetString(6),
+            UpdatedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+            UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9),
+        };
+    }
+
+    /// <summary>Dynamic SQL predicate plus its bound parameter descriptions, reused across a COUNT and a paged SELECT.</summary>
+    private readonly record struct SqlFilter(string Sql, IReadOnlyList<(string Name, NpgsqlDbType Type, object Value)> Parameters);
 
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,

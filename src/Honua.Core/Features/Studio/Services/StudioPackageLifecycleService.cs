@@ -247,6 +247,34 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
+    public async Task<StudioContentItemListResult> ListContentItemsAsync(
+        StudioContentItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        using var activity = ActivitySource.StartActivity("studio.package.content-item.list");
+        activity?.SetTag("studio.list.limit", query.Limit);
+        var result = await _store.ListContentItemsAsync(query, cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("studio.list.count", result.Items.Count);
+        activity?.SetTag("studio.list.total", result.Total);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioPackageDraftListResult> ListDraftsAsync(
+        StudioPackageDraftQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        using var activity = ActivitySource.StartActivity("studio.package.draft.list");
+        activity?.SetTag("studio.list.limit", query.Limit);
+        var result = await _store.ListDraftsAsync(query, cancellationToken).ConfigureAwait(false);
+        activity?.SetTag("studio.list.count", result.Items.Count);
+        activity?.SetTag("studio.list.total", result.Total);
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<StudioContentVersion?> GetVersionAsync(
         Guid itemId,
         Guid versionId,
