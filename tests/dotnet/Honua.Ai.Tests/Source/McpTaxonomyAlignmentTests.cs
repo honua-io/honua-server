@@ -8,7 +8,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
@@ -759,7 +758,6 @@ public sealed partial class McpTaxonomyAlignmentTests
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var groundingService = Substitute.For<IGroundingService>();
-        var studioLifecycleService = Substitute.For<IStudioPackageLifecycleService>();
         return
         [
             new ValidatePlanTool(jobService, NullLogger<ValidatePlanTool>.Instance),
@@ -806,18 +804,18 @@ public sealed partial class McpTaxonomyAlignmentTests
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool>.Instance),
-            new CreateStudioDraftTool(studioLifecycleService, jobService, NullLogger<CreateStudioDraftTool>.Instance),
-            new GetStudioDraftTool(studioLifecycleService, jobService, NullLogger<GetStudioDraftTool>.Instance),
-            new UpdateStudioDraftTool(studioLifecycleService, jobService, NullLogger<UpdateStudioDraftTool>.Instance),
-            new ValidateStudioDraftTool(studioLifecycleService, jobService, NullLogger<ValidateStudioDraftTool>.Instance),
-            new PreviewStudioDraftTool(studioLifecycleService, jobService, NullLogger<PreviewStudioDraftTool>.Instance),
-            new AddStudioLayerTool(studioLifecycleService, jobService, NullLogger<AddStudioLayerTool>.Instance),
-            new RemoveStudioLayerTool(studioLifecycleService, jobService, NullLogger<RemoveStudioLayerTool>.Instance),
-            new SetStudioLayerStyleTool(studioLifecycleService, jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
-            new SetStudioViewTool(studioLifecycleService, jobService, NullLogger<SetStudioViewTool>.Instance),
-            new AddStudioWidgetTool(studioLifecycleService, jobService, NullLogger<AddStudioWidgetTool>.Instance),
-            new RemoveStudioWidgetTool(studioLifecycleService, jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
-            new ProposeStudioPublicationTool(studioLifecycleService, jobService, NullLogger<ProposeStudioPublicationTool>.Instance)
+            new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
+            new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
+            new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
+            new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
+            new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
+            new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
+            new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
+            new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
+            new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
+            new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
+            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance)
         ];
     }
 

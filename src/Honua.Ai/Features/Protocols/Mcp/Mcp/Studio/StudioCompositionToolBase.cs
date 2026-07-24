@@ -27,11 +27,8 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 internal abstract class StudioCompositionToolBase : StudioDraftToolBase
 {
-    protected StudioCompositionToolBase(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger logger)
-        : base(lifecycleService, jobService, logger)
+    protected StudioCompositionToolBase(IGeoprocessingJobService jobService, ILogger logger)
+        : base(jobService, logger)
     {
     }
 
@@ -39,15 +36,16 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
     /// Loads the draft (verifying it exists and is a composition-eligible
     /// map/app family), applies <paramref name="mutate"/> to its parsed
     /// composition body, writes the result back onto the envelope, and
-    /// persists it through the lifecycle service with the caller-supplied
-    /// expected generation — the full load→mutate→save round trip every
-    /// composition tool needs, plus the audit record (NFR-001) and typed
-    /// error translation for every failure mode
+    /// persists it through <paramref name="lifecycleService"/> with the
+    /// caller-supplied expected generation — the full load→mutate→save round
+    /// trip every composition tool needs, plus the audit record (NFR-001) and
+    /// typed error translation for every failure mode
     /// (<see cref="TranslateCompositionError"/>).
     /// </summary>
     protected async Task<StudioPackageDraft> MutateCompositionAsync(
         ClaimsPrincipal principal,
         string toolName,
+        IStudioPackageLifecycleService lifecycleService,
         Guid draftId,
         long expectedGeneration,
         Func<StudioCompositionBody, StudioCompositionBody> mutate,
@@ -55,7 +53,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
     {
         try
         {
-            var draft = await RequireDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+            var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
             StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(draft.Family);
 
             var body = StudioCompositionBodyEditor.ReadBody(draft.Envelope);
@@ -64,6 +62,7 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
 
             var actorId = ActorIdFor(principal);
             var updated = await ApplyUpdateAsync(
+                lifecycleService,
                 draftId,
                 EnvelopeOnlyUpdate(draft, envelope, expectedGeneration, actorId),
                 cancellationToken).ConfigureAwait(false);

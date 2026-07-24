@@ -25,11 +25,8 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
 
     private readonly ILogger<AddStudioLayerTool> _typedLogger;
 
-    public AddStudioLayerTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<AddStudioLayerTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public AddStudioLayerTool(IGeoprocessingJobService jobService, ILogger<AddStudioLayerTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -62,6 +59,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioAddLayerArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -86,6 +84,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
+            lifecycleService,
             draftId,
             generation,
             body => StudioCompositionBodyEditor.AddLayer(body, layer, argument.BeforeId),
@@ -109,11 +108,8 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
 
     private readonly ILogger<RemoveStudioLayerTool> _typedLogger;
 
-    public RemoveStudioLayerTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<RemoveStudioLayerTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public RemoveStudioLayerTool(IGeoprocessingJobService jobService, ILogger<RemoveStudioLayerTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -148,6 +144,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveLayerArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -160,6 +157,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
+            lifecycleService,
             draftId,
             generation,
             body => StudioCompositionBodyEditor.RemoveLayer(body, argument.LayerId!),
@@ -180,11 +178,8 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
 
     private readonly ILogger<SetStudioLayerStyleTool> _typedLogger;
 
-    public SetStudioLayerStyleTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<SetStudioLayerStyleTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public SetStudioLayerStyleTool(IGeoprocessingJobService jobService, ILogger<SetStudioLayerStyleTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -220,6 +215,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioSetLayerStyleArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -232,6 +228,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
+            lifecycleService,
             draftId,
             generation,
             body => StudioCompositionBodyEditor.SetLayerStyleRef(body, argument.LayerId!, argument.StyleRef),
@@ -253,11 +250,8 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
 
     private readonly ILogger<SetStudioViewTool> _typedLogger;
 
-    public SetStudioViewTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<SetStudioViewTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public SetStudioViewTool(IGeoprocessingJobService jobService, ILogger<SetStudioViewTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -290,6 +284,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioSetViewArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -309,6 +304,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
+            lifecycleService,
             draftId,
             generation,
             body => StudioCompositionBodyEditor.SetView(body, view),
@@ -329,11 +325,8 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
 
     private readonly ILogger<AddStudioWidgetTool> _typedLogger;
 
-    public AddStudioWidgetTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<AddStudioWidgetTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public AddStudioWidgetTool(IGeoprocessingJobService jobService, ILogger<AddStudioWidgetTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -366,6 +359,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioAddWidgetArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -393,6 +387,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
+            lifecycleService,
             draftId,
             generation,
             body => StudioCompositionBodyEditor.AddWidget(body, widget),
@@ -413,11 +408,8 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
 
     private readonly ILogger<RemoveStudioWidgetTool> _typedLogger;
 
-    public RemoveStudioWidgetTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<RemoveStudioWidgetTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public RemoveStudioWidgetTool(IGeoprocessingJobService jobService, ILogger<RemoveStudioWidgetTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -450,6 +442,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioRemoveWidgetArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -462,6 +455,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         var updated = await MutateCompositionAsync(
             principal,
             ToolName,
+            lifecycleService,
             draftId,
             generation,
             body => StudioCompositionBodyEditor.RemoveWidget(body, argument.WidgetId!),

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
@@ -14,10 +15,10 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// <summary>
 /// MCP tool that creates a mutable Studio package lifecycle draft
 /// (honua-server#3002, REQ-001). Delegates entirely to
-/// <see cref="IStudioPackageLifecycleService.CreateDraftAsync"/> — the same
-/// canonical service <c>POST /api/v*/studio/package-drafts</c> uses — so an
-/// external MCP client and the in-app Studio AI proxy compose against the
-/// identical draft the Studio UI observes (AD-8).
+/// <see cref="Honua.Core.Features.Studio.Abstractions.IStudioPackageLifecycleService.CreateDraftAsync"/> —
+/// the same canonical service <c>POST /api/v*/studio/package-drafts</c>
+/// uses — so an external MCP client and the in-app Studio AI proxy compose
+/// against the identical draft the Studio UI observes (AD-8).
 /// </summary>
 internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
@@ -26,11 +27,8 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
     private readonly ILogger<CreateStudioDraftTool> _typedLogger;
 
-    public CreateStudioDraftTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<CreateStudioDraftTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public CreateStudioDraftTool(IGeoprocessingJobService jobService, ILogger<CreateStudioDraftTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -66,6 +64,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioCreateDraftArgument);
         if (string.IsNullOrWhiteSpace(argument.PackageKey))
@@ -87,7 +86,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         };
 
         var actorId = ActorIdFor(principal);
-        var draft = await LifecycleService.CreateDraftAsync(
+        var draft = await lifecycleService.CreateDraftAsync(
             new CreateStudioPackageDraftCommand
             {
                 ItemId = argument.ItemId,
@@ -116,11 +115,8 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
 
     private readonly ILogger<GetStudioDraftTool> _typedLogger;
 
-    public GetStudioDraftTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<GetStudioDraftTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public GetStudioDraftTool(IGeoprocessingJobService jobService, ILogger<GetStudioDraftTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -151,10 +147,11 @@ internal sealed class GetStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = RequireDraftId(argument.DraftId);
-        var draft = await RequireDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
 
         Audit(principal, ToolName, draft.DraftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);
@@ -179,11 +176,8 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
     private readonly ILogger<UpdateStudioDraftTool> _typedLogger;
 
-    public UpdateStudioDraftTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<UpdateStudioDraftTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public UpdateStudioDraftTool(IGeoprocessingJobService jobService, ILogger<UpdateStudioDraftTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -223,6 +217,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioUpdateDraftArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -238,7 +233,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             throw new GeoprocessingValidationException("'schemaVersion' is required.");
         }
 
-        var existing = await RequireDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+        var existing = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
         var envelope = existing.Envelope with
         {
             SchemaVersion = argument.SchemaVersion,
@@ -248,6 +243,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var actorId = ActorIdFor(principal);
         var updated = await ApplyUpdateAsync(
+            lifecycleService,
             draftId,
             new UpdateStudioPackageDraftCommand
             {
@@ -266,8 +262,14 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
 }
 
 /// <summary>
-/// MCP tool that validates a Studio package lifecycle draft and persists the
-/// resulting validation summary (honua-server#3002, REQ-001).
+/// MCP tool that validates a Studio package lifecycle draft's CURRENT
+/// envelope (honua-server#3002, REQ-001). Genuinely read-only (PR #3016
+/// review): unlike the REST admin surface's <c>POST .../validate</c>, this
+/// tool calls the pure <see cref="Honua.Core.Features.Studio.Abstractions.IStudioPackageValidator"/>
+/// directly and does NOT persist the result or advance the draft's
+/// generation — so its <c>readOnlyHint: true</c> annotation is honest and a
+/// concurrent composition-mutation call's expected generation is never
+/// invalidated by a validate call racing it.
 /// </summary>
 internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
@@ -276,11 +278,8 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
     private readonly ILogger<ValidateStudioDraftTool> _typedLogger;
 
-    public ValidateStudioDraftTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<ValidateStudioDraftTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public ValidateStudioDraftTool(IGeoprocessingJobService jobService, ILogger<ValidateStudioDraftTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -296,7 +295,10 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
     {
         Name = ToolName,
         Title = "Validate Studio draft",
-        Description = "Validate a Studio package lifecycle draft's current envelope and persist the resulting validation summary on the draft.",
+        Description =
+            "Validate a Studio package lifecycle draft's current envelope and return the validation summary. "
+            + "Genuinely read-only: it does NOT persist the result onto the draft or change its generation "
+            + "(unlike the REST admin POST .../validate endpoint), so it is always safe to call between composition-mutation calls.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioValidationOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Validate Studio draft")
@@ -311,27 +313,30 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+        var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var beforeDraft = await RequireDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
 
-        var actorId = ActorIdFor(principal);
-        var validation = await LifecycleService.ValidateDraftAsync(draftId, actorId, cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        // Pure computation only — no UpdateDraftAsync/ValidateDraftAsync call,
+        // so the draft's persisted generation is untouched.
+        var validation = validator.Validate(draft.Envelope);
 
-        Audit(principal, ToolName, draftId, generationBefore: beforeDraft.Generation, generationAfter: beforeDraft.Generation + 1);
+        Audit(principal, ToolName, draftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(validation, StudioJsonContext.Default.StudioValidationSummary);
     }
 }
 
 /// <summary>
-/// MCP tool that builds a preview plan for a Studio package lifecycle draft
-/// (honua-server#3002, REQ-001). Preview is read-only planning: for
-/// job-backed families (gp/etl/workflow) it returns the plan without
-/// submitting a job; the agent submits execution through the existing
-/// geoprocessing tools, not this one.
+/// MCP tool that builds a preview plan for a Studio package lifecycle draft's
+/// CURRENT envelope (honua-server#3002, REQ-001). Genuinely read-only (PR
+/// #3016 review): mirrors <c>StudioPackageLifecycleService.PreviewPlanAsync</c>'s
+/// projection (validate, then classify synchronous vs job-backed by family)
+/// without calling it, because that method persists a refreshed validation
+/// summary through the store first. For job-backed families (gp/etl/workflow)
+/// the plan is planning-only — it does not submit or execute a job.
 /// </summary>
 internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 {
@@ -340,11 +345,8 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 
     private readonly ILogger<PreviewStudioDraftTool> _typedLogger;
 
-    public PreviewStudioDraftTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<PreviewStudioDraftTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public PreviewStudioDraftTool(IGeoprocessingJobService jobService, ILogger<PreviewStudioDraftTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -361,7 +363,9 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
         Name = ToolName,
         Title = "Preview Studio draft",
         Description =
-            "Build a read-only preview plan for a Studio package lifecycle draft (re-validates the envelope first). "
+            "Build a read-only preview plan for a Studio package lifecycle draft's current envelope. "
+            + "Genuinely read-only: it does NOT persist a validation summary or change the draft's generation "
+            + "(unlike the REST admin POST .../preview-plan endpoint). "
             + "For job-backed families (gp, etl, workflow) the plan is planning-only — it does not submit or execute a job.",
         InputSchema = StudioMcpSchemas.DraftIdArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioPreviewPlanOutputSchema,
@@ -377,16 +381,31 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
+        var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var beforeDraft = await RequireDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
 
-        var actorId = ActorIdFor(principal);
-        var plan = await LifecycleService.PreviewPlanAsync(draftId, actorId, cancellationToken).ConfigureAwait(false)
-            ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        // Pure computation only — mirrors StudioPackageLifecycleService.PreviewPlanAsync's
+        // projection without calling it (that method persists via ValidateDraftAsync first).
+        var validation = validator.Validate(draft.Envelope);
+        var requiresJob = StudioPackageLifecycleService.RequiresBackgroundJob(draft.Family);
+        var steps = requiresJob
+            ? new[] { "validate-envelope", "plan-background-preview-job" }
+            : new[] { "validate-envelope", "prepare-inline-preview" };
+        var plan = new StudioPreviewPlan
+        {
+            DraftId = draft.DraftId,
+            Family = draft.Family,
+            Synchronous = !requiresJob,
+            RequiresJob = requiresJob,
+            Steps = steps,
+            Validation = validation,
+        };
 
-        Audit(principal, ToolName, draftId, generationBefore: beforeDraft.Generation, generationAfter: beforeDraft.Generation + 1);
+        Audit(principal, ToolName, draftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
         return McpToolHelpers.SuccessResult(plan, StudioJsonContext.Default.StudioPreviewPlan);
     }
 }

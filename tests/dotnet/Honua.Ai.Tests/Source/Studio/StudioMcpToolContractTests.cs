@@ -12,6 +12,7 @@ using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -20,12 +21,14 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// <summary>
 /// Tool-contract tests for the Studio draft lifecycle and composition MCP
 /// tools (honua-server#3002): input-schema shape, generation-conflict typed
-/// errors, family-gating and not-found typed errors, and the structural
-/// publish-tool-absence guarantee (REQ-003/REQ-009) — none of the twelve
-/// tools ever calls a lifecycle-service member that moves a current/published
-/// pointer. Uses a mocked <see cref="IStudioPackageLifecycleService"/>;
-/// <see cref="StudioMcpToolDelegationTests"/> covers the real
-/// <c>InMemoryStudioPackageStore</c>-backed happy path.
+/// errors, family-gating and not-found typed errors, the structural
+/// publish-tool-absence guarantee (REQ-003/REQ-009), read-only honesty for
+/// validate/preview (PR #3016 review), and the per-request service
+/// resolution that keeps the singleton tool descriptors from capturing the
+/// scoped <see cref="IStudioPackageLifecycleService"/>/<see cref="IStudioPackageValidator"/>
+/// as constructor dependencies. Uses mocked collaborators injected via
+/// <c>httpContext.RequestServices</c>; <see cref="StudioMcpToolDelegationTests"/>
+/// covers the real <c>InMemoryStudioPackageStore</c>-backed happy path.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpToolContractTests
@@ -33,6 +36,7 @@ public sealed class StudioMcpToolContractTests
     private static readonly Guid DraftId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private readonly IStudioPackageLifecycleService _lifecycleService = Substitute.For<IStudioPackageLifecycleService>();
+    private readonly IStudioPackageValidator _validator = Substitute.For<IStudioPackageValidator>();
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
     [UnitTest]
@@ -47,7 +51,9 @@ public sealed class StudioMcpToolContractTests
         var names = BuildAllTools().Select(t => t.Name).ToArray();
 
         names.Should().NotContain(n => n.Contains("rollback", StringComparison.OrdinalIgnoreCase));
-        names.Where(n => n.Contains("publish", StringComparison.OrdinalIgnoreCase))
+        // "publ" (not "publish") so it also matches "propose_publication" —
+        // "publish" is not literally a substring of "publication".
+        names.Where(n => n.Contains("publ", StringComparison.OrdinalIgnoreCase))
             .Should().BeEquivalentTo(["honua_studio_propose_publication"]);
         names.Should().NotContain("honua_studio_publish");
         names.Should().NotContain("honua_studio_publish_draft");
@@ -65,12 +71,12 @@ public sealed class StudioMcpToolContractTests
             .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
             .Returns(draft with { Generation = 2 });
 
-        var tool = new ProposeStudioPublicationTool(_lifecycleService, _jobService, NullLogger<ProposeStudioPublicationTool>.Instance);
+        var tool = new ProposeStudioPublicationTool(_jobService, NullLogger<ProposeStudioPublicationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioProposePublicationArgument { DraftId = DraftId, Generation = 1, Route = "/studio/parcels" },
             StudioMcpJsonContext.Default.McpStudioProposePublicationArgument);
 
-        var result = await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var result = await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("recorded").GetBoolean().Should().BeTrue();
@@ -99,7 +105,7 @@ public sealed class StudioMcpToolContractTests
             .Returns(Task.FromException<StudioPackageDraft?>(
                 new InvalidOperationException("Stale draft generation; refresh and retry.")));
 
-        var tool = new UpdateStudioDraftTool(_lifecycleService, _jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+        var tool = new UpdateStudioDraftTool(_jobService, NullLogger<UpdateStudioDraftTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioUpdateDraftArgument
             {
@@ -110,7 +116,7 @@ public sealed class StudioMcpToolContractTests
             },
             StudioMcpJsonContext.Default.McpStudioUpdateDraftArgument);
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
     }
@@ -127,7 +133,7 @@ public sealed class StudioMcpToolContractTests
             .Returns(Task.FromException<StudioPackageDraft?>(
                 new InvalidOperationException("Stale draft generation; refresh and retry.")));
 
-        var tool = new AddStudioLayerTool(_lifecycleService, _jobService, NullLogger<AddStudioLayerTool>.Instance);
+        var tool = new AddStudioLayerTool(_jobService, NullLogger<AddStudioLayerTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioAddLayerArgument
             {
@@ -137,7 +143,7 @@ public sealed class StudioMcpToolContractTests
             },
             StudioMcpJsonContext.Default.McpStudioAddLayerArgument);
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
     }
@@ -150,7 +156,7 @@ public sealed class StudioMcpToolContractTests
         var draft = BuildDraft(StudioPackageFamily.Query, generation: 1);
         _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
 
-        var tool = new AddStudioLayerTool(_lifecycleService, _jobService, NullLogger<AddStudioLayerTool>.Instance);
+        var tool = new AddStudioLayerTool(_jobService, NullLogger<AddStudioLayerTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioAddLayerArgument
             {
@@ -160,7 +166,7 @@ public sealed class StudioMcpToolContractTests
             },
             StudioMcpJsonContext.Default.McpStudioAddLayerArgument);
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
     }
@@ -173,12 +179,12 @@ public sealed class StudioMcpToolContractTests
         var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
         _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
 
-        var tool = new RemoveStudioLayerTool(_lifecycleService, _jobService, NullLogger<RemoveStudioLayerTool>.Instance);
+        var tool = new RemoveStudioLayerTool(_jobService, NullLogger<RemoveStudioLayerTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioRemoveLayerArgument { DraftId = DraftId, Generation = 1, LayerId = "no-such-layer" },
             StudioMcpJsonContext.Default.McpStudioRemoveLayerArgument);
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
@@ -190,14 +196,35 @@ public sealed class StudioMcpToolContractTests
     {
         _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns((StudioPackageDraft?)null);
 
-        var tool = new GetStudioDraftTool(_lifecycleService, _jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var tool = new GetStudioDraftTool(_jobService, NullLogger<GetStudioDraftTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioDraftIdArgument { DraftId = DraftId },
             StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task GetDraft_WhenLifecycleServiceIsNotComposed_SurfacesRetryableUnavailable()
+    {
+        // PR #3016 review, P1 remediation: registration is unconditional, so a
+        // host that never composed Studio persistence must still advertise the
+        // tool but fail per-call with a structured, retryable error rather
+        // than an opaque internal error.
+        var tool = new GetStudioDraftTool(_jobService, NullLogger<GetStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpStudioDraftIdArgument { DraftId = DraftId },
+            StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
+
+        // No IStudioPackageLifecycleService registered in RequestServices.
+        var httpContext = McpTestFactory.AuthenticatedHttpContextWithServices(_ => { });
+        var act = () => tool.InvokeAsync(httpContext, arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>();
     }
 
     [UnitTest]
@@ -205,10 +232,10 @@ public sealed class StudioMcpToolContractTests
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
     public async Task CreateDraft_WhenPackageKeyMissing_SurfacesInvalidArgument()
     {
-        var tool = new CreateStudioDraftTool(_lifecycleService, _jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var tool = new CreateStudioDraftTool(_jobService, NullLogger<CreateStudioDraftTool>.Instance);
         var arguments = McpTestFactory.ParseJson("""{"family":"map","schemaVersion":"1.0"}""");
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
     }
@@ -218,12 +245,74 @@ public sealed class StudioMcpToolContractTests
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
     public async Task CreateDraft_WhenFamilyIsUnknown_SurfacesInvalidArgument()
     {
-        var tool = new CreateStudioDraftTool(_lifecycleService, _jobService, NullLogger<CreateStudioDraftTool>.Instance);
+        var tool = new CreateStudioDraftTool(_jobService, NullLogger<CreateStudioDraftTool>.Instance);
         var arguments = McpTestFactory.ParseJson("""{"packageKey":"parcels-map","family":"not-a-family","schemaVersion":"1.0"}""");
 
-        var act = () => tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_validate_draft")]
+    public async Task ValidateDraft_IsGenuinelyReadOnly_NeverPersistsOrChangesGeneration()
+    {
+        // PR #3016 review, P2 honesty: readOnlyHint=true must be honest. The
+        // tool must call the pure IStudioPackageValidator.Validate directly
+        // and never UpdateDraftAsync/ValidateDraftAsync (both of which persist
+        // through the store and bump the draft's generation).
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 3);
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        var expectedValidation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid };
+        _validator.Validate(draft.Envelope).Returns(expectedValidation);
+
+        var tool = new ValidateStudioDraftTool(_jobService, NullLogger<ValidateStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpStudioDraftIdArgument { DraftId = DraftId },
+            StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
+
+        var result = await tool.InvokeAsync(HttpContextWithLifecycleServiceAndValidator(), arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("valid");
+        tool.Describe().Annotations!.ReadOnlyHint.Should().BeTrue();
+
+        _validator.Received(1).Validate(draft.Envelope);
+        await _lifecycleService.DidNotReceive().UpdateDraftAsync(
+            Arg.Any<Guid>(), Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>());
+        await _lifecycleService.DidNotReceive().ValidateDraftAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_preview_draft")]
+    public async Task PreviewDraft_IsGenuinelyReadOnly_NeverPersistsOrChangesGeneration()
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 4);
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        var expectedValidation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid };
+        _validator.Validate(draft.Envelope).Returns(expectedValidation);
+
+        var tool = new PreviewStudioDraftTool(_jobService, NullLogger<PreviewStudioDraftTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpStudioDraftIdArgument { DraftId = DraftId },
+            StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
+
+        var result = await tool.InvokeAsync(HttpContextWithLifecycleServiceAndValidator(), arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("synchronous").GetBoolean().Should().BeTrue();
+        tool.Describe().Annotations!.ReadOnlyHint.Should().BeTrue();
+
+        _validator.Received(1).Validate(draft.Envelope);
+        await _lifecycleService.DidNotReceive().UpdateDraftAsync(
+            Arg.Any<Guid>(), Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>());
+        await _lifecycleService.DidNotReceive().ValidateDraftAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _lifecycleService.DidNotReceive().PreviewPlanAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -254,7 +343,7 @@ public sealed class StudioMcpToolContractTests
             .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
             .Returns(draft with { Generation = 2 });
 
-        var tool = new AddStudioLayerTool(_lifecycleService, _jobService, NullLogger<AddStudioLayerTool>.Instance);
+        var tool = new AddStudioLayerTool(_jobService, NullLogger<AddStudioLayerTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioAddLayerArgument
             {
@@ -264,7 +353,7 @@ public sealed class StudioMcpToolContractTests
             },
             StudioMcpJsonContext.Default.McpStudioAddLayerArgument);
 
-        var result = await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var result = await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("generation").GetInt64().Should().Be(2);
@@ -276,24 +365,33 @@ public sealed class StudioMcpToolContractTests
             Arg.Any<CancellationToken>());
     }
 
-    private static IReadOnlyList<Honua.Ai.Protocols.Mcp.Tools.IMcpTool> BuildAllTools()
+    private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleService() =>
+        McpTestFactory.AuthenticatedHttpContextWithServices(services => services.AddSingleton(_lifecycleService));
+
+    private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleServiceAndValidator() =>
+        McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            services.AddSingleton(_validator);
+        });
+
+    private static IReadOnlyList<IMcpTool> BuildAllTools()
     {
-        var lifecycleService = Substitute.For<IStudioPackageLifecycleService>();
         var jobService = Substitute.For<IGeoprocessingJobService>();
         return
         [
-            new CreateStudioDraftTool(lifecycleService, jobService, NullLogger<CreateStudioDraftTool>.Instance),
-            new GetStudioDraftTool(lifecycleService, jobService, NullLogger<GetStudioDraftTool>.Instance),
-            new UpdateStudioDraftTool(lifecycleService, jobService, NullLogger<UpdateStudioDraftTool>.Instance),
-            new ValidateStudioDraftTool(lifecycleService, jobService, NullLogger<ValidateStudioDraftTool>.Instance),
-            new PreviewStudioDraftTool(lifecycleService, jobService, NullLogger<PreviewStudioDraftTool>.Instance),
-            new AddStudioLayerTool(lifecycleService, jobService, NullLogger<AddStudioLayerTool>.Instance),
-            new RemoveStudioLayerTool(lifecycleService, jobService, NullLogger<RemoveStudioLayerTool>.Instance),
-            new SetStudioLayerStyleTool(lifecycleService, jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
-            new SetStudioViewTool(lifecycleService, jobService, NullLogger<SetStudioViewTool>.Instance),
-            new AddStudioWidgetTool(lifecycleService, jobService, NullLogger<AddStudioWidgetTool>.Instance),
-            new RemoveStudioWidgetTool(lifecycleService, jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
-            new ProposeStudioPublicationTool(lifecycleService, jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
+            new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
+            new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
+            new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
+            new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
+            new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
+            new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
+            new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
+            new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
+            new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
+            new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
+            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
         ];
     }
 

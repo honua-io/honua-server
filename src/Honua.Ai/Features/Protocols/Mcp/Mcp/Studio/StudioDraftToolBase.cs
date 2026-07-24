@@ -7,6 +7,7 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
@@ -20,19 +21,33 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// <c>StudioDraft</c> operator-grant family, typed error translation, and the
 /// generation-before/after audit record (NFR-001).
 /// </summary>
+/// <remarks>
+/// <para>
+/// Tool descriptors are registered as singletons (matches every other
+/// <c>/mcp</c> tool), but <see cref="IStudioPackageLifecycleService"/> and
+/// <see cref="IStudioPackageValidator"/> are registered <c>Scoped</c>
+/// (<c>AddStudioPackageLifecycle</c>) — a singleton constructor cannot depend
+/// on them without becoming a captive dependency (PR #3016 review). Tools
+/// therefore never take these as constructor parameters; every
+/// <c>InvokeAsync</c> resolves them per call from <c>httpContext.RequestServices</c>
+/// (the ASP.NET Core per-request DI scope) via <see cref="RequireLifecycleService"/> /
+/// <see cref="RequireValidator"/>, mirroring the same per-request-resolution
+/// pattern <c>CreateMapPackageTool</c>/<c>ApplyStylePresetTool</c> already use
+/// for services composed after <c>AddMcpDataAccessSurface</c>. This also
+/// means Studio tool registration no longer depends on
+/// <c>AddStudioPackageLifecycle</c> having run first (or at all) — the tools
+/// are registered unconditionally and fail per-call with a structured
+/// <c>unavailable</c> error only if the host never composed Studio
+/// persistence.
+/// </para>
+/// </remarks>
 internal abstract class StudioDraftToolBase
 {
-    protected StudioDraftToolBase(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger logger)
+    protected StudioDraftToolBase(IGeoprocessingJobService jobService, ILogger logger)
     {
-        LifecycleService = lifecycleService;
         JobService = jobService;
         Logger = logger;
     }
-
-    protected IStudioPackageLifecycleService LifecycleService { get; }
 
     protected IGeoprocessingJobService JobService { get; }
 
@@ -58,12 +73,36 @@ internal abstract class StudioDraftToolBase
     }
 
     /// <summary>
+    /// Resolves <see cref="IStudioPackageLifecycleService"/> from the current
+    /// request's DI scope. Throws <see cref="GeoprocessingStoreUnavailableException"/>
+    /// (surfaced as a retryable <c>unavailable</c> MCP error) when the host
+    /// never composed Studio persistence (<c>AddStudioPackageLifecycle</c>) —
+    /// the same structured-unavailable pattern <c>ApplyStylePresetTool</c>
+    /// uses for <c>IStyleCatalog</c>.
+    /// </summary>
+    protected static IStudioPackageLifecycleService RequireLifecycleService(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioPackageLifecycleService>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio package lifecycle service is not available on this server.");
+
+    /// <summary>
+    /// Resolves the pure <see cref="IStudioPackageValidator"/> from the
+    /// current request's DI scope, for tools that validate WITHOUT persisting
+    /// (<c>honua_studio_validate_draft</c>, <c>honua_studio_preview_draft</c>
+    /// — PR #3016 review: these must not silently mutate draft state behind a
+    /// <c>readOnlyHint: true</c> advertisement).
+    /// </summary>
+    protected static IStudioPackageValidator RequireValidator(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioPackageValidator>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio package validator is not available on this server.");
+
+    /// <summary>
     /// Loads a draft by id, translating a missing draft into the typed
     /// <c>not_found</c> MCP error channel instead of returning null.
     /// </summary>
-    protected async Task<StudioPackageDraft> RequireDraftAsync(Guid draftId, CancellationToken cancellationToken)
+    protected static async Task<StudioPackageDraft> RequireDraftAsync(
+        IStudioPackageLifecycleService lifecycleService, Guid draftId, CancellationToken cancellationToken)
     {
-        var draft = await LifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await lifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
         return draft ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
     }
 
@@ -80,14 +119,15 @@ internal abstract class StudioDraftToolBase
     /// conflict never presents as an opaque internal error, and a draft that
     /// disappeared between load and update into <see cref="GeoprocessingNotFoundException"/>.
     /// </summary>
-    protected async Task<StudioPackageDraft> ApplyUpdateAsync(
+    protected static async Task<StudioPackageDraft> ApplyUpdateAsync(
+        IStudioPackageLifecycleService lifecycleService,
         Guid draftId,
         UpdateStudioPackageDraftCommand command,
         CancellationToken cancellationToken)
     {
         try
         {
-            var updated = await LifecycleService.UpdateDraftAsync(draftId, command, cancellationToken)
+            var updated = await lifecycleService.UpdateDraftAsync(draftId, command, cancellationToken)
                 .ConfigureAwait(false);
 
             return updated

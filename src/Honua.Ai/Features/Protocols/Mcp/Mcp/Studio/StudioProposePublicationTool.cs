@@ -40,11 +40,8 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
     private readonly ILogger<ProposeStudioPublicationTool> _typedLogger;
 
-    public ProposeStudioPublicationTool(
-        IStudioPackageLifecycleService lifecycleService,
-        IGeoprocessingJobService jobService,
-        ILogger<ProposeStudioPublicationTool> logger)
-        : base(lifecycleService, jobService, logger)
+    public ProposeStudioPublicationTool(IGeoprocessingJobService jobService, ILogger<ProposeStudioPublicationTool> logger)
+        : base(jobService, logger)
     {
         _typedLogger = logger;
     }
@@ -78,12 +75,13 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
 
         var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Create, cancellationToken)
             .ConfigureAwait(false);
+        var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioProposePublicationArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
         var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
 
-        var draft = await RequireDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
+        var draft = await RequireDraftAsync(lifecycleService, draftId, cancellationToken).ConfigureAwait(false);
         var actorId = ActorIdFor(principal);
 
         var intent = new StudioPublicationIntent
@@ -110,6 +108,7 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var envelope = draft.Envelope with { PublicationIntent = intent, Provenance = provenance };
 
         var updated = await ApplyUpdateAsync(
+            lifecycleService,
             draftId,
             EnvelopeOnlyUpdate(draft, envelope, generation, actorId),
             cancellationToken).ConfigureAwait(false);
