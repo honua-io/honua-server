@@ -4,8 +4,9 @@ Operator runbook to bring `demo.honua.io` to full demonstrable capability across
 four product pillars. It covers two separable tracks:
 
 1. **Seed STAC collections** so the Imagery & Terrain Studio shows a live catalog.
-2. **Apply a Pro license** so geocoding, realtime streaming, and FeatureServer editing
-   light up.
+2. **Apply a Pro license** so geocoding failover, realtime streaming, and
+   FeatureServer editing light up. Single-address forward/reverse geocoding is
+   available in Community; batch geocoding requires Enterprise.
 
 > Scope note: the underlying server features already exist. This is **operational
 > enablement** on the deployed demo. The only server code change shipped alongside this
@@ -32,10 +33,10 @@ wins.
 | Area | State | Evidence |
 |---|---|---|
 | Track 1 — STAC seed | **Live.** `/stac/collections` returns `90810` + `90820`; `/stac/search` against `90810` returns 4 features; both collections also appear in `/api/v1/streaming/features/capabilities` layer list. | Direct probe, 2026-07-23 |
-| Track 2 — Pro license | **Live.** `/api/v1/capabilities/manifest` → `policies.currentEdition = "Pro"`, `licenseValidationState = "Valid"`. `geocoding.forward`/`geocoding.reverse`/`geocoding.failover`/`streaming.feature-subscriptions`/`editing.featureserver-edits` all `active: true`. The 14/29 `available:false` capability entries seen on an **anonymous** manifest call are RBAC (`insufficient-policy`, expected with no caller identity) or correctly `minimumEdition: Enterprise` gates (we're Pro) — not a licensing gap. | Direct probe, 2026-07-23 |
+| Track 2 — Pro license | **Live.** `/api/v1/capabilities/manifest` → `policies.currentEdition = "Pro"`, `licenseValidationState = "Valid"`. Community `geocoding.forward`/`geocoding.reverse` and Pro `geocoding.failover`/`streaming.feature-subscriptions`/`editing.featureserver-edits` all report `active: true`; `geocoding.batch` correctly remains Enterprise. The 14/29 `available:false` capability entries seen on an **anonymous** manifest call are RBAC (`insufficient-policy`, expected with no caller identity) or correctly `minimumEdition: Enterprise` gates (we're Pro) — not a licensing gap. | Direct probe, 2026-07-23 |
 | Elevation / terrain | **Live and fully functional**, contradicting the 2026-07-20 probe. `maui-terrain` (layerId 8) is a registered raster dataset; `/elevation/maui-terrain/{value,profile,viewshed,line-of-sight,sun-shadow}` all return real computed results over real Maui terrain (elevations in a sane 4–590 m range), and `/terrain/maui-terrain/tile.json` + `.png` tiles serve `terrain-rgb` encoded tiles. No remediation needed. | Direct probe, 2026-07-23 |
 | Catalog cleanup — layer 68823 | **Done.** Not present in `/rest/services` (25 services, none named `test_service`/68823) or `/ogc/features/collections` (11 collections). Direct probe of `/rest/services/test_service/FeatureServer` returns `499 Unauthorized` (`allowAnonymous: false`), consistent with the recorded remediation (`PUT /api/v1/admin/services/test_service/access-policy {"allowAnonymous": false}`). | Direct probe, 2026-07-23 |
-| Geocoding | **Not working — categorical failure, not a cold-start.** The locator is published as `World` (not `maui`, which the original probe and this runbook's Step 4 assumed — `GET /rest/services/World/GeocodeServer?f=json` returns valid metadata with `Provider: nominatim`). But every `findAddressCandidates` call — first and repeated — fails after ~15.8s with `500 "Geocoding service error"`. Two consecutive calls both took ~15.8s (15.790s, 15.854s): this rules out a cold-start/keep-warm fix. Root cause (per the 2026-07-20/21 coordinator note, reconfirmed): the demo Lambda's VPC subnets have no NAT/IGW egress route, so the external Nominatim endpoint is unreachable from inside the VPC on every call. | Direct probe, 2026-07-23 |
+| Geocoding | **Not working — categorical failure, not a cold-start.** The locator is published as `World` (not `maui`, which the original probe and this runbook's Step 4 assumed — `GET /rest/services/World/GeocodeServer?f=json` returns valid metadata with `Provider: nominatim`). But every `findAddressCandidates` call — first and repeated — fails after ~15.8s with `500 "Geocoding service error"`. Two consecutive calls both took ~15.8s (15.790s, 15.854s): this rules out a cold-start/keep-warm fix. Root cause (per the 2026-07-20/21 coordinator note, reconfirmed): the demo Lambda's VPC subnets have no NAT/IGW egress route, so the external Nominatim endpoint is unreachable from inside the VPC on every call. **Operator-decided fix (2026-07-23): switch to Amazon Location Service via a VPC interface endpoint (PrivateLink) — no NAT gateway.** IaC in `honua-io/honua-iac#127` (not applied); see *Remediation plan* item 1. | Direct probe, 2026-07-23 |
 | SensorThings | **Confirmed intentional.** `/sta/v1.1/*` → 404. `Experimental:Features:SensorThings` defaults `false` in `src/Honua.Server/appsettings.json` with no environment override, and there is no SensorThings entry in the capabilities manifest at all (not even a gated one). This matches honua-io/honua-server#2434 ("Promote SensorThings to GA" — `roadmap:later`, still experimental). No action needed for this issue; GA promotion is tracked separately in #2434. | Direct probe + code read, 2026-07-23 |
 | `/api/scenes` (adjacent, server#2991) | **Fixed live.** Returns `200` with the scene listing — confirms the out-of-band migration run (073→082) documented in #2991 has landed on the shared demo DB. | Direct probe, 2026-07-23 |
 | ImageServer `maui-imagery` metadata (adjacent, server#2991/#2993) | **Still hangs** (>70s, no response) — expected: the code fix is in PR #2993, which has not been deployed to the demo image yet. Will be resolved by the next demo image redeploy (see remediation plan). | Direct probe, 2026-07-23 |
@@ -164,8 +165,8 @@ A Pro license unblocks the three remaining Pro-gated demo areas. Entitlement key
 |----------------------|---------------------------------------|-------------|
 | Realtime streaming   | `streaming.feature-subscriptions`     | Pro         |
 | FeatureServer edits  | `editing.featureserver-edits`         | Pro         |
-| Forward geocoding    | `geocoding.forward`                   | Pro         |
-| Reverse geocoding    | `geocoding.reverse`                   | Pro         |
+| Forward geocoding    | `geocoding.forward`                   | Community   |
+| Reverse geocoding    | `geocoding.reverse`                   | Community   |
 | Geocoding failover   | `geocoding.failover`                  | Pro         |
 
 > Editing note: only the **Esri GeoServices FeatureServer** write surface
@@ -246,27 +247,36 @@ Lambda filesystem with no bootstrap file write.
 > route**, so the external Nominatim endpoint is categorically unreachable from inside
 > the VPC — not slow, unreachable, timing out at whatever the outbound HTTP client
 > timeout is configured to (~15–16s). A scheduled keep-warm probe cannot fix this: it
-> would just be another call that times out the same way. See the remediation plan at
-> the end of this document — the actual fix is a network-egress change, which is
-> **honua-terraform's IaC surface**, out of this issue's scope per its own Non-goals,
-> and needs a separate infra-track decision/ticket.
+> would just be another call that times out the same way.
+>
+> **Operator decision (2026-07-23): fixed via Amazon Location Service over a VPC
+> interface endpoint (PrivateLink), not a NAT gateway.** No new compute, no general
+> egress opened up. IaC: `honua-io/honua-iac#127` (place index + IAM grant +
+> `com.amazonaws.us-west-2.geo.places`
+> interface endpoint — not applied). See *Remediation plan* item 1 below for the exact
+> env keys, sequencing, and rollback; a NAT-gateway + Nominatim fallback is kept at item
+> 1a if Amazon Location is ever rejected later.
 
 Geocoding is published when `Geocoding:Enabled=true` with a configured provider and locator
-name. On the demo Lambda, this is already configured:
+name. On the demo Lambda, this is already configured (Nominatim/`World`, currently
+broken per the callout above):
 
 ```
 Geocoding__Enabled=true
 Geocoding__LocatorName=World              # confirmed live; do not change without also
                                            # updating every demo probe/smoke script
-Geocoding__DefaultProvider=nominatim       # confirmed live
+Geocoding__DefaultProvider=nominatim       # confirmed live; PLANNED to become
+                                           # amazon-location — see Remediation plan item 1
 # provider config (endpoint/key) per Geocoding__Providers__* — not independently
 # re-verified here; the failure is at the network layer (see callout above), before
 # provider request construction would matter.
 ```
 
-The forward/reverse geocoding **operations** are Pro-gated (`geocoding.forward` /
-`geocoding.reverse`), so the Pro license from Steps 1–3 must be active (it is — see
-*As-verified live state* above).
+The forward/reverse geocoding **operations** are Community capabilities
+(`geocoding.forward` / `geocoding.reverse`), so they do not require the Pro
+license from Steps 1–3. Automatic provider failover remains Pro
+(`geocoding.failover`), while multi-address execution remains Enterprise
+(`geocoding.batch`).
 
 ### Step 5 — Streaming + editing need no extra config
 
@@ -317,7 +327,8 @@ node scripts/site-demo-smoke.mjs    # the four affected pages leave their fixtur
 | License mint CLI commands                      | N/A — Pro license **already applied and live** (2026-07-23 confirmed) |
 | Elevation/terrain dataset (`maui-terrain`)    | **Already registered and fully working** (2026-07-23 confirmed) — no action needed |
 | Layer 68823 catalog cleanup                   | **Already applied and live** (2026-07-23 confirmed) |
-| Geocoding network egress fix                  | **[OPERATOR + honua-terraform]** — VPC NAT/IGW route or alternate reachable provider; live env + IaC |
+| Geocoding — Amazon Location + PrivateLink (PRIMARY) | IaC ready, **not applied**: `honua-io/honua-iac#127` — **[OPERATOR]** review/apply, then fold `Geocoding__*` env into the image redeploy below |
+| Geocoding — NAT gateway + Nominatim (fallback, not chosen) | **[OPERATOR + honua-terraform]** only if Amazon Location is rejected later |
 | SensorThings GA promotion                     | Out of scope for this issue — tracked in #2434 |
 | Demo image redeploy (picks up #2993 + migrations 083-088) | **[OPERATOR]** — live env, standard versioned-alias deploy |
 
@@ -380,46 +391,140 @@ those surfaces through their native clients:
 Everything in *As-verified live state* above marked "Live"/"Already applied" needs **no
 further action**. The items below are the only ones still open as of 2026-07-23.
 
-### 1. Geocoding — VPC egress (or provider) fix
+### 1. Geocoding — Amazon Location Service via PrivateLink (PRIMARY, operator-decided 2026-07-23)
 
-**Not runnable from this repo** — it is a network/IaC change owned by `honua-terraform`,
-which is explicitly out of this issue's scope (see *Non-goals*). Recorded here so the
-decision and rollback are visible in one place when an operator picks it up in the
-owning repo.
+**Decision:** the operator chose Amazon Location Service reached over a VPC interface
+endpoint (PrivateLink) as the fix — **not** a NAT gateway. No new compute, no general
+egress opened up; the server's built-in `amazon-location` geocoding provider
+(`Honua.Geocoding.Features.Geocoding.Providers.AmazonLocationGeocodeProvider`) talks to
+Amazon Location's classic Places API (`SearchPlaceIndexForText` /
+`SearchPlaceIndexForPosition` / `SearchPlaceIndexForSuggestions`) against a named place
+index, authenticating via the Lambda execution role (`UseIamRole=true`, the default —
+no access keys). IaC PR (not applied): **honua-io/honua-iac#127** — adds an
+`enable_amazon_location_geocoding` toggle to the `aws-serverless` module (place index +
+least-privilege IAM grant) and wires a
+`com.amazonaws.us-west-2.geo.places` interface endpoint
+into the demo's `vpc-endpoints.tf` (single-AZ, same pattern as the existing Secrets
+Manager/Bedrock endpoints — see that PR for the exact resources and a read-only AWS
+audit of the account's current VPC/endpoint state, including one piece of *unrelated*
+pre-existing drift it flagged: the live `bedrock-runtime` endpoint spans all 3 private
+subnets despite being documented as single-AZ).
 
-- **Option A — NAT Gateway egress.** Add a public NAT Gateway with an Elastic IP in a
-  public subnet whose route table sends `0.0.0.0/0` to the VPC Internet Gateway. Then
-  update each private Lambda subnet's route table to send `0.0.0.0/0` to that NAT
-  Gateway (or use a correctly routed NAT instance, cost-dependent). Lambda ENIs remain
-  in the private subnets; placing the NAT Gateway there, or merely adding an Internet
-  Gateway route to those private subnets, does not provide internet egress. This is a
-  standard `honua-terraform` change; review there for cost/blast radius before applying.
-- **Option B — in-VPC-reachable provider.** Point `Geocoding__Providers__*` at a
-  provider reachable via a VPC endpoint / PrivateLink (or a self-hosted Photon/Pelias
-  instance inside the VPC) instead of the public internet. Avoids a NAT Gateway but is a
-  larger change (new provider integration + data).
-- **Rollback:** either option is additive (new NAT route / new provider config) and can
-  be torn down without touching the license, STAC, or catalog state; no coupling to the
-  other tracks.
-- **After either fix**, re-run the geocoding lines of the verification script above —
-  expect `findAddressCandidates` to return `200` with `candidates.length > 0` in well
-  under a second once the network path exists (Nominatim itself is fast; the current
-  ~15.8s is the egress timeout, not provider latency). *Only then* does a scheduled
-  keep-warm probe (e.g. an EventBridge-scheduled Lambda invocation of
-  `GET /rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului`
-  every few minutes) become a meaningful mitigation for genuine cold-start latency —
-  before the egress fix, a keep-warm probe would just be another guaranteed-timeout
-  call.
+**Why this is the primary fix, not the NAT+Nominatim fallback below:** no NAT gateway
+to provision or pay for (~$33/mo saved), no general internet egress opened on a public
+demo Lambda, and it reuses a provider the server already ships — this is config +
+one new AWS resource, not new infrastructure surface area.
 
-### 2. Demo image redeploy (picks up PR #2993 + migrations 083–088)
+**This requires the versioned-alias deploy below, not a standalone env change.** All of
+the following are plain (non-secret) Lambda environment variables — per the
+*Deployment model correction* above, environment variables only take effect on a
+**newly published Lambda version with the `live` alias repointed to it**; there is no
+way to apply them to what's actually serving `demo.honua.io` short of a real deploy.
+Fold them into the same deploy that picks up PR #2993 (item 2 below) rather than
+attempting a separate env-only change:
 
-Routine versioned-alias deploy, no schema/env changes of its own beyond what the new
-image already contains. See the *Deployment model correction* note above for why this
-must be a real publish-and-repoint, not an env edit on `$LATEST`.
+```
+Geocoding__Enabled                                   = true
+Geocoding__DefaultProvider                           = amazon-location
+Geocoding__EnableFailover                            = false
+Geocoding__Providers__Nominatim__Enabled             = false
+Geocoding__Providers__AmazonLocation__Enabled        = true
+Geocoding__Providers__AmazonLocation__Region         = us-west-2
+Geocoding__Providers__AmazonLocation__PlaceIndexName = <honua-iac output: amazon_location_place_index_name>
+Geocoding__Providers__AmazonLocation__UseIamRole     = true
+Geocoding__Providers__AmazonLocation__MaxResults     = 10
+```
 
-- **[OPERATOR]** Once PR #2993 merges to `trunk`: build and push a new demo image from
-  `trunk` HEAD, publish a new Lambda version, and repoint the `live` alias from v33 to
-  the new version (`aws lambda update-alias --function-name honua-demo-demo-honua
+`Geocoding__EnableFailover=false` is the effective safeguard against the existing
+Nominatim timeout. The current server registration path always registers Nominatim for
+backward compatibility, even when
+`Geocoding__Providers__Nominatim__Enabled=false`; with failover enabled, the coordinator
+would therefore still try it after any Amazon Location error (for example, a place-index
+typo) and hang for another ~15.8 seconds. Keep the provider-specific flag false to record
+the intended provider set, but do not rely on it until runtime registration honors that
+flag. For normal requests that omit the optional `provider` query parameter, this demo
+deployment deliberately attempts only Amazon Location. An explicit
+`provider=nominatim` request can still select the registered Nominatim provider and
+incur the unreachable-path timeout; demo smoke tests and clients must not send that
+override. Re-enable failover only after every registered fallback has a working network
+path.
+
+**Sequencing:**
+1. **[OPERATOR]** Review and apply `honua-io/honua-iac#127` (`terraform plan` then
+   `apply`, scoped to `enable_amazon_location_geocoding = true` plus the other toggles
+   this environment already runs) — creates the place index, the IAM grant, and the
+   `com.amazonaws.us-west-2.geo.places` VPC interface endpoint. This alone does **not**
+   change what's serving
+   `demo.honua.io` (no Lambda env change yet, and the place index/endpoint are inert
+   until referenced).
+2. **[OPERATOR]** Fold the `Geocoding__*` env block above into the image-redeploy
+   step (item 2 below) — same publish-new-version-and-repoint-alias operation, so the
+   code fix (#2993), the migrations (083–088), and the geocoding provider switch all
+   land in the one deploy that actually changes live behavior.
+3. **Expected verification** (after the deploy in item 2 completes): open the
+   `World` GeocodeServer metadata in the generated API explorer and confirm
+   `locatorProperties.Provider` is `amazon-location`, then run:
+   ```bash
+   export HONUA_BASE_URL=https://demo.honua.io
+   time honua geocode "Kahului" --locator World --limit 1 --json \
+     | jq -e 'type == "array" and length > 0'
+     # expect a non-empty candidate array in well under 1s
+   ```
+4. **Rollback:** the `Geocoding__*` env change rolls back the same way any other part
+   of this deploy does — repoint the `live` alias back to the prior version (see item
+   2's rollback). The place index and VPC endpoint from `honua-iac#127` are additive
+   AWS resources with no coupling to STAC/license/catalog state; `terraform destroy
+   -target` (or setting `enable_amazon_location_geocoding = false` and applying) removes
+   them cleanly once nothing references them, but there is no urgency to tear them down
+   just because the Lambda alias was rolled back — they cost nothing extra idle beyond
+   the endpoint's fixed per-hour charge.
+
+**Data-source note:** results come from **Esri** (the iac PR's default; `Here` is the
+other option), not OpenStreetMap — this is a full provider swap, not a drop-in
+replacement with identical results. Coverage, address formatting, and attribution
+differ from Nominatim.
+
+**Cost:** `com.amazonaws.us-west-2.geo.places` VPC interface endpoint ~$7–8/month
+(single-AZ, same pricing as the
+existing Secrets Manager endpoint) + Amazon Location's per-request Esri pricing tier
+(low single dollars/month at demo traffic volumes). No NAT gateway (~$33/mo avoided),
+no new compute.
+
+### 1a. Fallback — NAT gateway + Nominatim (not the chosen path; kept for reference)
+
+If Amazon Location is ever rejected (e.g. Esri/HERE data-licensing concerns, or the
+place index proves unreliable), the fallback is what this runbook originally proposed:
+
+- **NAT Gateway egress.** Add a public NAT Gateway with an Elastic IP in a public
+  subnet whose route table sends `0.0.0.0/0` to the VPC Internet Gateway, then update
+  each private Lambda subnet's route table to send `0.0.0.0/0` to that NAT Gateway (or
+  use a correctly routed NAT instance, cost-dependent). Lambda ENIs remain in the
+  private subnets; placing the NAT Gateway there, or merely adding an Internet Gateway
+  route to those private subnets, does not provide internet egress —
+  `enable_nat_gateway = true` in the `aws-serverless` module call handles this routing
+  correctly, but a hand-rolled NAT setup should double-check both route-table hops.
+  Costs ~$33/mo + data, the exact cost the Amazon Location path avoids.
+- **Rollback:** additive (new NAT route); can be torn down without touching license,
+  STAC, or catalog state.
+- Once reachable, Nominatim itself is fast — the current ~15.8s is purely the egress
+  timeout, not provider latency — so *only in this fallback path* would a scheduled
+  keep-warm probe be a meaningful mitigation for genuine cold-start latency (it is not
+  a fix for the current failure mode either way, which is unreachability, not
+  slowness).
+
+### 2. Demo image redeploy (picks up PR #2993 + migrations 083–088 + the Amazon Location env switch)
+
+Routine versioned-alias deploy. See the *Deployment model correction* note above for
+why this must be a real publish-and-repoint, not an env edit on `$LATEST` — and why
+item 1's `Geocoding__*` env variables are folded into this same step rather than
+attempted separately.
+
+- **[OPERATOR]** Once PR #2993 merges to `trunk` and `honua-io/honua-iac#127` is
+  applied (place index + `com.amazonaws.us-west-2.geo.places` endpoint exists): build
+  and push a new demo image from
+  `trunk` HEAD, set the `Geocoding__*` env block from item 1 above on the new version,
+  publish it, and repoint the `live` alias from v33 to the new version
+  (`aws lambda update-alias --function-name honua-demo-demo-honua
   --name live --function-version <new-version>` or the equivalent `terraform apply`).
 - **Expected verification:**
   - `GET /rest/services/maui-imagery/ImageServer?f=json` returns within the 20s
@@ -428,12 +533,16 @@ must be a real publish-and-repoint, not an env edit on `$LATEST`.
     with the byte-limit message, not an opaque 500.
   - `GET /api/v1/admin/observability/migrations` (authenticated) shows migrations
     through `088_CreateNetworkTopologyPromotions`.
-  - Everything in the *As-verified live state* table above still holds (STAC, Pro
-    license, elevation, catalog cleanup, geocoding-fails-the-same-way, SensorThings
-    404) — this is a regression check, not expected to change any of those.
+  - Geocoding: see item 1's verification block (`locatorProperties.Provider ==
+    "amazon-location"`, `findAddressCandidates` in well under 1s).
+  - Everything else in the *As-verified live state* table above still holds (STAC, Pro
+    license, elevation, catalog cleanup, SensorThings 404) — this is a regression
+    check, not expected to change any of those.
 - **Rollback:** repoint the `live` alias back to v33
   (`aws lambda update-alias --function-name honua-demo-demo-honua --name live
-  --function-version 33`). No DB rollback needed — migrations 083–088 are additive
+  --function-version 33`) — this reverts the geocoding provider switch along with
+  everything else in the deploy, back to Nominatim/`World` (broken, as today) until a
+  fixed version is published. No DB rollback needed — migrations 083–088 are additive
   (`CreateNetworkDataset*`/`CreateOpsHealth*`/network-topology tables) and unrelated to
   any table the demo currently reads from.
 

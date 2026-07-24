@@ -75,6 +75,15 @@ public interface IGeocodeCoordinatorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Perform forward geocoding with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
+        ForwardGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Perform reverse geocoding with automatic provider selection and failover
     /// </summary>
     /// <param name="request">Reverse geocoding request</param>
@@ -84,6 +93,15 @@ public interface IGeocodeCoordinatorService
     Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Perform reverse geocoding with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
+        ReverseGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -99,6 +117,15 @@ public interface IGeocodeCoordinatorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Get suggestions with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<IReadOnlyList<GeocodeSuggestion>>> SuggestAsync(
+        SuggestGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Perform batch geocoding with automatic provider selection and failover
     /// </summary>
     /// <param name="request">Batch geocoding request</param>
@@ -108,6 +135,15 @@ public interface IGeocodeCoordinatorService
     Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
         BatchGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Perform batch geocoding with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
+        BatchGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default);
 }
 

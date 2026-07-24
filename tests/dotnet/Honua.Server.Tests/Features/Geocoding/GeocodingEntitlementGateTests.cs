@@ -73,6 +73,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_Post_WithoutEntitlement_Returns402WithEntitlementDetail()
     {
@@ -92,6 +93,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_Alias_WithoutEntitlement_Returns402()
     {
@@ -106,6 +108,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_WithProEntitlement_StillReturns402()
     {
@@ -122,6 +125,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_WithEnterpriseEntitlement_ReachesEndpoint()
     {
@@ -178,13 +182,43 @@ public sealed class GeocodingEntitlementGateTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_WithoutAnyLicense_Succeeds()
     {
-        // GeocodeServer metadata/discovery must stay Community regardless of the batch gate.
+        // Metadata/discovery stays Community, but it must not advertise the gated batch
+        // operation when the active edition cannot call it.
         using var factory = CreateFactory(devGrantEdition: null);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.DoesNotContain(
+            "BatchGeocode",
+            payload.RootElement.GetProperty("capabilities").GetString()!,
+            StringComparison.Ordinal);
+        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
+        Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_WithEnterpriseEntitlement_AdvertisesBatch()
+    {
+        using var factory = CreateFactory(devGrantEdition: "Enterprise");
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Contains(
+            "BatchGeocode",
+            payload.RootElement.GetProperty("capabilities").GetString()!,
+            StringComparison.Ordinal);
+        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.Equal("100", locatorProperties.GetProperty("SuggestedBatchSize").GetString());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string? devGrantEdition)

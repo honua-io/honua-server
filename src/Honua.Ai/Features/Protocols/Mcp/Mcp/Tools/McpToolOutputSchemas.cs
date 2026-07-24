@@ -954,6 +954,92 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>
+    /// Schema for <c>StudioPackageDraft</c> (honua-server#3002) — returned by
+    /// every Studio draft lifecycle and composition-mutation tool. The nested
+    /// envelope/validation shapes are left open; the schema pins the top-level
+    /// draft fields an agent reads to drive generation-checked follow-up calls
+    /// (<c>draftId</c>, <c>generation</c>).
+    /// </summary>
+    public static readonly JsonElement StudioDraftOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["draftId", "itemId", "packageKey", "family", "envelope", "generation", "createdAt", "updatedAt"],
+          "properties": {
+            "draftId": { "type": "string" },
+            "itemId": { "type": "string" },
+            "packageKey": { "type": "string" },
+            "workspaceId": { "type": ["string", "null"] },
+            "ownerId": { "type": ["string", "null"] },
+            "family": { "type": "string" },
+            "envelope": { "type": "object" },
+            "validation": { "type": "object" },
+            "baseVersionId": { "type": ["string", "null"] },
+            "generation": {
+              "type": "integer",
+              "description": "Optimistic-concurrency generation. Pass this value as `generation` on the next mutating call for this draft."
+            },
+            "createdBy": { "type": ["string", "null"] },
+            "updatedBy": { "type": ["string", "null"] },
+            "createdAt": { "type": "string" },
+            "updatedAt": { "type": "string" }
+          }
+        }
+        """);
+
+    /// <summary>Schema for <c>StudioValidationSummary</c> (<c>honua_studio_validate_draft</c>).</summary>
+    public static readonly JsonElement StudioValidationOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "type": "string", "enum": ["not-validated", "valid", "warning", "invalid"] },
+            "diagnostics": { "type": "array", "items": { "type": "object" } },
+            "unsupportedCapabilities": { "type": "array", "items": { "type": "string" } },
+            "generatedAt": { "type": ["string", "null"] }
+          }
+        }
+        """);
+
+    /// <summary>Schema for <c>StudioPreviewPlan</c> (<c>honua_studio_preview_draft</c>).</summary>
+    public static readonly JsonElement StudioPreviewPlanOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["draftId", "family", "synchronous", "requiresJob", "steps", "validation"],
+          "properties": {
+            "draftId": { "type": "string" },
+            "family": { "type": "string" },
+            "synchronous": { "type": "boolean" },
+            "requiresJob": { "type": "boolean" },
+            "steps": { "type": "array", "items": { "type": "string" } },
+            "validation": { "type": "object" }
+          }
+        }
+        """);
+
+    /// <summary>
+    /// Schema for <c>McpStudioProposePublicationOutput</c>
+    /// (<c>honua_studio_propose_publication</c>). <c>recorded</c> and
+    /// <c>humanConfirmationRequired</c> are structural proof the tool only
+    /// recorded intent on the draft — it never executed publish/share/embed.
+    /// </summary>
+    public static readonly JsonElement StudioProposePublicationOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["draft", "recorded", "humanConfirmationRequired", "message"],
+          "properties": {
+            "draft": { "type": "object" },
+            "recorded": { "type": "boolean", "const": true },
+            "humanConfirmationRequired": { "type": "boolean", "const": true },
+            "message": { "type": "string" }
+          }
+        }
+        """);
+
     private static string ArtifactKindEnum => JsonStringArray(Enum.GetNames<ArtifactKind>());
 
     private static string JsonStringArray(string[] values)

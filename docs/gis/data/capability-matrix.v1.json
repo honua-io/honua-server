@@ -20,10 +20,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 364,
-      "provingTestCount": 947,
+      "entryCount": 366,
+      "provingTestCount": 952,
       "maturity": {
-        "implemented": 364
+        "implemented": 366
       },
       "noSurface": null,
       "cite": [],
@@ -250,7 +250,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 1
       },
@@ -352,7 +352,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 5,
       "maturity": {
         "implemented": 1
       },
@@ -369,7 +369,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 1
       },
@@ -880,7 +880,7 @@
       "category": "Geocoding",
       "edition": "Community",
       "entryCount": 9,
-      "provingTestCount": 46,
+      "provingTestCount": 47,
       "maturity": {
         "implemented": 9
       },
@@ -1504,7 +1504,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 11,
+      "provingTestCount": 12,
       "maturity": {
         "implemented": 4
       },

@@ -34,6 +34,25 @@ internal static class McpTestFactory
             RequestServices = CreateRequestServices(edition)
         };
 
+    /// <summary>
+    /// Authenticated HTTP context whose <c>RequestServices</c> additionally
+    /// registers <paramref name="configureServices"/> — for tools that resolve
+    /// collaborators per-request from <c>httpContext.RequestServices</c>
+    /// instead of taking them as constructor dependencies (the pattern
+    /// <c>CreateMapPackageTool</c> and the Studio tools use for services
+    /// registered <c>Scoped</c>, to avoid a singleton tool capturing a scoped
+    /// service as a captive dependency; PR #3016 review).
+    /// </summary>
+    public static DefaultHttpContext AuthenticatedHttpContextWithServices(
+        Action<IServiceCollection> configureServices,
+        string user = "test-user",
+        HonuaEdition edition = HonuaEdition.Pro) => new()
+        {
+            RequestServices = CreateRequestServices(edition, configureServices),
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, user)], "Test"))
+        };
+
     public static McpPlanInput CreateValidPlanInput() => new()
     {
         PlanId = "plan-1",
@@ -63,12 +82,13 @@ internal static class McpTestFactory
         return document.RootElement.Clone();
     }
 
-    private static ServiceProvider CreateRequestServices(HonuaEdition edition)
+    private static ServiceProvider CreateRequestServices(HonuaEdition edition, Action<IServiceCollection>? configureServices = null)
     {
         var license = new TestLicenseEntitlementService(edition);
-        return new ServiceCollection()
+        var services = new ServiceCollection()
             .AddSingleton<ILicenseEntitlementService>(license)
-            .AddSingleton<ILicenseStatusProvider>(license)
-            .BuildServiceProvider();
+            .AddSingleton<ILicenseStatusProvider>(license);
+        configureServices?.Invoke(services);
+        return services.BuildServiceProvider();
     }
 }

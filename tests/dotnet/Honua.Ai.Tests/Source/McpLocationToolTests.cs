@@ -50,6 +50,7 @@ public sealed class McpLocationToolTests
                     request.MaxResults == 1 &&
                     request.SpatialReferenceWkid == 4326),
                 "mock",
+                true,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
             [
@@ -67,7 +68,7 @@ public sealed class McpLocationToolTests
             ], "mock"));
 
         var services = BuildServices(
-            ActiveLicense("geocoding.forward"),
+            ActiveLicense(GeocodeTool.FailoverEntitlementKey),
             geocodeCoordinator: coordinator);
         var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
@@ -102,6 +103,7 @@ public sealed class McpLocationToolTests
         await coordinator.Received(1).ForwardGeocodeAsync(
             Arg.Any<ForwardGeocodeRequest>(),
             "mock",
+            true,
             Arg.Any<CancellationToken>());
     }
 
@@ -218,6 +220,7 @@ public sealed class McpLocationToolTests
         coordinator.ForwardGeocodeAsync(
                 Arg.Any<ForwardGeocodeRequest>(),
                 Arg.Any<string?>(),
+                false,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
             [
@@ -293,6 +296,7 @@ public sealed class McpLocationToolTests
         coordinator.ForwardGeocodeAsync(
                 Arg.Any<ForwardGeocodeRequest>(),
                 Arg.Any<string?>(),
+                false,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
                 "no provider produced a result.",
@@ -345,6 +349,8 @@ public sealed class McpLocationToolTests
     private static ILicenseEntitlementService ActiveLicense(string entitlementKey)
     {
         var license = Substitute.For<ILicenseEntitlementService>();
+        license.CheckEntitlement(Arg.Any<string>())
+            .Returns(call => InactiveDecision(call.Arg<string>()));
         license.CheckEntitlement(entitlementKey)
             .Returns(new LicenseEntitlementDecision(
                 entitlementKey,
@@ -359,6 +365,8 @@ public sealed class McpLocationToolTests
     private static ILicenseEntitlementService InactiveLicense(string entitlementKey)
     {
         var license = Substitute.For<ILicenseEntitlementService>();
+        license.CheckEntitlement(Arg.Any<string>())
+            .Returns(call => InactiveDecision(call.Arg<string>()));
         license.CheckEntitlement(entitlementKey)
             .Returns(new LicenseEntitlementDecision(
                 entitlementKey,
@@ -369,6 +377,14 @@ public sealed class McpLocationToolTests
                 $"{entitlementKey} requires an active Pro entitlement."));
         return license;
     }
+
+    private static LicenseEntitlementDecision InactiveDecision(string entitlementKey) => new(
+        entitlementKey,
+        false,
+        HonuaEdition.Community,
+        LicenseValidationState.NoLicenseConfigured,
+        HonuaEdition.Pro,
+        $"{entitlementKey} requires an active Pro entitlement.");
 
     private static DefaultHttpContext AuthenticatedContext(IServiceProvider services)
     {
