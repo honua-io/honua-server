@@ -8,9 +8,12 @@ a bounded, materialized page; Honua never falls back to the primary provider for
 This provider is read-only, so OData create/update/delete requests (including `$batch` mutations)
 return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
 
-OGC API Tiles per-collection provider routing remains the follow-up slice of
-[issue #2962](https://github.com/honua-io/honua-server/issues/2962). Until that lands, do not treat
-secondary-provider OGC tile reachability as supported.
+OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
+through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
+collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
+problem response naming the collection and provider: native MVT generation is a per-provider
+capability that only the PostGIS provider implements today, independent of the routing fix
+delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
 
 
 Honua exposes Amazon Redshift (`GEOMETRY` and `GEOGRAPHY`) tables as read-only feature layers

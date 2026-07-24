@@ -154,13 +154,17 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task GeocodeAddresses_WithOutFields_ProjectsAttributes()
     {
-        using var factory = CreateDefaultFactory(grantEnterpriseForBatch: true);
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var addresses = Uri.EscapeDataString(
             """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""");
         using var response = await client.GetAsync(
-            $"/rest/services/World/GeocodeServer/geocodeAddresses?addresses={addresses}&outFields=Provider&f=json");
+            $"/rest/services/World/GeocodeServer/geocodeAddresses?addresses={addresses}&outFields=Provider&provider=fake&f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
