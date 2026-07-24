@@ -7,7 +7,9 @@
 // route opts into AllowAnonymous explicitly so authorization-policy tooling
 // can see the intent rather than treating it as an accidental gap.
 
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.Geocoding;
 
@@ -82,7 +84,8 @@ internal static class GeocodingEndpoints
             .WithName("BatchGeocodeAddresses")
             .WithSummary("Batch geocode addresses")
             .WithDescription("Batch geocoding operation with provider capability checks")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/geocodeAddresses", HandleBatch)
             .WithDisplayName("Batch Geocode Addresses (POST)")
@@ -90,7 +93,8 @@ internal static class GeocodingEndpoints
             .WithSummary("Batch geocode addresses using POST")
             .WithDescription("Batch geocoding operation with provider capability checks")
             .WithTags("GeocodeServer")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         endpoints.MapGet("/rest/services/GeocodeServer", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleMetadataAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
@@ -127,9 +131,30 @@ internal static class GeocodingEndpoints
                 handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Batch Geocode Addresses (Alias)")
             .WithName("BatchGeocodeAddressesAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         return endpoints;
+    }
+
+    // #2981: batch geocoding (geocodeAddresses) is an Enterprise entitlement
+    // (FeatureCatalog.BatchGeocodingKey; ADR-0024) — the volume/enterprise geocoding workload.
+    // Applied directly to the geocodeAddresses routes (GET/POST scoped + GET alias) rather than
+    // a shared MapGroup, since findAddressCandidates/reverseGeocode/suggest and GeocodeServer
+    // metadata/discovery stay ungated (Community) on this same route builder. Mirrors the
+    // #2978 SAML/SCIM enforcement pattern.
+    private static ValueTask<object?> RequireBatchGeocodingEntitlement(
+        EndpointFilterInvocationContext invocationContext,
+        EndpointFilterDelegate next)
+    {
+        var gate = LicenseGate.RequireEntitlement(
+            invocationContext.HttpContext,
+            FeatureCatalog.BatchGeocodingKey,
+            "Batch Geocoding");
+
+        return gate is null
+            ? next(invocationContext)
+            : ValueTask.FromResult<object?>(gate);
     }
 
     private static Task<IResult> HandleMetadata(
