@@ -181,4 +181,14 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Warning,
         Message = "Ops-reader authorization denied {Method} ops request: principal lacks an admin or ops:read grant authorizing this operation")]
     public static partial void OpsReaderKeyDenied(ILogger logger, string method);
+
+    /// <summary>
+    /// Logs when a non-admin principal is denied the Studio package lifecycle policy because
+    /// <c>Studio:EndUserAuthorization:Enabled</c> is off (honua-server#3001).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4116,
+        Level = LogLevel.Debug,
+        Message = "Studio lifecycle authorization denied: caller is not admin and Studio:EndUserAuthorization:Enabled is false")]
+    public static partial void StudioEndUserModeDenied(ILogger logger);
 }

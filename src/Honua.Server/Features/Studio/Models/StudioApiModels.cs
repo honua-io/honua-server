@@ -211,6 +211,10 @@ public sealed class StudioContentItemListRow
     [JsonPropertyName("publishedVersionId")]
     public Guid? PublishedVersionId { get; init; }
 
+    /// <summary>Owner principal identifier (honua-server#3001).</summary>
+    [JsonPropertyName("ownerId")]
+    public string? OwnerId { get; init; }
+
     /// <summary>Identifier of the actor that created the item.</summary>
     [JsonPropertyName("createdBy")]
     public string? CreatedBy { get; init; }

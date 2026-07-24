@@ -67,6 +67,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 draft.Family,
                 currentVersionId: null,
                 publishedVersionId: null,
+                draft.OwnerId,
                 draft.CreatedBy,
                 draft.UpdatedBy,
                 draft.CreatedAt,
@@ -220,6 +221,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 updated.Family,
                 currentVersionId: null,
                 publishedVersionId: null,
+                updated.OwnerId,
                 updated.CreatedBy,
                 updated.UpdatedBy,
                 updated.CreatedAt,
@@ -356,6 +358,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 draft.Family,
                 currentVersionId: null,
                 publishedVersionId: null,
+                draft.OwnerId,
                 draft.CreatedBy,
                 actorId,
                 draft.CreatedAt,
@@ -461,7 +464,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id
+            SELECT item_id, current_version_id, published_version_id, owner_id
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -488,7 +491,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var total = await CountAsync(connection, _itemsTable, filter, cancellationToken).ConfigureAwait(false);
 
         var sql = new StringBuilder();
-        sql.Append("SELECT item_id, package_key, workspace_id, family, current_version_id, published_version_id, ");
+        sql.Append("SELECT item_id, package_key, workspace_id, family, current_version_id, published_version_id, owner_id, ");
         sql.Append("created_by, updated_by, created_at, updated_at FROM ").Append(_itemsTable).Append(' ').Append(filter.Sql);
 
         await using var command = new NpgsqlCommand { Connection = connection };
@@ -634,11 +637,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             parameters.Add(("@workspace_id", NpgsqlDbType.Text, query.WorkspaceId));
         }
 
-        // See StudioContentItemQuery.OwnerId: filters on the item's creator until
-        // honua-server#3001 introduces dedicated per-item ownership.
         if (!string.IsNullOrWhiteSpace(query.OwnerId))
         {
-            clauses.Add("created_by = @owner_id");
+            clauses.Add("owner_id = @owner_id");
             parameters.Add(("@owner_id", NpgsqlDbType.Text, query.OwnerId));
         }
 
@@ -719,10 +720,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                     : StudioContentItemState.Draft,
             CurrentVersionId = currentVersionId,
             PublishedVersionId = publishedVersionId,
-            CreatedBy = reader.IsDBNull(6) ? null : reader.GetString(6),
-            UpdatedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
-            CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
-            UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9),
+            OwnerId = reader.IsDBNull(6) ? null : reader.GetString(6),
+            CreatedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
+            UpdatedBy = reader.IsDBNull(8) ? null : reader.GetString(8),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(9),
+            UpdatedAt = reader.GetFieldValue<DateTimeOffset>(10),
         };
     }
 
@@ -891,19 +893,24 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         StudioPackageFamily family,
         Guid? currentVersionId,
         Guid? publishedVersionId,
+        string? ownerId,
         string? createdBy,
         string? updatedBy,
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
         CancellationToken cancellationToken)
     {
+        // owner_id is intentionally set only on INSERT and left out of the ON CONFLICT UPDATE
+        // clause: ownership is populated once, on create, from the authenticated principal
+        // (honua-server#3001) and is immutable thereafter -- a later draft/version upsert for
+        // the same item must never silently transfer ownership.
         var sql = $"""
             INSERT INTO {_itemsTable}
                 (item_id, package_key, workspace_id, family, current_version_id, published_version_id,
-                 created_by, updated_by, created_at, updated_at)
+                 owner_id, created_by, updated_by, created_at, updated_at)
             VALUES
                 (@item_id, @package_key, @workspace_id, @family, @current_version_id, @published_version_id,
-                 @created_by, @updated_by, @created_at, @updated_at)
+                 @owner_id, @created_by, @updated_by, @created_at, @updated_at)
             ON CONFLICT (item_id) DO UPDATE
             SET package_key = EXCLUDED.package_key,
                 workspace_id = EXCLUDED.workspace_id,
@@ -918,6 +925,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@family", ToDbFamily(family));
         command.Parameters.AddWithValue("@current_version_id", (object?)currentVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_by", (object?)createdBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_by", (object?)updatedBy ?? DBNull.Value);
         command.Parameters.AddWithValue("@created_at", createdAt);
@@ -1063,7 +1071,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id
+            SELECT item_id, current_version_id, published_version_id, owner_id
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -1151,6 +1159,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             ItemId = reader.GetGuid(0),
             CurrentVersionId = reader.IsDBNull(1) ? null : reader.GetGuid(1),
             PublishedVersionId = reader.IsDBNull(2) ? null : reader.GetGuid(2),
+            OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
         };
 
     private static string VersionSelectSql(string versionsTable) => $"""

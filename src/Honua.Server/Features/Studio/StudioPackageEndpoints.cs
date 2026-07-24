@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using Honua.Ai.AppGeneration;
 using Honua.Ai.MapGeneration;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
@@ -39,11 +40,17 @@ internal static class StudioPackageEndpoints
     /// </summary>
     public static void MapStudioPackageEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // honua-server#3001: RequireStudioLifecycleAuthorization() admits admin unconditionally
+        // (unchanged) and, once Studio:EndUserAuthorization:Enabled is on, any authenticated
+        // principal -- per-resource ownership and the elevated-operation (publish-request,
+        // rollback) operator-grant check are then enforced per handler via
+        // IStudioAuthorizationService. With the flag off this is exactly the prior
+        // RequireAdminAuthorization() gate (NFR-001).
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/studio")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Studio")
-            .RequireAdminAuthorization();
+            .RequireStudioLifecycleAuthorization();
 
         group.MapGet("/package-families", HandleGetPackageFamilies)
             .WithDisplayName("List Studio Package Families")
@@ -373,6 +380,9 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleCreateDraft(
         CreateStudioPackageDraftRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -383,14 +393,43 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            // honua-server#3001: creating a draft under an existing content item must be
+            // authorized against that item's recorded owner, not treated as a brand-new
+            // (ownerless) resource.
+            if (request.ItemId is { } existingItemId)
+            {
+                var pointers = await service.GetPointersAsync(existingItemId, context.RequestAborted).ConfigureAwait(false);
+                if (pointers is not null)
+                {
+                    var authResult = await EnsureAuthorizedAsync(
+                        authorizationService, auditLog, timeProvider, context,
+                        StudioAuthorizationOperation.CreateDraft, pointers.OwnerId,
+                        resourceType: "studio-content-item", resourceId: existingItemId.ToString("D")).ConfigureAwait(false);
+                    if (authResult is not null)
+                    {
+                        return authResult;
+                    }
+                }
+            }
+
             var actor = ConsolePrincipal.ResolveActorId(context.User);
+
+            // honua-server#3001: once end-user mode is on, a non-admin caller may only ever
+            // own the drafts they create -- ignore any client-supplied ownerId (which would
+            // otherwise let a caller assign a draft to someone else) rather than trusting it.
+            // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null, so
+            // omitting it here resolves ownership to the authenticated caller.
+            var ownerId = !authorizationService.IsAdmin(context.User) && authorizationService.IsEndUserAuthorizationEnabled
+                ? null
+                : request.OwnerId;
+
             var draft = await service.CreateDraftAsync(
                 new CreateStudioPackageDraftCommand
                 {
                     ItemId = request.ItemId,
                     PackageKey = request.PackageKey,
                     WorkspaceId = request.WorkspaceId,
-                    OwnerId = request.OwnerId,
+                    OwnerId = ownerId,
                     Envelope = request.Envelope,
                     ActorId = actor,
                 },
@@ -419,6 +458,7 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleListDrafts(
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context,
         [FromQuery] string? family = null,
@@ -435,12 +475,13 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            var effectiveOwner = ResolveEffectiveOwnerFilter(authorizationService, context, owner);
             var result = await service.ListDraftsAsync(
                 new StudioPackageDraftQuery
                 {
                     Families = families,
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
-                    OwnerId = NormalizeOptionalQueryValue(owner),
+                    OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
                     Limit = ClampListLimit(limit),
@@ -467,17 +508,32 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleGetDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
             var draft = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
-            return draft is null
-                ? NotFound(context, "Studio package draft was not found.")
-                : Results.Json(
-                    ApiResponse<StudioPackageDraft>.CreateSuccess(draft),
-                    StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+            if (draft is null)
+            {
+                return NotFound(context, "Studio package draft was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ReadDraft, draft.OwnerId,
+                resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            return Results.Json(
+                ApiResponse<StudioPackageDraft>.CreateSuccess(draft),
+                StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -490,6 +546,9 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         UpdateStudioPackageDraftRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -500,13 +559,38 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
+            if (existing is null)
+            {
+                return NotFound(context, "Studio package draft was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.UpdateDraft, existing.OwnerId,
+                resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            var isAdmin = authorizationService.IsAdmin(context.User);
+
+            // honua-server#3001: once end-user mode is on, a non-admin caller cannot transfer
+            // ownership of a draft they are otherwise authorized to edit -- ignore any
+            // client-supplied ownerId (UpdateStudioPackageDraftCommand.OwnerId falls back to the
+            // existing owner when null) rather than trusting it.
+            var ownerId = !isAdmin && authorizationService.IsEndUserAuthorizationEnabled
+                ? null
+                : request.OwnerId;
+
             var draft = await service.UpdateDraftAsync(
                 draftId,
                 new UpdateStudioPackageDraftCommand
                 {
                     PackageKey = request.PackageKey,
                     WorkspaceId = request.WorkspaceId,
-                    OwnerId = request.OwnerId,
+                    OwnerId = ownerId,
                     Envelope = request.Envelope,
                     Generation = request.Generation,
                     ActorId = ConsolePrincipal.ResolveActorId(context.User),
@@ -541,11 +625,29 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleDeleteDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
+            var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
+            if (existing is null)
+            {
+                return NotFound(context, "Studio package draft was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.DeleteDraft, existing.OwnerId,
+                resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var deleted = await service.DeleteDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             return deleted
                 ? Results.Json(
@@ -563,11 +665,29 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleValidateDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
+            var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
+            if (existing is null)
+            {
+                return NotFound(context, "Studio package draft was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
+                resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var validation = await service.ValidateDraftAsync(
                 draftId,
                 ConsolePrincipal.ResolveActorId(context.User),
@@ -592,11 +712,29 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandlePreviewPlan(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
+            var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
+            if (existing is null)
+            {
+                return NotFound(context, "Studio package draft was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
+                resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var plan = await service.PreviewPlanAsync(
                 draftId,
                 ConsolePrincipal.ResolveActorId(context.User),
@@ -622,6 +760,9 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         SaveStudioContentVersionRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -632,6 +773,21 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
+            if (existing is null)
+            {
+                return NotFound(context, "Studio package draft was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.CreateVersion, existing.OwnerId,
+                resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var version = await service.SaveDraftAsVersionAsync(
                 draftId,
                 request.ChangeNote,
@@ -662,6 +818,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleListContentItems(
         [FromServices] IStudioPackageLifecycleService service,
         [FromServices] IContentPublicationStore publicationStore,
+        [FromServices] IStudioAuthorizationService authorizationService,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context,
         [FromQuery] string? family = null,
@@ -683,12 +840,13 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            var effectiveOwner = ResolveEffectiveOwnerFilter(authorizationService, context, owner);
             var result = await service.ListContentItemsAsync(
                 new StudioContentItemQuery
                 {
                     Families = families,
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
-                    OwnerId = NormalizeOptionalQueryValue(owner),
+                    OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
                     States = states,
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
@@ -783,6 +941,28 @@ internal static class StudioPackageEndpoints
         _ => "active",
     };
 
+    /// <summary>
+    /// Resolves the <c>owner</c> query filter actually applied to a Studio enumeration query
+    /// (honua-server#3001, item 3). Admins (and every caller while the flag is off) keep today's
+    /// behavior: the client-supplied <paramref name="requestedOwner"/> is honored as-is (or
+    /// omitted, listing every item/draft). Once end-user mode is on, a non-admin caller's
+    /// effective owner filter is always forced to their own resolved id -- the list is
+    /// server-side scoped to "my content", never trusting a client-supplied <c>owner</c> value
+    /// to see another principal's items.
+    /// </summary>
+    private static string? ResolveEffectiveOwnerFilter(
+        IStudioAuthorizationService authorizationService,
+        HttpContext context,
+        string? requestedOwner)
+    {
+        if (authorizationService.IsAdmin(context.User) || !authorizationService.IsEndUserAuthorizationEnabled)
+        {
+            return requestedOwner;
+        }
+
+        return authorizationService.ResolveCallerId(context.User);
+    }
+
     private static int ClampListLimit(int requested)
         => Math.Clamp(requested <= 0 ? 25 : requested, 1, MaxListLimit);
 
@@ -875,11 +1055,31 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleListVersions(
         Guid itemId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
+            // honua-server#3001: an item with no saved versions has nothing to authorize or
+            // hide (the list is empty either way), so the ownership check only runs when the
+            // item actually exists.
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is not null)
+            {
+                var authResult = await EnsureAuthorizedAsync(
+                    authorizationService, auditLog, timeProvider, context,
+                    StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
+                if (authResult is not null)
+                {
+                    return authResult;
+                }
+            }
+
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             return Results.Json(
                 ApiResponse<StudioContentVersionListResponse>.CreateSuccess(new StudioContentVersionListResponse
@@ -900,17 +1100,34 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
             var version = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
-            return version is null
-                ? NotFound(context, "Studio content version was not found.")
-                : Results.Json(
-                    ApiResponse<StudioContentVersion>.CreateSuccess(version),
-                    StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+            if (version is null)
+            {
+                return NotFound(context, "Studio content version was not found.");
+            }
+
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
+                resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
+                isPubliclyReadable: pointers?.PublishedVersionId == versionId).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            return Results.Json(
+                ApiResponse<StudioContentVersion>.CreateSuccess(version),
+                StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -923,6 +1140,9 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         CompareStudioContentVersionsRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -933,6 +1153,25 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            // Ownership is authorized against the left version; both requested versions belong
+            // to the same item id and therefore share the same recorded owner. Comparisons are
+            // never treated as publicly readable (honua-server#3001), even when one side is the
+            // published version, since the diff itself can expose unpublished draft content.
+            var left = await service.GetVersionAsync(itemId, request.LeftVersionId, context.RequestAborted).ConfigureAwait(false);
+            if (left is null)
+            {
+                return NotFound(context, "Studio content version was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ReadContentItem, left.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var comparison = await service.CompareVersionsAsync(
                 itemId,
                 request.LeftVersionId,
@@ -956,6 +1195,9 @@ internal static class StudioPackageEndpoints
         Guid versionId,
         CreateStudioPublicationRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -966,6 +1208,24 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            // Elevated operation (REQ-003): ownership alone is not sufficient -- the caller also
+            // needs a matching StudioDraft Publish operator grant (own-sentinel or per-item),
+            // enforced by IStudioAuthorizationService.
+            var targetVersion = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
+            if (targetVersion is null)
+            {
+                return NotFound(context, "Studio content version was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.PublishRequest, targetVersion.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var publication = await service.CreatePublicationRequestAsync(
                 itemId,
                 versionId,
@@ -1004,11 +1264,29 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
         try
         {
+            var targetVersion = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
+            if (targetVersion is null)
+            {
+                return NotFound(context, "Studio content version was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ReopenVersion, targetVersion.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var draft = await service.ReopenVersionAsync(
                 itemId,
                 versionId,
@@ -1040,6 +1318,9 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         CreateStudioRollbackRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1054,6 +1335,24 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            // Elevated operation (REQ-003): ownership alone is not sufficient -- the caller also
+            // needs a matching StudioDraft Rollback operator grant (own-sentinel or per-item),
+            // enforced by IStudioAuthorizationService.
+            var targetVersion = await service.GetVersionAsync(itemId, request.TargetVersionId, context.RequestAborted).ConfigureAwait(false);
+            if (targetVersion is null)
+            {
+                return NotFound(context, "Studio content version was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.Rollback, targetVersion.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
             var rollback = await service.RollbackAsync(
                 itemId,
                 request.TargetVersionId,
@@ -1088,6 +1387,99 @@ internal static class StudioPackageEndpoints
         }
     }
 
+    /// <summary>
+    /// Authorizes a Studio package-lifecycle operation against the target resource's recorded
+    /// owner (honua-server#3001). Returns <see langword="null"/> when authorized (the caller
+    /// should proceed); otherwise returns the RFC 7807 problem response to return directly,
+    /// having already recorded the denial to the audit log (REQ-003/item 5). Elevated
+    /// (operator-grant-gated) allow decisions are also audited.
+    /// </summary>
+    private static async Task<IResult?> EnsureAuthorizedAsync(
+        IStudioAuthorizationService authorizationService,
+        IAuditLog auditLog,
+        TimeProvider timeProvider,
+        HttpContext context,
+        StudioAuthorizationOperation operation,
+        string? resourceOwnerId,
+        string resourceType,
+        string? resourceId,
+        bool isPubliclyReadable = false)
+    {
+        var callerId = ConsolePrincipal.ResolveActorId(context.User);
+        var decision = await authorizationService.AuthorizeAsync(
+            context.User,
+            callerId,
+            operation,
+            resourceOwnerId,
+            isPubliclyReadable,
+            resourceId,
+            context.RequestAborted).ConfigureAwait(false);
+
+        if (decision.IsAllowed)
+        {
+            if (decision.IsElevated)
+            {
+                await RecordAuthorizationAuditAsync(
+                    auditLog, timeProvider, context, operation, resourceType, resourceId,
+                    AuditOutcome.Success, code: null).ConfigureAwait(false);
+            }
+
+            return null;
+        }
+
+        await RecordAuthorizationAuditAsync(
+            auditLog, timeProvider, context, operation, resourceType, resourceId,
+            AuditOutcome.Denied, decision.Code).ConfigureAwait(false);
+
+        return Forbidden(context, decision.Reason ?? "The caller is not authorized to perform this operation.", decision.Code ?? "studio_authorization/denied");
+    }
+
+    private static Task RecordAuthorizationAuditAsync(
+        IAuditLog auditLog,
+        TimeProvider timeProvider,
+        HttpContext context,
+        StudioAuthorizationOperation operation,
+        string resourceType,
+        string? resourceId,
+        AuditOutcome outcome,
+        string? code)
+    {
+        var actor = ConsolePrincipal.ResolveActorId(context.User) ?? AuditEvent.AnonymousActor;
+        var auditEvent = new AuditEvent
+        {
+            Timestamp = timeProvider.GetUtcNow(),
+            EventType = AuditEventType.Authorization,
+            Actor = actor,
+            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
+                ? AuditActorType.Anonymous
+                : AuditActorType.UserId,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            Action = $"studio.{ToSnakeCase(operation)}",
+            Outcome = outcome,
+            CorrelationId = context.TraceIdentifier,
+            Details = code is null ? string.Empty : $"{{\"code\":\"{code}\"}}",
+        };
+
+        return auditLog.RecordAsync(auditEvent, context.RequestAborted);
+    }
+
+    private static string ToSnakeCase(StudioAuthorizationOperation operation) => operation switch
+    {
+        StudioAuthorizationOperation.CreateDraft => "create_draft",
+        StudioAuthorizationOperation.ReadDraft => "read_draft",
+        StudioAuthorizationOperation.UpdateDraft => "update_draft",
+        StudioAuthorizationOperation.DeleteDraft => "delete_draft",
+        StudioAuthorizationOperation.ValidateDraft => "validate_draft",
+        StudioAuthorizationOperation.CreateVersion => "create_version",
+        StudioAuthorizationOperation.ListOwn => "list_own",
+        StudioAuthorizationOperation.ReadContentItem => "read_content_item",
+        StudioAuthorizationOperation.ReopenVersion => "reopen_version",
+        StudioAuthorizationOperation.PublishRequest => "publish_request",
+        StudioAuthorizationOperation.Rollback => "rollback",
+        _ => operation.ToString(),
+    };
+
     private static bool TryValidateRequest<TRequest>(TRequest request, out string error) where TRequest : notnull
     {
         var results = new List<ValidationResult>();
@@ -1103,6 +1495,14 @@ internal static class StudioPackageEndpoints
 
     private static IResult BadRequest(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status400BadRequest, "Bad Request", detail);
+
+    /// <summary>
+    /// Builds the Studio package-lifecycle authorization-denied RFC 7807 problem, extended with
+    /// a machine-readable <c>code</c> member (honua-server#3001, REQ-004) the SDK client can
+    /// branch on (for example <c>studio_authorization/cross_user_denied</c>).
+    /// </summary>
+    private static IResult Forbidden(HttpContext context, string detail, string code)
+        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status403Forbidden, "Forbidden", detail, code);
 
     private static IResult NotFound(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail);
