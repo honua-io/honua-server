@@ -4,8 +4,9 @@ Operator runbook to bring `demo.honua.io` to full demonstrable capability across
 four product pillars. It covers two separable tracks:
 
 1. **Seed STAC collections** so the Imagery & Terrain Studio shows a live catalog.
-2. **Apply a Pro license** so geocoding, realtime streaming, and FeatureServer editing
-   light up.
+2. **Apply a Pro license** so geocoding failover, realtime streaming, and
+   FeatureServer editing light up. Single-address forward/reverse geocoding is
+   available in Community; batch geocoding requires Enterprise.
 
 > Scope note: the underlying server features already exist. This is **operational
 > enablement** on the deployed demo. The only server code change shipped alongside this
@@ -32,7 +33,7 @@ wins.
 | Area | State | Evidence |
 |---|---|---|
 | Track 1 — STAC seed | **Live.** `/stac/collections` returns `90810` + `90820`; `/stac/search` against `90810` returns 4 features; both collections also appear in `/api/v1/streaming/features/capabilities` layer list. | Direct probe, 2026-07-23 |
-| Track 2 — Pro license | **Live.** `/api/v1/capabilities/manifest` → `policies.currentEdition = "Pro"`, `licenseValidationState = "Valid"`. `geocoding.forward`/`geocoding.reverse`/`geocoding.failover`/`streaming.feature-subscriptions`/`editing.featureserver-edits` all `active: true`. The 14/29 `available:false` capability entries seen on an **anonymous** manifest call are RBAC (`insufficient-policy`, expected with no caller identity) or correctly `minimumEdition: Enterprise` gates (we're Pro) — not a licensing gap. | Direct probe, 2026-07-23 |
+| Track 2 — Pro license | **Live.** `/api/v1/capabilities/manifest` → `policies.currentEdition = "Pro"`, `licenseValidationState = "Valid"`. Community `geocoding.forward`/`geocoding.reverse` and Pro `geocoding.failover`/`streaming.feature-subscriptions`/`editing.featureserver-edits` all report `active: true`; `geocoding.batch` correctly remains Enterprise. The 14/29 `available:false` capability entries seen on an **anonymous** manifest call are RBAC (`insufficient-policy`, expected with no caller identity) or correctly `minimumEdition: Enterprise` gates (we're Pro) — not a licensing gap. | Direct probe, 2026-07-23 |
 | Elevation / terrain | **Live and fully functional**, contradicting the 2026-07-20 probe. `maui-terrain` (layerId 8) is a registered raster dataset; `/elevation/maui-terrain/{value,profile,viewshed,line-of-sight,sun-shadow}` all return real computed results over real Maui terrain (elevations in a sane 4–590 m range), and `/terrain/maui-terrain/tile.json` + `.png` tiles serve `terrain-rgb` encoded tiles. No remediation needed. | Direct probe, 2026-07-23 |
 | Catalog cleanup — layer 68823 | **Done.** Not present in `/rest/services` (25 services, none named `test_service`/68823) or `/ogc/features/collections` (11 collections). Direct probe of `/rest/services/test_service/FeatureServer` returns `499 Unauthorized` (`allowAnonymous: false`), consistent with the recorded remediation (`PUT /api/v1/admin/services/test_service/access-policy {"allowAnonymous": false}`). | Direct probe, 2026-07-23 |
 | Geocoding | **Not working — categorical failure, not a cold-start.** The locator is published as `World` (not `maui`, which the original probe and this runbook's Step 4 assumed — `GET /rest/services/World/GeocodeServer?f=json` returns valid metadata with `Provider: nominatim`). But every `findAddressCandidates` call — first and repeated — fails after ~15.8s with `500 "Geocoding service error"`. Two consecutive calls both took ~15.8s (15.790s, 15.854s): this rules out a cold-start/keep-warm fix. Root cause (per the 2026-07-20/21 coordinator note, reconfirmed): the demo Lambda's VPC subnets have no NAT/IGW egress route, so the external Nominatim endpoint is unreachable from inside the VPC on every call. | Direct probe, 2026-07-23 |
@@ -174,8 +175,8 @@ A Pro license unblocks the three remaining Pro-gated demo areas. Entitlement key
 |----------------------|---------------------------------------|-------------|
 | Realtime streaming   | `streaming.feature-subscriptions`     | Pro         |
 | FeatureServer edits  | `editing.featureserver-edits`         | Pro         |
-| Forward geocoding    | `geocoding.forward`                   | Pro         |
-| Reverse geocoding    | `geocoding.reverse`                   | Pro         |
+| Forward geocoding    | `geocoding.forward`                   | Community   |
+| Reverse geocoding    | `geocoding.reverse`                   | Community   |
 | Geocoding failover   | `geocoding.failover`                  | Pro         |
 
 > Editing note: only the **Esri GeoServices FeatureServer** write surface
@@ -274,9 +275,11 @@ Geocoding__DefaultProvider=nominatim       # confirmed live
 # provider request construction would matter.
 ```
 
-The forward/reverse geocoding **operations** are Pro-gated (`geocoding.forward` /
-`geocoding.reverse`), so the Pro license from Steps 1–3 must be active (it is — see
-*As-verified live state* above).
+The forward/reverse geocoding **operations** are Community capabilities
+(`geocoding.forward` / `geocoding.reverse`), so they do not require the Pro
+license from Steps 1–3. Automatic provider failover remains Pro
+(`geocoding.failover`), while multi-address execution remains Enterprise
+(`geocoding.batch`).
 
 ### Step 5 — Streaming + editing need no extra config
 
