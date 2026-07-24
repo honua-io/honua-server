@@ -470,6 +470,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var response = await scopedClient.GetAsync($"/api/v1/studio/package-drafts/{Guid.NewGuid():D}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        problem.GetProperty("type").GetString().Should().Be("https://honua.io/problems/studio");
+        problem.GetProperty("title").GetString().Should().Be("Forbidden");
+        problem.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.Forbidden);
+        problem.GetProperty("code").GetString().Should().Be("studio_authorization/end_user_mode_disabled");
     }
 
     [IntegrationTest]
@@ -826,6 +832,41 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 new CreateStudioRollbackRequest { TargetVersionId = bobVersionId, Target = StudioRollbackPointer.Current },
                 StudioApiJsonContext.Default.CreateStudioRollbackRequest));
         aliceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions")]
+    public async Task ListVersions_FlagOn_FiltersEachVersionByItsOwner()
+    {
+        // PR #3018 review, round 6, item 1: content-item ownership cannot authorize the
+        // complete immutable history when individual versions under that item have different
+        // owners. Each returned version must satisfy the same owner-or-published rule as the
+        // single-version endpoint.
+        await using var fixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = fixture.CreateAdminClient();
+        using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
+        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
+
+        var aliceResponse = await aliceClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
+        aliceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var aliceVersions = await ReadAsync<StudioContentVersionListResponse>(
+            aliceResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
+        aliceVersions.Versions.Should().ContainSingle(version => version.OwnerId == aliceOwnerId);
+        aliceVersions.Versions.Should().NotContain(version => version.VersionId == bobVersionId);
+
+        var bobResponse = await bobClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
+        bobResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bobVersions = await ReadAsync<StudioContentVersionListResponse>(
+            bobResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
+        bobVersions.Versions.Should().ContainSingle(version =>
+            version.VersionId == bobVersionId && version.OwnerId == bobOwnerId);
     }
 
     [IntegrationTest]

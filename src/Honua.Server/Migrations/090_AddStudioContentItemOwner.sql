@@ -14,20 +14,30 @@
 -- later draft/version upsert for the same item (PostgresStudioPackageStore.UpsertItemAsync's
 -- ON CONFLICT clause intentionally excludes owner_id).
 --
--- Existing rows predate the owner_id column, so they are backfilled from created_by: every
--- existing item's creator becomes its owner, matching the enumeration `owner` filter's prior
--- created_by-based behavior exactly (a zero-behavior-change backfill for already-migrated
--- deployments) so honua-server#3001's end-user authorization has a well-defined owner for
--- every pre-existing item from the moment the flag is turned on.
+-- Existing rows predate the owner_id column. Prefer the earliest existing draft with a
+-- non-blank owner_id: an admin may have created the item while explicitly assigning that
+-- draft to another principal, and making created_by (the admin) the immutable item owner
+-- would strand the designated owner. created_by remains the fallback when no owned draft
+-- survives for the item. Choosing the earliest owned draft mirrors the write path's
+-- set-once-at-item-creation ownership rule when multiple drafts exist.
 --
 -- Sequence numbering per ADR-0045: `089` is the current highest prefix as of this migration.
 ALTER TABLE honua.studio_content_items
     ADD COLUMN IF NOT EXISTS owner_id TEXT;
 
-UPDATE honua.studio_content_items
-SET owner_id = created_by
-WHERE owner_id IS NULL
-  AND created_by IS NOT NULL;
+UPDATE honua.studio_content_items AS item
+SET owner_id = COALESCE(
+    (
+        SELECT NULLIF(BTRIM(draft.owner_id), '')
+        FROM honua.studio_package_drafts AS draft
+        WHERE draft.item_id = item.item_id
+          AND NULLIF(BTRIM(draft.owner_id), '') IS NOT NULL
+        ORDER BY draft.created_at ASC, draft.draft_id ASC
+        LIMIT 1
+    ),
+    item.created_by
+)
+WHERE item.owner_id IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_studio_content_items_owner_list
     ON honua.studio_content_items (owner_id, updated_at DESC, item_id DESC)

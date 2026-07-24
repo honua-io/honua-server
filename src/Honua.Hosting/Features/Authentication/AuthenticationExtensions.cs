@@ -3,6 +3,7 @@
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
@@ -93,6 +94,7 @@ public static class AuthenticationExtensions
         // Widens the Studio package lifecycle surface from admin-only to ownership-scoped end
         // users behind a feature flag (honua-server#3001).
         services.AddSingleton<IAuthorizationHandler, StudioLifecycleAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, StudioLifecycleAuthorizationMiddlewareResultHandler>();
 
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)

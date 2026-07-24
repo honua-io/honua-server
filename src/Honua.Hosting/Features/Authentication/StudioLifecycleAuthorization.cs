@@ -4,7 +4,10 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.Studio.Services;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
@@ -82,8 +85,10 @@ internal sealed class StudioLifecycleAuthorizationHandler(
         }
 
         AuthenticationLog.StudioEndUserModeDenied(_logger);
-        // Leave the requirement unmet (do not Fail): yields a 403 and lets other
-        // handlers/requirements report their own outcome, matching the admin handler.
+        // Carry the stable Studio denial code into the middleware result handler. Leaving the
+        // requirement merely unmet delegates to the authentication scheme's generic 403 body,
+        // which violates the Studio lifecycle RFC 7807 contract.
+        context.Fail(new AuthorizationFailureReason(this, StudioAuthorizationService.EndUserModeDisabledCode));
         return Task.CompletedTask;
     }
 
@@ -112,4 +117,44 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     private static bool IsApiKeyPrincipal(ClaimsPrincipal principal)
         => principal.Identities.Any(identity =>
             string.Equals(identity.AuthenticationType, AuthenticationExtensions.ApiKeyScheme, StringComparison.Ordinal));
+}
+
+/// <summary>
+/// Preserves the Studio lifecycle RFC 7807 contract when the route-group policy rejects an
+/// authenticated non-admin before the endpoint handler can produce its normal denial result.
+/// </summary>
+internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
+{
+    private const string StudioProblemType = "https://honua.io/problems/studio";
+    private const string EndUserModeDisabledDetail = "Studio package lifecycle operations require the admin role.";
+    private readonly AuthorizationMiddlewareResultHandler _fallback = new();
+
+    /// <inheritdoc />
+    public async Task HandleAsync(
+        RequestDelegate next,
+        HttpContext context,
+        AuthorizationPolicy policy,
+        PolicyAuthorizationResult authorizeResult)
+    {
+        var isEndUserModeDisabled = authorizeResult.Forbidden
+            && authorizeResult.AuthorizationFailure?.FailureReasons.Any(static reason =>
+                string.Equals(
+                    reason.Message,
+                    StudioAuthorizationService.EndUserModeDisabledCode,
+                    StringComparison.Ordinal)) == true;
+
+        if (isEndUserModeDisabled)
+        {
+            await ProblemDetailsHelpers.CreateProblem(
+                context,
+                StudioProblemType,
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                EndUserModeDisabledDetail,
+                StudioAuthorizationService.EndUserModeDisabledCode).ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        await _fallback.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+    }
 }

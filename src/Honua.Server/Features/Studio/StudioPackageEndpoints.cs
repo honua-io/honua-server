@@ -1171,45 +1171,45 @@ internal static class StudioPackageEndpoints
     {
         try
         {
-            // honua-server#3001: an item with no saved versions has nothing to authorize or
-            // hide (the list is empty either way), so the ownership check only runs when the
-            // item actually exists.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
-            Guid? nonOwnerVisibleVersionId = null;
-            if (pointers is not null)
+            var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+
+            // PR #3018 review, round 6, item 1: version.OwnerId is an immutable snapshot of
+            // the draft owner that created that specific version and may differ from the
+            // content item's owner. Authorizing once against the item would therefore expose
+            // another owner's unpublished version in a mixed-owner history. Apply the exact
+            // same owner-or-published check as HandleGetVersion to every returned version.
+            // Preserve the previous fail-closed response when no version is visible, while
+            // returning only the authorized subset when the history contains a mix.
+            var visibleVersions = new List<StudioContentVersion>(versions.Count);
+            IResult? firstDenial = null;
+            foreach (var version in versions)
             {
                 var authResult = await EnsureAuthorizedAsync(
                     authorization, context,
-                    StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
-                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
-                    isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
-                if (authResult is not null)
+                    StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
+                    resourceType: "studio-content-version", resourceId: version.VersionId.ToString("D"),
+                    isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
+                if (authResult is null)
                 {
-                    return authResult;
+                    visibleVersions.Add(version);
                 }
-
-                // honua-server#3001: a published pointer only admits a non-owner into this
-                // endpoint at all (via isPubliclyReadable above) -- it must not expose the
-                // item's entire immutable history. Remember the single version a non-owner
-                // may see; GetVersion is already scoped identically (isPubliclyReadable
-                // requires versionId == PublishedVersionId).
-                if (!IsOwnerOrAdmin(authorization, context, pointers.OwnerId))
+                else
                 {
-                    nonOwnerVisibleVersionId = pointers.PublishedVersionId;
+                    firstDenial ??= authResult;
                 }
             }
 
-            var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
-            if (nonOwnerVisibleVersionId is { } publishedVersionId)
+            if (visibleVersions.Count == 0 && firstDenial is not null)
             {
-                versions = versions.Where(v => v.VersionId == publishedVersionId).ToArray();
+                return firstDenial;
             }
 
             return Results.Json(
                 ApiResponse<StudioContentVersionListResponse>.CreateSuccess(new StudioContentVersionListResponse
                 {
                     ItemId = itemId,
-                    Versions = versions,
+                    Versions = visibleVersions,
                 }),
                 StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
         }

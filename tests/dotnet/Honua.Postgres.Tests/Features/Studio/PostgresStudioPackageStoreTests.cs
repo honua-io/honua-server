@@ -385,6 +385,57 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task Migration090_BackfillsDraftOwnerBeforeCreatorFallback()
+    {
+        // PR #3018 review, round 6, item 2: an admin could create an item while explicitly
+        // assigning its existing draft to an end user before content-item owner_id existed.
+        // The migration must preserve that designated draft owner; created_by is only the
+        // fallback for an item without an owned draft.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await ApplyStudioMigrationAsync(schema, "035_CreateStudioPackageLifecycle.sql");
+
+            var draftOwnedItemId = Guid.NewGuid();
+            var creatorFallbackItemId = Guid.NewGuid();
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $$"""
+                    INSERT INTO "{{schema}}".studio_content_items
+                        (item_id, package_key, family, created_by)
+                    VALUES
+                        (@draft_owned_item_id, 'draft-owned-item', 'query', 'admin-creator'),
+                        (@creator_fallback_item_id, 'creator-fallback-item', 'query', 'fallback-creator');
+
+                    INSERT INTO "{{schema}}".studio_package_drafts
+                        (draft_id, item_id, package_key, owner_id, family, envelope, validation, created_by)
+                    VALUES
+                        (@draft_id, @draft_owned_item_id, 'draft-owned-item', 'designated-owner',
+                         'query', '{}'::jsonb, '{}'::jsonb, 'admin-creator');
+                    """;
+                command.Parameters.AddWithValue("@draft_owned_item_id", draftOwnedItemId);
+                command.Parameters.AddWithValue("@creator_fallback_item_id", creatorFallbackItemId);
+                command.Parameters.AddWithValue("@draft_id", Guid.NewGuid());
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await ApplyStudioMigrationAsync(schema, "090_AddStudioContentItemOwner.sql");
+
+            (await ReadContentItemOwnerAsync(schema, draftOwnedItemId)).Should().Be(
+                "designated-owner",
+                "an existing draft owner is the content item's designated owner even when an admin created the row");
+            (await ReadContentItemOwnerAsync(schema, creatorFallbackItemId)).Should().Be(
+                "fallback-creator",
+                "created_by remains the fallback when no owned draft exists");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ListDrafts_FiltersByOwnerAndSearchTerm()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
@@ -496,11 +547,29 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      "090_AddStudioContentItemOwner.sql",
                  })
         {
-            var migrationPath = Path.Join(root, "src", "Honua.Server", "Migrations", migrationFile);
-            var sql = await File.ReadAllTextAsync(migrationPath);
-            sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
-            await fixture.ExecuteAsync(sql, schema);
+            await ApplyStudioMigrationAsync(schema, migrationFile, root);
         }
+    }
+
+    private async Task ApplyStudioMigrationAsync(string schema, string migrationFile, string? root = null)
+    {
+        var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
+        var sql = await File.ReadAllTextAsync(migrationPath);
+        sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        await fixture.ExecuteAsync(sql, schema);
+    }
+
+    private async Task<string?> ReadContentItemOwnerAsync(string schema, Guid itemId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT owner_id
+            FROM "{schema}".studio_content_items
+            WHERE item_id = @item_id
+            """;
+        command.Parameters.AddWithValue("@item_id", itemId);
+        return await command.ExecuteScalarAsync() as string;
     }
 
     private async Task<int> CountDependencyRowsAsync(string schema, Guid versionId)
