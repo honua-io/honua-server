@@ -133,7 +133,8 @@ internal static partial class TilesEndpoints
         var tileLimits = limitsOptions.Value.Tiles;
         var titleBase = BuildDatasetTitleBase(selectedLayers!);
         var querySuffix = BuildCollectionsQuerySuffix(collections, selectedLayers!);
-        var advertiseVectorTiles = selectedLayers!.Length == 1;
+        var advertiseVectorTiles = selectedLayers!.Length == 1 &&
+            await SupportsVectorTilesAsync(selectedLayers[0], context, cancellationToken).ConfigureAwait(false);
         var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles, tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
@@ -197,6 +198,8 @@ internal static partial class TilesEndpoints
         var description = layers.Length == 1
             ? layers[0].Description
             : $"Dataset tiles across {layers.Length} collections.";
+        var advertiseVectorTiles = layers.Length == 1 &&
+            await SupportsVectorTilesAsync(layers[0], context, cancellationToken).ConfigureAwait(false);
 
         var (customEntry, customGeometry) = ResolveCustomTilesetGrid(tileMatrixSetEntry, tileMatrixSetRegistry, limitsOptions);
 
@@ -210,7 +213,7 @@ internal static partial class TilesEndpoints
             description,
             tileLimits,
             tileMatrixSetId,
-            advertiseVectorTiles: layers.Length == 1,
+            advertiseVectorTiles,
             customEntry,
             customGeometry);
 
@@ -314,7 +317,14 @@ internal static partial class TilesEndpoints
         var layer = resolution.Layer!;
         var tileLimits = limitsOptions.Value.Tiles;
         var encodedCollectionId = Uri.EscapeDataString(collectionId);
-        var tilesets = BuildTileSetItems(layer, baseUrl, tileLimits, encodedCollectionId, tileMatrixSetRegistry).ToImmutableArray();
+        var advertiseVectorTiles = await SupportsVectorTilesAsync(layer, context, cancellationToken).ConfigureAwait(false);
+        var tilesets = BuildTileSetItems(
+            layer,
+            baseUrl,
+            tileLimits,
+            advertiseVectorTiles,
+            encodedCollectionId,
+            tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/collections/{encodedCollectionId}/tiles",
@@ -371,6 +381,7 @@ internal static partial class TilesEndpoints
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
 
         var (customEntry, customGeometry) = ResolveCustomTilesetGrid(tileMatrixSetEntry, tileMatrixSetRegistry, limitsOptions);
+        var advertiseVectorTiles = await SupportsVectorTilesAsync(layer, context, cancellationToken).ConfigureAwait(false);
 
         var tileset = BuildTileset(
             layer.DisplayName,
@@ -382,7 +393,7 @@ internal static partial class TilesEndpoints
             layer.Description,
             tileLimits,
             tileMatrixSetId,
-            advertiseVectorTiles: true,
+            advertiseVectorTiles,
             customEntry,
             customGeometry);
 
@@ -751,11 +762,19 @@ internal static partial class TilesEndpoints
         }
 
         var usesRoutedReader = TileFeatureProviderResolver.RequiresRouting(layer.Snapshot, layer.Publication);
+        var readerResolution = await ResolveFeatureReaderAsync(
+            layer,
+            context.RequestServices.GetRequiredService<IFeatureReader>(),
+            providerQueryRouter,
+            cancellationToken).ConfigureAwait(false);
+        var sourceSrid = usesRoutedReader
+            ? readerResolution.StorageSrid ?? layer.SpatialReferenceSrid
+            : filterSrid;
         TileBounds queryBounds;
         try
         {
             queryBounds = usesRoutedReader
-                ? TransformTileBounds(bounds, filterSrid, layer.SpatialReferenceSrid)
+                ? TransformTileBounds(bounds, filterSrid, sourceSrid)
                 : bounds;
         }
         catch (NotSupportedException)
@@ -763,25 +782,25 @@ internal static partial class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 $"Collection '{layer.CollectionId}' cannot render raster tiles from SRID " +
-                $"{layer.SpatialReferenceSrid} into tile-matrix SRID {filterSrid}.");
+                $"{sourceSrid} into tile-matrix SRID {filterSrid}.");
         }
 
-        var querySrid = usesRoutedReader ? layer.SpatialReferenceSrid : filterSrid;
+        var querySrid = sourceSrid;
         var spatialFilter = CreateBboxSpatialFilter(queryBounds, querySrid);
 
-        var featureReader = await ResolveFeatureReaderAsync(
-            layer, context.RequestServices.GetRequiredService<IFeatureReader>(), providerQueryRouter, cancellationToken)
-            .ConfigureAwait(false);
         var featureQuery = new FeatureQuery
         {
             SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = layer.SpatialReferenceSrid,
+            SpatialReferenceSrid = usesRoutedReader ? sourceSrid : layer.SpatialReferenceSrid,
             OutputSrid = querySrid,
             Limit = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000,
             TemporalFilter = temporalFilter
         };
 
-        var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
+        var queryResult = await readerResolution.Reader.QueryAsync(
+            layer.StorageLayerId,
+            featureQuery,
+            cancellationToken);
 
         if (queryResult.Items.Length == 0)
         {
@@ -795,7 +814,7 @@ internal static partial class TilesEndpoints
             queryResult.Items,
             bounds,
             ToTileGeometryKind(layer.GeometryType),
-            sourceSrid: usesRoutedReader ? layer.SpatialReferenceSrid : null,
+            sourceSrid: usesRoutedReader ? sourceSrid : null,
             targetSrid: usesRoutedReader ? filterSrid : null);
 
         activity?.SetStatus(ActivityStatusCode.Ok);
@@ -887,11 +906,19 @@ internal static partial class TilesEndpoints
             // primary- and secondary-provider-backed collections, so each layer's reader must be
             // resolved independently rather than sharing one DI-registered primary reader.
             var usesRoutedReader = TileFeatureProviderResolver.RequiresRouting(layer.Snapshot, layer.Publication);
+            var readerResolution = await ResolveFeatureReaderAsync(
+                layer,
+                fallbackFeatureReader,
+                providerQueryRouter,
+                cancellationToken).ConfigureAwait(false);
+            var sourceSrid = usesRoutedReader
+                ? readerResolution.StorageSrid ?? layer.SpatialReferenceSrid
+                : filterSrid;
             TileBounds queryBounds;
             try
             {
                 queryBounds = usesRoutedReader
-                    ? TransformTileBounds(bounds, filterSrid, layer.SpatialReferenceSrid)
+                    ? TransformTileBounds(bounds, filterSrid, sourceSrid)
                     : bounds;
             }
             catch (NotSupportedException)
@@ -899,23 +926,24 @@ internal static partial class TilesEndpoints
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
                     $"Collection '{layer.CollectionId}' cannot render raster tiles from SRID " +
-                    $"{layer.SpatialReferenceSrid} into tile-matrix SRID {filterSrid}.");
+                    $"{sourceSrid} into tile-matrix SRID {filterSrid}.");
             }
 
-            var querySrid = usesRoutedReader ? layer.SpatialReferenceSrid : filterSrid;
+            var querySrid = sourceSrid;
             var spatialFilter = CreateBboxSpatialFilter(queryBounds, querySrid);
-            var featureReader = await ResolveFeatureReaderAsync(
-                layer, fallbackFeatureReader, providerQueryRouter, cancellationToken).ConfigureAwait(false);
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
-                SpatialReferenceSrid = layer.SpatialReferenceSrid,
+                SpatialReferenceSrid = usesRoutedReader ? sourceSrid : layer.SpatialReferenceSrid,
                 OutputSrid = querySrid,
                 Limit = remainingBudget,
                 TemporalFilter = GetTemporalFilterForLayer(layer, temporalFilters)
             };
 
-            var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
+            var queryResult = await readerResolution.Reader.QueryAsync(
+                layer.StorageLayerId,
+                featureQuery,
+                cancellationToken);
             if (queryResult.Items.Length == 0)
             {
                 continue;
@@ -924,7 +952,7 @@ internal static partial class TilesEndpoints
             renderedLayers.Add(new TileRenderer.TileRenderLayer(
                 queryResult.Items,
                 ToTileGeometryKind(layer.GeometryType),
-                SourceSrid: usesRoutedReader ? layer.SpatialReferenceSrid : null,
+                SourceSrid: usesRoutedReader ? sourceSrid : null,
                 TargetSrid: usesRoutedReader ? filterSrid : null));
             totalFeatureCount += queryResult.Items.Length;
             remainingBudget -= queryResult.Items.Length;
@@ -1116,6 +1144,7 @@ internal static partial class TilesEndpoints
         TileRequestLayer layer,
         string baseUrl,
         TileLimits tileLimits,
+        bool advertiseVectorTiles,
         string? encodedCollectionId = null,
         ITileMatrixSetRegistry? registry = null)
     {
@@ -1131,7 +1160,8 @@ internal static partial class TilesEndpoints
                 $"{baseUrl}/ogc/tiles/tileMatrixSets/{descriptor.Id}",
                 "Tileset metadata",
                 tileLimits,
-                descriptor);
+                descriptor,
+                advertiseVectorTiles);
         }
 
         // Append any operator-defined custom gridsets after the two built-ins (#1916). Default
@@ -1147,7 +1177,7 @@ internal static partial class TilesEndpoints
                 "Tileset metadata",
                 entry,
                 geometry,
-                advertiseVectorTiles: true);
+                advertiseVectorTiles);
         }
     }
 
@@ -1696,18 +1726,32 @@ internal static partial class TilesEndpoints
     /// storage binding names a secondary/additional provider connection is rendered from
     /// that provider rather than the DI-registered primary reader.
     /// </summary>
-    private static async Task<IFeatureReader> ResolveFeatureReaderAsync(
+    private static async Task<TileFeatureReaderResolution> ResolveFeatureReaderAsync(
         TileRequestLayer layer,
         IFeatureReader fallbackReader,
         FeatureProviderQueryRouter? providerQueryRouter,
         CancellationToken cancellationToken)
-        => await new TileFeatureProviderResolver(providerQueryRouter).ResolveFeatureReaderAsync(
+        => await new TileFeatureProviderResolver(providerQueryRouter).ResolveFeatureReaderWithStorageAsync(
             layer.Snapshot,
             layer.Service,
             layer.Resource,
             layer.Publication,
             layer.StorageLayerId,
             fallbackReader,
+            layer.SpatialReferenceSrid,
+            cancellationToken).ConfigureAwait(false);
+
+    private static async Task<bool> SupportsVectorTilesAsync(
+        TileRequestLayer layer,
+        HttpContext context,
+        CancellationToken cancellationToken)
+        => await new TileFeatureProviderResolver(
+            context.RequestServices.GetService<FeatureProviderQueryRouter>()).SupportsVectorTilesAsync(
+            layer.Snapshot,
+            layer.Service,
+            layer.Resource,
+            layer.Publication,
+            layer.StorageLayerId,
             cancellationToken).ConfigureAwait(false);
 
     /// <summary>

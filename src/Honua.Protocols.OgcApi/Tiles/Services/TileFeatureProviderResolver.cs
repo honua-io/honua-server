@@ -32,14 +32,38 @@ internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? pr
         int storageLayerId,
         IFeatureReader fallbackReader,
         CancellationToken cancellationToken)
+        => (await ResolveFeatureReaderWithStorageAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            fallbackReader,
+            fallbackStorageSrid: null,
+            cancellationToken).ConfigureAwait(false)).Reader;
+
+    /// <summary>
+    /// Resolves the raster feature reader together with the physical storage SRID selected by
+    /// its binding. Routed providers compare filters against, and return WKB in, this CRS even
+    /// when the publication advertises a projected-on-read CRS.
+    /// </summary>
+    public async Task<TileFeatureReaderResolution> ResolveFeatureReaderWithStorageAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        IFeatureReader fallbackReader,
+        int? fallbackStorageSrid,
+        CancellationToken cancellationToken)
     {
         if (!RequiresRouting(snapshot, publication))
         {
-            return fallbackReader;
+            return new TileFeatureReaderResolution(fallbackReader, fallbackStorageSrid);
         }
 
         var router = RequireRouter();
-        return await router.ResolveReaderAsync(
+        var binding = await router.ResolveBindingAsync(
             snapshot,
             service,
             resource,
@@ -47,6 +71,14 @@ internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? pr
             storageLayerId,
             FeatureProviderReadOperation.Query,
             cancellationToken).ConfigureAwait(false);
+
+        var reader = binding.Provider is IBindableFeatureDataProvider bindableProvider
+            ? bindableProvider.CreateReaderForBinding(binding)
+            : binding.Provider.Reader;
+
+        return new TileFeatureReaderResolution(
+            reader,
+            binding.StorageMapping.StorageSrid ?? fallbackStorageSrid);
     }
 
     /// <summary>
@@ -96,6 +128,36 @@ internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? pr
     }
 
     /// <summary>
+    /// Reports whether a collection can safely advertise native vector tiles. Routed
+    /// publications require a binding-aware tile provider; otherwise their discoverable tile
+    /// metadata must advertise the raster path that every query-capable provider supports.
+    /// </summary>
+    public async Task<bool> SupportsVectorTilesAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        CancellationToken cancellationToken)
+    {
+        if (!RequiresRouting(snapshot, publication))
+        {
+            return true;
+        }
+
+        var binding = await RequireRouter().ResolveBindingAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            storageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+
+        return binding.Provider is IBindableTileProvider;
+    }
+
+    /// <summary>
     /// A publication only routes away from the primary reader/tile provider when its resolved
     /// storage binding carries a connection id. Resolution follows Metadata v2 semantics:
     /// publication binding, resource primary binding, then the resource's first binding. A
@@ -134,3 +196,10 @@ internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? pr
 /// <param name="UnsupportedProviderName">Canonical name of the resolved provider when it does
 /// not implement <see cref="ITileProvider"/>; <see langword="null"/> otherwise.</param>
 internal readonly record struct TileProviderResolution(ITileProvider? Provider, string? UnsupportedProviderName);
+
+/// <summary>
+/// Raster reader resolution, including the physical SRID used by the selected storage binding.
+/// </summary>
+/// <param name="Reader">Resolved feature reader.</param>
+/// <param name="StorageSrid">Physical storage SRID, when declared by metadata.</param>
+internal readonly record struct TileFeatureReaderResolution(IFeatureReader Reader, int? StorageSrid);

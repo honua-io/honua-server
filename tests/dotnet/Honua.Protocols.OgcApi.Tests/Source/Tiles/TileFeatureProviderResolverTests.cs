@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -40,6 +41,35 @@ public sealed class TileFeatureProviderResolverTests
 
         resolved.Should().BeSameAs(secondaryReader);
         await fallbackReader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
+    }
+
+    [Fact]
+    public async Task ResolveFeatureReaderWithStorageAsync_UsesRoutedBindingsPhysicalSrid()
+    {
+        var connectionId = Guid.NewGuid();
+        var secondaryReader = Substitute.For<IFeatureReader>();
+        var secondaryProvider = Substitute.For<IFeatureDataProvider>();
+        secondaryProvider.ProviderName.Returns(DataProviderNames.SqlServer);
+        secondaryProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        secondaryProvider.Reader.Returns(secondaryReader);
+        var resolver = new TileFeatureProviderResolver(CreateRouter(connectionId, secondaryProvider));
+        var fallbackReader = Substitute.For<IFeatureReader>();
+        var (snapshot, service, resource, publication) = CreateSnapshot(
+            connectionId.ToString(),
+            storageSrid: 3857);
+
+        var resolution = await resolver.ResolveFeatureReaderWithStorageAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            41,
+            fallbackReader,
+            fallbackStorageSrid: 4326,
+            CancellationToken.None);
+
+        resolution.Reader.Should().BeSameAs(secondaryReader);
+        resolution.StorageSrid.Should().Be(3857);
     }
 
     [Fact]
@@ -149,6 +179,28 @@ public sealed class TileFeatureProviderResolverTests
     }
 
     [Fact]
+    public async Task SupportsVectorTilesAsync_SecondaryProviderWithoutTileSupport_ReturnsFalse()
+    {
+        var connectionId = Guid.NewGuid();
+        var secondaryProvider = Substitute.For<IFeatureDataProvider>();
+        secondaryProvider.ProviderName.Returns(DataProviderNames.SqlServer);
+        secondaryProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        secondaryProvider.Reader.Returns(Substitute.For<IFeatureReader>());
+        var resolver = new TileFeatureProviderResolver(CreateRouter(connectionId, secondaryProvider));
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var supported = await resolver.SupportsVectorTilesAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            41,
+            CancellationToken.None);
+
+        supported.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ResolveTileProviderAsync_ResourceFirstBinding_BindsSecondaryProvider()
     {
         var connectionId = Guid.NewGuid();
@@ -222,7 +274,8 @@ public sealed class TileFeatureProviderResolverTests
         CreateSnapshot(
             string? connectionId,
             bool publicationUsesExplicitBinding = true,
-            bool resourceUsesPrimaryBinding = false)
+            bool resourceUsesPrimaryBinding = false,
+            int? storageSrid = null)
     {
         var service = new MetadataV2Service
         {
@@ -254,7 +307,13 @@ public sealed class TileFeatureProviderResolverTests
             ConnectionId = connectionId,
             StorageType = MetadataV2StorageType.RelationalTable,
             Locator = "dbo.secondary",
-            StorageLayerId = 41
+            StorageLayerId = 41,
+            Options = storageSrid.HasValue
+                ? new Dictionary<string, JsonElement>
+                {
+                    ["storageSrid"] = JsonSerializer.SerializeToElement(storageSrid.Value)
+                }
+                : new Dictionary<string, JsonElement>()
         };
         var publication = new MetadataV2Publication
         {
