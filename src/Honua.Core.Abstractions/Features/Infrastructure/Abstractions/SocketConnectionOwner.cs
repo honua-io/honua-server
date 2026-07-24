@@ -34,7 +34,16 @@ public sealed class SocketConnectionOwner : IDisposable
     {
         var socket = Interlocked.Exchange(ref _socket, null)
             ?? throw new ObjectDisposedException(nameof(SocketConnectionOwner));
-        return new NetworkStream(socket, ownsSocket: true);
+
+        try
+        {
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
     }
 
     /// <inheritdoc />
