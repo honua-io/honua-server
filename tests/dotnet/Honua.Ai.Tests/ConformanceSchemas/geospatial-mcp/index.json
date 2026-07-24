@@ -355,6 +355,102 @@
       "schema": "tools/list_capabilities.schema.json",
       "implementationStatus": "implemented",
       "notes": "Honua extension (#1949): self-describing manifest of the live tool/resource surface for a cold client LLM. Pending formalization in the standard; schema marks x-honua-extension."
+    },
+    {
+      "standardName": "studio_create_draft",
+      "referenceToolName": "honua_studio_create_draft",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_create_draft.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): creates a mutable Studio package lifecycle draft (query/analysis/map/dashboard/report/form/app/workflow/gp/etl family). AD-8: composition state IS the lifecycle draft. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_get_draft",
+      "referenceToolName": "honua_studio_get_draft",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_get_draft.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): reads a Studio package lifecycle draft by id. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_update_draft",
+      "referenceToolName": "honua_studio_update_draft",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_update_draft.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): generation-checked whole-envelope update of a Studio package lifecycle draft. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_validate_draft",
+      "referenceToolName": "honua_studio_validate_draft",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_validate_draft.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): validates a Studio package lifecycle draft's current envelope. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_preview_draft",
+      "referenceToolName": "honua_studio_preview_draft",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_preview_draft.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): builds a read-only preview plan for a Studio package lifecycle draft. Pending formalization in the standard's preview_map_package/preview_app_package family."
+    },
+    {
+      "standardName": "studio_add_layer",
+      "referenceToolName": "honua_studio_add_layer",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_add_layer.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): adds a layer to a map/app-family Studio draft's composition, generation-checked. Taxonomy-aligned with the honua-sdk-js agent-tools addLayer shape. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_remove_layer",
+      "referenceToolName": "honua_studio_remove_layer",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_remove_layer.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): removes a layer from a map/app-family Studio draft's composition, generation-checked. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_set_layer_style",
+      "referenceToolName": "honua_studio_set_layer_style",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_set_layer_style.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): sets or clears a composed layer's bound style reference, generation-checked. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_set_view",
+      "referenceToolName": "honua_studio_set_view",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_set_view.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): replaces a map/app-family Studio draft's composition view, generation-checked. Taxonomy-aligned with the honua-sdk-js agent-tools setViewport shape. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_add_widget",
+      "referenceToolName": "honua_studio_add_widget",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_add_widget.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): adds a widget to an app-family Studio draft's composition, generation-checked. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_remove_widget",
+      "referenceToolName": "honua_studio_remove_widget",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_remove_widget.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): removes a widget from an app-family Studio draft's composition, generation-checked. Pending formalization in the standard's map/app composition family."
+    },
+    {
+      "standardName": "studio_propose_publication",
+      "referenceToolName": "honua_studio_propose_publication",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_propose_publication.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (honua-server#3002): records publish/share/embed intent on a Studio draft for human review ONLY — no publish/share/embed execution tool exists on the agent surface (REQ-003/REQ-009). Pending formalization in the standard's publish family."
     }
   ],
   "resources": [

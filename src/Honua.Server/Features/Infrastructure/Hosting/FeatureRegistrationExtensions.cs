@@ -44,6 +44,7 @@ using Honua.Protocols.GeoServices.VersionManagementServer;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.NlQuery;
 using Honua.Ai.WorkflowGeneration;
+using Honua.Ai.StudioAiProxy;
 using Honua.Plugins;
 using Honua.Server.Features.Plugins;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -128,6 +129,7 @@ internal static class FeatureRegistrationExtensions
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
         services.AddWorkflowGeneration(configuration);
+        services.AddStudioAiProxy(configuration);
         services.AddStac();
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
         // Set Experimental__Features__SensorThings=true to opt in.
