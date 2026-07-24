@@ -9,10 +9,9 @@ namespace Honua.Protocols.Ogc.Api.Tiles.Services;
 
 /// <summary>
 /// Resolves OGC API Tiles raster/vector tile operations through the provider selected by a
-/// layer's Metadata v2 storage binding (honua-server#2962), mirroring
-/// <c>Honua.Protocols.OData.Services.ODataFeatureProviderResolver</c>'s routing decision: a
-/// publication only routes away from the primary reader/tile provider when its resolved
-/// storage binding carries a connection id.
+/// layer's Metadata v2 storage binding (honua-server#2962). A publication only routes away
+/// from the primary reader/tile provider when its resolved storage binding carries a
+/// connection id.
 /// </summary>
 internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? providerQueryRouter)
 {

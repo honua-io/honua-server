@@ -108,6 +108,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         if (IsNearestNeighborQuery(query))
         {
             var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
@@ -163,6 +165,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {_qualifiedTableName}");
         AppendFilter(sql, query);
@@ -576,35 +580,43 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        if (query.EnforcedSqlFilter != null || query.EnforcedMaskedFields != null)
+        var needsFilter = query.EnforcedSqlFilter is null;
+        var needsFieldMask = query.EnforcedMaskedFields is null;
+        if (!needsFilter && !needsFieldMask)
         {
             return query;
         }
 
-        if (_resource.PermanentFilter is { Expression: { Length: > 0 } } &&
+        if (needsFilter &&
+            _resource.PermanentFilter is { Expression: { Length: > 0 } } &&
             _filterExpressionService is null)
         {
             throw new InvalidOperationException(
                 $"Permanent filter enforcement is unavailable for source-backed resource '{_resource.Metadata.Id}'.");
         }
 
-        var permanentFilter = PermanentFilterResolver.Resolve(_resource, _filterExpressionService);
-        var rlsFilter = _rlsFilterSource is null
-            ? null
-            : await _rlsFilterSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
-        var maskedFields = _fieldMaskSource is null
-            ? ImmutableArray<string>.Empty
-            : await _fieldMaskSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
-
-        var enforcedFilter = SqlFragmentHelpers.CombineSqlFilters(permanentFilter, rlsFilter);
-        if (enforcedFilter != null)
+        if (needsFilter)
         {
-            query = query with { EnforcedSqlFilter = enforcedFilter };
+            var permanentFilter = PermanentFilterResolver.Resolve(_resource, _filterExpressionService);
+            var rlsFilter = _rlsFilterSource is null
+                ? null
+                : await _rlsFilterSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
+            var enforcedFilter = SqlFragmentHelpers.CombineSqlFilters(permanentFilter, rlsFilter);
+            if (enforcedFilter != null)
+            {
+                query = query with { EnforcedSqlFilter = enforcedFilter };
+            }
         }
 
-        if (!maskedFields.IsDefaultOrEmpty)
+        if (needsFieldMask)
         {
-            query = query with { EnforcedMaskedFields = maskedFields };
+            var maskedFields = _fieldMaskSource is null
+                ? ImmutableArray<string>.Empty
+                : await _fieldMaskSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
+            if (!maskedFields.IsDefaultOrEmpty)
+            {
+                query = query with { EnforcedMaskedFields = maskedFields };
+            }
         }
 
         return query;
