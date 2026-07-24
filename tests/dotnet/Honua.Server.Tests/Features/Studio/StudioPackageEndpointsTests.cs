@@ -11,6 +11,7 @@ using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
@@ -362,6 +363,123 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var response = await unauthenticatedClient.GetAsync("/api/v1/studio/package-families");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
+    [Endpoint("PUT /api/v1/studio/package-drafts/{draftId}")]
+    [Endpoint("DELETE /api/v1/studio/package-drafts/{draftId}")]
+    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    public async Task EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant()
+    {
+        // honua-server#3001 role-fixture matrix: two genuinely non-admin principals (scoped
+        // admin API keys carrying neither a full-admin nor a layer-scoped write: grant --
+        // see ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult -- authenticate
+        // as role "scoped-api-key", never "admin") against a host with
+        // Studio:EndUserAuthorization:Enabled=true.
+        await using var endUserFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IStudioPackageStore>();
+                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+            });
+        await endUserFixture.InitializeAsync();
+
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+
+        using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        // Alice creates her own draft: any client-supplied ownerId is ignored and resolves to
+        // her own caller id (item 1 -- populated from the authenticated principal).
+        var createResponse = await aliceClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = "enduser-owner-query",
+                    WorkspaceId = "studio",
+                    OwnerId = "someone-else",
+                    Envelope = BuildEnvelope("1=1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(createResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        draft.OwnerId.Should().NotBe("someone-else");
+
+        // Alice can read and update her own draft.
+        var aliceGetResponse = await aliceClient.GetAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}");
+        aliceGetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var aliceUpdateResponse = await aliceClient.PutAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}",
+            JsonContent(
+                new UpdateStudioPackageDraftRequest
+                {
+                    PackageKey = draft.PackageKey,
+                    WorkspaceId = draft.WorkspaceId,
+                    Envelope = BuildEnvelope("POPULATION > 1000"),
+                    Generation = draft.Generation,
+                },
+                StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest));
+        aliceUpdateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await ReadAsync<StudioPackageDraft>(aliceUpdateResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        updated.OwnerId.Should().Be(draft.OwnerId, "a non-admin caller cannot transfer ownership of their own draft either");
+
+        // Bob cannot read Alice's draft: cross-user access is denied by default.
+        var bobGetResponse = await bobClient.GetAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}");
+        bobGetResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var bobGetProblem = JsonSerializer.Deserialize<JsonElement>(await bobGetResponse.Content.ReadAsStringAsync());
+        bobGetProblem.GetProperty("type").GetString().Should().Be("https://honua.io/problems/studio");
+        bobGetProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+
+        // Bob cannot delete Alice's draft either.
+        var bobDeleteResponse = await bobClient.DeleteAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}");
+        bobDeleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Alice saves her own draft as a version.
+        var saveResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{updated.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "owner save" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var version = await ReadAsync<StudioContentVersion>(saveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        // Elevated tier (REQ-003): Alice owns the version but holds no StudioDraft Publish
+        // operator grant, so publish-request is denied even though she owns the resource.
+        var publishResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests",
+            JsonContent(new CreateStudioPublicationRequest(), StudioApiJsonContext.Default.CreateStudioPublicationRequest));
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var publishProblem = JsonSerializer.Deserialize<JsonElement>(await publishResponse.Content.ReadAsStringAsync());
+        publishProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
+    public async Task EndUserAuthorization_FlagOff_NonAdminScopedKeyDenied()
+    {
+        // Same non-admin scoped-key principal as the flag-on matrix above, but against the
+        // class fixture, which never sets Studio:EndUserAuthorization:Enabled (default false)
+        // -- NFR-001: a non-admin caller is denied regardless of ownership, matching the
+        // pre-#3001 admin-only posture exactly.
+        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var scopedKey = await apiKeyStore.CreateAsync("carol", ["studio:enduser"], null, null, CancellationToken.None);
+        using var scopedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
+
+        var response = await scopedClient.GetAsync($"/api/v1/studio/package-drafts/{Guid.NewGuid():D}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
