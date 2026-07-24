@@ -36,7 +36,9 @@ payload.
 | Method | Route | Success | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/package-families` | `200 ApiResponse<StudioPackageFamilyCapabilities>` | Discover every package family, schema version, format, support level, supported operations, validation depth, limitations, and max package size. |
+| `GET` | `/content-items` | `200 ApiResponse<StudioContentItemListResponse>` | List/search Studio content items with filters (`family`, `workspaceId`, `owner`, `state`, `q`), cursor pagination, and a joined publication-registry lifecycle badge per row. |
 | `POST` | `/package-drafts` | `201 ApiResponse<StudioPackageDraft>` | Create a mutable package draft. |
+| `GET` | `/package-drafts` | `200 ApiResponse<StudioPackageDraftListResponse>` | List/search mutable Studio package drafts with filters (`family`, `workspaceId`, `owner`, `q`) and cursor pagination. |
 | `GET` | `/package-drafts/{draftId}` | `200 ApiResponse<StudioPackageDraft>` | Retrieve a mutable draft. |
 | `PUT` | `/package-drafts/{draftId}` | `200 ApiResponse<StudioPackageDraft>` | Replace a mutable draft with optional optimistic `generation` checking. |
 | `DELETE` | `/package-drafts/{draftId}` | `200 ApiResponse<object>` | Delete a draft. |
@@ -168,6 +170,105 @@ publication registry when a version must become a runtime route.
 `StudioContentItemPointers` in the rollback response. Undefined numeric enum
 values are rejected before the store is called.
 
+## Content Item And Draft Enumeration
+
+Tracked by issue **#3003**. `GET /content-items` and `GET /package-drafts` give
+clients a "my content" / content-browser view instead of requiring callers to
+already know an `itemId` or `draftId`.
+
+Both endpoints accept:
+
+- `family`: comma-separated family filter, e.g. `family=map,dashboard`. Accepts the
+  same short strings as the envelope's `family` field (`query`, `analysis`, `map`,
+  `dashboard`, `report`, `form`, `app`, `workflow`, `gp`, `etl`). An unknown value
+  returns `400`.
+- `workspaceId`: exact workspace match.
+- `owner`: exact match against the recorded owner (see below).
+- `q`: case-insensitive substring match against `packageKey`. There is no full-text
+  index in this slice (REQ-002); this is enough for a content-browser search box.
+- `cursor` / `limit` (default `25`, max `1000`): opaque keyset cursor pagination.
+  Pass the previous response's `nextCursor` back as `cursor` to fetch the next page.
+  `nextCursor` is `null` on the last page.
+
+`GET /content-items` additionally accepts `state`, a comma-separated filter over the
+derived lifecycle state: `draft` (no immutable version saved yet — `currentVersionId`
+is null), `current` (a saved version exists but is not published), or `published`
+(`publishedVersionId` is set). This is distinct from a joined publication's route
+`lifecycle` (`active`/`suspended`/`archived`) described below.
+
+Both endpoints order results by `updatedAt` descending with the row id (`itemId` or
+`draftId`) descending as a stable tiebreak (REQ-001), so pages stay stable even as
+other rows are concurrently created or updated.
+
+### Ownership Filter And #3001
+
+`studio_content_items` does not yet carry a dedicated ownership/scoping column.
+`GET /content-items`'s `owner` parameter is accepted and validated today, but it
+filters on the item's recorded creator (`createdBy`) as a stand-in. `GET
+/package-drafts`'s `owner` parameter filters the real `owner_id` column that already
+exists on `studio_package_drafts`. Once honua-server#3001 lands per-item ownership
+and policy-based visibility, `content-items`' `owner` filter should be re-pointed at
+the new column and both endpoints should additionally scope results to the
+requesting principal for non-admin callers (REQ-003); the query parameter shape is
+designed to slot that in without a breaking change. Both endpoints require admin
+authorization today, matching every other Studio package lifecycle endpoint — the
+MVP has no owner-scoped, non-admin access path yet.
+
+### Publication-Registry Lifecycle Badge (REQ-004)
+
+Each row in `GET /content-items` carries an optional `publication` badge sourced
+from the [Content Publication Registry API](content-publication-registry.md), so
+clients can render lifecycle state without a second call per item. The registry
+does not have a foreign key back to Studio; the join uses the convention that a
+publication's `sourceContentId` equals the Studio item id
+(`itemId.ToString("D")`). Publishers that route a Studio content item through the
+registry should set `sourceContentId` accordingly. The badge reflects the *route's*
+current state (potentially newer than the version that is current/published in
+Studio); `publication` is omitted when no publication references the item. The
+lookup batches every row in a page into one query
+(`IContentPublicationStore.GetLatestRouteStatesBySourceContentIdsAsync`) rather than
+querying per row.
+
+### Example: `GET /content-items?family=map&state=published&limit=2`
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "itemId": "b2a6e6a0-9b8e-4b2f-9a3a-6a6d9c8e6f31",
+        "packageKey": "parcels-overview",
+        "workspaceId": "studio",
+        "family": "map",
+        "state": "published",
+        "currentVersionId": "6f5c8945-a329-4680-b489-bb3a7ddc87b8",
+        "publishedVersionId": "6f5c8945-a329-4680-b489-bb3a7ddc87b8",
+        "createdBy": "alice",
+        "updatedBy": "alice",
+        "createdAt": "2026-05-24T00:00:00Z",
+        "updatedAt": "2026-06-01T00:00:00Z",
+        "publication": {
+          "publicationId": "d8b3d8a0-2f52-4a24-8a59-5bd596a3b7f4",
+          "routeSlug": "field/maps/parcels-overview",
+          "routePath": "/api/v1/published/field/maps/parcels-overview",
+          "lifecycle": "active",
+          "activeRevision": 2,
+          "updatedAt": "2026-06-01T00:10:00Z"
+        }
+      }
+    ],
+    "total": 14,
+    "nextCursor": "MTc3NzYwMDYwMDAwMDAwMDA6YjJhNmU2YTAtOWI4ZS00YjJmLTlhM2EtNmE2ZDljOGU2ZjMx"
+  },
+  "timestamp": "2026-06-01T00:15:00Z"
+}
+```
+
+`GET /package-drafts` returns the same envelope shape but with `items` as full
+`StudioPackageDraft` objects (matching `GET /package-drafts/{draftId}`) and no
+`publication` badge — drafts are mutable and pre-publication by definition.
+
 ## Validation And Preview
 
 Create, update, validate, preview, and save-as-version paths all run the shared
@@ -209,6 +310,12 @@ Providers without the Postgres durable store fall back to an in-memory store for
 tests/local development and advertise that limitation through
 `GET /package-families`.
 
+Migration `089_AddStudioContentEnumerationIndexes.sql` adds the keyset-pagination
+indexes `GET /content-items` and `GET /package-drafts` rely on (`updated_at DESC,
+<id> DESC`, plus per-filter composites on `family`, `created_by`/`owner_id`, and
+`workspace_id`) and a `content_publication_versions (source_content_id, created_at
+DESC, revision DESC)` index supporting the publication-badge join.
+
 The package lifecycle service emits OpenTelemetry activities under
 `Honua.Studio.PackageLifecycle` with stable tags such as `studio.item.id`,
 `studio.draft.id`, `studio.version.id`, `studio.family`,
@@ -227,6 +334,8 @@ Child SDK/client work should add typed clients for:
 
 - Package family capability discovery.
 - Draft create/read/update/delete and validation.
+- Content item and draft enumeration (`GET /content-items`, `GET /package-drafts`)
+  with filter/cursor pagination and the joined publication badge (sdk-js#780).
 - Preview plan creation.
 - Save-as-version, list/get/compare versions.
 - Publish request, reopen, and rollback request operations.
