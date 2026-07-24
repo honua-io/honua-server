@@ -41,32 +41,24 @@ in
 
 Power Query folds many transforms to OData automatically; you can also query the feed directly. Supported system options on `Features` include `$filter`, `$select`, `$orderby`, `$top`, `$skip`, and `$count`. Two spatial functions are available in `$filter`: `geo.distance` and `geo.intersects` (the geometry property is named `Geometry`).
 
-```bash
-BASE=http://localhost:8080
-LAYER=1
-# First 5 features, selected columns
-curl -s "$BASE/odata/Features($LAYER)?\$top=5&\$select=ObjectId"
-# Features intersecting a polygon
-curl -s --get "$BASE/odata/Features($LAYER)" \
-  --data-urlencode "\$filter=geo.intersects(Geometry, geography'POLYGON((-122.5 37.7, -122.3 37.7, -122.3 37.85, -122.5 37.85, -122.5 37.7))')"
+Use these relative OData URLs in Power Query or another OData client, substituting the published layer id:
+
+```text
+/odata/Features({layerId})?$top=5&$select=ObjectId
+/odata/Features({layerId})?$filter=geo.intersects(Geometry, geography'POLYGON((-122.5 37.7, -122.3 37.7, -122.3 37.85, -122.5 37.85, -122.5 37.7))')
 ```
 
 ## Verify
 
-```bash
-BASE=http://localhost:8080
-curl -s "$BASE/odata"            # service document: lists Layers and Features
-curl -s "$BASE/odata/\$metadata" # EDM schema with column names and types
-curl -s "$BASE/odata/Layers"     # one entry per published layer
-```
+Open `http://localhost:8080/odata`, `http://localhost:8080/odata/$metadata`, and `http://localhost:8080/odata/Layers` in a browser. The responses should show the service document, EDM schema, and one entry per published layer, respectively.
 
 In the client, the Navigator should list the entity sets, and the loaded table's column names and types should match `$metadata`.
 
 ## Troubleshoot
 
-- **"Unable to connect" / connection refused** — check `curl http://localhost:8080/healthz/ready` and that the URL ends in `/odata/`. See [troubleshooting](../deploy/troubleshooting.md).
+- **"Unable to connect" / connection refused** — open `http://localhost:8080/healthz/ready` in a browser and confirm the connector URL ends in `/odata/`. See [troubleshooting](../deploy/troubleshooting.md).
 - **401 Unauthorized** — the deployment requires auth; use the Power Query `Headers` snippet above for API keys, or Basic credentials in the credential dialog.
-- **Empty Navigator** — no layers are published; `curl http://localhost:8080/odata/Layers` should return at least one entry.
+- **Empty Navigator** — no layers are published; `http://localhost:8080/odata/Layers` should return at least one entry. You can also confirm the catalog with `honua services` and `honua layers <service-id>`.
 - **Geometry column unusable in Excel** — Excel has no spatial type; `$select` it away in Power Query, or keep it for export-only purposes. Use `geo.intersects` in `$filter` to do the spatial work server-side.
 - **Slow loads on large layers** — filter before loading (`$filter`, `$top`) rather than pulling the full table; Power Query's row/column filters fold to the server in most cases.
 

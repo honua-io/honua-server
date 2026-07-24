@@ -52,6 +52,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Documentation Command Policy
+      shell: pwsh
+      run: scripts/ci/check-markdown-command-policy.ps1
+
     - name: Validate merge-train timeout policy
       shell: bash
       run: scripts/ci/merge-train/fixtures/validate-timeout-retry.sh

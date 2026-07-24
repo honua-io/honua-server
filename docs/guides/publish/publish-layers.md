@@ -1,119 +1,92 @@
 # Publish layers
 
-You'll have a PostGIS table published as a live layer — queryable over OGC API Features, FeatureServer, and vector tiles — in about 5 minutes.
+Register a database connection and publish its spatial tables through Honua's supported control-plane SDK. Each published layer is immediately available through every enabled protocol.
 
-**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a PostGIS table to publish (import one with [Import data from files](import-files.md) if needed).
+**Prerequisites:** a running server, an admin API key, a reachable database, and Python with
+[`honua-admin` installed from source](https://github.com/honua-io/honua-sdk-python#install)
+until the package's first PyPI release.
 
-Publishing registers a table in the catalog as a layer; every enabled protocol serves it immediately, no restart required.
+## Create a secure connection
 
-> Prefer an SDK? The same endpoints are wrapped by `honua-sdk-js` and `honua-sdk-dotnet`. Also available in Honua Console — UI guide coming soon.
+Prefer a server-side secret reference in production. The plaintext password below is only for the local development stack.
 
-## Steps
+```python
+from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
-### 1. Create a connection
+with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as admin:
+    connection = admin.create_connection(CreateSecureConnectionRequest(
+        name="primary-db",
+        host="localhost",
+        port=5432,
+        database_name="honua",
+        username="postgres",
+        password="development-only-password",
+        ssl_mode="Require",
+    ))
+    print(connection)
+```
+
+Use `admin.list_connections()` and `admin.get_connection(id)` to inspect existing connections. The SDK never returns stored secrets.
+
+## Inspect and validate tables
+
+The table-discovery and pre-publish validation operations do not yet have high-level SDK methods. Use the [admin API explorer](../../reference/openapi-and-explorer.md) or generate a client from [`admin-api.json`](../../developer/api-specs/admin-api.json) for:
+
+- `GET /api/v1/admin/connections/{id}/tables`
+- `POST /api/v1/admin/connections/{id}/tables/validate`
+
+Validation reports missing primary keys, unsupported geometry, and other publish-blocking problems before catalog mutation.
+
+## Publish a layer
+
+```python
+from honua_admin import HonuaAdminClient, PublishLayerRequest
+
+with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as admin:
+    layer = admin.publish_layer("primary-db", PublishLayerRequest(
+        schema="public",
+        table="parcels",
+        layer_name="city-parcels",
+        geometry_column="geom",
+        srid=4326,
+        service_name="default",
+    ))
+    print(layer)
+```
+
+The result includes the numeric layer ID and owning service name. Optional request fields include a description, geometry type, primary key, attribute allowlist, service name, and enabled state.
+
+Manage published layers through `list_layers`, `set_layer_enabled`, and `set_service_layers_enabled`:
+
+```python
+with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as admin:
+    for layer in admin.list_layers("primary-db"):
+        print(layer)
+    admin.set_layer_enabled("primary-db", layer_id=0, enabled=True)
+```
+
+Extent refresh and several bulk catalog operations do not yet have SDK wrappers; use the generated admin client for those endpoints.
+
+## Verify the data plane
 
 ```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{
-    "name": "primary-db",
-    "host": "localhost",
-    "port": 5432,
-    "databaseName": "honua",
-    "username": "postgres",
-    "password": "secure-password",
-    "sslMode": "Require"
-  }' \
-  "$HONUA_URL/api/v1/admin/connections"
+export HONUA_BASE_URL=http://localhost:8080
+export HONUA_API_KEY=your-admin-api-key
+
+honua services
+honua layers default
+honua query default/0 --limit 5
+honua query default/0 --count
 ```
 
-Save the returned connection `id`. Skip this step if a connection already exists (`GET /api/v1/admin/connections`).
-
-### 2. List discoverable tables
-
-```bash
-CONNECTION_ID=paste-id-from-step-1
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/tables"
-```
-
-Returns spatial tables with schema, geometry column, geometry type, and SRID. The `{id}` segment accepts the connection GUID or its name.
-
-### 3. Validate the table (optional)
-
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"schema":"public","table":"parcels","layerName":"city-parcels"}' \
-  "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/tables/validate"
-```
-
-Validation reports publish-blocking problems (missing primary key, unsupported geometry) before you commit.
-
-### 4. Publish the layer
-
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{
-    "schema": "public",
-    "table": "parcels",
-    "layerName": "city-parcels",
-    "geometryColumn": "geom",
-    "srid": 4326
-  }' \
-  "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/layers"
-```
-
-Returns `201 Created` with a `layerId` and the owning `serviceName` (defaults to `default`). Optional fields: `description`, `geometryType`, `primaryKey`, `fields` (attribute allowlist), `serviceName`, `enabled`.
-
-### 5. Manage published layers
-
-```bash
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/connections/$CONNECTION_ID/layers"
-```
-
-Toggle one layer with `PUT .../layers/{layerId}/enabled`, all layers in a service with `PUT .../layers/enabled` (body `{"enabled": true}`), and refresh catalog extents after bulk data loads with `POST .../layers/extents/refresh`.
-
-## Verify
-
-The layer is live across protocols. OGC API Features:
-
-```bash
-curl "$HONUA_URL/ogc/features/collections"
-```
-
-```json
-{"collections": [{"id": "…", "title": "city-parcels", …}], …}
-```
-
-GeoServices FeatureServer (use the `serviceName` and `layerId` from step 4):
-
-```bash
-LAYER_ID=paste-layerid-from-step-4
-curl "$HONUA_URL/rest/services/default/FeatureServer/$LAYER_ID?f=json"
-```
-
-Vector tiles:
-
-```bash
-curl "$HONUA_URL/tiles/$LAYER_ID/tile.json"
-```
-
-```json
-{"tilejson": "3.0.0", "tiles": ["…/tiles/1/{z}/{x}/{y}.mvt"], …}
-```
+Use the actual service and layer ID from the publish result. The same catalog entry also drives OGC API Features, GeoServices, OData, vector tiles, and the other enabled protocol adapters.
 
 ## Troubleshoot
 
-- **`Validation failed: …` (400)** — the request is missing required fields; `schema`, `table`, and `layerName` are mandatory.
-- **`409 Conflict` on publish** — a layer with the same name already exists in the target service; change `layerName` or `serviceName`.
-- **`404` on publish** — the connection id or the schema/table does not exist; re-check step 2 output.
-- **Layer published but absent from `/ogc/features/collections`** — confirm the layer is enabled (`GET .../layers`) and the protocol is enabled for the service (`GET /api/v1/admin/services/{serviceName}/settings`).
-- **Stale or empty extent on the map** — run `POST .../layers/extents/refresh` after loading data into the source table.
+- **401 or 403** — verify the admin key and required connection/layer permissions.
+- **Connection test fails** — check host reachability, TLS mode, database name, and credential secret configuration.
+- **Table is absent from discovery** — verify the connection user can read the schema and geometry metadata.
+- **Publish validation fails** — add a stable primary key and use a supported geometry/SRID before retrying.
+- **The layer publishes but queries fail** — confirm it is enabled and the service access policy permits the caller.
 
-More help: [troubleshooting](../deploy/troubleshooting.md).
-
-## Next steps
-
-- [Style maps](../style/style-maps.md) — attach a MapLibre style to the layer.
-- [Publish tiles](publish-tiles.md) — seed and manage the vector tile cache.
-- [Query features](../query-analyze/query-features.md) — query the published layer.
+More help: [deployment troubleshooting](../deploy/troubleshooting.md).

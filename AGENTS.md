@@ -18,7 +18,7 @@ Honua Server is a greenfield implementation of a geospatial server that exposes 
 ## Setup
 
 - Install the .NET 10 SDK. `dotnet restore Honua.sln`.
-- Local stack via Docker Compose (PostGIS auto-starts, migrations run on boot): `docker compose up -d` then `curl http://localhost:8080/healthz/ready`. HTTP/gRPC-Web on `8080`, native h2c gRPC on `8081`.
+- Local stack via Docker Compose (PostGIS auto-starts, migrations run on boot): run `docker compose up -d`, confirm the services with `docker compose ps`, then open <http://localhost:8080/healthz/ready> in a browser and expect `Ready`. HTTP/gRPC-Web is on `8080`; native h2c gRPC is on `8081`.
 - Aspire local dev (dashboard for traces/logs/metrics): `dotnet run --project src/Honua.AppHost`.
 - Config is environment-variable driven; copy `.env.example` (Docker: `.env.docker.example`). Required defaults: `ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`.
 - Integration tests use Testcontainers (require a running Docker daemon).

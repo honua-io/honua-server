@@ -15,13 +15,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/import/upload-url` | Import data from a supported public object URL |
 | GET | `/api/v1/admin/import/limits` | Get import size and concurrency limits |
 
-```bash
-HONUA_URL=https://honua.example.com
-API_KEY=your-admin-key
-curl -X POST "$HONUA_URL/api/v1/admin/import/upload" \
-  -H "X-API-Key: $API_KEY" \
-  -F "file=@parcels.geojson"
-```
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/import/upload` and attach `parcels.geojson` to the `file` form field.
 
 Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly; provide `sourceSrid` when the file does not embed a CRS. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
 
@@ -36,10 +30,7 @@ Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves t
 | GET | `/api/v1/admin/import/jobs/{jobId}` | Get import job status |
 | POST | `/api/v1/admin/import/jobs/{jobId}/cancel` | Cancel an import job |
 
-```bash
-JOB_ID=8f3c2e9a
-curl "$HONUA_URL/api/v1/admin/import/jobs/$JOB_ID" -H "X-API-Key: $API_KEY"
-```
+Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the id returned by the upload.
 
 ## Migration scan
 
@@ -49,11 +40,7 @@ curl "$HONUA_URL/api/v1/admin/import/jobs/$JOB_ID" -H "X-API-Key: $API_KEY"
 
 `sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `arcgis-geoservices-rest`. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/import/scan" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"sourceKind":"geoservices","sourceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}'
-```
+Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 
 ## GeoServer migration import
 
@@ -79,11 +66,7 @@ Queued jobs persist request state before a worker runs, so credentials must use 
 
 Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints.
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/import/geoservices/discover" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}'
-```
+Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 
 ## Raster import and cloud raster registration
 
@@ -109,11 +92,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/import/geoservices/discover" \
 
 Raster import is multipart form-data with optional sidecars (`.pgw`/`.jgw`/`.tfw`/`.wld`, `.prj`). Subsequent uploads to a layer must match the layer's SRID and band count; mismatches return `400`.
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/import/raster" \
-  -H "X-API-Key: $API_KEY" \
-  -F "file=@ortho.tif" -F "layerName=ortho-2026"
-```
+Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif` and `layerName=ortho-2026`.
 
 ## Tile operation jobs
 
@@ -127,11 +106,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/import/raster" \
 
 Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`. The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. See [Publish tiles](../../guides/publish/publish-tiles.md).
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/tile-operations/jobs" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"operation":"seed","layerId":42,"minZoom":0,"maxZoom":12}'
-```
+Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"seed","layerId":42,"minZoom":0,"maxZoom":12}`.
 
 ## Operations and durable jobs
 
@@ -151,10 +126,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/tile-operations/jobs" \
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`, `TileCache`, `PMTilesArchive`, `PMTilesPublish`, `Export`, `RasterImport`, `Print`, `Geoprocessing`, `Publishing`, `Orchestration`. Cancelling an operation already in a terminal state returns `409`; cancelling an already-cancelled operation returns `200` idempotently.
 
-```bash
-OP_ID=2b1f7c44
-curl "$HONUA_URL/api/v1/admin/operations/$OP_ID" -H "X-API-Key: $API_KEY"
-```
+Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned by the long-running request.
 
 ## Related guides
 

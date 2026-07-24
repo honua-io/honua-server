@@ -38,13 +38,19 @@ named "operator surface" ships in this repo.
 
 1. Confirm the endpoint answers:
 
-   ```bash
-   BASE=http://localhost:8080
-   curl -s -X POST "$BASE/mcp" -H "Content-Type: application/json" -d '{
-     "jsonrpc": "2.0", "id": 1, "method": "initialize",
-     "params": { "protocolVersion": "2025-03-26", "capabilities": {},
-                 "clientInfo": { "name": "curl", "version": "0" } }
-   }'
+   Connect an MCP client to the Streamable HTTP endpoint at `/mcp`. The client performs the initialize handshake; the equivalent protocol payload is:
+
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "method": "initialize",
+     "params": {
+       "protocolVersion": "2025-03-26",
+       "capabilities": {},
+       "clientInfo": { "name": "honua-docs", "version": "1" }
+     }
+   }
    ```
 
 2. Register the server with your MCP client. For Claude Code, add to the project's `.mcp.json`:
@@ -100,11 +106,7 @@ named "operator surface" ships in this repo.
 
 ## Verify
 
-```bash
-BASE=http://localhost:8080
-curl -s -X POST "$BASE/mcp" -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-```
+Run `POST /mcp` with `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`.
 
 The response lists the nine `honua_*` tools above with JSON Schema input definitions. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 

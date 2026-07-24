@@ -12,53 +12,46 @@ The admin import API accepts a single file per request, streams it into PostGIS,
 
 ### 1. Check supported formats
 
-```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/import/formats"
-```
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/import/formats`.
 
 Returns the live extension list for your build (`.geojson`, `.json`, `.zip`, `.gpkg`, `.gpx`, `.kml`, `.kmz`, `.wkt`, `.csv`, `.fgb`, `.gdb.zip`, `.parquet`, `.geoparquet`).
 
 ### 2. Preview before importing (optional)
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" \
-  -F "file=@parcels.geojson" \
-  "$HONUA_URL/api/v1/admin/import/preview"
-```
+Run `POST /api/v1/admin/import/preview` and attach `parcels.geojson` to the `file` form field.
 
 Preview reports detected format, fields, and a `warnings` array without writing any data.
 
 ### 3. Upload and import
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" \
-  -F "file=@parcels.geojson" \
-  -F "tableName=parcels" \
-  -F "targetSrid=4326" \
-  -F "overwriteExisting=true" \
-  "$HONUA_URL/api/v1/admin/import/upload"
-```
+Run `POST /api/v1/admin/import/upload` with these form values:
+
+| Field | Value |
+| --- | --- |
+| `file` | `parcels.geojson` |
+| `tableName` | `parcels` |
+| `targetSrid` | `4326` |
+| `overwriteExisting` | `true` |
 
 Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchema`, `forceBackground`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
 
 ### 4. Poll the job (background imports only)
 
-```bash
-JOB_ID=paste-jobid-from-step-3
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/import/jobs/$JOB_ID"
-```
+Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the `jobId` returned by the upload.
 
 Cancel with `POST /api/v1/admin/import/jobs/{jobId}/cancel`; list active jobs with `GET /api/v1/admin/import/jobs`.
 
 ### 5. Import from a public object URL (alternative to upload)
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"sourceUrl":"https://s3.amazonaws.com/example-bucket/parcels.gdb.zip","tableName":"parcels","targetSrid":4326,"overwriteExisting":true}' \
-  "$HONUA_URL/api/v1/admin/import/upload-url"
+Run `POST /api/v1/admin/import/upload-url` with this JSON body:
+
+```json
+{
+  "sourceUrl": "https://s3.amazonaws.com/example-bucket/parcels.gdb.zip",
+  "tableName": "parcels",
+  "targetSrid": 4326,
+  "overwriteExisting": true
+}
 ```
 
 The server downloads the object directly; redirecting URLs are rejected. `POST /api/v1/admin/import/preview-url` previews the same way.

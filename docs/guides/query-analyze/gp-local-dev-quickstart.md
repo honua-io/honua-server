@@ -55,9 +55,7 @@ This builds the server image and starts three containers: `postgres` (required
 at boot for migrations), `redis` (the GP job substrate), and `honua` (the
 server, running the in-process GP worker loop). Wait for readiness:
 
-```bash
-curl -s http://localhost:8080/healthz/ready
-```
+Open `http://localhost:8080/healthz/ready` in a browser and wait for `Ready`.
 
 To also run the optional GDAL worker for `gdal.*` jobs:
 
@@ -79,26 +77,19 @@ process over OGC API Processes, then polls and fetches results. There is also a
 
 Doing it by hand (the same flow the script runs):
 
-```bash
-BASE=http://localhost:8080
-# The admin password (compose default) doubles as the X-API-Key; the admin role
-# holds the process-execute grant the submit path requires.
-KEY=quickstart-admin-password
+Authorize the [API explorer](../../reference/openapi-and-explorer.md) with `quickstart-admin-password`, then run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
 
-# Submit (async). Returns 201 Created + a Location header pointing at the job.
-curl -si -X POST "$BASE/ogc/processes/processes/geometry.buffer/execution" \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -H "Prefer: respond-async" \
-  -d '{"inputs":{"wkb":"AQEAAABQ/Bhz15pewNDVVuwv40JA","srid":4326,"distance":500}}'
-
-# Poll until "status":"successful". Take JOB from the Location header / jobID.
-JOB=<jobId>
-curl -s "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY"
-
-# Fetch results, then dismiss.
-curl -s "$BASE/ogc/processes/jobs/$JOB/results" -H "X-API-Key: $KEY"
-curl -s -X DELETE "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY"
+```json
+{
+  "inputs": {
+    "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
+    "srid": 4326,
+    "distance": 500
+  }
+}
 ```
+
+Use the `jobID` or `Location` value in `GET /ogc/processes/jobs/{jobId}` until the status is `successful`. Then run the sibling `/results` operation and `DELETE /ogc/processes/jobs/{jobId}`.
 
 The same catalog is exposed Esri-style at
 `/rest/services/{serviceId}/GPServer` for ArcGIS clients, and the deterministic
@@ -135,7 +126,7 @@ GP processes are catalog entries backed by job executors. To add or change one:
      ```
 
 4. **Submit against your new process id** (swap `geometry.buffer` for your id in
-   the curl/sample above). The local backend picks it up automatically: managed
+   the API explorer operation above). The local backend picks it up automatically: managed
    ids drain through the in-process loop; native ids are claimed by the GDAL
    worker because they declare `RuntimeProfile: native`.
 

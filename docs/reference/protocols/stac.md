@@ -60,17 +60,9 @@ The Item Search Filter Extension is conformant against `stac-api-validator` (`--
 
 ## Examples
 
-```bash
-# Browse collections
-curl "https://server.example.com/stac/collections"
-```
+> Open `https://server.example.com/stac/collections` in a browser.
 
-```bash
-# Search items by bbox and time
-curl -X POST "https://server.example.com/stac/search" \
-  -H "Content-Type: application/json" \
-  -d '{"collections":["imagery"],"bbox":[-122.5,37.7,-122.3,37.9],"datetime":"2025-01-01T00:00:00Z/..","limit":10}'
-```
+In the [API explorer](../openapi-and-explorer.md), run `POST /stac/search` with `{"collections":["imagery"],"bbox":[-122.5,37.7,-122.3,37.9],"datetime":"2025-01-01T00:00:00Z/..","limit":10}`.
 
 A read-only open-data STAC projection is also published per dataset under `/api/v1/open-data/stac` for datasets opted into open-data publication.
 

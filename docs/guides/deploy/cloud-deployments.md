@@ -111,7 +111,7 @@ HONUA_CLOUD_TEST_ADMIN_API_KEY=replace-with-admin-password \
 ./scripts/cloud/run-cloud-post-apply-validation.sh
 ```
 
-Expected: the script runs `scripts/cloud/post-deployment-verification.sh` plus the `Category=Cloud` integration tests and exits 0. A plain readiness check also works: `curl -s https://honua.example.com/healthz/ready` returns `Ready`.
+Expected: the script runs `scripts/cloud/post-deployment-verification.sh` plus the `Category=Cloud` integration tests and exits 0. For a plain readiness check, open `https://honua.example.com/healthz/ready` in a browser and expect `Ready`.
 
 ## Troubleshoot
 

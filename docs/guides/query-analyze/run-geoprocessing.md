@@ -10,49 +10,37 @@ Process discovery is open; execution is always asynchronous (`jobControlOptions:
 
 1. List the available processes. The list contains the canonical `honua-geoprocessing` plan runner plus individually-projected catalog processes such as `geometry.buffer`, `geometry.clip`, `geometry.dissolve`, `analytics.spatial-join`, and `analytics.density`:
 
-   ```bash
-   BASE=http://localhost:8080
-   KEY=my-api-key
-   curl -s "$BASE/ogc/processes/processes"
-   ```
+   Open `http://localhost:8080/ogc/processes/processes` in a browser.
 
 2. Describe the process you want — the response lists its inputs with schemas:
 
-   ```bash
-   curl -s "$BASE/ogc/processes/processes/geometry.buffer"
-   ```
+   Open `http://localhost:8080/ogc/processes/processes/geometry.buffer` in a browser.
 
    `geometry.buffer` takes `wkb` (base64-encoded WKB geometry), `srid`, `distance` (meters), and an optional `geodesic` flag.
 
 3. Execute it. The request returns `201 Created` with a job status document and a `Location` header pointing at the job:
 
-   ```bash
-   curl -si -X POST "$BASE/ogc/processes/processes/geometry.buffer/execution" \
-     -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-     -H "Prefer: respond-async" -d '{
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
+
+   ```json
+   {
      "inputs": {
        "wkb": "AQEAAABQ/Bhz15pewNDVVuwv40JA",
        "srid": 4326,
        "distance": 500
      }
-   }'
+   }
    ```
 
    The `wkb` value above is `POINT(-122.4194 37.7749)`. Only `"response": "document"` mode is supported; omit `response` or set it to `document`.
 
 4. Poll the job until `status` reaches `successful` (or `failed`/`dismissed`). Take `JOB` from the `Location` header or the `jobID` field:
 
-   ```bash
-   JOB=0123456789abcdef
-   curl -s "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY"
-   ```
+   Run `GET /ogc/processes/jobs/{jobId}` in the explorer.
 
 5. Fetch the results document for a terminal job, and dismiss the job when you are done with it:
 
-   ```bash
-   curl -s "$BASE/ogc/processes/jobs/$JOB/results" -H "X-API-Key: $KEY"
-   curl -s -X DELETE "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY"
-   ```
+   Run `GET /ogc/processes/jobs/{jobId}/results`, then `DELETE /ogc/processes/jobs/{jobId}` in the explorer.
 
    Catalog processes return document-mode artifact references when the runtime publishes results; `GET /ogc/processes/jobs` lists your recent jobs.
 
@@ -60,9 +48,7 @@ The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{
 
 ## Verify
 
-```bash
-curl -s "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY"
-```
+Run `GET /ogc/processes/jobs/{jobId}` again in the explorer.
 
 Expected (trimmed):
 
