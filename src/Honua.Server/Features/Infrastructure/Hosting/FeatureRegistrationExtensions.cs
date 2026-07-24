@@ -193,6 +193,7 @@ internal static class FeatureRegistrationExtensions
         // REST read surface (#1371 → #1243).
         services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle(configuration);
+        services.TryAddScoped<Honua.Server.Features.Studio.StudioEndpointAuthorization>();
         // Server-side deliverable export: render a Studio map/dashboard/report content version to a
         // shareable PDF/PNG. Reuses the SkiaSharp raster/font surface (the headless Lambda
         // fontconfig/freetype infra from #1728) and the canonical Studio lifecycle store; PDFs are

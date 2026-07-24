@@ -5,7 +5,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using Honua.Ai.AppGeneration;
 using Honua.Ai.MapGeneration;
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
@@ -146,9 +145,7 @@ internal static class StudioPackageEndpoints
         Guid id,
         [FromServices] IStudioDeliverableExporter exporter,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -194,7 +191,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
                 resourceType: "studio-content-item", resourceId: id.ToString("D"),
                 isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
@@ -203,7 +200,7 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            if (!IsOwnerOrAdmin(authorizationService, context, pointers.OwnerId))
+            if (!IsOwnerOrAdmin(authorization, context, pointers.OwnerId))
             {
                 if (pointers.PublishedVersionId is not { } publishedVersionId)
                 {
@@ -430,9 +427,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleCreateDraft(
         CreateStudioPackageDraftRequest request,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -452,7 +447,7 @@ internal static class StudioPackageEndpoints
                 if (pointers is not null)
                 {
                     var authResult = await EnsureAuthorizedAsync(
-                        authorizationService, auditLog, timeProvider, context,
+                        authorization, context,
                         StudioAuthorizationOperation.CreateDraft, pointers.OwnerId,
                         resourceType: "studio-content-item", resourceId: existingItemId.ToString("D")).ConfigureAwait(false);
                     if (authResult is not null)
@@ -469,7 +464,7 @@ internal static class StudioPackageEndpoints
             // otherwise let a caller assign a draft to someone else) rather than trusting it.
             // CreateStudioPackageDraftCommand.OwnerId falls back to ActorId when null, so
             // omitting it here resolves ownership to the authenticated caller.
-            var ownerId = !authorizationService.IsAdmin(context.User) && authorizationService.IsEndUserAuthorizationEnabled
+            var ownerId = !authorization.IsAdmin(context.User) && authorization.IsEndUserAuthorizationEnabled
                 ? null
                 : request.OwnerId;
 
@@ -508,7 +503,7 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleListDrafts(
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context,
         [FromQuery] string? family = null,
@@ -525,7 +520,7 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            var effectiveOwner = ResolveEffectiveOwnerFilter(authorizationService, context, owner);
+            var effectiveOwner = ResolveEffectiveOwnerFilter(authorization, context, owner);
             var result = await service.ListDraftsAsync(
                 new StudioPackageDraftQuery
                 {
@@ -558,9 +553,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleGetDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -573,7 +566,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ReadDraft, draft.OwnerId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -596,9 +589,7 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         UpdateStudioPackageDraftRequest request,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -616,7 +607,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.UpdateDraft, existing.OwnerId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -624,13 +615,13 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var isAdmin = authorizationService.IsAdmin(context.User);
+            var isAdmin = authorization.IsAdmin(context.User);
 
             // honua-server#3001: once end-user mode is on, a non-admin caller cannot transfer
             // ownership of a draft they are otherwise authorized to edit -- ignore any
             // client-supplied ownerId (UpdateStudioPackageDraftCommand.OwnerId falls back to the
             // existing owner when null) rather than trusting it.
-            var ownerId = !isAdmin && authorizationService.IsEndUserAuthorizationEnabled
+            var ownerId = !isAdmin && authorization.IsEndUserAuthorizationEnabled
                 ? null
                 : request.OwnerId;
 
@@ -675,9 +666,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleDeleteDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -690,7 +679,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.DeleteDraft, existing.OwnerId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -715,9 +704,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleValidateDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -730,7 +717,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -762,9 +749,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandlePreviewPlan(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -777,7 +762,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -810,9 +795,7 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         SaveStudioContentVersionRequest request,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -830,7 +813,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.CreateVersion, existing.OwnerId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -868,7 +851,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleListContentItems(
         [FromServices] IStudioPackageLifecycleService service,
         [FromServices] IContentPublicationStore publicationStore,
-        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context,
         [FromQuery] string? family = null,
@@ -890,7 +873,7 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            var effectiveOwner = ResolveEffectiveOwnerFilter(authorizationService, context, owner);
+            var effectiveOwner = ResolveEffectiveOwnerFilter(authorization, context, owner);
             var result = await service.ListContentItemsAsync(
                 new StudioContentItemQuery
                 {
@@ -1001,16 +984,16 @@ internal static class StudioPackageEndpoints
     /// to see another principal's items.
     /// </summary>
     private static string? ResolveEffectiveOwnerFilter(
-        IStudioAuthorizationService authorizationService,
+        StudioEndpointAuthorization authorization,
         HttpContext context,
         string? requestedOwner)
     {
-        if (authorizationService.IsAdmin(context.User) || !authorizationService.IsEndUserAuthorizationEnabled)
+        if (authorization.IsAdmin(context.User) || !authorization.IsEndUserAuthorizationEnabled)
         {
             return requestedOwner;
         }
 
-        return authorizationService.ResolveCallerId(context.User);
+        return authorization.ResolveCallerId(context.User);
     }
 
     /// <summary>
@@ -1021,11 +1004,11 @@ internal static class StudioPackageEndpoints
     /// export -- must additionally narrow their payload/target in exactly that case.
     /// </summary>
     private static bool IsOwnerOrAdmin(
-        IStudioAuthorizationService authorizationService,
+        StudioEndpointAuthorization authorization,
         HttpContext context,
         string? resourceOwnerId)
     {
-        if (authorizationService.IsAdmin(context.User))
+        if (authorization.IsAdmin(context.User))
         {
             return true;
         }
@@ -1035,7 +1018,7 @@ internal static class StudioPackageEndpoints
             return true;
         }
 
-        var callerId = authorizationService.ResolveCallerId(context.User);
+        var callerId = authorization.ResolveCallerId(context.User);
         return string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
     }
 
@@ -1131,9 +1114,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleListVersions(
         Guid itemId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1147,7 +1128,7 @@ internal static class StudioPackageEndpoints
             if (pointers is not null)
             {
                 var authResult = await EnsureAuthorizedAsync(
-                    authorizationService, auditLog, timeProvider, context,
+                    authorization, context,
                     StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
                     resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
                     isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
@@ -1161,7 +1142,7 @@ internal static class StudioPackageEndpoints
                 // item's entire immutable history. Remember the single version a non-owner
                 // may see; GetVersion is already scoped identically (isPubliclyReadable
                 // requires versionId == PublishedVersionId).
-                if (!IsOwnerOrAdmin(authorizationService, context, pointers.OwnerId))
+                if (!IsOwnerOrAdmin(authorization, context, pointers.OwnerId))
                 {
                     nonOwnerVisibleVersionId = pointers.PublishedVersionId;
                 }
@@ -1192,9 +1173,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1208,7 +1187,7 @@ internal static class StudioPackageEndpoints
 
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
                 resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
                 isPubliclyReadable: pointers?.PublishedVersionId == versionId).ConfigureAwait(false);
@@ -1232,9 +1211,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         CompareStudioContentVersionsRequest request,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1256,7 +1233,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, left.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -1287,9 +1264,7 @@ internal static class StudioPackageEndpoints
         Guid versionId,
         CreateStudioPublicationRequest request,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1310,7 +1285,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.PublishRequest, targetVersion.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -1356,9 +1331,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1371,7 +1344,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.ReopenVersion, targetVersion.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -1410,9 +1383,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         CreateStudioRollbackRequest request,
         [FromServices] IStudioPackageLifecycleService service,
-        [FromServices] IStudioAuthorizationService authorizationService,
-        [FromServices] IAuditLog auditLog,
-        [FromServices] TimeProvider timeProvider,
+        [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -1437,7 +1408,7 @@ internal static class StudioPackageEndpoints
             }
 
             var authResult = await EnsureAuthorizedAsync(
-                authorizationService, auditLog, timeProvider, context,
+                authorization, context,
                 StudioAuthorizationOperation.Rollback, targetVersion.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
@@ -1487,9 +1458,7 @@ internal static class StudioPackageEndpoints
     /// (operator-grant-gated) allow decisions are also audited.
     /// </summary>
     private static async Task<IResult?> EnsureAuthorizedAsync(
-        IStudioAuthorizationService authorizationService,
-        IAuditLog auditLog,
-        TimeProvider timeProvider,
+        StudioEndpointAuthorization authorization,
         HttpContext context,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
@@ -1497,80 +1466,21 @@ internal static class StudioPackageEndpoints
         string? resourceId,
         bool isPubliclyReadable = false)
     {
-        var callerId = ConsolePrincipal.ResolveActorId(context.User);
-        var decision = await authorizationService.AuthorizeAsync(
-            context.User,
-            callerId,
+        var decision = await authorization.AuthorizeAsync(
+            context,
             operation,
             resourceOwnerId,
-            isPubliclyReadable,
+            resourceType,
             resourceId,
-            context.RequestAborted).ConfigureAwait(false);
+            isPubliclyReadable).ConfigureAwait(false);
 
         if (decision.IsAllowed)
         {
-            if (decision.IsElevated)
-            {
-                await RecordAuthorizationAuditAsync(
-                    auditLog, timeProvider, context, operation, resourceType, resourceId,
-                    AuditOutcome.Success, code: null).ConfigureAwait(false);
-            }
-
             return null;
         }
 
-        await RecordAuthorizationAuditAsync(
-            auditLog, timeProvider, context, operation, resourceType, resourceId,
-            AuditOutcome.Denied, decision.Code).ConfigureAwait(false);
-
         return Forbidden(context, decision.Reason ?? "The caller is not authorized to perform this operation.", decision.Code ?? "studio_authorization/denied");
     }
-
-    private static Task RecordAuthorizationAuditAsync(
-        IAuditLog auditLog,
-        TimeProvider timeProvider,
-        HttpContext context,
-        StudioAuthorizationOperation operation,
-        string resourceType,
-        string? resourceId,
-        AuditOutcome outcome,
-        string? code)
-    {
-        var actor = ConsolePrincipal.ResolveActorId(context.User) ?? AuditEvent.AnonymousActor;
-        var auditEvent = new AuditEvent
-        {
-            Timestamp = timeProvider.GetUtcNow(),
-            EventType = AuditEventType.Authorization,
-            Actor = actor,
-            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
-                ? AuditActorType.Anonymous
-                : AuditActorType.UserId,
-            ResourceType = resourceType,
-            ResourceId = resourceId,
-            Action = $"studio.{ToSnakeCase(operation)}",
-            Outcome = outcome,
-            CorrelationId = context.TraceIdentifier,
-            Details = code is null ? string.Empty : $"{{\"code\":\"{code}\"}}",
-        };
-
-        return auditLog.RecordAsync(auditEvent, context.RequestAborted);
-    }
-
-    private static string ToSnakeCase(StudioAuthorizationOperation operation) => operation switch
-    {
-        StudioAuthorizationOperation.CreateDraft => "create_draft",
-        StudioAuthorizationOperation.ReadDraft => "read_draft",
-        StudioAuthorizationOperation.UpdateDraft => "update_draft",
-        StudioAuthorizationOperation.DeleteDraft => "delete_draft",
-        StudioAuthorizationOperation.ValidateDraft => "validate_draft",
-        StudioAuthorizationOperation.CreateVersion => "create_version",
-        StudioAuthorizationOperation.ListOwn => "list_own",
-        StudioAuthorizationOperation.ReadContentItem => "read_content_item",
-        StudioAuthorizationOperation.ReopenVersion => "reopen_version",
-        StudioAuthorizationOperation.PublishRequest => "publish_request",
-        StudioAuthorizationOperation.Rollback => "rollback",
-        _ => operation.ToString(),
-    };
 
     private static bool TryValidateRequest<TRequest>(TRequest request, out string error) where TRequest : notnull
     {
