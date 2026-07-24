@@ -290,6 +290,87 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ListContentItems_FiltersByFamilyOwnerStateAndPagesViaCursor()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+
+            var draftOnlyId = Guid.NewGuid();
+            var draftOnly = await store.CreateDraftAsync(BuildDraft("1=1", "list-draft-only", draftOnlyId, owner: "bob"));
+
+            var publishedId = Guid.NewGuid();
+            var publishedDraft = await store.CreateDraftAsync(BuildDraft("1=1", "list-published", publishedId, owner: "alice"));
+            var version = await store.CreateVersionAsync(publishedDraft, "first save", "alice");
+            await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = version.ItemId,
+                VersionId = version.VersionId,
+                Intent = version.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = version.Validation,
+                RequestedBy = "alice",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+            var byOwner = await store.ListContentItemsAsync(new StudioContentItemQuery { OwnerId = "bob" });
+            byOwner.Items.Should().ContainSingle(i => i.ItemId == draftOnly.ItemId);
+            byOwner.Items[0].State.Should().Be(StudioContentItemState.Draft);
+
+            var byState = await store.ListContentItemsAsync(new StudioContentItemQuery { States = [StudioContentItemState.Published] });
+            byState.Items.Should().ContainSingle(i => i.ItemId == publishedId);
+
+            var byFamily = await store.ListContentItemsAsync(new StudioContentItemQuery { Families = [StudioPackageFamily.Query] });
+            byFamily.Total.Should().Be(2);
+
+            var page1 = await store.ListContentItemsAsync(new StudioContentItemQuery { Limit = 1 });
+            page1.Items.Should().HaveCount(1);
+            page1.Total.Should().Be(2);
+            page1.NextCursor.Should().NotBeNull();
+
+            var page2 = await store.ListContentItemsAsync(new StudioContentItemQuery { Limit = 1, Cursor = page1.NextCursor });
+            page2.Items.Should().HaveCount(1);
+            page2.NextCursor.Should().BeNull();
+            page1.Items[0].ItemId.Should().NotBe(page2.Items[0].ItemId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ListDrafts_FiltersByOwnerAndSearchTerm()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var alice = await store.CreateDraftAsync(BuildDraft("1=1", "list-alice-query", owner: "alice"));
+            await store.CreateDraftAsync(BuildDraft("1=1", "list-bob-query", owner: "bob"));
+
+            var byOwner = await store.ListDraftsAsync(new StudioPackageDraftQuery { OwnerId = "alice" });
+            byOwner.Items.Should().ContainSingle(d => d.DraftId == alice.DraftId);
+
+            var bySearch = await store.ListDraftsAsync(new StudioPackageDraftQuery { SearchTerm = "bob" });
+            bySearch.Items.Should().ContainSingle(d => d.PackageKey == "list-bob-query");
+
+            var all = await store.ListDraftsAsync(new StudioPackageDraftQuery());
+            all.Total.Should().Be(2);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureStudioTablesAsync(string schema)
     {
         var root = FindRepoRoot();
@@ -314,16 +395,16 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
-    private static StudioPackageDraft BuildDraft(string where, string packageKey = "parcels-query")
+    private static StudioPackageDraft BuildDraft(string where, string packageKey = "parcels-query", Guid? itemId = null, string owner = "tester")
     {
         var now = DateTimeOffset.UtcNow;
         return new StudioPackageDraft
         {
             DraftId = Guid.NewGuid(),
-            ItemId = Guid.NewGuid(),
+            ItemId = itemId ?? Guid.NewGuid(),
             PackageKey = packageKey,
             WorkspaceId = "studio",
-            OwnerId = "tester",
+            OwnerId = owner,
             Family = StudioPackageFamily.Query,
             Envelope = BuildEnvelope(where),
             Validation = new StudioValidationSummary
@@ -332,8 +413,8 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 GeneratedAt = now,
             },
             Generation = 1,
-            CreatedBy = "tester",
-            UpdatedBy = "tester",
+            CreatedBy = owner,
+            UpdatedBy = owner,
             CreatedAt = now,
             UpdatedAt = now,
         };
