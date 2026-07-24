@@ -72,6 +72,21 @@ public sealed class CoreAbstractionsIsolationTests
         }
     }
 
+    [ArchitectureTest]
+    public void SocketConnectionOwner_ShouldNotBePublicContract()
+    {
+        const string qualifiedTypeName = "Honua.Core.Features.Infrastructure.Internal.SocketConnectionOwner";
+        var abstractionsAssembly =
+            typeof(Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository).Assembly;
+
+        var socketOwnerType = abstractionsAssembly.GetType(qualifiedTypeName);
+        socketOwnerType.Should().NotBeNull("callers share one resource-ownership implementation");
+        socketOwnerType!.IsNotPublic.Should().BeTrue("concrete infrastructure helpers must remain internal");
+        abstractionsAssembly.GetExportedTypes()
+            .Should()
+            .NotContain(socketOwnerType, "socket lifetime management is not part of the abstractions contract");
+    }
+
     /// <summary>
     /// Audit C3 goal-state assertion: <c>IDatabaseConnectionProvider</c> must
     /// not leak <c>System.Data.Common.DbConnection</c> /

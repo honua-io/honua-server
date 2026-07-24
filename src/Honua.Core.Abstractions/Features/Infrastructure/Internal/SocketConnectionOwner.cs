@@ -3,12 +3,12 @@
 
 using System.Net.Sockets;
 
-namespace Honua.Core.Features.Infrastructure.Abstractions;
+namespace Honua.Core.Features.Infrastructure.Internal;
 
 /// <summary>
 /// Owns a socket until its lifetime is transferred to a network stream.
 /// </summary>
-public sealed class SocketConnectionOwner : IDisposable
+internal sealed class SocketConnectionOwner : IDisposable
 {
     private Socket? _socket;
 
