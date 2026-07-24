@@ -3,9 +3,11 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Licensing;
 using Honua.Ai.Protocols.Mcp.Location;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -32,6 +34,7 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 internal sealed class GeocodeTool : IMcpTool
 {
     public const string ToolName = "honua_geocode_address";
+    public const string FailoverEntitlementKey = FeatureCatalog.GeocodingFailoverKey;
 
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<GeocodeTool> _logger;
@@ -80,8 +83,11 @@ internal sealed class GeocodeTool : IMcpTool
         // registrations), so it is resolved from the request scope instead of
         // being captured by this singleton tool.
         var coordinator = httpContext.RequestServices.GetRequiredService<IGeocodeCoordinatorService>();
+        var allowFailover = LicenseGate
+            .CheckEntitlement(httpContext.RequestServices, FailoverEntitlementKey)
+            .IsActive;
         var result = await coordinator
-            .ForwardGeocodeAsync(request, providerName, cancellationToken)
+            .ForwardGeocodeAsync(request, providerName, allowFailover, cancellationToken)
             .ConfigureAwait(false);
 
         if (!result.IsSuccess)

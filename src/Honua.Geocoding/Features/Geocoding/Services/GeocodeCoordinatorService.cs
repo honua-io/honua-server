@@ -66,7 +66,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         ForwardGeocodeRequest request,
         string? providerName = null,
         CancellationToken cancellationToken = default)
-        => ForwardGeocodeAsync(request, providerName, allowFailover: true, cancellationToken);
+        => ForwardGeocodeAsync(request, providerName, allowFailover: false, cancellationToken);
 
     public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
