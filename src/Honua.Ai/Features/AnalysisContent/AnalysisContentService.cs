@@ -265,17 +265,22 @@ internal sealed partial class AnalysisContentService(
 
     private static bool TryResolveLayerInput(AnalysisPlanStep step, out int layerId)
     {
-        var resolvedLayerId = LayerInputKeys
-            .Select(key =>
-                step.Inputs.TryGetValue(key, out var raw) &&
+        var keyIndex = 0;
+        while (keyIndex < LayerInputKeys.Length)
+        {
+            if (step.Inputs.TryGetValue(LayerInputKeys[keyIndex], out var raw) &&
                 int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
-                parsed >= 0
-                    ? (int?)parsed
-                    : null)
-            .FirstOrDefault(candidate => candidate.HasValue);
+                parsed >= 0)
+            {
+                layerId = parsed;
+                return true;
+            }
 
-        layerId = resolvedLayerId.GetValueOrDefault();
-        return resolvedLayerId.HasValue;
+            keyIndex++;
+        }
+
+        layerId = 0;
+        return false;
     }
 
     public async Task<AnalysisContentVersionResult> GetVersionAsync(

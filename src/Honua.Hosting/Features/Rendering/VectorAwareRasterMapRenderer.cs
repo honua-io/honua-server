@@ -295,13 +295,17 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     {
         if (request.ResolvedLayers is { } resolved)
         {
-            var byResolvedLayer = resolved
-                .Where(entry => entry.LayerId == layerId)
-                .Select(entry => snapshot.Index.ResourcesById.GetValueOrDefault(entry.ResourceId))
-                .FirstOrDefault(resource => resource is not null);
-            if (byResolvedLayer is not null)
+            var resolvedLayerIndex = 0;
+            while (resolvedLayerIndex < resolved.Count)
             {
-                return byResolvedLayer;
+                var entry = resolved[resolvedLayerIndex];
+                if (entry.LayerId == layerId &&
+                    snapshot.Index.ResourcesById.TryGetValue(entry.ResourceId, out var byResolvedLayer))
+                {
+                    return byResolvedLayer;
+                }
+
+                resolvedLayerIndex++;
             }
         }
 

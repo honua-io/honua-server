@@ -199,18 +199,18 @@ public static class WorkflowPackageGraphValidator
             _ => new List<string>(),
             StringComparer.Ordinal);
 
-        foreach (var candidate in graph.Edges
-                     .Where(edge => edge.Kind != WorkflowEdgeKind.Failure)
-                     .Select(edge => (
-                         Edge: edge,
-                         Targets: adjacency.TryGetValue(edge.SourceNodeId, out var targets)
-                             ? targets
-                             : null))
-                     .Where(candidate =>
-                         candidate.Targets is not null &&
-                         adjacency.ContainsKey(candidate.Edge.TargetNodeId)))
+        var edgeIndex = 0;
+        while (edgeIndex < graph.Edges.Count)
         {
-            candidate.Targets!.Add(candidate.Edge.TargetNodeId);
+            var edge = graph.Edges[edgeIndex];
+            if (edge.Kind != WorkflowEdgeKind.Failure &&
+                adjacency.TryGetValue(edge.SourceNodeId, out var targets) &&
+                adjacency.ContainsKey(edge.TargetNodeId))
+            {
+                targets.Add(edge.TargetNodeId);
+            }
+
+            edgeIndex++;
         }
 
         // Three-colour DFS with an explicit stack over user-submitted graphs: `unvisited`

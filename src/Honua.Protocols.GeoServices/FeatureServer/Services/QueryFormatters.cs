@@ -306,24 +306,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         // esriFieldTypeDate attributes must serialize as epoch-ms integers (the object/non-
         // streaming serialization path has no field-type context downstream, so coerce here
         // where the layer's date fields are known).
-        if (dateFieldNames.Count > 0)
-        {
-            foreach (var converted in dateFieldNames
-                         .Select(fieldName => (
-                             FieldName: fieldName,
-                             EpochMilliseconds:
-                                 attributes.TryGetValue(fieldName, out var dateValue) &&
-                                 dateValue is not null &&
-                                 GeoServicesFieldConventions.TryConvertToEpochMilliseconds(
-                                     dateValue,
-                                     out var epochMilliseconds)
-                                     ? (long?)epochMilliseconds
-                                     : null))
-                         .Where(converted => converted.EpochMilliseconds.HasValue))
-            {
-                attributes[converted.FieldName] = converted.EpochMilliseconds.GetValueOrDefault();
-            }
-        }
+        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
         return new GeoServicesFeature
         {

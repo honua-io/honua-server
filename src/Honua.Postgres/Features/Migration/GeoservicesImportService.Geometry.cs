@@ -126,12 +126,18 @@ internal sealed partial class GeoservicesImportService
                 return true;
 
             // Rings (polygon), paths (polyline), points (multipoint): check coordinate array lengths
-            if (NestedCoordinatePropertyNames.Any(propName =>
-                    geometry.TryGetProperty(propName, out var arrays) &&
-                    arrays.EnumerateArray().Any(array =>
-                        array.EnumerateArray().Any(coord => coord.GetArrayLength() > 2))))
+            var propertyIndex = 0;
+            while (propertyIndex < NestedCoordinatePropertyNames.Length)
             {
-                return true;
+                var propertyName = NestedCoordinatePropertyNames[propertyIndex];
+                if (geometry.TryGetProperty(propertyName, out var arrays) &&
+                    arrays.EnumerateArray().Any(static array =>
+                        array.EnumerateArray().Any(static coordinate => coordinate.GetArrayLength() > 2)))
+                {
+                    return true;
+                }
+
+                propertyIndex++;
             }
 
             if (geometry.TryGetProperty("points", out var pts) &&

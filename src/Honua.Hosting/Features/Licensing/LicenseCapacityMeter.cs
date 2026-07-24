@@ -616,10 +616,17 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         var windowStart = now - NormalizePositive(_options.Value.SampleWindow, TimeSpan.FromDays(30));
         var values = await database.ListRangeAsync(SampleKey).ConfigureAwait(false);
         var samples = new List<LicenseCapacitySample>(values.Length);
-        samples.AddRange(values
-            .Select(value => TryParseSamplePayload(value.ToString(), out var sample) ? sample : null)
-            .OfType<LicenseCapacitySample>()
-            .Where(sample => sample.Timestamp >= windowStart));
+        var valueIndex = 0;
+        while (valueIndex < values.Length)
+        {
+            if (TryParseSamplePayload(values[valueIndex].ToString(), out var sample) &&
+                sample.Timestamp >= windowStart)
+            {
+                samples.Add(sample);
+            }
+
+            valueIndex++;
+        }
 
         return samples;
     }

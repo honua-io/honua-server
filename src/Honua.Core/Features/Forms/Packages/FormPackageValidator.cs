@@ -849,24 +849,20 @@ public sealed class FormPackageValidator
         }
 
         long totalSize = 0;
-        foreach (var exceeded in request.Attachments
-            .Where(static attachment => !string.IsNullOrWhiteSpace(attachment.FieldId))
-            .GroupBy(static attachment => attachment.FieldId!, StringComparer.OrdinalIgnoreCase)
-            .Select(group => (
-                Group: group,
-                MaxCount: fieldPolicies.TryGetValue(group.Key, out var policy)
-                    ? policy.MaxCount
-                    : null))
-            .Where(candidate =>
-                candidate.MaxCount.HasValue &&
-                candidate.Group.Count() > candidate.MaxCount.Value))
+        foreach (var group in request.Attachments
+                     .Where(static attachment => !string.IsNullOrWhiteSpace(attachment.FieldId))
+                     .GroupBy(static attachment => attachment.FieldId!, StringComparer.OrdinalIgnoreCase))
         {
-            var fieldMaxCount = exceeded.MaxCount.GetValueOrDefault();
-            AddError(
-                issues,
-                "attachmentFieldCountExceeded",
-                $"Attachment field '{exceeded.Group.Key}' includes {exceeded.Group.Count()} attachments; maximum is {fieldMaxCount}.",
-                exceeded.Group.Key);
+            switch (fieldPolicies.TryGetValue(group.Key, out var policy) ? policy.MaxCount : null)
+            {
+                case int fieldMaxCount when group.Count() > fieldMaxCount:
+                    AddError(
+                        issues,
+                        "attachmentFieldCountExceeded",
+                        $"Attachment field '{group.Key}' includes {group.Count()} attachments; maximum is {fieldMaxCount}.",
+                        group.Key);
+                    break;
+            }
         }
 
         foreach (var attachment in request.Attachments)

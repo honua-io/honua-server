@@ -103,9 +103,14 @@ internal sealed class StatisticsSummarizeExecutor(
         public void Accumulate(IFeature feature, IReadOnlyList<string> numericFields)
         {
             Frequency++;
-            foreach (var (field, value) in StatisticsSupport.ReadNumericValues(feature, numericFields))
+            foreach (var field in numericFields)
             {
-                _accumulators[field].Add(value);
+                switch (StatisticsSupport.TryReadNumeric(feature, field, out var value))
+                {
+                    case true:
+                        _accumulators[field].Add(value);
+                        break;
+                }
             }
         }
 

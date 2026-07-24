@@ -264,12 +264,17 @@ internal sealed class ManagedSpatialJoinExecutor(
         public void Add(IFeature joinFeature)
         {
             Count++;
-            foreach (var (field, numeric) in StatisticsSupport.ReadNumericValues(joinFeature, _fields))
+            foreach (var field in _fields)
             {
-                _sums[field] = _sums.GetValueOrDefault(field) + numeric;
-                _counts[field] = _counts.GetValueOrDefault(field) + 1;
-                _mins[field] = _mins.TryGetValue(field, out var min) ? Math.Min(min, numeric) : numeric;
-                _maxs[field] = _maxs.TryGetValue(field, out var max) ? Math.Max(max, numeric) : numeric;
+                switch (StatisticsSupport.TryReadNumeric(joinFeature, field, out var numeric))
+                {
+                    case true:
+                        _sums[field] = _sums.GetValueOrDefault(field) + numeric;
+                        _counts[field] = _counts.GetValueOrDefault(field) + 1;
+                        _mins[field] = _mins.TryGetValue(field, out var min) ? Math.Min(min, numeric) : numeric;
+                        _maxs[field] = _maxs.TryGetValue(field, out var max) ? Math.Max(max, numeric) : numeric;
+                        break;
+                }
             }
         }
 

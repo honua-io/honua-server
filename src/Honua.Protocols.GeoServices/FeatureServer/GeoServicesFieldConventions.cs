@@ -161,18 +161,16 @@ internal static class GeoServicesFieldConventions
             return;
         }
 
-        foreach (var converted in dateFieldNames
-                     .Select(fieldName => (
-                         FieldName: fieldName,
-                         EpochMilliseconds:
-                             attributes.TryGetValue(fieldName, out var dateValue) &&
-                             dateValue is not null &&
-                             TryConvertToEpochMilliseconds(dateValue, out var epochMilliseconds)
-                                 ? (long?)epochMilliseconds
-                                 : null))
-                     .Where(converted => converted.EpochMilliseconds.HasValue))
+        using var fieldNames = dateFieldNames.GetEnumerator();
+        while (fieldNames.MoveNext())
         {
-            attributes[converted.FieldName] = converted.EpochMilliseconds.GetValueOrDefault();
+            var fieldName = fieldNames.Current;
+            if (attributes.TryGetValue(fieldName, out var dateValue) &&
+                dateValue is not null &&
+                TryConvertToEpochMilliseconds(dateValue, out var epochMilliseconds))
+            {
+                attributes[fieldName] = epochMilliseconds;
+            }
         }
     }
 }

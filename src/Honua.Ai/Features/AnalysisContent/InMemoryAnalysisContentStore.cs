@@ -177,21 +177,17 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         // Opportunistic sweep: remove entries whose ExpiresAt has passed so the
         // dictionary does not grow without bound across preview calls.
         var now = _timeProvider.GetUtcNow();
-        foreach (var stale in _artifacts.Keys
-                     .Select(key => (
-                         Key: key,
-                         Found: _artifacts.TryGetValue(key, out var candidate),
-                         Candidate: candidate))
-                     .Where(entry =>
-                         entry.Found &&
-                         entry.Candidate is { ExpiresAt: { } expiresAt } &&
-                         expiresAt <= now))
+        foreach (var entry in _artifacts)
         {
-            // Value-conditional remove: only drop the exact stale entry we just
-            // inspected, so a concurrent refresh between the check and the remove
-            // is not lost.
-            _artifacts.TryRemove(
-                new KeyValuePair<string, ResultArtifactRecord>(stale.Key, stale.Candidate!));
+            switch (entry.Value.ExpiresAt)
+            {
+                case { } expiresAt when expiresAt <= now:
+                    // Value-conditional remove: only drop the exact stale entry we just
+                    // inspected, so a concurrent refresh between the check and the remove
+                    // is not lost.
+                    _artifacts.TryRemove(entry);
+                    break;
+            }
         }
 
         return Task.FromResult(artifact);

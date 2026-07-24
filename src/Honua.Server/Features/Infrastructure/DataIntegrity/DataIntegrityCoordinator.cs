@@ -497,10 +497,17 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // referenced (a legitimately long-running holder or queued waiters)
             // are left untouched and revisited on a later sweep.
             var removedCount = 0;
-            foreach (var key in expiredKeys.Where(TryRemoveIdleEntry))
+            var expiredKeyIndex = 0;
+            while (expiredKeyIndex < expiredKeys.Count)
             {
-                _lockOwnership.TryRemove(key, out _);
-                removedCount++;
+                var key = expiredKeys[expiredKeyIndex];
+                if (TryRemoveIdleEntry(key))
+                {
+                    _lockOwnership.TryRemove(key, out _);
+                    removedCount++;
+                }
+
+                expiredKeyIndex++;
             }
 
             // If collections are growing too large, also sweep locks that have no
@@ -508,9 +515,17 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // using the same ref-count guard.
             if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
-                var orphanedRemoved = _globalLocks.Keys.Count(lockKey =>
-                    !_lockOwnership.ContainsKey(lockKey) &&
-                    TryRemoveIdleEntry(lockKey));
+                var orphanedRemoved = 0;
+                foreach (var lockKey in _globalLocks.Keys)
+                {
+                    switch (!_lockOwnership.ContainsKey(lockKey) &&
+                            TryRemoveIdleEntry(lockKey))
+                    {
+                        case true:
+                            orphanedRemoved++;
+                            break;
+                    }
+                }
 
                 if (orphanedRemoved > 0 && _cleanupLogger is { } orphanLogger)
                 {

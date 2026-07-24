@@ -1619,21 +1619,21 @@ internal static class GPServerEndpoints
         IReadOnlyDictionary<string, string> rawParameters,
         int? derivedSrid)
     {
-        var resolvedSrid = SpatialReferenceParameterKeys
-            .Select(key =>
-                rawParameters.TryGetValue(key, out var value) &&
+        var keyIndex = 0;
+        while (keyIndex < SpatialReferenceParameterKeys.Length)
+        {
+            if (rawParameters.TryGetValue(SpatialReferenceParameterKeys[keyIndex], out var value) &&
                 int.TryParse(
                     value,
                     System.Globalization.NumberStyles.Integer,
                     System.Globalization.CultureInfo.InvariantCulture,
                     out var parsed) &&
-                parsed > 0
-                    ? (int?)parsed
-                    : null)
-            .FirstOrDefault(srid => srid.HasValue);
-        if (resolvedSrid.HasValue)
-        {
-            return resolvedSrid.Value;
+                parsed > 0)
+            {
+                return parsed;
+            }
+
+            keyIndex++;
         }
 
         return derivedSrid ?? 0;

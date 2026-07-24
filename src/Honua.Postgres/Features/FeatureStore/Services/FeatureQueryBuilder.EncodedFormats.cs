@@ -123,10 +123,19 @@ internal sealed partial class FeatureQueryBuilder
             .Where(field => !maskedFields.Contains(field.Name))
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
-        return requestedOutFields
-            .Select(fieldName => availableFields.TryGetValue(fieldName, out var field) ? field : null)
-            .OfType<MetadataV2Field>()
-            .ToArray();
+        var orderedFields = new List<MetadataV2Field>(requestedOutFields.Length);
+        var fieldIndex = 0;
+        while (fieldIndex < requestedOutFields.Length)
+        {
+            if (availableFields.TryGetValue(requestedOutFields[fieldIndex], out var field))
+            {
+                orderedFields.Add(field);
+            }
+
+            fieldIndex++;
+        }
+
+        return orderedFields;
     }
 
     private static string BuildEncodedBinaryAttributeExpression(

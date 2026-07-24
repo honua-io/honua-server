@@ -168,16 +168,20 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
             if (depth >= maxDepth)
                 continue;
 
-            var nextItems = current.Provenance
-                .Where(reference => reference is not null && !string.IsNullOrWhiteSpace(reference.ItemId))
-                .Where(reference => visited.Add(reference.ItemId))
-                .Select(reference => _items.GetValueOrDefault(reference.ItemId))
-                .OfType<ConsoleContentItem>();
-
-            foreach (var next in nextItems)
+            var referenceIndex = 0;
+            while (referenceIndex < current.Provenance.Count)
             {
-                ordered.Add(next);
-                frontier.Enqueue((next, depth + 1));
+                var reference = current.Provenance[referenceIndex];
+                if (reference is not null &&
+                    !string.IsNullOrWhiteSpace(reference.ItemId) &&
+                    visited.Add(reference.ItemId) &&
+                    _items.TryGetValue(reference.ItemId, out var next))
+                {
+                    ordered.Add(next);
+                    frontier.Enqueue((next, depth + 1));
+                }
+
+                referenceIndex++;
             }
         }
 

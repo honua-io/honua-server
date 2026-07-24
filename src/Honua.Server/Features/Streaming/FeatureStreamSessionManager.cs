@@ -424,13 +424,17 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             // actually sends. The generation observed at match time travels
             // with the frame so the writer can reject queued frames whose
             // subscription was unsubscribed or replaced before drain.
-            foreach (var subscriptionMessage in matches.Select(match => message with
+            var matchIndex = 0;
+            while (matchIndex < matches.Length)
             {
-                Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
-                SubscriptionGeneration = match.Generation
-            }))
-            {
+                var match = matches[matchIndex];
+                var subscriptionMessage = message with
+                {
+                    Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
+                    SubscriptionGeneration = match.Generation
+                };
                 delivered += TryQueueMessage(id, entry, subscriptionMessage) ? 1 : 0;
+                matchIndex++;
             }
         }
 

@@ -181,24 +181,6 @@ internal static class StatisticsSupport
         }
     }
 
-    /// <summary>Returns the numeric field values that can be read from a feature.</summary>
-    public static IEnumerable<(string Field, double Value)> ReadNumericValues(
-        IFeature feature,
-        IEnumerable<string> fields)
-    {
-        ArgumentNullException.ThrowIfNull(feature);
-        ArgumentNullException.ThrowIfNull(fields);
-
-        return fields
-            .Select(field => (
-                Field: field,
-                Value: TryReadNumeric(feature, field, out var value)
-                    ? (double?)value
-                    : null))
-            .Where(candidate => candidate.Value.HasValue)
-            .Select(candidate => (candidate.Field, candidate.Value.GetValueOrDefault()));
-    }
-
     /// <summary>Accumulates numeric statistics for a single field within a group.</summary>
     public sealed class FieldAccumulator
     {

@@ -91,8 +91,11 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
     private int Broadcast(string method)
     {
         var notification = Serialize(method, parameters: null);
-        var delivered = _sessions.ActiveSessionIds.Count(
-            sessionId => _sessions.TryEnqueue(sessionId, notification));
+        var delivered = 0;
+        foreach (var sessionId in _sessions.ActiveSessionIds)
+        {
+            delivered += _sessions.TryEnqueue(sessionId, notification) ? 1 : 0;
+        }
 
         if (delivered > 0)
         {

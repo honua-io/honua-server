@@ -84,61 +84,73 @@ public static class NetworkTopologyEditValidation
             return false;
         }
 
-        var edgeFailure = batch.AddEdges
-            .Concat(batch.UpdateEdges)
-            .Select(edge =>
-            {
-                var isValid = TryValidateEdge(edge, generationSrid, allowedAttributeKeys, out var validationError);
-                return (IsFailure: !isValid, Error: validationError);
-            })
-            .FirstOrDefault(result => result.IsFailure);
-        if (edgeFailure.IsFailure)
+        var edgeIndex = 0;
+        while (edgeIndex < batch.AddEdges.Count)
         {
-            error = edgeFailure.Error;
-            return false;
+            if (!TryValidateEdge(batch.AddEdges[edgeIndex], generationSrid, allowedAttributeKeys, out error))
+            {
+                return false;
+            }
+
+            edgeIndex++;
         }
 
-        var edgeIdFailure = batch.DeleteEdgeIds
-            .Select(edgeId =>
-            {
-                var isValid = TryValidateStableId(edgeId, "edge id", out var validationError);
-                return (IsFailure: !isValid, Error: validationError);
-            })
-            .FirstOrDefault(result => result.IsFailure);
-        if (edgeIdFailure.IsFailure)
+        edgeIndex = 0;
+        while (edgeIndex < batch.UpdateEdges.Count)
         {
-            error = edgeIdFailure.Error;
-            return false;
+            if (!TryValidateEdge(batch.UpdateEdges[edgeIndex], generationSrid, allowedAttributeKeys, out error))
+            {
+                return false;
+            }
+
+            edgeIndex++;
         }
 
-        var restrictionFailure = batch.AddRestrictions
-            .Concat(batch.UpdateRestrictions)
-            .Select(restriction =>
-            {
-                var isValid = TryValidateRestriction(restriction, out var validationError);
-                return (IsFailure: !isValid, Error: validationError);
-            })
-            .FirstOrDefault(result => result.IsFailure);
-        if (restrictionFailure.IsFailure)
+        var edgeIdIndex = 0;
+        while (edgeIdIndex < batch.DeleteEdgeIds.Count)
         {
-            error = restrictionFailure.Error;
-            return false;
+            if (!TryValidateStableId(batch.DeleteEdgeIds[edgeIdIndex], "edge id", out error))
+            {
+                return false;
+            }
+
+            edgeIdIndex++;
         }
 
-        var restrictionIdFailure = batch.DeleteRestrictionIds
-            .Select(restrictionId =>
+        var restrictionIndex = 0;
+        while (restrictionIndex < batch.AddRestrictions.Count)
+        {
+            if (!TryValidateRestriction(batch.AddRestrictions[restrictionIndex], out error))
             {
-                var isValid = TryValidateStableId(
-                    restrictionId,
+                return false;
+            }
+
+            restrictionIndex++;
+        }
+
+        restrictionIndex = 0;
+        while (restrictionIndex < batch.UpdateRestrictions.Count)
+        {
+            if (!TryValidateRestriction(batch.UpdateRestrictions[restrictionIndex], out error))
+            {
+                return false;
+            }
+
+            restrictionIndex++;
+        }
+
+        var restrictionIdIndex = 0;
+        while (restrictionIdIndex < batch.DeleteRestrictionIds.Count)
+        {
+            if (!TryValidateStableId(
+                    batch.DeleteRestrictionIds[restrictionIdIndex],
                     "turn restriction id",
-                    out var validationError);
-                return (IsFailure: !isValid, Error: validationError);
-            })
-            .FirstOrDefault(result => result.IsFailure);
-        if (restrictionIdFailure.IsFailure)
-        {
-            error = restrictionIdFailure.Error;
-            return false;
+                    out error))
+            {
+                return false;
+            }
+
+            restrictionIdIndex++;
         }
 
         error = string.Empty;

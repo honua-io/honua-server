@@ -84,15 +84,22 @@ internal static class FilterGeometryCrsValidator
         Func<int, bool> isSupportedSrid,
         out int unsupportedSrid)
     {
-        var resolvedUnsupportedSrid = expressions
-            .Select(expression =>
-                TryFindUnsupportedExplicitGeometryCrs(expression, isSupportedSrid, out var candidate)
-                    ? (int?)candidate
-                    : null)
-            .FirstOrDefault(candidate => candidate.HasValue);
+        var expressionIndex = 0;
+        while (expressionIndex < expressions.Count)
+        {
+            if (TryFindUnsupportedExplicitGeometryCrs(
+                    expressions[expressionIndex],
+                    isSupportedSrid,
+                    out unsupportedSrid))
+            {
+                return true;
+            }
 
-        unsupportedSrid = resolvedUnsupportedSrid.GetValueOrDefault();
-        return resolvedUnsupportedSrid.HasValue;
+            expressionIndex++;
+        }
+
+        unsupportedSrid = 0;
+        return false;
     }
 
     private static void CollectExplicitGeometrySrids(

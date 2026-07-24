@@ -837,10 +837,16 @@ public sealed class GeoServicesSqlParser
 
     private bool Match(params TokenType[] types)
     {
-        if (types.Any(Check))
+        var index = 0;
+        while (index < types.Length)
         {
-            Advance();
-            return true;
+            if (Check(types[index]))
+            {
+                Advance();
+                return true;
+            }
+
+            index++;
         }
 
         return false;

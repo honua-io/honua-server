@@ -137,18 +137,17 @@ internal sealed partial class ODataBatchHandler
             var dependencyOrder = OrderRequestsByDependencies(groupRequests);
             if (dependencyOrder.ErrorsById.Count > 0)
             {
-                foreach (var dependencyError in groupRequests
-                             .DistinctBy(request => request.Id, StringComparer.Ordinal)
-                             .Select(request => (
-                                 Request: request,
-                                 Found: dependencyOrder.ErrorsById.TryGetValue(
-                                     request.Id,
-                                     out var error),
-                                 Error: error))
-                             .Where(dependencyError => dependencyError.Found))
+                foreach (var request in groupRequests.DistinctBy(
+                             static request => request.Id,
+                             StringComparer.Ordinal))
                 {
-                    responses.Add(dependencyError.Error!);
-                    responsesById[dependencyError.Request.Id] = dependencyError.Error!;
+                    switch (dependencyOrder.ErrorsById.TryGetValue(request.Id, out var dependencyError))
+                    {
+                        case true:
+                            responses.Add(dependencyError);
+                            responsesById[request.Id] = dependencyError;
+                            break;
+                    }
                 }
             }
 
@@ -157,9 +156,20 @@ internal sealed partial class ODataBatchHandler
             {
                 if (request.DependsOn is { Length: > 0 })
                 {
-                    var failedDependency = request.DependsOn.FirstOrDefault(dep =>
-                        responsesById.TryGetValue(dep, out var dependencyResponse) &&
-                        dependencyResponse.Status >= 400);
+                    string? failedDependency = null;
+                    var dependencyIndex = 0;
+                    while (dependencyIndex < request.DependsOn.Length)
+                    {
+                        var dependency = request.DependsOn[dependencyIndex];
+                        if (responsesById.TryGetValue(dependency, out var dependencyResponse) &&
+                            dependencyResponse.Status >= 400)
+                        {
+                            failedDependency = dependency;
+                            break;
+                        }
+
+                        dependencyIndex++;
+                    }
 
                     if (!string.IsNullOrWhiteSpace(failedDependency))
                     {

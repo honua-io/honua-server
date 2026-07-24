@@ -97,12 +97,14 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
     /// </summary>
     public void Dispose()
     {
-        foreach (var entry in _subscribers.Keys
-                     .Select(id => _subscribers.TryRemove(id, out var removed) ? removed : null)
-                     .OfType<SubscriptionEntry>())
+        using var subscriberIds = _subscribers.Keys.GetEnumerator();
+        while (subscriberIds.MoveNext())
         {
-            entry.Cts.Cancel();
-            entry.Cts.Dispose();
+            if (_subscribers.TryRemove(subscriberIds.Current, out var entry))
+            {
+                entry.Cts.Cancel();
+                entry.Cts.Dispose();
+            }
         }
     }
 

@@ -264,30 +264,40 @@ internal static class ImageServerSensorModel
 
     private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] names)
     {
-        var resolved = names
-            .Select(name =>
-                root.TryGetProperty(name, out var candidate) &&
-                candidate.ValueKind == JsonValueKind.Array
-                    ? (JsonElement?)candidate
-                    : null)
-            .FirstOrDefault(candidate => candidate.HasValue);
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
+        {
+            if (root.TryGetProperty(names[nameIndex], out var candidate) &&
+                candidate.ValueKind == JsonValueKind.Array)
+            {
+                array = candidate;
+                return true;
+            }
 
-        array = resolved.GetValueOrDefault();
-        return resolved.HasValue;
+            nameIndex++;
+        }
+
+        array = default;
+        return false;
     }
 
     private static bool TryGetObject(JsonElement root, out JsonElement value, params string[] names)
     {
-        var resolved = names
-            .Select(name =>
-                root.TryGetProperty(name, out var candidate) &&
-                candidate.ValueKind == JsonValueKind.Object
-                    ? (JsonElement?)candidate
-                    : null)
-            .FirstOrDefault(candidate => candidate.HasValue);
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
+        {
+            if (root.TryGetProperty(names[nameIndex], out var candidate) &&
+                candidate.ValueKind == JsonValueKind.Object)
+            {
+                value = candidate;
+                return true;
+            }
 
-        value = resolved.GetValueOrDefault();
-        return resolved.HasValue;
+            nameIndex++;
+        }
+
+        value = default;
+        return false;
     }
 
     private static int? ReadWkid(JsonElement element)
@@ -316,13 +326,19 @@ internal static class ImageServerSensorModel
 
     private static bool TryReadAny(JsonElement root, out double value, params string[] names)
     {
-        // Not rewritten as .Where(...): this is a first-match short-circuit over the
-        var resolved = names
-            .Select(name => TryGetDouble(root, name, out var candidate) ? (double?)candidate : null)
-            .FirstOrDefault(candidate => candidate.HasValue);
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
+        {
+            if (TryGetDouble(root, names[nameIndex], out value))
+            {
+                return true;
+            }
 
-        value = resolved.GetValueOrDefault();
-        return resolved.HasValue;
+            nameIndex++;
+        }
+
+        value = 0;
+        return false;
     }
 
     private static bool TryGetDouble(JsonElement root, string name, out double value)

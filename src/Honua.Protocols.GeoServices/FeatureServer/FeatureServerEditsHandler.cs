@@ -1277,16 +1277,17 @@ internal sealed class FeatureServerEditsHandler(
             },
             cancellationToken).ConfigureAwait(false);
 
-        foreach (var resolvedFeature in result.Items
-                     .Select(feature => (
-                         Feature: feature,
-                         ObjectId: feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue) &&
-                             FeatureServerValueParser.TryConvertToLong(rawValue, out var objectId)
-                                 ? (long?)objectId
-                                 : null))
-                     .Where(resolvedFeature => resolvedFeature.ObjectId.HasValue))
+        var featureIndex = 0;
+        while (featureIndex < result.Items.Length)
         {
-            resolved[resolvedFeature.ObjectId.GetValueOrDefault()] = resolvedFeature.Feature;
+            var feature = result.Items[featureIndex];
+            if (feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue) &&
+                FeatureServerValueParser.TryConvertToLong(rawValue, out var objectId))
+            {
+                resolved[objectId] = feature;
+            }
+
+            featureIndex++;
         }
 
         return resolved;

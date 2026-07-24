@@ -192,17 +192,26 @@ internal static class ImageServerGeometryHelpers
         }
 
         // paths: [[[x,y], ...], ...] and rings: [[[x,y], ...], ...]
-        foreach (var part in CompositeCoordinatePropertyNames
-                     .Select(name =>
-                         root.TryGetProperty(name, out var element) &&
-                         element.ValueKind == JsonValueKind.Array
-                             ? (JsonElement?)element
-                             : null)
-                     .Where(element => element.HasValue)
-                     .SelectMany(element => element.GetValueOrDefault().EnumerateArray())
-                     .Where(part => part.ValueKind == JsonValueKind.Array))
+        var propertyIndex = 0;
+        while (propertyIndex < CompositeCoordinatePropertyNames.Length)
         {
-            AppendCoordinatePairs(part, result);
+            if (root.TryGetProperty(CompositeCoordinatePropertyNames[propertyIndex], out var element) &&
+                element.ValueKind == JsonValueKind.Array)
+            {
+                var partIndex = 0;
+                while (partIndex < element.GetArrayLength())
+                {
+                    var part = element[partIndex];
+                    if (part.ValueKind == JsonValueKind.Array)
+                    {
+                        AppendCoordinatePairs(part, result);
+                    }
+
+                    partIndex++;
+                }
+            }
+
+            propertyIndex++;
         }
 
         return result;
@@ -210,12 +219,20 @@ internal static class ImageServerGeometryHelpers
 
     private static void AppendCoordinatePairs(JsonElement array, List<(double, double)> result)
     {
-        result.AddRange(array.EnumerateArray()
-            .Where(pair => pair.ValueKind == JsonValueKind.Array &&
+        var pairIndex = 0;
+        while (pairIndex < array.GetArrayLength())
+        {
+            var pair = array[pairIndex];
+            if (pair.ValueKind == JsonValueKind.Array &&
                 pair.GetArrayLength() >= 2 &&
                 pair[0].ValueKind == JsonValueKind.Number &&
                 pair[1].ValueKind == JsonValueKind.Number)
-            .Select(pair => (pair[0].GetDouble(), pair[1].GetDouble())));
+            {
+                result.Add((pair[0].GetDouble(), pair[1].GetDouble()));
+            }
+
+            pairIndex++;
+        }
     }
 
     private static bool TryReadNumber(JsonElement element, string property, out double value)

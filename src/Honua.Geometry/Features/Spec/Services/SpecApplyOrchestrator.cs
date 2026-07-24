@@ -727,14 +727,16 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
         }
 
         var result = new Dictionary<string, CachedArtifactRef>(plannedNode.DependsOn.Count, StringComparer.Ordinal);
-        foreach (var cachedInput in plannedNode.DependsOn
-                     .Select(dependency => (
-                         Dependency: dependency,
-                         Found: cachedInputs.TryGetValue(dependency, out var reference),
-                         Reference: reference))
-                     .Where(cachedInput => cachedInput.Found))
+        var dependencyIndex = 0;
+        while (dependencyIndex < plannedNode.DependsOn.Count)
         {
-            result[cachedInput.Dependency] = cachedInput.Reference!;
+            var dependency = plannedNode.DependsOn[dependencyIndex];
+            if (cachedInputs.TryGetValue(dependency, out var reference))
+            {
+                result[dependency] = reference;
+            }
+
+            dependencyIndex++;
         }
 
         return result;

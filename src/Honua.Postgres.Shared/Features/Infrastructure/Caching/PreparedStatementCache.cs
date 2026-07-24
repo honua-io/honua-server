@@ -709,12 +709,16 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
         var removedCount = 0;
 
-        foreach (var statement in keysToRemove
-                     .Select(key => TryRemoveCachedStatement(key, out var removed) ? removed : null)
-                     .OfType<CachedStatement>())
+        var keyIndex = 0;
+        while (keyIndex < keysToRemove.Count)
         {
-            statement.Dispose();
-            removedCount++;
+            if (TryRemoveCachedStatement(keysToRemove[keyIndex], out var removed))
+            {
+                removed!.Dispose();
+                removedCount++;
+            }
+
+            keyIndex++;
         }
 
         if (removedCount > 0)
@@ -946,11 +950,15 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 .Select(kvp => kvp.Key)
                 .ToList();
 
-            foreach (var expired in expiredKeys
-                         .Select(key => TryRemoveCachedStatement(key, out var removed) ? removed : null)
-                         .OfType<CachedStatement>())
+            var expiredKeyIndex = 0;
+            while (expiredKeyIndex < expiredKeys.Count)
             {
-                expired.Dispose();
+                if (TryRemoveCachedStatement(expiredKeys[expiredKeyIndex], out var removed))
+                {
+                    removed!.Dispose();
+                }
+
+                expiredKeyIndex++;
             }
 
             // Also cleanup execution metrics for old statements

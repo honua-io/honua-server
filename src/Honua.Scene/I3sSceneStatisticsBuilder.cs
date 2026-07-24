@@ -110,15 +110,17 @@ public static class I3sSceneStatisticsBuilder
         // Non-numeric (string) field: emit value presence + distinct count only.
         var present = 0;
         var distinct = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var value in features
-                     .Select(feature =>
-                         feature.Attributes.TryGetValue(attributeKey, out var value)
-                             ? value
-                             : null)
-                     .Where(value => value is not null))
+        var featureIndex = 0;
+        while (featureIndex < features.Count)
         {
-            present++;
-            distinct.Add(value as string ?? value!.ToString() ?? string.Empty);
+            if (features[featureIndex].Attributes.TryGetValue(attributeKey, out var value) &&
+                value is not null)
+            {
+                present++;
+                distinct.Add(value as string ?? value.ToString() ?? string.Empty);
+            }
+
+            featureIndex++;
         }
 
         return new I3sAttributeStatisticsDocument

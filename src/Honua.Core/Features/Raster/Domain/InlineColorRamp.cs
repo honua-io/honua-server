@@ -456,36 +456,43 @@ public static class InlineColorRamp
 
     private static bool TryGetString(JsonElement element, string property, out string value)
     {
-        value = string.Empty;
-        var resolved = new[] { property, ToLowerFirst(property), property.ToLowerInvariant() }
-            .Select(candidate =>
-                element.TryGetProperty(candidate, out var child) &&
-                child.ValueKind == JsonValueKind.String
-                    ? child.GetString()
-                    : null)
-            .FirstOrDefault(candidate => candidate is not null);
+        if (TryGetStringProperty(element, property, out value) ||
+            TryGetStringProperty(element, ToLowerFirst(property), out value) ||
+            TryGetStringProperty(element, property.ToLowerInvariant(), out value))
+        {
+            return !string.IsNullOrWhiteSpace(value);
+        }
 
-        value = resolved ?? string.Empty;
-        return !string.IsNullOrWhiteSpace(value);
+        value = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetStringProperty(JsonElement element, string property, out string value)
+    {
+        if (element.TryGetProperty(property, out var child) &&
+            child.ValueKind == JsonValueKind.String &&
+            child.GetString() is { } resolved)
+        {
+            value = resolved;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
     }
 
     private static bool TryParseColor(JsonElement element, string property, out ColorRgba color)
     {
         color = default;
-        var resolved = new[] { property, ToLowerFirst(property), property.ToLowerInvariant() }
-            .Select(candidate =>
-                element.TryGetProperty(candidate, out var array)
-                    ? (JsonElement?)array
-                    : null)
-            .FirstOrDefault(array => array.HasValue);
-        if (!resolved.HasValue ||
-            resolved.Value.ValueKind != JsonValueKind.Array ||
-            resolved.Value.GetArrayLength() < 3)
+        if (!(element.TryGetProperty(property, out var array) ||
+              element.TryGetProperty(ToLowerFirst(property), out array) ||
+              element.TryGetProperty(property.ToLowerInvariant(), out array)) ||
+            array.ValueKind != JsonValueKind.Array ||
+            array.GetArrayLength() < 3)
         {
             return false;
         }
 
-        var array = resolved.Value;
         if (!array[0].TryGetDouble(out var r) ||
             !array[1].TryGetDouble(out var g) ||
             !array[2].TryGetDouble(out var b))

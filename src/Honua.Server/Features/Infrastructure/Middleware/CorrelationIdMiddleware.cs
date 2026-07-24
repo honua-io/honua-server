@@ -186,13 +186,17 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         out string? value,
         params string[] keys)
     {
-        var routeValue = keys
-            .Select(key => routeValues.TryGetValue(key, out var candidate) ? candidate : null)
-            .FirstOrDefault(candidate => candidate is not null);
-        if (routeValue is not null)
+        var keyIndex = 0;
+        while (keyIndex < keys.Length)
         {
-            value = routeValue.ToString();
-            return !string.IsNullOrWhiteSpace(value);
+            if (routeValues.TryGetValue(keys[keyIndex], out var routeValue) &&
+                routeValue is not null)
+            {
+                value = routeValue.ToString();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+
+            keyIndex++;
         }
 
         value = null;

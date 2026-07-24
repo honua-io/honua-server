@@ -48,10 +48,15 @@ internal sealed class StatisticsCalculateExecutor(
         foreach (var feature in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var (field, value) in StatisticsSupport.ReadNumericValues(feature, fields))
+            foreach (var field in fields)
             {
-                accumulators[field].Add(value);
-                counts[field]++;
+                switch (StatisticsSupport.TryReadNumeric(feature, field, out var value))
+                {
+                    case true:
+                        accumulators[field].Add(value);
+                        counts[field]++;
+                        break;
+                }
             }
         }
 

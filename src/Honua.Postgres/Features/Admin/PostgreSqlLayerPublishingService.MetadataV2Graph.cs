@@ -223,19 +223,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // Map layer_id -> resource ids (a layer may be published into multiple services).
         var affectedResourceIds = new HashSet<string>(StringComparer.Ordinal);
         var extentByResourceId = new Dictionary<string, LayerExtentInsert?>(StringComparer.Ordinal);
-        foreach (var refreshed in graph.Publications
-                     .Where(publication => publication.LayerIndex.HasValue)
-                     .Select(publication => (
-                         Publication: publication,
-                         Found: refreshedExtents.TryGetValue(
-                             publication.LayerIndex.GetValueOrDefault(),
-                             out var extent),
-                         Extent: extent))
-                     .Where(refreshed => refreshed.Found)
-                     .DistinctBy(refreshed => refreshed.Publication.ResourceId))
+        var publicationIndex = 0;
+        while (publicationIndex < graph.Publications.Count)
         {
-            affectedResourceIds.Add(refreshed.Publication.ResourceId);
-            extentByResourceId[refreshed.Publication.ResourceId] = refreshed.Extent;
+            var publication = graph.Publications[publicationIndex];
+            if (publication.LayerIndex is { } layerIndex &&
+                refreshedExtents.TryGetValue(layerIndex, out var extent) &&
+                affectedResourceIds.Add(publication.ResourceId))
+            {
+                extentByResourceId[publication.ResourceId] = extent;
+            }
+
+            publicationIndex++;
         }
         if (affectedResourceIds.Count == 0)
         {

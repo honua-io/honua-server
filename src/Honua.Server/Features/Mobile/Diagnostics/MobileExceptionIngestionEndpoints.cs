@@ -71,16 +71,20 @@ internal static class MobileExceptionIngestionEndpoints
 
     private static string? ReadString(JsonElement report, params string[] names)
     {
-        // Not a simple .Where(): the filter condition depends on TryGetProperty's `out`
-        // value, which the returned GetString() also needs, so a LINQ predicate can't
-        // cleanly carry that state without re-running the lookup per candidate.
-        return names
-            .Select(name =>
-                report.TryGetProperty(name, out var value) &&
-                value.ValueKind == JsonValueKind.String
-                    ? value.GetString()
-                    : null)
-            .FirstOrDefault(value => value is not null);
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
+        {
+            if (report.TryGetProperty(names[nameIndex], out var value) &&
+                value.ValueKind == JsonValueKind.String &&
+                value.GetString() is { } resolved)
+            {
+                return resolved;
+            }
+
+            nameIndex++;
+        }
+
+        return null;
     }
 
     private static void ApplyNoStoreHeaders(HttpResponse response)

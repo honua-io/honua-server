@@ -465,15 +465,14 @@ internal sealed class ODataAggregationHandler
 
     private static void UpdateAccumulators(List<AggregateAccumulator> accumulators, Feature feature)
     {
-        foreach (var candidate in accumulators
-                     .Select(accumulator => (
-                         Accumulator: accumulator,
-                         Value: TryGetNumericValue(feature, accumulator.Field, out var value)
-                             ? (double?)value
-                             : null))
-                     .Where(candidate => candidate.Value.HasValue))
+        foreach (var accumulator in accumulators)
         {
-            candidate.Accumulator.AddValue(candidate.Value.GetValueOrDefault());
+            switch (TryGetNumericValue(feature, accumulator.Field, out var value))
+            {
+                case true:
+                    accumulator.AddValue(value);
+                    break;
+            }
         }
     }
 

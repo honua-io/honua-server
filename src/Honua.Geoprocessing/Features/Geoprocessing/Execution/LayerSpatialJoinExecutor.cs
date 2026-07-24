@@ -131,9 +131,14 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
                     carried[field].Add(ReadValue(candidate, field));
                 }
 
-                foreach (var (field, value) in StatisticsSupport.ReadNumericValues(candidate, accumulators.Keys))
+                foreach (var accumulator in accumulators)
                 {
-                    accumulators[field].Add(value);
+                    switch (StatisticsSupport.TryReadNumeric(candidate, accumulator.Key, out var value))
+                    {
+                        case true:
+                            accumulator.Value.Add(value);
+                            break;
+                    }
                 }
             }
         }

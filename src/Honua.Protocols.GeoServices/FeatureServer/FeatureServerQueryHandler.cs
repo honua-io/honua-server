@@ -2308,13 +2308,18 @@ internal sealed partial class FeatureServerQueryHandler(
             return true;
         }
 
-        errorMessage = paths
-            .Select(path =>
-                TryValidateCoordinateCollection(path, isGeographic, out var validationError)
-                    ? null
-                    : validationError)
-            .FirstOrDefault(validationError => validationError is not null);
-        return errorMessage is null;
+        var pathIndex = 0;
+        while (pathIndex < paths.Length)
+        {
+            if (!TryValidateCoordinateCollection(paths[pathIndex], isGeographic, out errorMessage))
+            {
+                return false;
+            }
+
+            pathIndex++;
+        }
+
+        return true;
     }
 
     private static bool TryValidateCoordinatePair(

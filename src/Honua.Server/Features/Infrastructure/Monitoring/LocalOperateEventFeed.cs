@@ -212,10 +212,17 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            results.AddRange(page.Items
-                .Select(MapAlertEvent)
-                .Where(value => MatchesFilter(filter, value))
-                .Take(pageSize - results.Count));
+            var itemIndex = 0;
+            while (itemIndex < page.Items.Count && results.Count < pageSize)
+            {
+                var value = MapAlertEvent(page.Items[itemIndex]);
+                if (MatchesFilter(filter, value))
+                {
+                    results.Add(value);
+                }
+
+                itemIndex++;
+            }
 
             if (string.IsNullOrEmpty(page.NextCursor) ||
                 string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
@@ -270,12 +277,18 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            results.AddRange(page.Items
-                .Select(MapAuditRecord)
-                .Where(value =>
-                    MatchesFilter(filter, value, matchResourceRef: false) &&
+            var itemIndex = 0;
+            while (itemIndex < page.Items.Count && results.Count < pageSize)
+            {
+                var value = MapAuditRecord(page.Items[itemIndex]);
+                if (MatchesFilter(filter, value, matchResourceRef: false) &&
                     MatchesAuditResourceFilter(resourceFilter, value.ResourceRef))
-                .Take(pageSize - results.Count));
+                {
+                    results.Add(value);
+                }
+
+                itemIndex++;
+            }
 
             if (string.IsNullOrEmpty(page.NextCursor) ||
                 string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))

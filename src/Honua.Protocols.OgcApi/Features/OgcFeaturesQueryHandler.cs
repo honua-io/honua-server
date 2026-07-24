@@ -1325,15 +1325,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
             lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
-        foreach (var field in propertyFields
-                     .Select(fieldName => (
-                         Name: fieldName,
-                         Found: lookup.TryGetValue(fieldName, out var value),
-                         Value: value))
-                     .Where(field => field.Found))
+        var fieldIndex = 0;
+        while (fieldIndex < propertyFields.Length)
         {
-            writer.WritePropertyName(field.Name);
-            field.Value.WriteTo(writer);
+            var fieldName = propertyFields[fieldIndex];
+            if (lookup.TryGetValue(fieldName, out var value))
+            {
+                writer.WritePropertyName(fieldName);
+                value.WriteTo(writer);
+            }
+
+            fieldIndex++;
         }
 
         writer.WriteEndObject();

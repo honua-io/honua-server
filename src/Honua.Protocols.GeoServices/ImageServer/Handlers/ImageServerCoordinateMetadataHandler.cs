@@ -364,13 +364,19 @@ internal sealed class ImageServerCoordinateMetadataHandler
             var parsed = new List<MapPoint>();
             if (geometriesElement.ValueKind == JsonValueKind.Array)
             {
-                parsed.AddRange(geometriesElement.EnumerateArray()
-                    .Select(geometry =>
-                        TryReadPointGeometry(geometry, fallbackSrid, out var point)
-                            ? (MapPoint?)point
-                            : null)
-                    .Where(point => point.HasValue)
-                    .Select(point => point.GetValueOrDefault()));
+                var geometryIndex = 0;
+                while (geometryIndex < geometriesElement.GetArrayLength())
+                {
+                    if (TryReadPointGeometry(
+                            geometriesElement[geometryIndex],
+                            fallbackSrid,
+                            out var parsedPoint))
+                    {
+                        parsed.Add(parsedPoint);
+                    }
+
+                    geometryIndex++;
+                }
             }
             else if (TryReadPointGeometry(geometriesElement, fallbackSrid, out var point))
             {

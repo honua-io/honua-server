@@ -1527,17 +1527,19 @@ internal static partial class MapServerEndpoints
         System.Collections.Immutable.ImmutableArray<Feature> features,
         string leftKeyField)
     {
-        // Not rewritten as .Where(...): the Try-pattern (TryGetValue / TryGetAttributeCaseInsensitive)
-        // needs to produce a correlated output (the resolved value) from a single pass, which a
-        // filter predicate can't express as clearly as the loop.
         var values = new List<object?>(features.Length);
-        values.AddRange(features
-            .Select(feature => (
-                Found: feature.Attributes.TryGetValue(leftKeyField, out var value) ||
-                    TryGetAttributeCaseInsensitive(feature.Attributes, leftKeyField, out value),
-                Value: value))
-            .Where(candidate => candidate.Found)
-            .Select(candidate => candidate.Value));
+        var featureIndex = 0;
+        while (featureIndex < features.Length)
+        {
+            var attributes = features[featureIndex].Attributes;
+            if (attributes.TryGetValue(leftKeyField, out var value) ||
+                TryGetAttributeCaseInsensitive(attributes, leftKeyField, out value))
+            {
+                values.Add(value);
+            }
+
+            featureIndex++;
+        }
 
         return values;
     }

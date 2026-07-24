@@ -307,19 +307,17 @@ internal static class OgcFeatureIdentifierResolver
         // a single ObjectIds query (mirrors the per-id GetAsync fast path in ResolveAsync).
         if (CanUseObjectIdFastPath(idField))
         {
-            // judgment call: TryParseCanonicalPositiveObjectId both filters (returns false for
-            // non-canonical ids) and binds the extracted `objectId` used below; a .Where() would
-            // have to re-parse the id, so the guard-clause form here is clearer.
             var tokensByObjectId = new Dictionary<long, string>(distinctIds.Count);
-            foreach (var candidate in distinctIds
-                         .Select(featureId => (
-                             FeatureId: featureId,
-                             ObjectId: TryParseCanonicalPositiveObjectId(featureId, out var objectId)
-                                 ? (long?)objectId
-                                 : null))
-                         .Where(candidate => candidate.ObjectId.HasValue))
+            var featureIdIndex = 0;
+            while (featureIdIndex < distinctIds.Count)
             {
-                tokensByObjectId.TryAdd(candidate.ObjectId.GetValueOrDefault(), candidate.FeatureId);
+                var featureId = distinctIds[featureIdIndex];
+                if (TryParseCanonicalPositiveObjectId(featureId, out var objectId))
+                {
+                    tokensByObjectId.TryAdd(objectId, featureId);
+                }
+
+                featureIdIndex++;
             }
 
             if (tokensByObjectId.Count > 0)
@@ -334,16 +332,16 @@ internal static class OgcFeatureIdentifierResolver
                     cancellationToken).ConfigureAwait(false);
                 if (!fastPathResult.Items.IsDefaultOrEmpty)
                 {
-                    foreach (var resolvedFeature in fastPathResult.Items
-                                 .Select(feature => (
-                                     Feature: feature,
-                                     Found: tokensByObjectId.TryGetValue(feature.Id, out var token),
-                                     Token: token))
-                                 .Where(resolvedFeature => resolvedFeature.Found))
+                    var resolvedFeatureIndex = 0;
+                    while (resolvedFeatureIndex < fastPathResult.Items.Length)
                     {
-                        resolved.TryAdd(
-                            resolvedFeature.Token!,
-                            new ResolvedFeature(resolvedFeature.Feature.Id, resolvedFeature.Feature));
+                        var feature = fastPathResult.Items[resolvedFeatureIndex];
+                        if (tokensByObjectId.TryGetValue(feature.Id, out var token))
+                        {
+                            resolved.TryAdd(token, new ResolvedFeature(feature.Id, feature));
+                        }
+
+                        resolvedFeatureIndex++;
                     }
                 }
             }

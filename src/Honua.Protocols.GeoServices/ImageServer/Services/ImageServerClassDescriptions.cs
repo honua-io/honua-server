@@ -97,26 +97,38 @@ internal static class ImageServerClassDescriptions
 
     private static int ReadClassId(JsonElement classElement, int ordinal)
     {
-        return ClassIdPropertyNames
-            .Select(name =>
-                classElement.TryGetProperty(name, out var element) &&
+        var propertyIndex = 0;
+        while (propertyIndex < ClassIdPropertyNames.Length)
+        {
+            if (classElement.TryGetProperty(ClassIdPropertyNames[propertyIndex], out var element) &&
                 element.ValueKind == JsonValueKind.Number &&
-                element.TryGetInt32(out var id)
-                    ? (int?)id
-                    : null)
-            .FirstOrDefault(id => id.HasValue)
-            ?? ordinal;
+                element.TryGetInt32(out var id))
+            {
+                return id;
+            }
+
+            propertyIndex++;
+        }
+
+        return ordinal;
     }
 
     private static string? ReadName(JsonElement classElement)
     {
-        return ClassNamePropertyNames
-            .Select(name =>
-                classElement.TryGetProperty(name, out var element) &&
-                element.ValueKind == JsonValueKind.String
-                    ? element.GetString()
-                    : null)
-            .FirstOrDefault(value => value is not null);
+        var propertyIndex = 0;
+        while (propertyIndex < ClassNamePropertyNames.Length)
+        {
+            if (classElement.TryGetProperty(ClassNamePropertyNames[propertyIndex], out var element) &&
+                element.ValueKind == JsonValueKind.String &&
+                element.GetString() is { } value)
+            {
+                return value;
+            }
+
+            propertyIndex++;
+        }
+
+        return null;
     }
 
     private static bool TryBuildClipGeometry(

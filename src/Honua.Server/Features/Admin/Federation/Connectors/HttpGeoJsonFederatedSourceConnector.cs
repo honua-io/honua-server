@@ -196,16 +196,16 @@ internal abstract class HttpGeoJsonFederatedSourceConnector : IFederatedSourceCo
 
     private static long ResolveIdentifier(ImmutableDictionary<string, object?> attributes, int ordinal)
     {
-        var resolvedId = IdentifierKeys
-            .Select(key =>
-                attributes.TryGetValue(key, out var value) &&
-                TryConvertToInt64(value, out var id)
-                    ? (long?)id
-                    : null)
-            .FirstOrDefault(id => id.HasValue);
-        if (resolvedId.HasValue)
+        var keyIndex = 0;
+        while (keyIndex < IdentifierKeys.Length)
         {
-            return resolvedId.Value;
+            if (attributes.TryGetValue(IdentifierKeys[keyIndex], out var value) &&
+                TryConvertToInt64(value, out var id))
+            {
+                return id;
+            }
+
+            keyIndex++;
         }
 
         return ordinal;

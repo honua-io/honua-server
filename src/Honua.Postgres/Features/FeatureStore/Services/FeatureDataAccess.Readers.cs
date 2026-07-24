@@ -96,14 +96,14 @@ internal sealed partial class FeatureDataAccess
 
         // Not rewritten as .Where(...): TryGetValue does the existence check and value fetch in one
         // dictionary lookup; a LINQ filter would need a second lookup (or a sentinel) to get the value.
-        foreach (var entry in outFields
-                     .Select(field => (
-                         Field: field,
-                         Found: feature.Attributes.TryGetValue(field, out var value),
-                         Value: value))
-                     .Where(entry => entry.Found))
+        foreach (var field in outFields)
         {
-            filteredAttributes[entry.Field] = entry.Value;
+            switch (feature.Attributes.TryGetValue(field, out var value))
+            {
+                case true:
+                    filteredAttributes[field] = value;
+                    break;
+            }
         }
 
         return Feature.Create(feature.Id, feature.Geometry, filteredAttributes.ToImmutableDictionary());

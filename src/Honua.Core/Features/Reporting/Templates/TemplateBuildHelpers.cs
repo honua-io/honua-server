@@ -157,9 +157,19 @@ internal static class TemplateBuildHelpers
     /// </summary>
     public static string? FirstArtifactMetadata(AnalysisResultPackage package, string key)
     {
-        return package.Artifacts
-            .Select(artifact => artifact.Metadata.TryGetValue(key, out var value) ? value : null)
-            .FirstOrDefault(value => !string.IsNullOrEmpty(value));
+        var artifactIndex = 0;
+        while (artifactIndex < package.Artifacts.Count)
+        {
+            if (package.Artifacts[artifactIndex].Metadata.TryGetValue(key, out var value) &&
+                !string.IsNullOrEmpty(value))
+            {
+                return value;
+            }
+
+            artifactIndex++;
+        }
+
+        return null;
     }
 
     /// <summary>

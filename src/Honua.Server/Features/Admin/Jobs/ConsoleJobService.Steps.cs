@@ -119,9 +119,19 @@ internal sealed partial class ConsoleJobService
             return null;
         }
 
-        var command = CommandMetadataKeys
-            .Select(key => entry.Metadata.TryGetValue(key, out var value) ? value : null)
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        string? command = null;
+        var keyIndex = 0;
+        while (keyIndex < CommandMetadataKeys.Length)
+        {
+            if (entry.Metadata.TryGetValue(CommandMetadataKeys[keyIndex], out var value) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                command = value;
+                break;
+            }
+
+            keyIndex++;
+        }
 
         return command is null
             ? null
