@@ -3,9 +3,12 @@
 
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Geocoding.Features.Geocoding;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -14,6 +17,20 @@ namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class GeocodeCoordinatorFailoverTests
 {
+    [Fact]
+    public void AddGeocodingCore_WithoutLicenseService_ResolvesProviderCoordinator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddGeocodingCore(new ConfigurationBuilder().Build());
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IGeocodeProviderCoordinator>());
+    }
+
     [Fact]
     public async Task ForwardGeocodeAsync_CapabilityIncompatibleFirstProvider_DoesNotConsumeFailoverBudget()
     {
