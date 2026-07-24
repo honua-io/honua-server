@@ -156,6 +156,25 @@ public sealed partial class McpTaxonomyAlignmentTests
             // so coverage stays honest until the standard defines them.
             "honua_describe_layer",
             "honua_list_jobs",
+            // Studio draft lifecycle + composition tools (honua-server#3002) are
+            // Honua extensions with vendored index.json entries (family "Studio
+            // composition and lifecycle (Honua extension)") but no published
+            // geospatial-mcp standard schema yet — the standard's map/app
+            // composition and publish families are still known-gaps for Honua
+            // (see KnownGapStandardTools above). Recorded here so coverage stays
+            // honest until the standard formalizes a composition/lifecycle profile.
+            "honua_studio_create_draft",
+            "honua_studio_get_draft",
+            "honua_studio_update_draft",
+            "honua_studio_validate_draft",
+            "honua_studio_preview_draft",
+            "honua_studio_add_layer",
+            "honua_studio_remove_layer",
+            "honua_studio_set_layer_style",
+            "honua_studio_set_view",
+            "honua_studio_add_widget",
+            "honua_studio_remove_widget",
+            "honua_studio_propose_publication",
         };
 
     private static string SchemaRoot =>

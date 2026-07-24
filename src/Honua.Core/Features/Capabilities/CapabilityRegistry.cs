@@ -127,6 +127,25 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_apply_style_preset", "apply_style_preset", "execution"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
+
+            // Studio draft lifecycle + composition tools (honua-server#3002,
+            // AD-8). Honua-specific extensions — not (yet) part of the
+            // geospatial-mcp standard's composition/publish families, which
+            // McpGeospatialMcpSchemaConformanceTests tracks as a known gap.
+            ("honua_studio_create_draft", "studio_create_draft", "lifecycle"),
+            ("honua_studio_get_draft", "studio_get_draft", "lifecycle"),
+            ("honua_studio_update_draft", "studio_update_draft", "lifecycle"),
+            ("honua_studio_validate_draft", "studio_validate_draft", "lifecycle"),
+            ("honua_studio_preview_draft", "studio_preview_draft", "lifecycle"),
+            ("honua_studio_add_layer", "studio_add_layer", "execution"),
+            ("honua_studio_remove_layer", "studio_remove_layer", "execution"),
+            ("honua_studio_set_layer_style", "studio_set_layer_style", "execution"),
+            ("honua_studio_set_view", "studio_set_view", "execution"),
+            ("honua_studio_add_widget", "studio_add_widget", "execution"),
+            ("honua_studio_remove_widget", "studio_remove_widget", "execution"),
+            // No publish/share/embed execution tool: honua_studio_propose_publication
+            // only records intent on the draft (REQ-003/REQ-009).
+            ("honua_studio_propose_publication", "studio_propose_publication", "lifecycle"),
         ];
 
         foreach (var (advertised, standard, family) in tools)

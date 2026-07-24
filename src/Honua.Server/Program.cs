@@ -1465,6 +1465,7 @@ app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
+Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);
 app.MapOperationsEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
 Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);

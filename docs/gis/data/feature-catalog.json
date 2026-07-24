@@ -5206,6 +5206,21 @@
       "capability": "streaming.feature-subscriptions"
     },
     {
+      "id": "get-api-v1-studio-ai-capabilities",
+      "route": "/api/v1/studio/ai/capabilities",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Admin_ReturnsConfiguredProvider",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Anonymous_Returns401"
+      ],
+      "proof_ledger_surface": "studio-package-lifecycle",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "get-api-v1-studio-content-items-itemid-versions",
       "route": "/api/v1/studio/content-items/{itemId}/versions",
       "method": "GET",
@@ -16074,6 +16089,22 @@
       "capability": "collaboration.map-sessions"
     },
     {
+      "id": "post-api-v1-studio-ai-chat",
+      "route": "/api/v1/studio/ai/chat",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_Anonymous_Returns401",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_KnownButUnreachableProvider_StreamsErrorEventAndRecordsOneFailureAudit",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_UnknownProvider_Returns400AndDoesNotAudit"
+      ],
+      "proof_ledger_surface": "studio-package-lifecycle",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-studio-app-packages-generate",
       "route": "/api/v1/studio/app-packages/generate",
       "method": "POST",
@@ -16319,6 +16350,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_DegeneratePlane_ReturnsUnprocessableEntity",
+        "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_OverStepTerrain_ReturnsKnownStationElevationsAndRelief",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_OverSurface_ReturnsIntersectionMetadata",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithMixedResolutionMosaic_ReturnsActionableUnprocessableEntity",
         "Honua.Server.Tests.Features.Protocols.Elevation.SceneAnalysisEndpointTests.PostSlice_WithoutProLicense_ReturnsPaymentRequired"
@@ -18215,6 +18247,7 @@
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_DissolveTrue_ReturnsDissolvedPolygon",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_DistanceCapBypassByMiles_ReturnsBadRequest",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_DoesNotLeakInputCountIntoProperties",
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_GroupByCategoryWithNumericOutStatistics_ReturnsExactAggregatesPerBand",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_GroupByField_ReturnsRowPerGroup",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_InvalidUnit_ReturnsBadRequest",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.QueryBufferAggregate_MissingDistance_ReturnsBadRequest",
@@ -18347,6 +18380,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_DWithinMissingDistance_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_DWithinOverKnownGeometry_ReturnsExactRowLevelMatchCountsAndAggregates",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_DWithin_ReturnsTargetFeaturesWithMatchCount",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_Intersects_ReturnsTargetFeaturesWithMatchCount",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests.SpatialJoin_InvalidPredicate_ReturnsBadRequest",
