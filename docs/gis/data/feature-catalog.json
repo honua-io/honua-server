@@ -16165,6 +16165,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.Rollback_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16179,6 +16180,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CompareVersions_FlagOn_BothSidesAuthorizedIndividually",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16195,6 +16197,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreatePublishRequest_WithInvalidIntentOverride_ReturnsBadRequestProblem",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
