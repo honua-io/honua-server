@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters;
@@ -151,6 +152,56 @@ public sealed class AnthropicStudioAiProxyAdapterTests
         events.Should().ContainSingle();
         events[0].Type.Should().Be(StudioAiChatEventType.Error);
         handler.CapturedRequestBody.Should().BeNull("no HTTP call should be made without an API key");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_AssistantToolCallAndResult_UsesAnthropicWireShape()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new AnthropicStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var request = new StudioAiChatRequest
+        {
+            Messages =
+            [
+                new StudioAiMessage
+                {
+                    Role = StudioAiRole.Assistant,
+                    Content = string.Empty,
+                    ToolCalls =
+                    [
+                        new StudioAiToolCall
+                        {
+                            Id = "toolu_123",
+                            Name = "list_incidents",
+                            Arguments = JsonDocument.Parse("""{"status":"open"}""").RootElement.Clone()
+                        }
+                    ]
+                },
+                new StudioAiMessage
+                {
+                    Role = StudioAiRole.Tool,
+                    Content = """[{"id":1}]""",
+                    ToolCallId = "toolu_123",
+                    ToolName = "list_incidents"
+                }
+            ],
+            Tools = ToolRequest().Tools
+        };
+
+        await CollectAsync(adapter, request);
+
+        using var payload = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var messages = payload.RootElement.GetProperty("messages");
+        var replayedCall = messages[0].GetProperty("content")[0];
+        replayedCall.GetProperty("type").GetString().Should().Be("tool_use");
+        replayedCall.GetProperty("id").GetString().Should().Be("toolu_123");
+        replayedCall.GetProperty("input").GetProperty("status").GetString().Should().Be("open");
+        var result = messages[1].GetProperty("content")[0];
+        result.GetProperty("type").GetString().Should().Be("tool_result");
+        result.GetProperty("tool_use_id").GetString().Should().Be("toolu_123");
     }
 
     [UnitTest]

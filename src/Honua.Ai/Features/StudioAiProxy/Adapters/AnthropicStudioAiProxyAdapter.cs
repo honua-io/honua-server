@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -252,7 +253,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                 .Select(m => new AnthropicProxyMessage
                 {
                     Role = m.Role == StudioAiRole.Tool ? "user" : m.Role.ToString().ToLowerInvariant(),
-                    Content = m.Content
+                    Content = BuildMessageContent(m)
                 })
                 .ToArray()
         };
@@ -273,6 +274,55 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         }
 
         return proxyRequest;
+    }
+
+    private static JsonElement BuildMessageContent(StudioAiMessage message)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            if (message.Role == StudioAiRole.Tool)
+            {
+                writer.WriteStartArray();
+                writer.WriteStartObject();
+                writer.WriteString("type", "tool_result");
+                writer.WriteString("tool_use_id", message.ToolCallId);
+                writer.WriteString("content", message.Content);
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+            }
+            else if (message.Role == StudioAiRole.Assistant && message.ToolCalls is { Count: > 0 } toolCalls)
+            {
+                writer.WriteStartArray();
+                if (!string.IsNullOrEmpty(message.Content))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("type", "text");
+                    writer.WriteString("text", message.Content);
+                    writer.WriteEndObject();
+                }
+
+                foreach (var call in toolCalls)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("type", "tool_use");
+                    writer.WriteString("id", call.Id);
+                    writer.WriteString("name", call.Name);
+                    writer.WritePropertyName("input");
+                    call.Arguments.WriteTo(writer);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+            }
+            else
+            {
+                writer.WriteStringValue(message.Content);
+            }
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return document.RootElement.Clone();
     }
 
     private static StudioAiStopReason MapStopReason(string? stopReason) => stopReason switch

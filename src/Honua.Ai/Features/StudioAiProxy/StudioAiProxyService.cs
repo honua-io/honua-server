@@ -65,9 +65,14 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return "The Studio AI proxy is not enabled.";
         }
 
-        if (request.Messages.Count == 0)
+        if (request.Messages is not { Count: > 0 })
         {
             return "At least one message is required.";
+        }
+
+        if (request.Messages.Any(static message => message is null || message.Content is null))
+        {
+            return "Message content must not be null.";
         }
 
         var totalChars = request.Messages.Sum(m => m.Content.Length) + (request.System?.Length ?? 0);

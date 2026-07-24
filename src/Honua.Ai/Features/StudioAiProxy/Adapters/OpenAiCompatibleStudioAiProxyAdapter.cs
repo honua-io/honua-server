@@ -272,7 +272,18 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
                 _ => "user"
             },
             Content = m.Content,
-            ToolCallId = m.Role == StudioAiRole.Tool ? m.ToolCallId : null
+            ToolCallId = m.Role == StudioAiRole.Tool ? m.ToolCallId : null,
+            ToolCalls = m.Role == StudioAiRole.Assistant && m.ToolCalls is { Count: > 0 }
+                ? m.ToolCalls.Select(static call => new OpenAiProxyMessageToolCall
+                {
+                    Id = call.Id,
+                    Function = new OpenAiProxyMessageFunctionCall
+                    {
+                        Name = call.Name,
+                        Arguments = call.Arguments.GetRawText()
+                    }
+                }).ToArray()
+                : null
         }));
 
         var proxyRequest = new OpenAiProxyRequest

@@ -159,6 +159,29 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
 }
 ```
 
+After a `tool_call_stop`, replay the assistant tool call before its result so the provider can
+match the result to the pending call:
+
+```json
+{
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        { "id": "call_123", "name": "list_incidents", "arguments": { "status": "open" } }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "[{\"id\":1}]",
+      "toolCallId": "call_123",
+      "toolName": "list_incidents"
+    }
+  ]
+}
+```
+
 A request that names an unknown or unconfigured provider, has no messages, exceeds
 `MaxPromptCharacters`, or asks for tools against a provider with `SupportsTools: false` is rejected
 with a normal `400` JSON problem response **before** any SSE headers are written — once the stream

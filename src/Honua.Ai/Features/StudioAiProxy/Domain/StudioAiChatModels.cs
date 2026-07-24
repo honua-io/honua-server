@@ -43,6 +43,26 @@ public sealed class StudioAiMessage
 
     /// <summary>For <see cref="StudioAiRole.Tool"/> messages: the name of the tool that was called.</summary>
     public string? ToolName { get; init; }
+
+    /// <summary>
+    /// For <see cref="StudioAiRole.Assistant"/> messages: the tool calls emitted by that assistant
+    /// turn. Replaying these before the matching <see cref="StudioAiRole.Tool"/> results preserves
+    /// the provider's tool-use conversation protocol.
+    /// </summary>
+    public IReadOnlyList<StudioAiToolCall>? ToolCalls { get; init; }
+}
+
+/// <summary>A tool call previously emitted by an assistant turn.</summary>
+public sealed class StudioAiToolCall
+{
+    /// <summary>Provider-issued id referenced by the matching tool-result message.</summary>
+    public required string Id { get; init; }
+
+    /// <summary>Name of the invoked tool.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Complete JSON arguments assembled from the streamed tool-call deltas.</summary>
+    public JsonElement Arguments { get; init; }
 }
 
 /// <summary>
@@ -159,13 +179,29 @@ public sealed class StudioAiChatHttpMessage
     public string Role { get; init; } = string.Empty;
 
     [JsonPropertyName("content")]
-    public string Content { get; init; } = string.Empty;
+    public string? Content { get; init; } = string.Empty;
 
     [JsonPropertyName("toolCallId")]
     public string? ToolCallId { get; init; }
 
     [JsonPropertyName("toolName")]
     public string? ToolName { get; init; }
+
+    [JsonPropertyName("toolCalls")]
+    public List<StudioAiChatHttpToolCall>? ToolCalls { get; init; }
+}
+
+/// <summary>Wire shape of a prior assistant tool call.</summary>
+public sealed class StudioAiChatHttpToolCall
+{
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("arguments")]
+    public JsonElement Arguments { get; init; }
 }
 
 /// <summary>Wire shape of a <see cref="StudioAiToolDefinition"/>.</summary>

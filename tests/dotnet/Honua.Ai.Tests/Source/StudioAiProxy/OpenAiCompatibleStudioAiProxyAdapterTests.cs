@@ -149,6 +149,20 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
             [
                 new StudioAiMessage
                 {
+                    Role = StudioAiRole.Assistant,
+                    Content = string.Empty,
+                    ToolCalls =
+                    [
+                        new StudioAiToolCall
+                        {
+                            Id = "call_123",
+                            Name = "list_incidents",
+                            Arguments = JsonDocument.Parse("""{"status":"open"}""").RootElement.Clone()
+                        }
+                    ]
+                },
+                new StudioAiMessage
+                {
                     Role = StudioAiRole.Tool,
                     Content = """{"status":"open"}""",
                     ToolCallId = "call_123",
@@ -167,7 +181,13 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 
         using var payload = JsonDocument.Parse(handler.CapturedRequestBody!);
         var root = payload.RootElement;
-        root.GetProperty("messages")[0].GetProperty("tool_call_id").GetString().Should().Be("call_123");
+        var messages = root.GetProperty("messages");
+        var replayedCall = messages[0].GetProperty("tool_calls")[0];
+        replayedCall.GetProperty("id").GetString().Should().Be("call_123");
+        replayedCall.GetProperty("function").GetProperty("name").GetString().Should().Be("list_incidents");
+        replayedCall.GetProperty("function").GetProperty("arguments").GetString()
+            .Should().Be("""{"status":"open"}""");
+        messages[1].GetProperty("tool_call_id").GetString().Should().Be("call_123");
         root.GetProperty("tool_choice").GetProperty("type").GetString().Should().Be("function");
         root.GetProperty("tool_choice").GetProperty("function").GetProperty("name").GetString()
             .Should().Be("list_incidents");

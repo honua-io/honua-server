@@ -32,6 +32,19 @@ public sealed class StudioAiChatRequestMapperTests
     }
 
     [UnitTest]
+    public void ToDomain_NullMessageContent_IsRejected()
+    {
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(
+            new StudioAiChatHttpRequest
+            {
+                Messages = [new StudioAiChatHttpMessage { Role = "user", Content = null }]
+            });
+
+        request.Should().BeNull();
+        error.Should().Be("Message content must not be null.");
+    }
+
+    [UnitTest]
     public void ToDomain_UnknownRole_IsRejected()
     {
         var (request, error) = StudioAiChatRequestMapper.ToDomain(new StudioAiChatHttpRequest
@@ -67,6 +80,20 @@ public sealed class StudioAiChatRequestMapperTests
             Messages =
             [
                 new StudioAiChatHttpMessage { Role = "user", Content = "list incidents" },
+                new StudioAiChatHttpMessage
+                {
+                    Role = "assistant",
+                    Content = string.Empty,
+                    ToolCalls =
+                    [
+                        new StudioAiChatHttpToolCall
+                        {
+                            Id = "call-1",
+                            Name = "list_incidents",
+                            Arguments = JsonDocument.Parse("""{"status":"open"}""").RootElement.Clone()
+                        }
+                    ]
+                },
                 new StudioAiChatHttpMessage { Role = "TOOL", Content = "[]", ToolCallId = "call-1", ToolName = "list_incidents" }
             ],
             Tools =
@@ -90,10 +117,13 @@ public sealed class StudioAiChatRequestMapperTests
         request!.Provider.Should().Be("claude");
         request.Model.Should().Be("claude-opus-4-1");
         request.System.Should().Be("Be terse.");
-        request.Messages.Should().HaveCount(2);
+        request.Messages.Should().HaveCount(3);
         request.Messages[0].Role.Should().Be(StudioAiRole.User);
-        request.Messages[1].Role.Should().Be(StudioAiRole.Tool, "role parsing is case-insensitive");
-        request.Messages[1].ToolCallId.Should().Be("call-1");
+        request.Messages[1].Role.Should().Be(StudioAiRole.Assistant);
+        request.Messages[1].ToolCalls.Should().ContainSingle(call =>
+            call.Id == "call-1" && call.Name == "list_incidents");
+        request.Messages[2].Role.Should().Be(StudioAiRole.Tool, "role parsing is case-insensitive");
+        request.Messages[2].ToolCallId.Should().Be("call-1");
         request.Tools.Should().ContainSingle(t => t.Name == "list_incidents");
         request.ToolChoice!.Mode.Should().Be(StudioAiToolChoiceMode.Specific);
         request.ToolChoice.ToolName.Should().Be("list_incidents");

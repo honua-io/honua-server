@@ -24,9 +24,40 @@ public static class StudioAiChatRequestMapper
         var messages = new List<StudioAiMessage>(sourceMessages.Count);
         foreach (var message in sourceMessages)
         {
+            if (message is null || message.Content is null)
+            {
+                return (null, "Message content must not be null.");
+            }
+
             if (!TryParseRole(message.Role, out var role))
             {
                 return (null, $"Unknown message role '{message.Role}'. Expected one of: system, user, assistant, tool.");
+            }
+
+            IReadOnlyList<StudioAiToolCall>? toolCalls = null;
+            if (message.ToolCalls is { Count: > 0 } sourceToolCalls)
+            {
+                if (role != StudioAiRole.Assistant)
+                {
+                    return (null, "message.toolCalls is only valid for assistant messages.");
+                }
+
+                if (sourceToolCalls.Any(static call =>
+                        string.IsNullOrWhiteSpace(call.Id) ||
+                        string.IsNullOrWhiteSpace(call.Name) ||
+                        call.Arguments.ValueKind != System.Text.Json.JsonValueKind.Object))
+                {
+                    return (null, "Each assistant tool call requires a non-empty id, name, and JSON object arguments value.");
+                }
+
+                toolCalls = sourceToolCalls
+                    .Select(static call => new StudioAiToolCall
+                    {
+                        Id = call.Id,
+                        Name = call.Name,
+                        Arguments = call.Arguments.Clone()
+                    })
+                    .ToArray();
             }
 
             messages.Add(new StudioAiMessage
@@ -34,7 +65,8 @@ public static class StudioAiChatRequestMapper
                 Role = role,
                 Content = message.Content,
                 ToolCallId = message.ToolCallId,
-                ToolName = message.ToolName
+                ToolName = message.ToolName,
+                ToolCalls = toolCalls
             });
         }
 

@@ -55,6 +55,31 @@ internal sealed class OpenAiProxyMessage
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("tool_calls")]
+    public OpenAiProxyMessageToolCall[]? ToolCalls { get; set; }
+}
+
+internal sealed class OpenAiProxyMessageToolCall
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "function";
+
+    [JsonPropertyName("function")]
+    public OpenAiProxyMessageFunctionCall Function { get; set; } = new();
+}
+
+internal sealed class OpenAiProxyMessageFunctionCall
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("arguments")]
+    public string Arguments { get; set; } = "{}";
 }
 
 internal sealed class OpenAiProxyTool

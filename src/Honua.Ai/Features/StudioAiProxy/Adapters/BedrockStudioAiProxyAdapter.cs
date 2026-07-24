@@ -214,7 +214,25 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
                     messages.Add(new ChatMessage(ChatRole.System, message.Content));
                     break;
                 case StudioAiRole.Assistant:
-                    messages.Add(new ChatMessage(ChatRole.Assistant, message.Content));
+                    if (message.ToolCalls is { Count: > 0 } toolCalls)
+                    {
+                        List<AIContent> contents = [];
+                        if (!string.IsNullOrEmpty(message.Content))
+                        {
+                            contents.Add(new TextContent(message.Content));
+                        }
+
+                        contents.AddRange(toolCalls.Select(static call =>
+                            (AIContent)new FunctionCallContent(
+                                call.Id,
+                                call.Name,
+                                ToArgumentsDictionary(call.Arguments))));
+                        messages.Add(new ChatMessage(ChatRole.Assistant, contents));
+                    }
+                    else
+                    {
+                        messages.Add(new ChatMessage(ChatRole.Assistant, message.Content));
+                    }
                     break;
                 case StudioAiRole.Tool:
                     messages.Add(new ChatMessage(
@@ -229,6 +247,27 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         return messages;
     }
+
+    private static Dictionary<string, object?> ToArgumentsDictionary(JsonElement arguments)
+        => arguments.ValueKind == JsonValueKind.Object
+            ? arguments.EnumerateObject().ToDictionary(
+                static property => property.Name,
+                static property => ToArgumentValue(property.Value),
+                StringComparer.Ordinal)
+            : [];
+
+    private static object? ToArgumentValue(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Object => ToArgumentsDictionary(value),
+        JsonValueKind.Array => value.EnumerateArray().Select(ToArgumentValue).ToArray(),
+        JsonValueKind.String => value.GetString(),
+        JsonValueKind.Number when value.TryGetInt64(out var integer) => integer,
+        JsonValueKind.Number => value.GetDouble(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Null => null,
+        _ => value.GetRawText()
+    };
 
     private static ChatOptions BuildChatOptions(StudioAiProxyProviderOptions options, StudioAiChatRequest request, string model)
     {
