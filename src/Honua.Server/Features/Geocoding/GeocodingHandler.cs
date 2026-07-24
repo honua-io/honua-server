@@ -4,6 +4,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
@@ -63,6 +65,13 @@ internal sealed class GeocodingHandler(
             }
 
             var capabilities = provider.Capabilities;
+            if (!context.RequestServices
+                    .GetRequiredService<ILicenseEntitlementService>()
+                    .CheckEntitlement(FeatureCatalog.BatchGeocodingKey)
+                    .IsActive)
+            {
+                capabilities = capabilities with { SupportsBatch = false };
+            }
 
             var response = new GeocodeServerInfoResponse
             {
@@ -203,7 +212,11 @@ internal sealed class GeocodingHandler(
             };
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await _coordinatorService.ForwardGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.ForwardGeocodeAsync(
+                providerRequest,
+                providerName,
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -352,7 +365,11 @@ internal sealed class GeocodingHandler(
             };
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await _coordinatorService.ReverseGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.ReverseGeocodeAsync(
+                providerRequest,
+                providerName,
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -496,7 +513,11 @@ internal sealed class GeocodingHandler(
 
             var stopwatch = Stopwatch.StartNew();
 
-            var result = await _coordinatorService.SuggestAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.SuggestAsync(
+                providerRequest,
+                providerName,
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -630,7 +651,11 @@ internal sealed class GeocodingHandler(
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await _coordinatorService.BatchGeocodeAsync(batchRequest, NormalizeProviderName(requestedProviderName), cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.BatchGeocodeAsync(
+                batchRequest,
+                NormalizeProviderName(requestedProviderName),
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -923,6 +948,12 @@ internal sealed class GeocodingHandler(
     {
         return NormalizeProviderName(providerName) ?? _options.DefaultProvider;
     }
+
+    private static bool IsFailoverEntitled(HttpContext context)
+        => context.RequestServices
+            .GetRequiredService<ILicenseEntitlementService>()
+            .CheckEntitlement(FeatureCatalog.GeocodingFailoverKey)
+            .IsActive;
 
     private IResult? ValidateLocatorName(HttpContext context, string? locatorName)
     {

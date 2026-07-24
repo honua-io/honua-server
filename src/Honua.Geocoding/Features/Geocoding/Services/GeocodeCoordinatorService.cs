@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Microsoft.Extensions.Logging;
@@ -62,9 +64,16 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         };
     }
 
-    public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
+    public Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
         ForwardGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default)
+        => ForwardGeocodeAsync(request, providerName, allowFailover: false, cancellationToken);
+
+    public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
+        ForwardGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -73,7 +82,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.operation", "forward");
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
-        var providers = GetProvidersToTry(providerName);
+        var providers = GetProvidersToTry(providerName, allowFailover);
 
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -92,7 +101,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
             // Stop once the configured number of real attempts is reached. Capability skips above
             // are free and never consume this budget.
-            if (!HasFailoverBudget(attemptedProviders.Count))
+            if (!HasFailoverBudget(attemptedProviders.Count, allowFailover))
             {
                 break;
             }
@@ -145,7 +154,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     ex);
 
-                if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
+                if (!allowFailover ||
+                    !_configuration.EnableFailover ||
+                    attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
                     break;
                 }
@@ -177,9 +188,16 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
-    public async Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
+    public Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default)
+        => ReverseGeocodeAsync(request, providerName, allowFailover: false, cancellationToken);
+
+    public async Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
+        ReverseGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -188,7 +206,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.operation", "reverse");
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
-        var providers = GetProvidersToTry(providerName);
+        var providers = GetProvidersToTry(providerName, allowFailover);
 
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -206,7 +224,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
             // Stop once the configured number of real attempts is reached. Capability skips above
             // are free and never consume this budget.
-            if (!HasFailoverBudget(attemptedProviders.Count))
+            if (!HasFailoverBudget(attemptedProviders.Count, allowFailover))
             {
                 break;
             }
@@ -259,7 +277,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     ex);
 
-                if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
+                if (!allowFailover ||
+                    !_configuration.EnableFailover ||
+                    attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
                     break;
                 }
@@ -291,9 +311,16 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
-    public async Task<GeocodeResult<IReadOnlyList<GeocodeSuggestion>>> SuggestAsync(
+    public Task<GeocodeResult<IReadOnlyList<GeocodeSuggestion>>> SuggestAsync(
         SuggestGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default)
+        => SuggestAsync(request, providerName, allowFailover: false, cancellationToken);
+
+    public async Task<GeocodeResult<IReadOnlyList<GeocodeSuggestion>>> SuggestAsync(
+        SuggestGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -304,7 +331,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         // Length only — never tag the raw query text (PII).
         activity?.SetTag("honua.geocoding.query_length", request.Text?.Length ?? 0);
 
-        var providers = GetProvidersToTry(providerName);
+        var providers = GetProvidersToTry(providerName, allowFailover);
 
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -322,7 +349,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
             // Stop once the configured number of real attempts is reached. Capability skips above
             // are free and never consume this budget.
-            if (!HasFailoverBudget(attemptedProviders.Count))
+            if (!HasFailoverBudget(attemptedProviders.Count, allowFailover))
             {
                 break;
             }
@@ -375,7 +402,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     ex);
 
-                if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
+                if (!allowFailover ||
+                    !_configuration.EnableFailover ||
+                    attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
                     break;
                 }
@@ -407,9 +436,16 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             errorMessage, failedProviderName, attemptedProviders: attemptedProviders);
     }
 
-    public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
+    public Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
         BatchGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default)
+        => BatchGeocodeAsync(request, providerName, allowFailover: false, cancellationToken);
+
+    public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
+        BatchGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -419,7 +455,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
         activity?.SetTag("honua.geocoding.batch_size", request.Queries.Count);
 
-        var providers = GetProvidersToTry(providerName);
+        var providers = GetProvidersToTry(providerName, allowFailover);
 
         // Enforce the batch cap (provider + licensing) against the effective batch-capable provider
         // before any work, then the per-minute request rate. Both reuse the shared limit enforcer so
@@ -456,7 +492,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
 
             // Stop once the configured number of real attempts is reached. Capability skips above
             // are free and never consume this budget.
-            if (!HasFailoverBudget(attemptedProviders.Count))
+            if (!HasFailoverBudget(attemptedProviders.Count, allowFailover))
             {
                 break;
             }
@@ -509,7 +545,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
                     stopwatch.Elapsed.TotalMilliseconds,
                     ex);
 
-                if (!_configuration.EnableFailover || attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
+                if (!allowFailover ||
+                    !_configuration.EnableFailover ||
+                    attemptedProviders.Count >= _configuration.MaxFailoverAttempts)
                 {
                     break;
                 }
@@ -544,17 +582,19 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
     // Returns true while there is remaining failover budget to initiate another real attempt.
     // Capability-skipped providers do not count toward attemptedProviders, so they never consume
     // this budget; only providers that actually attempt the operation do.
-    private bool HasFailoverBudget(int attemptedCount)
+    private bool HasFailoverBudget(int attemptedCount, bool allowFailover)
     {
         if (attemptedCount == 0)
         {
             return true;
         }
 
-        return _configuration.EnableFailover && attemptedCount < Math.Max(1, _configuration.MaxFailoverAttempts);
+        return allowFailover &&
+            _configuration.EnableFailover &&
+            attemptedCount < Math.Max(1, _configuration.MaxFailoverAttempts);
     }
 
-    private List<IGeocodeProvider> GetProvidersToTry(string? preferredProviderName)
+    private List<IGeocodeProvider> GetProvidersToTry(string? preferredProviderName, bool allowFailover)
     {
         var providers = new List<IGeocodeProvider>();
 
@@ -580,7 +620,9 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         }
 
         // Add default provider next if not already added.
-        if (providers.Count == 0 || !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase)))
+        if (providers.Count == 0 ||
+            (allowFailover &&
+             !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase))))
         {
             var defaultProvider = _providerRegistry.GetProvider(_configuration.DefaultProvider);
             if (defaultProvider != null)
@@ -590,7 +632,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         }
 
         // Add the remaining registered providers as failover candidates when enabled.
-        if (_configuration.EnableFailover)
+        if (allowFailover && _configuration.EnableFailover)
         {
             var allProviders = _providerRegistry.GetAllProviders();
             var additionalProviders = allProviders
@@ -633,13 +675,16 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
 {
     private readonly IGeocodeCoordinatorService _coordinatorService;
     private readonly IGeocodeProviderRegistry _providerRegistry;
+    private readonly ILicenseEntitlementService? _entitlementService;
 
     public GeocodeProviderCoordinator(
         IGeocodeCoordinatorService coordinatorService,
-        IGeocodeProviderRegistry providerRegistry)
+        IGeocodeProviderRegistry providerRegistry,
+        ILicenseEntitlementService? entitlementService = null)
     {
         _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
         _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
+        _entitlementService = entitlementService;
     }
 
     public IGeocodeProvider? GetProvider(string? providerName = null)
@@ -663,7 +708,11 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
         string? providerName = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _coordinatorService.ForwardGeocodeAsync(request, providerName, cancellationToken).ConfigureAwait(false);
+        var result = await _coordinatorService.ForwardGeocodeAsync(
+            request,
+            providerName,
+            IsFailoverEntitled(),
+            cancellationToken).ConfigureAwait(false);
 
         // A successful result with zero candidates is a genuine "no match" and is
         // returned as an empty list. A failure means every attempted provider errored
@@ -682,7 +731,11 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
         string? providerName = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _coordinatorService.ReverseGeocodeAsync(request, providerName, cancellationToken).ConfigureAwait(false);
+        var result = await _coordinatorService.ReverseGeocodeAsync(
+            request,
+            providerName,
+            IsFailoverEntitled(),
+            cancellationToken).ConfigureAwait(false);
 
         // A successful result with a null match is a genuine "no match". A failure means
         // every attempted provider errored, which must not be collapsed into null (that
@@ -709,6 +762,11 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
             ErrorCode = GeocodeErrorCodes.ServiceUnavailable,
         };
     }
+
+    private bool IsFailoverEntitled()
+        => _entitlementService?
+            .CheckEntitlement(FeatureCatalog.GeocodingFailoverKey)
+            .IsActive == true;
 
     public async Task<IReadOnlyList<GeocodeProviderHealth>> CheckAllProvidersHealthAsync(CancellationToken cancellationToken = default)
     {

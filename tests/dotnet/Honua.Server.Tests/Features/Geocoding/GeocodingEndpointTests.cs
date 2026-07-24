@@ -154,7 +154,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task GeocodeAddresses_WithOutFields_ProjectsAttributes()
     {
-        using var factory = CreateDefaultFactory();
+        using var factory = CreateDefaultFactory(grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var addresses = Uri.EscapeDataString(
@@ -315,7 +315,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch()
     {
-        using var factory = CreateDefaultFactory();
+        using var factory = CreateDefaultFactory(grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"test address"}}]""";
@@ -406,7 +406,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"SingleLine":"350 Fifth Avenue, New York"}}]""";
@@ -441,7 +441,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]""";
@@ -471,7 +471,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":2,"SingleLine":"350 Fifth Avenue, New York"}}]}""";
@@ -508,7 +508,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
@@ -568,7 +568,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
@@ -610,7 +610,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
@@ -635,7 +635,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?f=json");
@@ -652,7 +652,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/geocodeAddresses?records=not-valid-json&f=json");
@@ -672,7 +672,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 2 }));
+        { MaxBatchSize = 2 }), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"addr1"}},{"attributes":{"SingleLine":"addr2"}},{"attributes":{"SingleLine":"addr3"}}]""";
@@ -693,7 +693,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"valid address"}},{"attributes":{}},{"attributes":{"SingleLine":"another valid"}}]""";
@@ -862,7 +862,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task ForwardGeocode_PrimaryFails_FallsBackToSecondary()
     {
-        using var factory = CreateFailoverFactory();
+        using var factory = CreateFailoverFactory(grantEdition: "Pro");
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test+address&f=json");
@@ -876,10 +876,24 @@ public sealed class GeocodingEndpointTests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task ForwardGeocode_WithoutPro_DoesNotFailOverToSecondary()
+    {
+        using var factory = CreateFailoverFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test+address&f=json");
+
+        await response.AssertGeoServicesErrorAsync(500);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_PrimaryFails_FallsBackToSecondary()
     {
-        using var factory = CreateFailoverFactory();
+        using var factory = CreateFailoverFactory(grantEdition: "Enterprise");
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]""";
@@ -1262,7 +1276,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 37 }));
+        { MaxBatchSize = 37 }), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
@@ -1287,7 +1301,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 10 }));
+        { MaxBatchSize = 10 }), grantEnterpriseForBatch: true);
         using var smallClient = smallFactory.CreateClient();
 
         using var largeFactory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
@@ -1295,7 +1309,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 250 }));
+        { MaxBatchSize = 250 }), grantEnterpriseForBatch: true);
         using var largeClient = largeFactory.CreateClient();
 
         using var smallResponse = await smallClient.GetAsync("/rest/services/World/GeocodeServer?f=json");
@@ -1483,10 +1497,15 @@ public sealed class GeocodingEndpointTests
         SupportsStructuredInput: false,
         SupportsBiasing: true);
 
-    private static WebApplicationFactory<Program> CreateDefaultFactory()
-        => CreateFactory(new FakeGeocodeProvider(DefaultCapabilities));
+    private static WebApplicationFactory<Program> CreateDefaultFactory(bool grantEnterpriseForBatch = false)
+        => CreateFactory(new FakeGeocodeProvider(DefaultCapabilities), grantEnterpriseForBatch);
 
-    private static WebApplicationFactory<Program> CreateFactory(FakeGeocodeProvider fakeProvider)
+    // #2981: geocodeAddresses (batch) now requires the Enterprise geocoding.batch entitlement
+    // (GeocodingEntitlementGateTests proves the gate itself in both directions). Every batch test
+    // here exercises the handler's own logic downstream of the gate, so it opts in via
+    // grantEnterpriseForBatch — forward/reverse/suggest tests leave it off since those stayed
+    // Community and need no license at all.
+    private static WebApplicationFactory<Program> CreateFactory(FakeGeocodeProvider fakeProvider, bool grantEnterpriseForBatch = false)
     {
         return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
@@ -1501,6 +1520,15 @@ public sealed class GeocodingEndpointTests
                 });
             });
 
+            // Licensing:DevGrantEdition is read by AddHonuaLicensing while the minimal-hosting-model
+            // WebApplicationBuilder is still being configured, before a ConfigureAppConfiguration
+            // callback added here would apply. UseSetting (mirrors the #2978
+            // IdentityEntitlementGateTests pattern) pushes it in early enough to be honored.
+            if (grantEnterpriseForBatch)
+            {
+                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
+            }
+
             builder.ConfigureServices(services =>
             {
                 services.AddGeocodeProvider(fakeProvider.Name, _ => fakeProvider, ServiceLifetime.Singleton);
@@ -1513,7 +1541,7 @@ public sealed class GeocodingEndpointTests
         });
     }
 
-    private static WebApplicationFactory<Program> CreateFailoverFactory()
+    private static WebApplicationFactory<Program> CreateFailoverFactory(string? grantEdition = null)
     {
         var failingProvider = new FailingGeocodeProvider("failing-primary");
         var workingProvider = new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
@@ -1537,6 +1565,13 @@ public sealed class GeocodingEndpointTests
                     ["Geocoding:MaxFailoverAttempts"] = "10"
                 });
             });
+
+            // See CreateFactory above: Licensing:DevGrantEdition must go through UseSetting, not
+            // ConfigureAppConfiguration, to be honored by AddHonuaLicensing.
+            if (!string.IsNullOrWhiteSpace(grantEdition))
+            {
+                builder.UseSetting("Licensing:DevGrantEdition", grantEdition);
+            }
 
             builder.ConfigureServices(services =>
             {
