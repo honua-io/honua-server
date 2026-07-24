@@ -765,37 +765,30 @@ internal static partial class TilesEndpoints
         var sourceSrid = usesRoutedReader
             ? readerResolution.StorageSrid ?? layer.SpatialReferenceSrid
             : filterSrid;
-        TileBounds queryBounds;
-        try
-        {
-            queryBounds = usesRoutedReader
-                ? TransformTileBounds(bounds, filterSrid, sourceSrid)
-                : bounds;
-        }
-        catch (NotSupportedException)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Collection '{layer.CollectionId}' cannot render raster tiles from SRID " +
-                $"{sourceSrid} into tile-matrix SRID {filterSrid}.");
-        }
-
-        var querySrid = sourceSrid;
-        var spatialFilter = CreateBboxSpatialFilter(queryBounds, querySrid);
+        var projection = CreateRasterQueryProjection(bounds, filterSrid, sourceSrid, usesRoutedReader);
+        var spatialFilter = CreateBboxSpatialFilter(projection.QueryBounds, projection.QuerySrid);
 
         var featureQuery = new FeatureQuery
         {
             SpatialFilter = spatialFilter,
             SpatialReferenceSrid = usesRoutedReader ? sourceSrid : layer.SpatialReferenceSrid,
-            OutputSrid = querySrid,
+            OutputSrid = projection.OutputSrid,
             Limit = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000,
             TemporalFilter = temporalFilter
         };
 
-        var queryResult = await readerResolution.Reader.QueryAsync(
-            layer.StorageLayerId,
-            featureQuery,
-            cancellationToken);
+        QueryResult<Feature> queryResult;
+        try
+        {
+            queryResult = await readerResolution.Reader.QueryAsync(
+                layer.StorageLayerId,
+                featureQuery,
+                cancellationToken);
+        }
+        catch (NotSupportedException) when (projection.UsesProviderTransform)
+        {
+            return CreateUnsupportedRasterCrsResult(context, layer.CollectionId, sourceSrid, filterSrid);
+        }
 
         if (queryResult.Items.Length == 0)
         {
@@ -809,8 +802,8 @@ internal static partial class TilesEndpoints
             queryResult.Items,
             bounds,
             ToTileGeometryKind(layer.GeometryType),
-            sourceSrid: usesRoutedReader ? sourceSrid : null,
-            targetSrid: usesRoutedReader ? filterSrid : null);
+            sourceSrid: projection.RenderSourceSrid,
+            targetSrid: projection.RenderTargetSrid);
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, queryResult.Items.Length);
@@ -858,36 +851,30 @@ internal static partial class TilesEndpoints
             var sourceSrid = usesRoutedReader
                 ? readerResolution.StorageSrid ?? layer.SpatialReferenceSrid
                 : filterSrid;
-            TileBounds queryBounds;
-            try
-            {
-                queryBounds = usesRoutedReader
-                    ? TransformTileBounds(bounds, filterSrid, sourceSrid)
-                    : bounds;
-            }
-            catch (NotSupportedException)
-            {
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    $"Collection '{layer.CollectionId}' cannot render raster tiles from SRID " +
-                    $"{sourceSrid} into tile-matrix SRID {filterSrid}.");
-            }
-
-            var querySrid = sourceSrid;
-            var spatialFilter = CreateBboxSpatialFilter(queryBounds, querySrid);
+            var projection = CreateRasterQueryProjection(bounds, filterSrid, sourceSrid, usesRoutedReader);
+            var spatialFilter = CreateBboxSpatialFilter(projection.QueryBounds, projection.QuerySrid);
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
                 SpatialReferenceSrid = usesRoutedReader ? sourceSrid : layer.SpatialReferenceSrid,
-                OutputSrid = querySrid,
+                OutputSrid = projection.OutputSrid,
                 Limit = remainingBudget,
                 TemporalFilter = GetTemporalFilterForLayer(layer, temporalFilters)
             };
 
-            var queryResult = await readerResolution.Reader.QueryAsync(
-                layer.StorageLayerId,
-                featureQuery,
-                cancellationToken);
+            QueryResult<Feature> queryResult;
+            try
+            {
+                queryResult = await readerResolution.Reader.QueryAsync(
+                    layer.StorageLayerId,
+                    featureQuery,
+                    cancellationToken);
+            }
+            catch (NotSupportedException) when (projection.UsesProviderTransform)
+            {
+                return CreateUnsupportedRasterCrsResult(context, layer.CollectionId, sourceSrid, filterSrid);
+            }
+
             if (queryResult.Items.Length == 0)
             {
                 continue;
@@ -896,8 +883,8 @@ internal static partial class TilesEndpoints
             renderedLayers.Add(new TileRenderer.TileRenderLayer(
                 queryResult.Items,
                 ToTileGeometryKind(layer.GeometryType),
-                SourceSrid: usesRoutedReader ? sourceSrid : null,
-                TargetSrid: usesRoutedReader ? filterSrid : null));
+                SourceSrid: projection.RenderSourceSrid,
+                TargetSrid: projection.RenderTargetSrid));
             totalFeatureCount += queryResult.Items.Length;
             remainingBudget -= queryResult.Items.Length;
         }
@@ -968,6 +955,58 @@ internal static partial class TilesEndpoints
 
         return SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
     }
+
+    internal static RasterQueryProjection CreateRasterQueryProjection(
+        TileBounds bounds,
+        int filterSrid,
+        int sourceSrid,
+        bool usesRoutedReader)
+    {
+        if (!usesRoutedReader)
+        {
+            return new RasterQueryProjection(
+                bounds,
+                filterSrid,
+                filterSrid,
+                RenderSourceSrid: null,
+                RenderTargetSrid: null,
+                UsesProviderTransform: false);
+        }
+
+        try
+        {
+            return new RasterQueryProjection(
+                TransformTileBounds(bounds, filterSrid, sourceSrid),
+                sourceSrid,
+                sourceSrid,
+                RenderSourceSrid: sourceSrid,
+                RenderTargetSrid: filterSrid,
+                UsesProviderTransform: false);
+        }
+        catch (NotSupportedException)
+        {
+            // The shared in-memory transformer intentionally supports only WGS84/Web Mercator.
+            // Keep the tile envelope in the tile-matrix CRS and let capable routed providers
+            // (notably PostGIS and DuckDB) transform the filter and returned geometry in SQL.
+            return new RasterQueryProjection(
+                bounds,
+                filterSrid,
+                filterSrid,
+                RenderSourceSrid: null,
+                RenderTargetSrid: null,
+                UsesProviderTransform: true);
+        }
+    }
+
+    private static IResult CreateUnsupportedRasterCrsResult(
+        HttpContext context,
+        string collectionId,
+        int sourceSrid,
+        int filterSrid)
+        => StandardErrorHelpers.CreateBadRequest(
+            context,
+            $"Collection '{collectionId}' cannot render raster tiles from SRID " +
+            $"{sourceSrid} into tile-matrix SRID {filterSrid}.");
 
     private static TileBounds TransformTileBounds(TileBounds bounds, int fromSrid, int toSrid)
     {
@@ -1988,5 +2027,13 @@ internal static partial class TilesEndpoints
     }
 
     private readonly record struct TileRequestLayerResolution(TileRequestLayer? Layer, IResult? Error);
+
+    internal readonly record struct RasterQueryProjection(
+        TileBounds QueryBounds,
+        int QuerySrid,
+        int OutputSrid,
+        int? RenderSourceSrid,
+        int? RenderTargetSrid,
+        bool UsesProviderTransform);
 
 }
