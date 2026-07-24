@@ -12,6 +12,9 @@ public static partial class EndpointRegistry
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
         new("POST", "/api/v1/studio/package-drafts"),
+        // v1 Studio content-item and draft enumeration endpoints (#3003)
+        new("GET", "/api/v1/studio/content-items"),
+        new("GET", "/api/v1/studio/package-drafts"),
         new("GET", "/api/v1/studio/package-drafts/{draftId}"),
         new("PUT", "/api/v1/studio/package-drafts/{draftId}"),
         new("DELETE", "/api/v1/studio/package-drafts/{draftId}"),
@@ -46,5 +49,10 @@ public static partial class EndpointRegistry
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
         // NL-assisted report/dashboard content generation (#1183).
         new("POST", "/api/v1/console/publications/generate"),
+
+        // Provider-agnostic Studio AI proxy adapters (#3000): Bedrock/Anthropic/OpenAI-compatible
+        // behind one streaming chat contract, plus capability discovery.
+        new("GET", "/api/v1/studio/ai/capabilities"),
+        new("POST", "/api/v1/studio/ai/chat"),
     ];
 }

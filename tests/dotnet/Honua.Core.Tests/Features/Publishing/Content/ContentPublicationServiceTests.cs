@@ -54,6 +54,47 @@ public sealed class ContentPublicationServiceTests
     }
 
     [UnitTest]
+    public async Task GetLatestRouteStatesBySourceContentIds_ReturnsNewestVersionsRouteAndOmitsUnmatchedIds()
+    {
+        // honua-server#3003: Studio's content-item list endpoint batch-resolves publication
+        // badges by the convention sourceContentId == Studio itemId. This exercises the store
+        // method directly: the newest version's route wins per source content id, ids with no
+        // matching version are omitted, and an unrelated publication for a different source
+        // content id does not leak into the result.
+        var (service, store) = CreateService();
+        var studioItemA = Guid.NewGuid().ToString("D");
+        var studioItemB = Guid.NewGuid().ToString("D");
+        var unrelated = Guid.NewGuid().ToString("D");
+
+        var detailA = await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Map, RouteSlug = "map-a", SourceContentId = studioItemA },
+            Actor,
+            null);
+        await service.RepublishAsync(
+            detailA.Route.PublicationId,
+            new RepublishContentRequest { SourceContentId = studioItemA, ExpectedEtag = detailA.Route.Etag },
+            Actor,
+            null);
+        await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Dashboard, RouteSlug = "dash-b", SourceContentId = studioItemB },
+            Actor,
+            null);
+        await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Report, RouteSlug = "report-unrelated", SourceContentId = unrelated },
+            Actor,
+            null);
+
+        var badges = await store.GetLatestRouteStatesBySourceContentIdsAsync([studioItemA, studioItemB, "no-such-item"]);
+
+        badges.Should().HaveCount(2);
+        badges[studioItemA].RouteSlug.Should().Be("map-a");
+        badges[studioItemA].ActiveRevision.Should().Be(2, "the newest (republished) version's route must win");
+        badges[studioItemB].RouteSlug.Should().Be("dash-b");
+        badges.Should().NotContainKey("no-such-item");
+        badges.Should().NotContainKey(unrelated);
+    }
+
+    [UnitTest]
     [Operation(Operations.Create)]
     public async Task Publish_DuplicateSlug_ThrowsConflict()
     {
