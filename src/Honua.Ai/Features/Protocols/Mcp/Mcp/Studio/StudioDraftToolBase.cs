@@ -156,14 +156,14 @@ internal abstract class StudioDraftToolBase
     /// </summary>
     protected static UpdateStudioPackageDraftCommand EnvelopeOnlyUpdate(
         StudioPackageDraft draft, StudioPackageEnvelope envelope, long expectedGeneration, string? actorId) => new()
-    {
-        PackageKey = draft.PackageKey,
-        WorkspaceId = draft.WorkspaceId,
-        OwnerId = draft.OwnerId,
-        Envelope = envelope,
-        Generation = expectedGeneration,
-        ActorId = actorId,
-    };
+        {
+            PackageKey = draft.PackageKey,
+            WorkspaceId = draft.WorkspaceId,
+            OwnerId = draft.OwnerId,
+            Envelope = envelope,
+            Generation = expectedGeneration,
+            ActorId = actorId,
+        };
 
     /// <summary>Resolves the audit-record actor id from the resolved principal key.</summary>
     protected static string ActorIdFor(ClaimsPrincipal principal) => McpAuthorizationHelper.ResolvePrincipalKey(principal);
