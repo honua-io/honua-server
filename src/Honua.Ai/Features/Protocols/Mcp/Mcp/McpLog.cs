@@ -77,4 +77,23 @@ internal static partial class McpLog
 
     [LoggerMessage(8172, LogLevel.Warning, "MCP progress bridge stopped for session {SessionId} job {JobId}: job read failed.")]
     public static partial void ProgressBridgeJobReadFailed(ILogger logger, string sessionId, string jobId, Exception exception);
+
+    /// <summary>
+    /// Per-call audit record for a Studio draft lifecycle/composition tool
+    /// (honua-server#3002, NFR-001): session identity (the resolved principal
+    /// key) plus the draft generation before and after the call. Emitted by
+    /// every Studio tool, including read-only calls (generation before/after
+    /// equal) and failed calls (generation after omitted/unchanged).
+    /// </summary>
+    [LoggerMessage(
+        8173,
+        LogLevel.Information,
+        "MCP Studio draft audited: Tool={ToolName}, Principal={PrincipalKey}, DraftId={DraftId}, GenerationBefore={GenerationBefore}, GenerationAfter={GenerationAfter}")]
+    public static partial void StudioDraftAudited(
+        ILogger logger,
+        string toolName,
+        string principalKey,
+        string draftId,
+        long? generationBefore,
+        long? generationAfter);
 }
