@@ -15,10 +15,7 @@ explicitly so “runs itself” never means “may mutate anything unattended.�
 The loop starts with a server-computed posture instead of a dashboard-specific
 guess:
 
-```bash
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  http://localhost:8080/api/v1/operate/status
-```
+> Open Honua Console's **Operate → Health** view. It reads `/api/v1/operate/status`; Console/Operate routes are not exposed by the OpenAPI explorer.
 
 `GET /api/v1/operate/status` returns one `healthy`, `degraded`, or `unhealthy`
 verdict plus rollups for deploys, jobs, alerts, migrations, findings, telemetry
@@ -130,40 +127,29 @@ data-affecting.
 
 Read the live policy and track record before graduating a rule:
 
-```bash
-curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  http://localhost:8080/api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog
-```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog`.
 
 The following example opts only the proven dead-letter rule into AutoApply,
 limits it to two actions per ten-minute window, and caps its blast radius. Policy
 updates require admin authorization and are audited.
 
-```bash
-curl -sS -X PUT \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "AutoApply",
-    "maxAutoActionsPerWindow": 2,
-    "windowSeconds": 600,
-    "maxBlastRadius": 2,
-    "reason": "graduated after reviewed successful proposals"
-  }' \
-  http://localhost:8080/api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/observability/autonomy/policies/alert-dispatch-backlog` with this body:
+
+```json
+{
+  "mode": "AutoApply",
+  "maxAutoActionsPerWindow": 2,
+  "windowSeconds": 600,
+  "maxBlastRadius": 2,
+  "reason": "graduated after reviewed successful proposals"
+}
 ```
 
 Freeze all autonomous evaluation immediately with the global kill switch. This
 does not delete the saved rule policies; setting it back to `false` restores
 their eligibility after the incident review.
 
-```bash
-curl -sS -X PUT \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d '{"killSwitchEnabled":true,"reason":"incident freeze"}' \
-  http://localhost:8080/api/v1/admin/observability/autonomy/settings
-```
+Run `PUT /api/v1/admin/observability/autonomy/settings` with `{"killSwitchEnabled":true,"reason":"incident freeze"}`.
 
 Hosts without the durable control plane fail closed: autonomy is inert and
 policy changes are read-only even if configuration asks for AutoApply. See
@@ -204,10 +190,7 @@ restore last.
 
 1. Preflight:
 
-   ```bash
-   curl -s -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-     "http://localhost:8080/api/v1/admin/deploy/preflight?includeDiagnostics=true"
-   ```
+> Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true`.
 
    Proceed only when coordinated deploy readiness, migration state, database
    compatibility, and platform-release projection are understood.

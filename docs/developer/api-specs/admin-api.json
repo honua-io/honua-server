@@ -103,9 +103,209 @@
     {
       "name": "Security",
       "description": "Authentication policy metadata and client-certificate trust management"
+    },
+    {
+      "name": "API Keys",
+      "description": "Server-managed API key lifecycle and effective permissions"
     }
   ],
   "paths": {
+    "/api-keys": {
+      "get": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "List Admin API Keys",
+        "description": "Lists server-managed API keys without returning plaintext key material.",
+        "operationId": "listAdminApiKeys",
+        "responses": {
+          "200": {
+            "description": "API keys listed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeyResponseArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Create Admin API Key",
+        "description": "Creates a server-managed API key. The plaintext key is returned once in this response and must be stored securely.",
+        "operationId": "createAdminApiKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAdminApiKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "API key created successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeySecretResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api-keys/{id}/rotate": {
+      "post": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Rotate Admin API Key",
+        "description": "Rotates an active server-managed API key. The replacement plaintext key is returned once in this response.",
+        "operationId": "rotateAdminApiKey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API key identifier.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key rotated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeySecretResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api-keys/{id}/revoke": {
+      "post": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Revoke Admin API Key",
+        "description": "Revokes a server-managed API key so it can no longer authenticate.",
+        "operationId": "revokeAdminApiKey",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API key identifier.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key revoked successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api-keys/{id}/effective-permissions": {
+      "get": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Get Admin API Key Effective Permissions",
+        "description": "Returns the current lifecycle status, permissions, and authentication eligibility for a server-managed API key.",
+        "operationId": "getAdminApiKeyEffectivePermissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API key identifier.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective permissions returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeyEffectivePermissionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/alerts/zones": {
       "get": {
         "tags": [
@@ -1787,6 +1987,543 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/import/formats": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Get Supported Import Formats",
+        "description": "Returns the geospatial file extensions supported by this server build and a description of each format.",
+        "operationId": "getImportFormats",
+        "responses": {
+          "200": {
+            "description": "Supported import formats.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "supportedExtensions",
+                    "formatDescriptions"
+                  ],
+                  "properties": {
+                    "supportedExtensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "formatDescriptions": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/preview": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Preview a Geospatial File",
+        "description": "Inspects one supported geospatial file without importing or mutating data.",
+        "operationId": "previewImportFile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "One supported geospatial file."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Detected file structure and sample metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFilePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/preview-url": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Preview a Geospatial File from a URL",
+        "description": "Downloads and inspects a supported public geospatial object without importing or mutating data.",
+        "operationId": "previewImportFileFromUrl",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sourceUrl"
+                ],
+                "properties": {
+                  "sourceUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "fileName": {
+                    "type": "string",
+                    "description": "Optional filename hint when the URL path does not contain a usable extension."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Detected file structure and sample metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportFilePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/upload-url": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Import a Geospatial File from a URL",
+        "description": "Downloads one supported public geospatial object and imports it into PostgreSQL. Large imports may return a background job.",
+        "operationId": "uploadImportFileFromUrl",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportFileFromUrlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/limits": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Get Import Limits",
+        "description": "Returns the configured preview, upload, memory, and background-job limits.",
+        "operationId": "getImportLimits",
+        "responses": {
+          "200": {
+            "description": "Current import limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/import/jobs": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "List Active Import Jobs",
+        "description": "Returns the active background import jobs.",
+        "operationId": "getActiveImportJobs",
+        "responses": {
+          "200": {
+            "description": "Active import jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Import job service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Get Import Job Status",
+        "description": "Returns progress and result metadata for one background import job.",
+        "operationId": "getImportJobStatus",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Import job service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/jobs/{jobId}/cancel": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Cancel an Import Job",
+        "description": "Requests cancellation of one active background import job.",
+        "operationId": "cancelImportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import job cancellation was requested.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobId",
+                    "message"
+                  ],
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Import job service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/import/upload": {
+      "post": {
+        "tags": [
+          "Import"
+        ],
+        "summary": "Upload and Import a Geospatial File",
+        "description": "Streams one supported geospatial file into PostgreSQL. Small imports complete synchronously; large imports return a durable background job when shared file storage and the job service are configured.",
+        "operationId": "uploadImportFile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "TableName"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "One supported geospatial file."
+                  },
+                  "TableName": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$",
+                    "description": "Destination table name."
+                  },
+                  "TargetSchema": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+                    "description": "Optional destination schema."
+                  },
+                  "SourceSrid": {
+                    "type": "integer",
+                    "format": "int32",
+                    "description": "Source EPSG code when the file does not embed one."
+                  },
+                  "TargetSrid": {
+                    "type": "integer",
+                    "format": "int32",
+                    "default": 4326,
+                    "description": "Destination EPSG code."
+                  },
+                  "OverwriteExisting": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "ForceBackground": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "TrackProgress": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "UploadId": {
+                    "type": "string",
+                    "description": "Optional caller-supplied upload operation identifier."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import completed synchronously.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Import accepted for background processing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "description": "Import failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Background import dependencies are unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -4600,6 +5337,109 @@
       }
     },
     "schemas": {
+      "ImportFilePreview": {
+        "type": "object",
+        "required": [
+          "format",
+          "totalFeatureCount",
+          "sampleProperties",
+          "availableLayers",
+          "warnings"
+        ],
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "GeoJson",
+              "Shapefile",
+              "GeoPackage",
+              "Gpx",
+              "Kml",
+              "Gml",
+              "Wkt",
+              "Csv",
+              "FileGdb",
+              "FlatGeobuf",
+              "GeoParquet",
+              "EsriJson",
+              "Wkb"
+            ]
+          },
+          "totalFeatureCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "detectedSrid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "sampleProperties": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "availableLayers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ImportFileFromUrlRequest": {
+        "type": "object",
+        "required": [
+          "sourceUrl",
+          "tableName"
+        ],
+        "properties": {
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "fileName": {
+            "type": "string",
+            "description": "Optional filename hint when the URL path does not contain a usable extension."
+          },
+          "tableName": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,62}$"
+          },
+          "targetSchema": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "sourceSrid": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "targetSrid": {
+            "type": "integer",
+            "format": "int32",
+            "default": 4326
+          },
+          "overwriteExisting": {
+            "type": "boolean",
+            "default": false
+          },
+          "forceBackground": {
+            "type": "boolean",
+            "default": false
+          },
+          "trackProgress": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
       "ConfigurationResponse": {
         "type": "object",
         "properties": {
@@ -7626,6 +8466,234 @@
             "type": "string",
             "nullable": true,
             "description": "Optional rule name when the diagnostic was emitted while processing a specific SLD Rule."
+          }
+        }
+      },
+      "CreateAdminApiKeyRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Human-readable key name used in operator audit and list views."
+          },
+          "permissions": {
+            "type": "array",
+            "description": "Permission labels assigned to the key. Layer-scoped write grants use write:{service} or write:{service}/{layer}.",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "default": []
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Optional UTC expiration time."
+          }
+        }
+      },
+      "AdminApiKeyResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "keyPrefix",
+          "permissions",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "keyPrefix": {
+            "type": "string",
+            "description": "Non-secret prefix used to recognize the key."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "rotatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "AdminApiKeySecretResponse": {
+        "type": "object",
+        "required": [
+          "apiKey",
+          "key"
+        ],
+        "properties": {
+          "apiKey": {
+            "$ref": "#/components/schemas/AdminApiKeyResponse"
+          },
+          "key": {
+            "type": "string",
+            "description": "Plaintext key material returned only when a key is created or rotated."
+          }
+        }
+      },
+      "AdminApiKeyEffectivePermissionsResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "permissions",
+          "canAuthenticate"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ]
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "canAuthenticate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiResponseAdminApiKeyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminApiKeyResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAdminApiKeyResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminApiKeyResponse"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAdminApiKeySecretResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminApiKeySecretResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAdminApiKeyEffectivePermissionsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminApiKeyEffectivePermissionsResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

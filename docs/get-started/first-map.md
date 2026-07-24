@@ -10,19 +10,11 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 
 1. Set variables and allow anonymous reads on the service so the browser can fetch tiles without credentials.
 
-```bash
-export HONUA=http://localhost:8080
-export KEY=quickstart-admin-password
-export LAYER_ID=1   # layerId from your publish response
-curl -s -X PUT -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"allowAnonymous":true}' "$HONUA/api/v1/admin/services/default/access-policy"
-```
+The service access-policy operation does not yet have a high-level client method. In the local [API explorer](http://localhost:8080/docs), run `PUT /api/v1/admin/services/default/access-policy` with `{"allowAnonymous": true}`. Use the [admin OpenAPI document](../developer/api-specs/admin-api.json) to generate a client when the explorer is unavailable.
 
 2. Fetch the TileJSON. It carries the tile URL template, zoom range, data bounds, the vector layer schema, and a link to the auto-generated style.
 
-```bash
-curl -s "$HONUA/tiles/$LAYER_ID/tile.json"
-```
+Open `http://localhost:8080/tiles/1/tile.json` in a browser, replacing `1` with your layer ID.
 
 ```text
 {"tilejson":"3.0.0","name":"quickstart-points","scheme":"xyz",
@@ -33,9 +25,7 @@ curl -s "$HONUA/tiles/$LAYER_ID/tile.json"
 
 3. Fetch the auto-generated MapLibre style. It is a complete MapLibre v8 style document with geometry-appropriate defaults; add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for variants.
 
-```bash
-curl -s "$HONUA/api/styles/$LAYER_ID.json"
-```
+Open `http://localhost:8080/api/styles/1.json` in a browser, replacing `1` with your layer ID. Add `?theme=dark`, `?theme=colorblind-safe`, or `?theme=print` for a variant.
 
 4. Save this as `map.html`. It reads the TileJSON, fits the map to your data's bounds, and draws the features over an OpenStreetMap basemap (in every MVT tile the source-layer name is `layer`).
 
@@ -74,15 +64,7 @@ python3 -m http.server 3000
 
 ## Verify
 
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" "$HONUA/tiles/$LAYER_ID/0/0/0.mvt"
-```
-
-```text
-200
-```
-
-The browser shows your features drawn over the basemap, centered on the data extent.
+In the browser developer tools, confirm the TileJSON and vector-tile requests return `200`. The page should show your features over the basemap, centered on the data extent.
 
 ## Troubleshoot
 

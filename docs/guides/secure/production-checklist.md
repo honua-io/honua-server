@@ -40,12 +40,9 @@ Work through this checklist before exposing Honua to the internet; each item is 
 
 ## Verify
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "https://gis.example.com/api/v1/admin/configuration/secrets/validate"
-```
+Use a client generated from the checked-in [admin OpenAPI document](../../developer/api-specs/admin-api.json) to invoke `GET /api/v1/admin/configuration/secrets/validate` with an admin credential. On staging, the authorized [API explorer](../../reference/openapi-and-explorer.md) can run the same operation.
 
-Also confirm from outside the network: `curl -I https://gis.example.com/docs` returns `404`, `/metrics` is unreachable, and responses carry `Strict-Transport-Security`.
+Also confirm from outside the network that `/docs` returns `404` and `/metrics` is unreachable. Inspect the root response in browser developer tools or your security scanner and confirm it carries `Strict-Transport-Security`.
 
 ## Troubleshoot
 

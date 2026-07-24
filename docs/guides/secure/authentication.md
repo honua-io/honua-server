@@ -18,11 +18,14 @@ This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitori
 
 Don't share the admin password with CI jobs — mint named keys instead:
 
-```bash
-BASE=http://localhost:8080
-curl -X POST "$BASE/api/v1/admin/api-keys" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"name":"ci-publisher","permissions":[],"expiresAt":null}'
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
+
+```json
+{
+  "name": "ci-publisher",
+  "permissions": [],
+  "expiresAt": null
+}
 ```
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
@@ -43,10 +46,7 @@ Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; O
 
 Esri clients (ArcGIS Pro, Maps SDKs) authenticate against the portal token endpoint, which is always on:
 
-```bash
-curl -X POST "$BASE/sharing/rest/generateToken" \
-  -d "username=admin&password=$ADMIN_PASSWORD&client=referer&referer=https://app.example.com&expiration=60&f=json"
-```
+Use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat` with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. ArcGIS Pro and other Esri clients discover the same endpoint automatically when they prompt for credentials.
 
 The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer`. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400). An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider — register every redirect URI in `Authentication__PortalToken__OAuth2__AllowedRedirectUris` before enabling it.
 
@@ -67,9 +67,7 @@ A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `
 
 ## Verify
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" "$BASE/api/v1/admin/version"
-```
+Run `GET /api/v1/admin/version` in the authorized explorer.
 
 ```json
 { "success": true, "data": { "version": "..." } }

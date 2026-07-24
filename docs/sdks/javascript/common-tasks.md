@@ -81,11 +81,12 @@ for (const item of results.features) {
 
 ## Migrate ArcGIS JS code
 
-The `honua-migrate` codemod scans and rewrites ArcGIS JS API imports toward the Honua SDK:
+The JavaScript engine from [`honua-migrate`](https://github.com/honua-io/honua-migrate) scans and rewrites ArcGIS JS API imports toward the Honua SDK:
 
 ```bash
-npx @honua/honua-migrate scan ./src
-npx @honua/honua-migrate codemod ./src --write --report migration-report.json
+npm install --global @honua/honua-migrate
+honua-js-migrate scan ./src
+honua-js-migrate codemod ./src --write --report migration-report.json
 ```
 
 See [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md) for the migration path and the `esri-compat` layer.

@@ -67,7 +67,7 @@ with HonuaClient("http://localhost:8080", api_key=os.environ["HONUA_API_KEY"]) a
 print(f"Found {len(result.features)} features")
 ```
 
-A wrong or missing key raises an authentication error from the client — confirm `HONUA_API_KEY` is set and accepted (`curl -H "X-API-Key: $HONUA_API_KEY" http://localhost:8080/api/v1/admin/version`).
+A wrong or missing key raises an authentication error from the client. Confirm `HONUA_API_KEY` is set, then rerun the authenticated SDK query above.
 
 ## Available surfaces
 
@@ -85,7 +85,7 @@ A wrong or missing key raises an authentication error from the client — confir
 
 | Symptom | Fix |
 |---|---|
-| Authentication error / 401 | `api_key` unset or wrong; verify with `curl -H "X-API-Key: $KEY" .../api/v1/admin/version`. |
+| Authentication error / 401 | `api_key` is unset or wrong; set it and rerun the authenticated SDK query above. |
 | `ModuleNotFoundError: honua_sdk` | The import name uses an underscore (`honua_sdk`), the package name a hyphen (`honua-sdk`). |
 | Empty `result.features` | The `where` filtered everything out, or the layer is empty; try `Query(where="1=1")`. |
 

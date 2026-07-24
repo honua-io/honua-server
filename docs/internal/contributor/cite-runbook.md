@@ -75,7 +75,7 @@ docker compose -f docker/cite/<suite>/compose.yml logs honua-server
 docker compose -f docker/cite/<suite>/compose.yml logs cite-runner
 ```
 
-If `--interactive` was used, hit the relevant capabilities/landing endpoint with curl (per-suite endpoints below) before invoking TeamEngine — most failures show up there first.
+If `--interactive` was used, open the relevant capabilities or landing endpoint listed below in a browser before invoking TeamEngine — most failures show up there first.
 
 For format-level suites, the upstream OGC ETS images are pinned to `:latest` (KML 2.2, GML 3.2, GeoPackage 1.2). If validation behavior changes unexpectedly, check for an image refresh upstream.
 
@@ -86,7 +86,7 @@ For format-level suites, the upstream OGC ETS images are pinned to `:latest` (KM
 - **Scope:** Core, OpenAPI 3.0, GeoJSON, HTML. CRS is optional.
 - **Profiles:** `full` (default — all classes + CRS + advanced), `default` (core conformance classes only), `minimal` (Core only).
 - **Test params:** `docker/cite/ogc-api-features/config/test-params.xml`.
-- **Sanity check:** `curl http://localhost:8080/ogc/features/`
+- **Sanity check:** open `http://localhost:8080/ogc/features/` in a browser.
 
 ### OGC API Tiles
 
@@ -110,14 +110,14 @@ Conformance classes advertised: `core`, `collection-map`, `dataset-map`, `collec
 - **Scope:** `GetCapabilities`, `GetMap`.
 - **Profiles:** `minimal`, `default`, `full`.
 - **Test params:** `docker/cite/wms13/config/test-params.xml`.
-- **Sanity check:** `curl 'http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0'`
+- **Sanity check:** open `http://localhost:8080/rest/services/cite/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0` in a browser.
 
 ### WMTS 1.0
 
 - **Scope:** `GetCapabilities`, `GetTile` (KVP).
 - **Profiles:** label-override via `--profile` (default: standard WMTS profile).
 - **Test params:** `docker/cite/wmts10/config/test-params.xml`.
-- **Sanity check:** `curl 'http://localhost:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0'`
+- **Sanity check:** open `http://localhost:8080/rest/services/cite/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0` in a browser.
 - **Open issue:** lane is not certification-ready until `WebMercatorQuad`'s `WellKnownScaleSet` CRS URN is corrected. Tracked by [#870](https://github.com/honua-io/honua-server/issues/870).
 
 ### WPS 2.0.2
@@ -125,7 +125,7 @@ Conformance classes advertised: `core`, `collection-map`, `dataset-map`, `collec
 - **Scope:** official `ets-wps20` 1.1 Basic, Synchronous, and Asynchronous conformance classes.
 - **Profiles:** `basic-async` (default certification path), `basic-sync`, and `all`.
 - **Test params:** the runner generates `cite-wps20-results/test-run-props.xml` from the template under `docker/cite/wps20/config/`.
-- **Sanity check:** `curl 'http://localhost:8100/wps?service=WPS&request=GetCapabilities&version=2.0.0'`.
+- **Sanity check:** open `http://localhost:8100/wps?service=WPS&request=GetCapabilities&version=2.0.0` in a browser.
 - **Upstream pin:** tag `1.1`, commit `e2acc691440fad98d32e873a6b7237c9d759b8df`, built as the official all-in-one Java 17 JAR.
 - **Evidence status:** pending the first all-pass run. This lane is not yet part of the public aggregate or an OGC certification claim.
 
@@ -151,7 +151,7 @@ explicit `unknown` warning. Local `--skip-build` runs are marked
 - **Scope:** Basic WFS, XML/KVP encoding, FES filter encoding; transactional WFS optional.
 - **Profiles:** `basic` (default), `transactional`, `full`.
 - **Test params:** `docker/cite/wfs20/config/test-params.xml`.
-- **Sanity check:** `curl 'http://localhost:8080/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities'`
+- **Sanity check:** open `http://localhost:8080/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities` in a browser.
 - **Open issue:** lane is not certification-ready until the bounded service-behavior fixes from [#870](https://github.com/honua-io/honua-server/issues/870), [#871](https://github.com/honua-io/honua-server/issues/871), [#872](https://github.com/honua-io/honua-server/issues/872), [#873](https://github.com/honua-io/honua-server/issues/873) are re-validated against a clean retained artifact.
 
 ### WCS 2.0.1
@@ -164,20 +164,20 @@ explicit `unknown` warning. Local `--skip-build` runs are marked
 
 - **Scope:** validates a Honua-generated KML document produced by `MapServer/generateKml` against the OGC KML 2.2 schema. KML output is always EPSG:4326.
 - **Profiles:** `applicable` (default — strict Level 1 no-skip evidence profile), `default` (raw ETS, may report skips for Level 2/3 checks).
-- **Sanity check:** `curl http://localhost:8080/rest/services/cite/MapServer/generateKml`
+- **Sanity check:** open `http://localhost:8080/rest/services/cite/MapServer/generateKml` in a browser.
 
 ### GML 3.2 (format-level)
 
 - **Scope:** validates a GML document fetched from the `cite:BasicPolygons` collection via OGC API Features content negotiation (`Accept: application/gml+xml; version=3.2`).
 - **Profiles:** `applicable` (default), `default` (raw ETS).
-- **Sanity check:** `curl -H 'Accept: application/gml+xml; version=3.2' http://localhost:8080/ogc/features/collections/cite:BasicPolygons/items`
+- **Sanity check:** use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /ogc/features/collections/cite:BasicPolygons/items` and select `application/gml+xml; version=3.2`.
 
 ### GeoPackage 1.2 (format-level)
 
 - **Scope:** validates a GeoPackage exported from layer 0 of the cite service via the admin layer-export endpoint.
 - **Auth:** admin export requires `X-API-Key`. In the CITE environment this is hardcoded to `CiteAdminPassword123!` — no secrets management needed for this test infrastructure.
 - **Profiles:** `applicable` (default — core + features), `default` (raw ETS).
-- **Sanity check:** `curl -H 'X-API-Key: CiteAdminPassword123!' 'http://localhost:8080/api/v1/admin/services/cite/layers/0/export?format=gpkg' -o export.gpkg`
+- **Sanity check:** use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/services/cite/layers/0/export?format=gpkg` with the documented test key.
 
 ## External references
 
