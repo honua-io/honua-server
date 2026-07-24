@@ -9,7 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
 
-namespace Honua.Server.Features.StudioAi;
+namespace Honua.Server.Features.Studio.Ai;
 
 /// <summary>
 /// Studio AI proxy endpoints (honua-server#3000): a provider-neutral, server-mediated chat surface
