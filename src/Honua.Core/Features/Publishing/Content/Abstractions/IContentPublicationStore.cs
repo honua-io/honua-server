@@ -46,6 +46,17 @@ public interface IContentPublicationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Batch-resolves, for each of the supplied source content ids, the route state of the
+    /// publication whose most recently created version referenced that source content id
+    /// (<see cref="ContentPublicationVersion.SourceContentId"/>). Ids with no matching version
+    /// are omitted from the result. Used to join publication-registry lifecycle badges onto a
+    /// content-browser list (for example Studio content items) without one round-trip per row.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
+        IReadOnlyCollection<string> sourceContentIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Atomically appends a new immutable version, upserts the route-state pointer,
     /// and appends an event. Used by publish (new route) and republish (existing route).
     /// </summary>

@@ -37,6 +37,18 @@ public interface IStudioPackageStore
     /// <summary>Gets current and published pointers for a content item.</summary>
     Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists Studio content items matching the supplied query, ordered by <c>updatedAt</c>
+    /// descending with <c>itemId</c> descending as a stable tiebreak.
+    /// </summary>
+    Task<StudioContentItemListResult> ListContentItemsAsync(StudioContentItemQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists mutable Studio package drafts matching the supplied query, ordered by
+    /// <c>updatedAt</c> descending with <c>draftId</c> descending as a stable tiebreak.
+    /// </summary>
+    Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default);
+
     /// <summary>Creates a persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest> CreatePublicationRequestAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default);
 
@@ -105,6 +117,18 @@ public interface IStudioPackageLifecycleService
 
     /// <summary>Lists immutable content versions for an item.</summary>
     Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists Studio content items matching the supplied query, ordered by <c>updatedAt</c>
+    /// descending with <c>itemId</c> descending as a stable tiebreak.
+    /// </summary>
+    Task<StudioContentItemListResult> ListContentItemsAsync(StudioContentItemQuery query, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists mutable Studio package drafts matching the supplied query, ordered by
+    /// <c>updatedAt</c> descending with <c>draftId</c> descending as a stable tiebreak.
+    /// </summary>
+    Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>Gets one immutable content version.</summary>
     Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default);

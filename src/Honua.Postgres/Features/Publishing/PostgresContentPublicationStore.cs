@@ -30,6 +30,10 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         "publication_id, route_slug, route_path, kind, active_version_id, active_revision, previous_version_id, " +
         "rollback_target_version_id, lifecycle, policy, generation, etag, updated_by, updated_at, created_at";
 
+    private const string RouteColumnsQualified =
+        "r.publication_id, r.route_slug, r.route_path, r.kind, r.active_version_id, r.active_revision, r.previous_version_id, " +
+        "r.rollback_target_version_id, r.lifecycle, r.policy, r.generation, r.etag, r.updated_by, r.updated_at, r.created_at";
+
     private const string EventColumns =
         "event_seq, event_id, publication_id, operation, version_id, revision, route_slug, actor, correlation_id, detail, created_at";
 
@@ -144,6 +148,41 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         command.Parameters.AddWithValue("@publication_id", publicationGuid);
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return value is long revision ? revision : 0L;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
+        IReadOnlyCollection<string> sourceContentIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceContentIds);
+        var result = new Dictionary<string, ContentPublicationRouteState>(StringComparer.Ordinal);
+        if (sourceContentIds.Count == 0)
+        {
+            return result;
+        }
+
+        var ids = sourceContentIds.Distinct(StringComparer.Ordinal).ToArray();
+        var sql = $"""
+            SELECT DISTINCT ON (v.source_content_id)
+                v.source_content_id, {RouteColumnsQualified}
+            FROM {_versionsTable} v
+            JOIN {_routesTable} r ON r.publication_id = v.publication_id
+            WHERE v.source_content_id = ANY(@source_content_ids)
+            ORDER BY v.source_content_id, v.created_at DESC, v.revision DESC
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@source_content_ids", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = ids });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var sourceContentId = reader.GetString(0);
+            result[sourceContentId] = MapRoute(reader, offset: 1);
+        }
+
+        return result;
     }
 
     /// <inheritdoc />
@@ -411,24 +450,24 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         CreatedAt = reader.GetFieldValue<DateTimeOffset>(24),
     };
 
-    private static ContentPublicationRouteState MapRoute(NpgsqlDataReader reader) => new()
+    private static ContentPublicationRouteState MapRoute(NpgsqlDataReader reader, int offset = 0) => new()
     {
-        PublicationId = reader.GetGuid(0).ToString("D"),
-        RouteSlug = reader.GetString(1),
-        RoutePath = reader.GetString(2),
-        Kind = KindFromDb(reader.GetString(3)),
-        ActiveVersionId = reader.GetGuid(4).ToString("D"),
-        ActiveRevision = reader.GetInt64(5),
-        PreviousVersionId = reader.IsDBNull(6) ? null : reader.GetGuid(6).ToString("D"),
-        RollbackTargetVersionId = reader.IsDBNull(7) ? null : reader.GetGuid(7).ToString("D"),
-        Lifecycle = LifecycleFromDb(reader.GetString(8)),
-        Policy = JsonSerializer.Deserialize(reader.GetString(9), ContentPublicationJsonContext.Default.ContentPublicationPolicy)
+        PublicationId = reader.GetGuid(offset + 0).ToString("D"),
+        RouteSlug = reader.GetString(offset + 1),
+        RoutePath = reader.GetString(offset + 2),
+        Kind = KindFromDb(reader.GetString(offset + 3)),
+        ActiveVersionId = reader.GetGuid(offset + 4).ToString("D"),
+        ActiveRevision = reader.GetInt64(offset + 5),
+        PreviousVersionId = reader.IsDBNull(offset + 6) ? null : reader.GetGuid(offset + 6).ToString("D"),
+        RollbackTargetVersionId = reader.IsDBNull(offset + 7) ? null : reader.GetGuid(offset + 7).ToString("D"),
+        Lifecycle = LifecycleFromDb(reader.GetString(offset + 8)),
+        Policy = JsonSerializer.Deserialize(reader.GetString(offset + 9), ContentPublicationJsonContext.Default.ContentPublicationPolicy)
             ?? new ContentPublicationPolicy(),
-        Generation = reader.GetInt64(10),
-        Etag = reader.GetString(11),
-        UpdatedBy = reader.GetString(12),
-        UpdatedAt = reader.GetFieldValue<DateTimeOffset>(13),
-        CreatedAt = reader.GetFieldValue<DateTimeOffset>(14),
+        Generation = reader.GetInt64(offset + 10),
+        Etag = reader.GetString(offset + 11),
+        UpdatedBy = reader.GetString(offset + 12),
+        UpdatedAt = reader.GetFieldValue<DateTimeOffset>(offset + 13),
+        CreatedAt = reader.GetFieldValue<DateTimeOffset>(offset + 14),
     };
 
     private static ContentPublicationEvent MapEvent(NpgsqlDataReader reader) => new()

@@ -28,6 +28,12 @@ internal static partial class StudioEndpointsLog
     [LoggerMessage(EventId = 118006, Level = LogLevel.Information, Message = "Studio {Kind} deliverable exported for item {ItemId} as {Format} ({Bytes} bytes).")]
     public static partial void DeliverableExported(ILogger logger, Honua.Core.Features.Studio.Domain.StudioPackageFamily kind, Guid itemId, Honua.Server.Features.Studio.Export.StudioDeliverableFormat format, int bytes);
 
+    [LoggerMessage(EventId = 118007, Level = LogLevel.Information, Message = "Studio content items listed: {Count} of {Total} total.")]
+    public static partial void ContentItemsListed(ILogger logger, int count, int total);
+
+    [LoggerMessage(EventId = 118008, Level = LogLevel.Information, Message = "Studio package drafts listed: {Count} of {Total} total.")]
+    public static partial void DraftsListed(ILogger logger, int count, int total);
+
     [LoggerMessage(EventId = 118050, Level = LogLevel.Error, Message = "Studio package endpoint {Operation} failed.")]
     public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }
