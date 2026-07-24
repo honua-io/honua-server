@@ -119,7 +119,13 @@ public interface IStudioAuthorizationService
     /// </summary>
     bool IsEndUserAuthorizationEnabled { get; }
 
-    /// <summary>Returns true when the principal holds the platform <c>admin</c> role.</summary>
+    /// <summary>
+    /// Returns true when the principal holds the platform <c>admin</c> role, or a configured
+    /// OIDC admin-role alias (<c>Oidc:AdminRoles</c>, for example <c>administrator</c>) -- the
+    /// same alias set <c>OidcAuthenticationExtensions.AddOidcAuthorization</c> uses to widen
+    /// <c>AdminPolicy</c>/<c>AdminPolicyAlias</c>/the Temporal-* policies, so an OIDC admin
+    /// authenticated under an alias role is never incorrectly scoped to ownership.
+    /// </summary>
     bool IsAdmin(ClaimsPrincipal principal);
 
     /// <summary>
@@ -147,7 +153,12 @@ public interface IStudioAuthorizationService
     /// <param name="operation">The operation being performed.</param>
     /// <param name="resourceOwnerId">
     /// The owning principal id of the target resource (draft/content item), or
-    /// <see langword="null"/> when creating a brand-new resource with no prior owner.
+    /// <see langword="null"/> when an existing resource has no recorded owner (for example a
+    /// legacy row created before honua-server#3001's ownership migration). A null owner is
+    /// treated as fail-closed -- not owned by the caller -- so only an admin can act on it until
+    /// an owner is assigned. Endpoints that create a brand-new resource never call this method
+    /// with a null owner: they resolve ownership to the creating caller before persisting and
+    /// only authorize against an existing resource's recorded owner thereafter.
     /// </param>
     /// <param name="isPubliclyReadable">
     /// True when the target resource has a published version, admitting a read-only operation

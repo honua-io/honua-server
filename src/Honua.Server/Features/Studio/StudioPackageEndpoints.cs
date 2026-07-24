@@ -520,6 +520,12 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            var scopeDenied = DenyIfCallerUnresolvedForScopedListing(authorization, context);
+            if (scopeDenied is not null)
+            {
+                return scopeDenied;
+            }
+
             var effectiveOwner = ResolveEffectiveOwnerFilter(authorization, context, owner);
             var result = await service.ListDraftsAsync(
                 new StudioPackageDraftQuery
@@ -873,6 +879,12 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            var scopeDenied = DenyIfCallerUnresolvedForScopedListing(authorization, context);
+            if (scopeDenied is not null)
+            {
+                return scopeDenied;
+            }
+
             var effectiveOwner = ResolveEffectiveOwnerFilter(authorization, context, owner);
             var result = await service.ListContentItemsAsync(
                 new StudioContentItemQuery
@@ -959,6 +971,7 @@ internal static class StudioPackageEndpoints
         State = item.State,
         CurrentVersionId = item.CurrentVersionId,
         PublishedVersionId = item.PublishedVersionId,
+        OwnerId = item.OwnerId,
         CreatedBy = item.CreatedBy,
         UpdatedBy = item.UpdatedBy,
         CreatedAt = item.CreatedAt,
@@ -997,11 +1010,49 @@ internal static class StudioPackageEndpoints
     }
 
     /// <summary>
+    /// Denies a scoped Studio enumeration request (honua-server#3001 follow-up) when end-user
+    /// mode is on, the caller is non-admin, and <see cref="StudioEndpointAuthorization.ResolveCallerId"/>
+    /// cannot resolve a caller id (for example a principal with none of NameIdentifier, "sub",
+    /// the admin API-key id/name claims, or <see cref="System.Security.Claims.ClaimsIdentity.Name"/>).
+    /// Without this check, <see cref="ResolveEffectiveOwnerFilter"/> would return null for such a
+    /// caller, which downstream <see cref="NormalizeOptionalQueryValue"/> treats as "no owner
+    /// filter" -- silently listing every draft/content item instead of scoping to "my content".
+    /// Returns the RFC 7807 problem response to return directly, or <see langword="null"/> when
+    /// the caller should proceed.
+    /// </summary>
+    private static IResult? DenyIfCallerUnresolvedForScopedListing(
+        StudioEndpointAuthorization authorization,
+        HttpContext context)
+    {
+        if (authorization.IsAdmin(context.User) || !authorization.IsEndUserAuthorizationEnabled)
+        {
+            return null;
+        }
+
+        var callerId = authorization.ResolveCallerId(context.User);
+        if (!string.IsNullOrWhiteSpace(callerId))
+        {
+            return null;
+        }
+
+        return Forbidden(
+            context,
+            "The caller's identity could not be resolved for this scoped Studio listing request.",
+            "studio_authorization/authentication_required");
+    }
+
+    /// <summary>
     /// Returns whether the caller is the admin or the resource's recorded owner (honua-server#3001).
     /// Distinct from <see cref="EnsureAuthorizedAsync"/>'s allow/deny outcome: a caller can be
     /// authorized to reach a resource without being its owner (public-read visibility, an
     /// elevated delegate grant), and some responses -- content-version listing, deliverable
-    /// export -- must additionally narrow their payload/target in exactly that case.
+    /// export -- must additionally narrow their payload/target in exactly that case. Mirrors
+    /// <see cref="Honua.Core.Features.Studio.Services.StudioAuthorizationService"/>'s fail-closed
+    /// ownership check: a null <paramref name="resourceOwnerId"/> (an existing resource with no
+    /// recorded owner, for example an unbackfilled legacy row) is never treated as owned by the
+    /// caller, so a non-admin caller who only reached this point via public-read visibility is
+    /// correctly narrowed to the published version rather than granted full owner-equivalent
+    /// access.
     /// </summary>
     private static bool IsOwnerOrAdmin(
         StudioEndpointAuthorization authorization,
@@ -1015,7 +1066,7 @@ internal static class StudioPackageEndpoints
 
         if (resourceOwnerId is null)
         {
-            return true;
+            return false;
         }
 
         var callerId = authorization.ResolveCallerId(context.User);

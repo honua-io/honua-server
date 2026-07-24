@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -470,6 +471,65 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-drafts")]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    public async Task ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything()
+    {
+        // PR #3018 review, item 3: once end-user mode is on, ResolveEffectiveOwnerFilter scopes
+        // a non-admin caller's list request to their own resolved id. If ResolveCallerId cannot
+        // resolve any id at all (for example a principal missing NameIdentifier/sub/api-key/name
+        // claims -- not reachable via any api-key-authenticated request in this codebase today,
+        // since every branch of ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult
+        // unconditionally stamps ClaimTypes.Name, but a real risk for other auth schemes such as
+        // mTLS certificates or an OIDC JWT missing its subject claim), the filter used to
+        // collapse to null, which NormalizeOptionalQueryValue treats as "no owner filter" --
+        // silently listing every draft/content item instead of denying. This test isolates the
+        // endpoint-level fix (DenyIfCallerUnresolvedForScopedListing) from exactly how such a
+        // principal authenticates by substituting a fake IStudioAuthorizationService whose
+        // ResolveCallerId always returns null while IsAdmin returns false, simulating the shape
+        // of that principal regardless of transport.
+        await using var fixture = await CreateUnresolvableCallerFixtureAsync();
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var scopedKey = await apiKeyStore.CreateAsync("dave", ["studio:enduser"], null, null, CancellationToken.None);
+        using var scopedClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
+
+        var draftsResponse = await scopedClient.GetAsync("/api/v1/studio/package-drafts");
+        draftsResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var draftsProblem = JsonSerializer.Deserialize<JsonElement>(await draftsResponse.Content.ReadAsStringAsync());
+        draftsProblem.GetProperty("code").GetString().Should().Be("studio_authorization/authentication_required");
+
+        var itemsResponse = await scopedClient.GetAsync("/api/v1/studio/content-items");
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var itemsProblem = JsonSerializer.Deserialize<JsonElement>(await itemsResponse.Content.ReadAsStringAsync());
+        itemsProblem.GetProperty("code").GetString().Should().Be("studio_authorization/authentication_required");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    public async Task ListContentItems_FlagOn_ResponseIncludesOwnerId()
+    {
+        // PR #3018 review, item 4: StudioContentItemListRow.OwnerId was never populated by
+        // ToListRow, so GET /studio/content-items never returned the documented field even
+        // though the query already scopes by owner. Assert it is actually present in the
+        // response.
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = endUserFixture.CreateAdminClient();
+        using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+
+        var ownerId = aliceKey.Record.Id.ToString("D");
+        var (itemId, _, _) = await CreatePublishedTwoVersionItemAsync(adminClient, ownerId);
+
+        var listResponse = await aliceClient.GetAsync("/api/v1/studio/content-items");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listed = await ReadAsync<StudioContentItemListResponse>(
+            listResponse, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        var row = listed.Items.Should().ContainSingle(item => item.ItemId == itemId).Subject;
+        row.OwnerId.Should().Be(ownerId);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/package-families")]
     [Endpoint("POST /api/v1/studio/package-drafts")]
     public async Task AdminReadOnlyKey_CanReadButNotMutateStudio()
@@ -669,6 +729,39 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             {
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                // The content-items list endpoint joins publication-registry lifecycle badges
+                // (REQ-004); use the in-memory store here (like the class-level fixture) so the
+                // HTTP + join path is exercised without a migrated Postgres schema.
+                services.RemoveAll<IContentPublicationStore>();
+                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
+            });
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    /// <summary>
+    /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
+    /// on and <see cref="IStudioAuthorizationService"/> replaced with a fake whose
+    /// <see cref="IStudioAuthorizationService.ResolveCallerId"/> always returns
+    /// <see langword="null"/> and <see cref="IStudioAuthorizationService.IsAdmin"/> always
+    /// returns <see langword="false"/>, for the PR #3018 review item 3 regression test.
+    /// </summary>
+    private static async Task<WebAppFixture> CreateUnresolvableCallerFixtureAsync()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IStudioPackageStore>();
+                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                services.RemoveAll<IStudioAuthorizationService>();
+                services.AddScoped<IStudioAuthorizationService, UnresolvableCallerStudioAuthorizationService>();
             });
         await fixture.InitializeAsync();
         return fixture;
@@ -1174,4 +1267,33 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             Body = body.RootElement.Clone(),
         };
     }
+}
+
+/// <summary>
+/// Fake <see cref="IStudioAuthorizationService"/> that simulates a non-admin principal whose
+/// caller id cannot be resolved (PR #3018 review item 3): end-user mode is always enabled, the
+/// principal is never treated as admin, and <see cref="ResolveCallerId"/> always returns
+/// <see langword="null"/> regardless of the actual claims presented, isolating
+/// StudioPackageEndpoints's "deny when unresolvable" fix from exactly how such a principal would
+/// authenticate in production.
+/// </summary>
+file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthorizationService
+{
+    public bool IsEndUserAuthorizationEnabled => true;
+
+    public bool IsAdmin(ClaimsPrincipal principal) => false;
+
+    public string? ResolveCallerId(ClaimsPrincipal principal) => null;
+
+    public Task<StudioAuthorizationDecision> AuthorizeAsync(
+        ClaimsPrincipal principal,
+        string? callerId,
+        StudioAuthorizationOperation operation,
+        string? resourceOwnerId,
+        bool isPubliclyReadable = false,
+        string? resourceId = null,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(StudioAuthorizationDecision.Deny(
+            "studio_authorization/authentication_required",
+            "Authentication is required for Studio package lifecycle operations."));
 }

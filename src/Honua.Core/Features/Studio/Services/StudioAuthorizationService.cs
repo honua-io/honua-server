@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Studio.Abstractions;
@@ -37,16 +38,20 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
 
     private readonly IOperatorAuthorizationEvaluator _evaluator;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
+    private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions;
 
     /// <summary>Initializes a new Studio authorization service.</summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
-        IOptionsMonitor<StudioEndUserAuthorizationOptions> options)
+        IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
+        IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(adminRoleOptions);
         _evaluator = evaluator;
         _options = options;
+        _adminRoleOptions = adminRoleOptions;
     }
 
     /// <inheritdoc />
@@ -56,7 +61,36 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     public bool IsAdmin(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        return principal.IsInRole(AdminRole);
+
+        // The literal "admin" role is always recognized regardless of configuration -- this
+        // matches every other admin check on the platform (AdminApiKeyPermission, AdminSession,
+        // the API-key handler's role stamping) and must never regress even if a deployment
+        // configures Oidc:AdminRoles to a list that omits it.
+        if (principal.IsInRole(AdminRole))
+        {
+            return true;
+        }
+
+        // Also recognize configured OIDC admin-role aliases (for example "administrator"), the
+        // same Oidc:AdminRoles-driven set that OidcAuthenticationExtensions.AddOidcAuthorization
+        // widens AdminPolicy/AdminPolicyAlias/the Temporal-* policies with. See
+        // AdminRoleOptions for why this reads the same config key rather than referencing that
+        // type directly (Honua.Core cannot depend on Honua.Hosting).
+        var aliases = _adminRoleOptions.CurrentValue.AdminRoles;
+        if (aliases is null)
+        {
+            return false;
+        }
+
+        foreach (var alias in aliases)
+        {
+            if (!string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <inheritdoc />
@@ -141,7 +175,15 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         var isRead = operation is StudioAuthorizationOperation.ReadDraft
             or StudioAuthorizationOperation.ReadContentItem
             or StudioAuthorizationOperation.ListOwn;
-        var isOwn = resourceOwnerId is null || string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
+        // Fail closed on an ownerless *existing* resource: owner_id is a nullable column
+        // (legacy rows created before honua-server#3001's ownership migration may still be
+        // unbackfilled), so treating a null owner as "owned by whoever asks" would let any
+        // authenticated caller claim it. A null owner here means "no owner assigned yet" --
+        // only an admin may act on it until an owner is assigned. Endpoints that create a
+        // brand-new resource never reach this method with a null resourceOwnerId; they pass
+        // the actual (possibly just-created) owner id of an existing resource in every call
+        // site (see StudioPackageEndpoints.EnsureAuthorizedAsync call sites).
+        var isOwn = resourceOwnerId is not null && string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
 
         if (!isElevated)
         {

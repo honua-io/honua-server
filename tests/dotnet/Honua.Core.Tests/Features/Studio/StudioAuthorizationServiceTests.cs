@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -68,11 +69,47 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
-    public async Task AuthorizeAsync_FlagOn_NonAdminCreatingNewResource_Allowed()
+    public async Task AuthorizeAsync_FlagOn_NonAdminOwnerlessExistingResource_DeniedFailClosed()
+    {
+        // honua-server#3001 follow-up (P2): owner_id is a nullable column -- legacy rows
+        // created before the ownership migration (or a partial backfill) may still have no
+        // recorded owner. A null owner must never be treated as "owned by whoever asks" (that
+        // would let any authenticated caller claim it); it fails closed to admin-only until an
+        // owner is assigned. Endpoints never call AuthorizeAsync with resourceOwnerId: null for
+        // a brand-new resource -- StudioPackageEndpoints resolves ownership to the creating
+        // caller before persisting and only authorizes against an existing resource's recorded
+        // owner thereafter, so this null-owner path is exclusively the "no owner assigned yet"
+        // case in practice.
+        var service = BuildService(enabled: true, out _);
+        var decision = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.ReadDraft, resourceOwnerId: null);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_NonAdminOwnerlessResource_PubliclyReadableStillAllowed()
+    {
+        // A null owner does not defeat public-read visibility: an ownerless-but-published item
+        // must remain readable by any authenticated caller, exactly like an owned published item.
+        var service = BuildService(enabled: true, out _);
+        var decision = await service.AuthorizeAsync(
+            UserPrincipal(Alice),
+            Alice,
+            StudioAuthorizationOperation.ReadContentItem,
+            resourceOwnerId: null,
+            isPubliclyReadable: true);
+
+        Assert.True(decision.IsAllowed);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_AdminOwnerlessResource_AllowedRegardlessOfOwnership()
     {
         var service = BuildService(enabled: true, out _);
         var decision = await service.AuthorizeAsync(
-            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.CreateDraft, resourceOwnerId: null);
+            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: null);
 
         Assert.True(decision.IsAllowed);
     }
@@ -219,6 +256,68 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public void IsAdmin_RecognizesConfiguredOidcAdminRoleAlias()
+    {
+        // honua-server#3001 follow-up (P1): IsAdmin must recognize the same Oidc:AdminRoles
+        // aliases (for example "administrator") that OidcAuthenticationExtensions.AddOidcAuthorization
+        // uses to widen AdminPolicy/AdminPolicyAlias/the Temporal-* policies -- not just the
+        // literal "admin" role -- so an OIDC admin authenticated under an alias role is never
+        // incorrectly scoped to ownership.
+        var service = BuildService(enabled: true, out _, adminRoles: ["admin", "administrator"]);
+        var aliasedAdmin = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "oidc-admin-1"),
+                new Claim(ClaimTypes.Role, "administrator"),
+            ],
+            authenticationType: "Test"));
+
+        Assert.True(service.IsAdmin(aliasedAdmin));
+    }
+
+    [UnitTest]
+    public void IsAdmin_UnconfiguredAlias_NotRecognized()
+    {
+        var service = BuildService(enabled: true, out _, adminRoles: ["admin", "administrator"]);
+        var unrelatedRole = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "user-1"),
+                new Claim(ClaimTypes.Role, "superuser"),
+            ],
+            authenticationType: "Test"));
+
+        Assert.False(service.IsAdmin(unrelatedRole));
+    }
+
+    [UnitTest]
+    public void IsAdmin_LiteralAdminRoleAlwaysRecognized_EvenWhenAliasListOmitsIt()
+    {
+        // The literal "admin" role must never regress even if a deployment configures
+        // Oidc:AdminRoles to a list that (accidentally or otherwise) omits it -- every other
+        // admin check on the platform (AdminApiKeyPermission, AdminSession) always recognizes
+        // the literal role unconditionally.
+        var service = BuildService(enabled: true, out _, adminRoles: ["administrator"]);
+        Assert.True(service.IsAdmin(AdminPrincipal()));
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_AliasedAdminRole_AllowedRegardlessOfOwnership()
+    {
+        var service = BuildService(enabled: true, out _, adminRoles: ["admin", "administrator"]);
+        var aliasedAdmin = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "oidc-admin-1"),
+                new Claim(ClaimTypes.Role, "administrator"),
+            ],
+            authenticationType: "Test"));
+
+        var decision = await service.AuthorizeAsync(
+            aliasedAdmin, "oidc-admin-1", StudioAuthorizationOperation.DeleteDraft, resourceOwnerId: Bob);
+
+        Assert.True(decision.IsAllowed);
+        Assert.False(decision.IsElevated);
+    }
+
+    [UnitTest]
     public void ResolveCallerId_PrefersNameIdentifierClaim()
     {
         var service = BuildService(enabled: true, out _);
@@ -226,11 +325,15 @@ public sealed class StudioAuthorizationServiceTests
         Assert.Null(service.ResolveCallerId(new ClaimsPrincipal(new ClaimsIdentity())));
     }
 
-    private static StudioAuthorizationService BuildService(bool enabled, out FakeOperatorAuthorizationEvaluator evaluator)
+    private static StudioAuthorizationService BuildService(
+        bool enabled,
+        out FakeOperatorAuthorizationEvaluator evaluator,
+        string[]? adminRoles = null)
     {
         evaluator = new FakeOperatorAuthorizationEvaluator();
-        var options = new StaticOptionsMonitor(new StudioEndUserAuthorizationOptions { Enabled = enabled });
-        return new StudioAuthorizationService(evaluator, options);
+        var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
+        var adminRoleOptions = new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions { AdminRoles = adminRoles ?? [] });
+        return new StudioAuthorizationService(evaluator, options, adminRoleOptions);
     }
 
     private static ClaimsPrincipal AdminPrincipal()
@@ -249,13 +352,13 @@ public sealed class StudioAuthorizationServiceTests
             ],
             authenticationType: "Test"));
 
-    private sealed class StaticOptionsMonitor(StudioEndUserAuthorizationOptions value) : IOptionsMonitor<StudioEndUserAuthorizationOptions>
+    private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
-        public StudioEndUserAuthorizationOptions CurrentValue { get; } = value;
+        public T CurrentValue { get; } = value;
 
-        public StudioEndUserAuthorizationOptions Get(string? name) => CurrentValue;
+        public T Get(string? name) => CurrentValue;
 
-        public IDisposable OnChange(Action<StudioEndUserAuthorizationOptions, string?> listener) => NullDisposable.Instance;
+        public IDisposable OnChange(Action<T, string?> listener) => NullDisposable.Instance;
 
         private sealed class NullDisposable : IDisposable
         {

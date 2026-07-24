@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Services;
 using Microsoft.Extensions.Configuration;
@@ -38,9 +39,17 @@ public static class StudioServiceCollectionExtensions
         services.TryAddScoped<IStudioAuthorizationService, StudioAuthorizationService>();
 
         var optionsBuilder = services.AddOptions<StudioEndUserAuthorizationOptions>();
+
+        // Admin-role recognition (honua-server#3001 follow-up): bind from the same Oidc:*
+        // config key OidcAuthenticationOptions.AdminRoles reads, so StudioAuthorizationService
+        // recognizes configured OIDC admin-role aliases (for example "administrator") without
+        // Honua.Core referencing Honua.Hosting's OidcAuthenticationOptions type. See
+        // AdminRoleOptions for the full rationale.
+        var adminRoleOptionsBuilder = services.AddOptions<AdminRoleOptions>();
         if (configuration is not null)
         {
             optionsBuilder.Bind(configuration.GetSection(StudioEndUserAuthorizationOptions.SectionName));
+            adminRoleOptionsBuilder.Bind(configuration.GetSection(AdminRoleOptions.SectionName));
         }
 
         return services;

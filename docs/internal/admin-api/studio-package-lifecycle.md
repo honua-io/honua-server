@@ -74,6 +74,22 @@ With the flag on:
   regardless of ownership. Cross-user access to a non-owned, non-published
   resource is denied by default. No operator grant is required for the baseline
   tier — the flag itself is the widening switch (REQ-002).
+- **Ownerless resources fail closed.** `owner_id` is a nullable column: a
+  content item or draft created before the honua-server#3001 ownership
+  migration (or left unbackfilled) can have no recorded owner. A null owner is
+  never treated as "owned by whoever asks" — only an admin may act on it until
+  an owner is assigned. This does not affect creating a brand-new resource
+  (ownership always resolves to the creating caller before the resource is
+  persisted, admin or not) or reading an ownerless-but-*published* item, which
+  remains publicly readable exactly like an owned published item.
+- **Admin recognizes configured OIDC admin-role aliases.** Beyond the literal
+  `admin` role (always recognized unconditionally), the Studio authorization
+  service also recognizes any role configured in `Oidc:AdminRoles` (default
+  `["admin", "administrator"]`) — the same alias set
+  `OidcAuthenticationExtensions.AddOidcAuthorization` uses to widen
+  `AdminPolicy`/`AdminPolicyAlias`/the Temporal-\* policies. An OIDC principal
+  authenticated under a configured alias role is never incorrectly scoped to
+  ownership.
 - **Version visibility is per-version, not per-item.** A published pointer on an
   item does not open its entire immutable history: `GET
   /content-items/{itemId}/versions` filters the response to exactly the
@@ -113,7 +129,12 @@ With the flag on:
   to their own resolved id, regardless of any `owner` query value the client
   supplies: the list is scoped to "my content," never trusting a client-supplied
   owner parameter. Admins (and every caller with the flag off) keep today's
-  unscoped-by-default behavior.
+  unscoped-by-default behavior. If a non-admin caller's id cannot be resolved
+  at all (no `NameIdentifier`/`sub`/admin-API-key id or name claim, and no
+  `Identity.Name`), the request is denied (`403`,
+  `studio_authorization/authentication_required`) rather than falling through
+  to an unscoped list — an unresolved caller id must never see every
+  draft/content item. Both list responses include each row's `ownerId`.
 
 Admin principals retain full, unscoped access in both flag states; nothing above
 changes existing admin client behavior.
