@@ -750,7 +750,24 @@ internal static partial class TilesEndpoints
             activity?.SetTag("honua.tile.vertical_selection", selection.RawValue);
         }
 
-        var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
+        var usesRoutedReader = TileFeatureProviderResolver.RequiresRouting(layer.Snapshot, layer.Publication);
+        TileBounds queryBounds;
+        try
+        {
+            queryBounds = usesRoutedReader
+                ? TransformTileBounds(bounds, filterSrid, layer.SpatialReferenceSrid)
+                : bounds;
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Collection '{layer.CollectionId}' cannot render raster tiles from SRID " +
+                $"{layer.SpatialReferenceSrid} into tile-matrix SRID {filterSrid}.");
+        }
+
+        var querySrid = usesRoutedReader ? layer.SpatialReferenceSrid : filterSrid;
+        var spatialFilter = CreateBboxSpatialFilter(queryBounds, querySrid);
 
         var featureReader = await ResolveFeatureReaderAsync(
             layer, context.RequestServices.GetRequiredService<IFeatureReader>(), providerQueryRouter, cancellationToken)
@@ -759,7 +776,7 @@ internal static partial class TilesEndpoints
         {
             SpatialFilter = spatialFilter,
             SpatialReferenceSrid = layer.SpatialReferenceSrid,
-            OutputSrid = filterSrid,
+            OutputSrid = querySrid,
             Limit = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000,
             TemporalFilter = temporalFilter
         };
@@ -774,7 +791,12 @@ internal static partial class TilesEndpoints
             return Results.NoContent();
         }
 
-        var imageBytes = TileRenderer.RenderTilePng(queryResult.Items, bounds, ToTileGeometryKind(layer.GeometryType));
+        var imageBytes = TileRenderer.RenderTilePng(
+            queryResult.Items,
+            bounds,
+            ToTileGeometryKind(layer.GeometryType),
+            sourceSrid: usesRoutedReader ? layer.SpatialReferenceSrid : null,
+            targetSrid: usesRoutedReader ? filterSrid : null);
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, queryResult.Items.Length);
@@ -849,7 +871,6 @@ internal static partial class TilesEndpoints
         var tileOptionsValue = renderContext.TileOptions;
         var activity = renderContext.Activity;
 
-        var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
         var fallbackFeatureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var renderedLayers = new List<TileRenderer.TileRenderLayer>(layers.Length);
         var remainingBudget = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000;
@@ -865,13 +886,31 @@ internal static partial class TilesEndpoints
             // Routed per layer (#2962): a multi-collection dataset raster tile request can mix
             // primary- and secondary-provider-backed collections, so each layer's reader must be
             // resolved independently rather than sharing one DI-registered primary reader.
+            var usesRoutedReader = TileFeatureProviderResolver.RequiresRouting(layer.Snapshot, layer.Publication);
+            TileBounds queryBounds;
+            try
+            {
+                queryBounds = usesRoutedReader
+                    ? TransformTileBounds(bounds, filterSrid, layer.SpatialReferenceSrid)
+                    : bounds;
+            }
+            catch (NotSupportedException)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Collection '{layer.CollectionId}' cannot render raster tiles from SRID " +
+                    $"{layer.SpatialReferenceSrid} into tile-matrix SRID {filterSrid}.");
+            }
+
+            var querySrid = usesRoutedReader ? layer.SpatialReferenceSrid : filterSrid;
+            var spatialFilter = CreateBboxSpatialFilter(queryBounds, querySrid);
             var featureReader = await ResolveFeatureReaderAsync(
                 layer, fallbackFeatureReader, providerQueryRouter, cancellationToken).ConfigureAwait(false);
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
                 SpatialReferenceSrid = layer.SpatialReferenceSrid,
-                OutputSrid = filterSrid,
+                OutputSrid = querySrid,
                 Limit = remainingBudget,
                 TemporalFilter = GetTemporalFilterForLayer(layer, temporalFilters)
             };
@@ -882,7 +921,11 @@ internal static partial class TilesEndpoints
                 continue;
             }
 
-            renderedLayers.Add(new TileRenderer.TileRenderLayer(queryResult.Items, ToTileGeometryKind(layer.GeometryType)));
+            renderedLayers.Add(new TileRenderer.TileRenderLayer(
+                queryResult.Items,
+                ToTileGeometryKind(layer.GeometryType),
+                SourceSrid: usesRoutedReader ? layer.SpatialReferenceSrid : null,
+                TargetSrid: usesRoutedReader ? filterSrid : null));
             totalFeatureCount += queryResult.Items.Length;
             remainingBudget -= queryResult.Items.Length;
         }
@@ -1017,6 +1060,19 @@ internal static partial class TilesEndpoints
         }
 
         return SpatialFilterHelpers.CreateBboxSpatialFilter(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, srid);
+    }
+
+    private static TileBounds TransformTileBounds(TileBounds bounds, int fromSrid, int toSrid)
+    {
+        var transformed = CoordinateTransformer.TransformExtent(
+            new RenderExtent(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax),
+            fromSrid,
+            toSrid);
+        return new TileBounds(
+            transformed.MinX,
+            transformed.MinY,
+            transformed.MaxX,
+            transformed.MaxY);
     }
 
     private static IEnumerable<TileSetItem> BuildDatasetTileSetItems(

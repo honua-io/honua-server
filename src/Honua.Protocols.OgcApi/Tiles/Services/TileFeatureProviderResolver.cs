@@ -81,9 +81,18 @@ internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? pr
             FeatureProviderReadOperation.Query,
             cancellationToken).ConfigureAwait(false);
 
-        return binding.Provider is ITileProvider tileProvider
-            ? new TileProviderResolution(tileProvider, null)
-            : new TileProviderResolution(null, binding.Provider.ProviderName);
+        if (binding.Provider is IBindableTileProvider bindableTileProvider)
+        {
+            return new TileProviderResolution(
+                bindableTileProvider.CreateTileProviderForBinding(binding),
+                null);
+        }
+
+        // A routed publication names a distinct connection. A provider singleton that also
+        // implements ITileProvider is still bound to the primary/default connection, so using it
+        // here would silently cross the source boundary. Only an explicitly binding-aware tile
+        // provider is safe on this path.
+        return new TileProviderResolution(null, binding.Provider.ProviderName);
     }
 
     /// <summary>

@@ -93,12 +93,17 @@ public sealed class TileFeatureProviderResolverTests
     }
 
     [Fact]
-    public async Task ResolveTileProviderAsync_SecondaryProviderImplementsTileProvider_RoutesToSecondaryProvider()
+    public async Task ResolveTileProviderAsync_SecondaryProviderBindsTileProviderToRoutedConnection()
     {
         var connectionId = Guid.NewGuid();
-        var secondaryProvider = Substitute.For<IFeatureDataProvider, ITileProvider>();
+        var secondaryProvider = Substitute.For<IFeatureDataProvider, IBindableTileProvider>();
+        var boundTileProvider = Substitute.For<ITileProvider>();
         secondaryProvider.ProviderName.Returns(DataProviderNames.Postgis);
         secondaryProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
+        ((IBindableTileProvider)secondaryProvider).CreateTileProviderForBinding(
+                Arg.Is<FeatureProviderBinding>(binding =>
+                    binding.Connection != null && binding.Connection.ConnectionId == connectionId))
+            .Returns(boundTileProvider);
         var router = CreateRouter(connectionId, secondaryProvider);
         var resolver = new TileFeatureProviderResolver(router);
         var fallbackProvider = Substitute.For<ITileProvider>();
@@ -107,8 +112,13 @@ public sealed class TileFeatureProviderResolverTests
         var resolution = await resolver.ResolveTileProviderAsync(
             snapshot, service, resource, publication, 41, fallbackProvider, CancellationToken.None);
 
-        resolution.Provider.Should().BeSameAs(secondaryProvider);
+        resolution.Provider.Should().BeSameAs(boundTileProvider);
         resolution.UnsupportedProviderName.Should().BeNull();
+        ((IBindableTileProvider)secondaryProvider).Received(1).CreateTileProviderForBinding(
+            Arg.Is<FeatureProviderBinding>(binding =>
+                binding.StorageLayerId == 41
+                && binding.Connection != null
+                && binding.Connection.ConnectionId == connectionId));
     }
 
     [Fact]
@@ -137,7 +147,7 @@ public sealed class TileFeatureProviderResolverTests
     public async Task ResolveTileProviderAsync_MissingRoutingMetadata_UsesFallbackProvider()
     {
         var connectionId = Guid.NewGuid();
-        var provider = Substitute.For<IFeatureDataProvider, ITileProvider>();
+        var provider = Substitute.For<IFeatureDataProvider, IBindableTileProvider>();
         provider.ProviderName.Returns(DataProviderNames.Postgis);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
         var fallbackProvider = Substitute.For<ITileProvider>();

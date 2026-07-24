@@ -39,7 +39,7 @@ namespace Honua.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -119,6 +119,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             binding.Connection,
             _connectionEncryptionService,
             _storageMappedReaderLogger);
+    }
+
+    public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)
+    {
+        var reader = CreateReaderForBinding(binding);
+        return reader as ITileProvider
+            ?? throw new InvalidOperationException(
+                $"PostGIS storage binding '{binding.StorageBinding.Metadata.Id}' does not expose a connection-bound tile provider.");
     }
 
     #region Core CRUD Operations
