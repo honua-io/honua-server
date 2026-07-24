@@ -47,9 +47,24 @@ internal sealed class AwsSecretsManagerResolver : IConnectionSecretResolver, IDi
     public string ProviderName => ProviderType;
 
     public AwsSecretsManagerResolver(IHttpClientFactory httpClientFactory, ILogger<AwsSecretsManagerResolver> logger)
+        : this(
+            (httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory))).CreateClient(SecretsClientName),
+            httpClientFactory.CreateClient(MetadataClientName),
+            logger)
     {
-        _secretsClient = httpClientFactory.CreateClient(SecretsClientName);
-        _metadataClient = httpClientFactory.CreateClient(MetadataClientName);
+    }
+
+    /// <summary>
+    /// Bootstrap constructor for callers that must resolve a secret-backed connection string before the
+    /// DI container exists — e.g. Program.cs's Redis <c>ConnectionMultiplexer</c> wiring, which runs
+    /// ahead of <c>WebApplicationBuilder.Build()</c> and therefore has no <see cref="IHttpClientFactory"/>
+    /// to pull the named resilient clients from (honua-server#3011). Callers own the supplied
+    /// <see cref="HttpClient"/> instances and are responsible for disposing them.
+    /// </summary>
+    internal AwsSecretsManagerResolver(HttpClient secretsClient, HttpClient metadataClient, ILogger<AwsSecretsManagerResolver> logger)
+    {
+        _secretsClient = secretsClient ?? throw new ArgumentNullException(nameof(secretsClient));
+        _metadataClient = metadataClient ?? throw new ArgumentNullException(nameof(metadataClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

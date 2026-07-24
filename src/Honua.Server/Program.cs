@@ -103,6 +103,11 @@ var builder = WebApplication.CreateBuilder(args);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+// Resolve aws:secretsmanager: Redis connection-string references before anything below reads
+// ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
+// WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
+// composite the way the Postgres DefaultConnection path does (honua-server#3011).
+await StartupConfigurationHelpers.ResolveRedisConnectionSecretReferencesAsync(builder.Configuration);
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var registerInfrastructureInTestEnvironment =
     builder.Configuration.GetValue<bool>("HONUA_REGISTER_TEST_INFRASTRUCTURE") ||
