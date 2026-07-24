@@ -17,6 +17,23 @@ internal sealed class PMTilesProxyService
 {
     private const long MaxRangeLength = 64 * 1024 * 1024; // 64 MiB cap per range request
 
+    // A no-Range GET falls back to streaming the whole artifact. In a serverless
+    // Lambda-proxy deployment the entire HTTP response has to fit inside a single
+    // synchronous Lambda invocation result, which AWS hard-caps at 6 MB (larger still
+    // once binary bodies are base64-encoded for the Lambda/API Gateway proxy envelope,
+    // ~33% inflation). Above that ceiling the platform doesn't return a clean error: the
+    // Lambda response fails to transmit and API Gateway/CloudFront synthesize an opaque
+    // generic 500 with no correlation id (#2991) even though honua-server itself served
+    // 200 internally. PMTiles browser clients always read archives via byte-range
+    // requests (the header, directories, and tiles are all fetched by range) and never
+    // perform a full-file GET in normal operation, so rejecting an oversized full-file
+    // GET with a fast, bounded, honest error only affects callers that intentionally
+    // want the whole artifact in one response (health checks, curl, wget) — never a
+    // real map client — while keeping small archives' existing no-Range fast path
+    // unchanged. Kept comfortably under the 6 MB Lambda ceiling even after the ~33%
+    // base64 inflation a binary body incurs over that transport.
+    internal const long MaxDirectFullStreamBytes = 4 * 1024 * 1024; // 4 MiB
+
     // Cap on how many bytes the download fallback may read-and-discard to reach
     // the range start when the provider stream is not seekable. PMTiles clients
     // routinely request small ranges at large offsets (directories live at the
@@ -120,7 +137,9 @@ internal sealed class PMTilesProxyService
         var totalSize = metadata.SizeBytes;
         if (string.IsNullOrWhiteSpace(rangeHeader))
         {
-            return PMTilesRangeResult.Full(totalSize);
+            return totalSize > MaxDirectFullStreamBytes
+                ? PMTilesRangeResult.TooLarge(totalSize)
+                : PMTilesRangeResult.Full(totalSize);
         }
 
         if (!TryParseSingleByteRange(rangeHeader, totalSize, out var start, out var end))
@@ -132,6 +151,16 @@ internal sealed class PMTilesProxyService
         if (length <= 0 || length > MaxRangeLength)
         {
             return PMTilesRangeResult.Unsatisfiable(totalSize);
+        }
+
+        // A Range response crosses the same synchronous serverless payload
+        // boundary as a no-Range response. Reject callers that spell a full
+        // oversized download as "bytes=0-" (and any other oversized range)
+        // before reading the object; normal PMTiles clients request small
+        // header, directory, and tile slices.
+        if (length > MaxDirectFullStreamBytes)
+        {
+            return PMTilesRangeResult.TooLarge(totalSize);
         }
 
         var bucket = ResolveBucket(metadata.Provider);
@@ -370,6 +399,12 @@ internal sealed record PMTilesRangeResult
         Outcome = PMTilesRangeOutcome.NotFound,
         TotalSize = totalSize
     };
+
+    public static PMTilesRangeResult TooLarge(long totalSize) => new()
+    {
+        Outcome = PMTilesRangeOutcome.TooLarge,
+        TotalSize = totalSize
+    };
 }
 
 internal enum PMTilesRangeOutcome
@@ -377,5 +412,6 @@ internal enum PMTilesRangeOutcome
     Full,
     Partial,
     Unsatisfiable,
-    NotFound
+    NotFound,
+    TooLarge
 }

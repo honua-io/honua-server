@@ -20,6 +20,48 @@ those steps are marked **[OPERATOR]**. No secrets are committed in this repo.
 
 ---
 
+## As-verified live state (2026-07-23, server#2948)
+
+A fresh, read-only probe of `https://demo.honua.io` on 2026-07-23 found this runbook's
+Tracks 1 and 2 **already applied and serving correctly**, plus an elevation/terrain
+dataset that the 2026-07-20 probe (server#2948) reported missing but which is in fact
+live. The table below is the current source of truth; the track sections further down
+are kept for the mechanism/history but where they disagree with this table, this table
+wins.
+
+| Area | State | Evidence |
+|---|---|---|
+| Track 1 — STAC seed | **Live.** `/stac/collections` returns `90810` + `90820`; `/stac/search` against `90810` returns 4 features; both collections also appear in `/api/v1/streaming/features/capabilities` layer list. | Direct probe, 2026-07-23 |
+| Track 2 — Pro license | **Live.** `/api/v1/capabilities/manifest` → `policies.currentEdition = "Pro"`, `licenseValidationState = "Valid"`. `geocoding.forward`/`geocoding.reverse`/`geocoding.failover`/`streaming.feature-subscriptions`/`editing.featureserver-edits` all `active: true`. The 14/29 `available:false` capability entries seen on an **anonymous** manifest call are RBAC (`insufficient-policy`, expected with no caller identity) or correctly `minimumEdition: Enterprise` gates (we're Pro) — not a licensing gap. | Direct probe, 2026-07-23 |
+| Elevation / terrain | **Live and fully functional**, contradicting the 2026-07-20 probe. `maui-terrain` (layerId 8) is a registered raster dataset; `/elevation/maui-terrain/{value,profile,viewshed,line-of-sight,sun-shadow}` all return real computed results over real Maui terrain (elevations in a sane 4–590 m range), and `/terrain/maui-terrain/tile.json` + `.png` tiles serve `terrain-rgb` encoded tiles. No remediation needed. | Direct probe, 2026-07-23 |
+| Catalog cleanup — layer 68823 | **Done.** Not present in `/rest/services` (25 services, none named `test_service`/68823) or `/ogc/features/collections` (11 collections). Direct probe of `/rest/services/test_service/FeatureServer` returns `499 Unauthorized` (`allowAnonymous: false`), consistent with the recorded remediation (`PUT /api/v1/admin/services/test_service/access-policy {"allowAnonymous": false}`). | Direct probe, 2026-07-23 |
+| Geocoding | **Not working — categorical failure, not a cold-start.** The locator is published as `World` (not `maui`, which the original probe and this runbook's Step 4 assumed — `GET /rest/services/World/GeocodeServer?f=json` returns valid metadata with `Provider: nominatim`). But every `findAddressCandidates` call — first and repeated — fails after ~15.8s with `500 "Geocoding service error"`. Two consecutive calls both took ~15.8s (15.790s, 15.854s): this rules out a cold-start/keep-warm fix. Root cause (per the 2026-07-20/21 coordinator note, reconfirmed): the demo Lambda's VPC subnets have no NAT/IGW egress route, so the external Nominatim endpoint is unreachable from inside the VPC on every call. | Direct probe, 2026-07-23 |
+| SensorThings | **Confirmed intentional.** `/sta/v1.1/*` → 404. `Experimental:Features:SensorThings` defaults `false` in `src/Honua.Server/appsettings.json` with no environment override, and there is no SensorThings entry in the capabilities manifest at all (not even a gated one). This matches honua-io/honua-server#2434 ("Promote SensorThings to GA" — `roadmap:later`, still experimental). No action needed for this issue; GA promotion is tracked separately in #2434. | Direct probe + code read, 2026-07-23 |
+| `/api/scenes` (adjacent, server#2991) | **Fixed live.** Returns `200` with the scene listing — confirms the out-of-band migration run (073→082) documented in #2991 has landed on the shared demo DB. | Direct probe, 2026-07-23 |
+| ImageServer `maui-imagery` metadata (adjacent, server#2991/#2993) | **Still hangs** (>70s, no response) — expected: the code fix is in PR #2993, which has not been deployed to the demo image yet. Will be resolved by the next demo image redeploy (see remediation plan). | Direct probe, 2026-07-23 |
+
+**Deployment model correction (learned 2026-07-23, applies to every step below that
+touches Lambda env or the DB):** `demo.honua.io` serves a **published Lambda version**
+via the `live` alias (currently **v33**), and that published version's **environment is
+frozen** — editing environment variables on `$LATEST` has **no effect on what's
+actually serving traffic**. The only way DB-side changes (seeds, migrations) reach the
+live site is because they mutate the **shared RDS database**, which every Lambda
+version/alias reads from — so a DB write done by invoking `$LATEST` directly *does*
+show up on `demo.honua.io` even though `$LATEST` itself never serves a request. An
+**environment variable** change (e.g. `Geocoding__LocatorName`, `Licensing:LicenseContent`)
+does **not** reach `demo.honua.io` this way — it only takes effect once a **new Lambda
+version is published and the `live` alias is repointed to it** (i.e. a real deploy).
+This is why Track 1 (a DB write) and Track 2 (apparently an env change, but see below)
+show up as live today while an env-only fix would not have. The out-of-band DB
+migration procedure used in #2991 (invoke `$LATEST` directly, which runs
+`HONUA_SKIP_MIGRATIONS=false`-equivalent startup migrations against the shared DB, then
+leave `$LATEST`'s config untouched) is the template for any future schema-only fix; it
+does **not** work for anything that must be visible to the *serving* environment
+(license content, geocoding locator/provider config) — those need an actual versioned
+deploy.
+
+---
+
 ## Prerequisites (deploy a current image first)
 
 Both tracks require a demo image built from `trunk` at or after the commits below, then
@@ -68,9 +110,20 @@ activates it. Existing graph entities (the 11 `maui-*` layers) are preserved.
 
 ### Run it
 
+> **Do not derive the metadata environment from `server.deploymentEnvironment`.**
+> The manifest field reports `IWebHostEnvironment.EnvironmentName` (`Production` on
+> the demo), while the metadata graph independently reads `Metadata__Environment`,
+> then `Environment`, with a `default` fallback. Operator records say the successful
+> 2026-07-20/21 seed apply used `HONUA_SEED_ENV=Production`, and the live catalog
+> confirms those rows are active, but the manifest alone does not prove that mapping.
+> Before any repeat apply, inspect `Metadata__Environment` / `Environment` on the
+> serving Lambda version or query the active environment in `metadata_v2_current`.
+
 **[OPERATOR]** Set `HONUA_SEED_ENV` to the env id the demo Lambda is configured with —
 this MUST match the server's `Metadata__Environment` / `Environment` setting (it defaults
-to `default`; confirm against the Lambda's environment variables):
+to `default`; confirm against the serving Lambda's environment variables or the active
+`metadata_v2_current` row — the capabilities manifest's host-environment field is not
+the metadata environment):
 
 ```bash
 # Local / direct-psql target:
@@ -187,20 +240,43 @@ Lambda filesystem with no bootstrap file write.
 
 ### Step 4 — Enable geocoding (resolve the 404, REQ-003) **[OPERATOR]**
 
+> **2026-07-23 status: the 404 is already resolved, but geocoding still doesn't work.**
+> `Geocoding:Enabled=true` with `Provider: nominatim` is live today, published under the
+> **default `World` locator** (`GET /rest/services/World/GeocodeServer?f=json` returns
+> valid metadata) — the `maui` locator name this step originally called for was never
+> applied and is not needed; **update any demo probe/smoke script to call
+> `/rest/services/World/GeocodeServer`, not `/rest/services/maui/GeocodeServer`.**
+>
+> The real, still-open problem is downstream of the locator: every
+> `findAddressCandidates` call — first or repeated — fails after a consistent ~15.8s
+> with `500 "Geocoding service error"`. Two back-to-back calls both took ~15.8s
+> (15.790s, then 15.854s on a supposedly "warm" second call), which rules out a
+> cold-start explanation. Per the 2026-07-21 coordinator finding, reconfirmed
+> 2026-07-23: **the demo Lambda's VPC subnets have no NAT gateway / internet gateway
+> route**, so the external Nominatim endpoint is categorically unreachable from inside
+> the VPC — not slow, unreachable, timing out at whatever the outbound HTTP client
+> timeout is configured to (~15–16s). A scheduled keep-warm probe cannot fix this: it
+> would just be another call that times out the same way. See the remediation plan at
+> the end of this document — the actual fix is a network-egress change, which is
+> **honua-terraform's IaC surface**, out of this issue's scope per its own Non-goals,
+> and needs a separate infra-track decision/ticket.
+
 Geocoding is published when `Geocoding:Enabled=true` with a configured provider and locator
-name. The demo probes `/rest/services/maui/GeocodeServer`, so set the locator name to
-`maui` (or publish under the default `World` and update the demo probe). On the demo
-Lambda:
+name. On the demo Lambda, this is already configured:
 
 ```
 Geocoding__Enabled=true
-Geocoding__LocatorName=maui
-Geocoding__DefaultProvider=nominatim     # or the configured provider
-# plus provider config (endpoint/key) per Geocoding__Providers__*
+Geocoding__LocatorName=World              # confirmed live; do not change without also
+                                           # updating every demo probe/smoke script
+Geocoding__DefaultProvider=nominatim       # confirmed live
+# provider config (endpoint/key) per Geocoding__Providers__* — not independently
+# re-verified here; the failure is at the network layer (see callout above), before
+# provider request construction would matter.
 ```
 
 The forward/reverse geocoding **operations** are Pro-gated (`geocoding.forward` /
-`geocoding.reverse`), so the Pro license from Steps 1–3 must be active.
+`geocoding.reverse`), so the Pro license from Steps 1–3 must be active (it is — see
+*As-verified live state* above).
 
 ### Step 5 — Streaming + editing need no extra config
 
@@ -219,15 +295,16 @@ probes:
 curl -s https://demo.honua.io/api/v1/streaming/features/capabilities \
   | jq '{enabled, edition}'                       # {"enabled": true, "edition": "Pro"}
 
-# REQ-003 geocoding
-curl -s 'https://demo.honua.io/rest/services/maui/GeocodeServer?f=json' \
-  | jq '.currentVersion'                          # present (no 404)
-curl -s 'https://demo.honua.io/rest/services/maui/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului' \
-  | jq '.candidates | length'                     # > 0
+# REQ-003 geocoding (locator is `World`, not `maui` — see Step 4 callout)
+curl -s 'https://demo.honua.io/rest/services/World/GeocodeServer?f=json' \
+  | jq '.currentVersion'                          # present (no 404) — confirmed live
+curl -s 'https://demo.honua.io/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului' \
+  | jq '.candidates | length'                     # > 0 once the VPC egress fix lands (currently 500 after ~15.8s)
 
-# Edition / capability manifest
+# Edition / capability manifest (confirmed field path as of 2026-07-23; the manifest
+# has no top-level `license` object)
 curl -s https://demo.honua.io/api/v1/capabilities/manifest \
-  | jq '.license.edition'                          # "Pro"
+  | jq '.policies.currentEdition'                  # "Pro" — confirmed live
 
 # REQ-005 editing — authenticated PATCH/POST to a writable layer should persist
 #   (round-trips on re-read). NFR-001: write creds stay server-side, never in client pages.
@@ -251,8 +328,140 @@ node scripts/site-demo-smoke.mjs    # the four affected pages leave their fixtur
 
 | Item                                          | State                                   |
 |-----------------------------------------------|-----------------------------------------|
-| STAC seed SQL + apply script                  | **Runnable now** (validated vs PostGIS) |
-| `release-packages` 42P08 fix + tests          | **Merged in this PR**                   |
-| License mint CLI commands                      | Runnable; signing key is **[OPERATOR]** |
-| Apply license / geocoding env on demo Lambda  | **[OPERATOR]** — live env + secrets     |
-| Redeploy + probe                               | **[OPERATOR]** — live env               |
+| STAC seed SQL + apply script                  | **Already applied and live** (2026-07-23 confirmed) |
+| `release-packages` 42P08 fix + tests          | **Merged, live**                        |
+| License mint CLI commands                      | N/A — Pro license **already applied and live** (2026-07-23 confirmed) |
+| Elevation/terrain dataset (`maui-terrain`)    | **Already registered and fully working** (2026-07-23 confirmed) — no action needed |
+| Layer 68823 catalog cleanup                   | **Already applied and live** (2026-07-23 confirmed) |
+| Geocoding network egress fix                  | **[OPERATOR + honua-terraform]** — VPC NAT/IGW route or alternate reachable provider; live env + IaC |
+| SensorThings GA promotion                     | Out of scope for this issue — tracked in #2434 |
+| Demo image redeploy (picks up #2993 + migrations 083-088) | **[OPERATOR]** — live env, standard versioned-alias deploy |
+
+## Verification probe script (read-only, run against `https://demo.honua.io`)
+
+The exact commands used for the 2026-07-23 as-verified pass, kept here so the probe is
+re-runnable end-to-end without reconstructing it from scratch. All read-only; safe to
+run anytime.
+
+```bash
+set -euo pipefail
+BASE=https://demo.honua.io
+
+# Track 1 — STAC
+curl -fsS "$BASE/stac/collections" | jq -r '.collections[].id'          # expect 90810, 90820
+curl -fsS -X POST "$BASE/stac/search" -H 'content-type: application/json' \
+  -d '{"bbox":[-156.70,20.60,-156.30,20.96],"collections":["90810"]}' \
+  | jq '.features | length'                                             # expect > 0
+
+# Track 2 — Pro license + entitlements
+curl -fsS "$BASE/api/v1/capabilities/manifest" \
+  | jq '.policies | {currentEdition, licenseValid, licenseValidationState}'
+  # expect {"currentEdition":"Pro","licenseValid":true,"licenseValidationState":"Valid"}
+
+# Elevation / terrain (maui-terrain, layerId 8)
+curl -fsS "$BASE/elevation/maui-terrain/value?x=-156.5&y=20.8" | jq '.elevation'
+curl -fsS -G "$BASE/elevation/maui-terrain/profile" \
+  --data-urlencode 'line=LINESTRING(-156.55 20.80, -156.45 20.85)' --data-urlencode 'sampleCount=10' \
+  | jq '.samples | length'
+curl -fsS -X POST "$BASE/elevation/maui-terrain/viewshed" -H 'content-type: application/json' \
+  -d '{"observerLon":-156.5,"observerLat":20.8,"observerHeight":10,"radiusMeters":2000,"rayCount":8,"samplesPerRay":10}' \
+  | jq '.visibleSampleCount'
+curl -fsS -X POST "$BASE/elevation/maui-terrain/line-of-sight" -H 'content-type: application/json' \
+  -d '{"observerLon":-156.55,"observerLat":20.80,"observerHeight":10,"targetLon":-156.45,"targetLat":20.85,"targetHeight":2}' \
+  | jq '.visible'
+curl -fsS -X POST "$BASE/elevation/maui-terrain/sun-shadow" -H 'content-type: application/json' \
+  -d '{"observerLon":-156.5,"observerLat":20.8,"observerHeight":10,"timestamp":"2026-07-23T22:00:00Z","maxShadowLengthMeters":500}' \
+  | jq '.shadowCast'
+
+# Catalog cleanup — layer 68823 / test_service must NOT be publicly visible
+service_names="$(curl -fsS "$BASE/rest/services?f=json" | jq -er '.services | map(.name) | .[]')"
+if grep -qi test_service <<<"$service_names"; then
+  echo "FAIL: test_service still public"
+  exit 1
+else
+  echo "OK: not public"
+fi
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/rest/services/test_service/FeatureServer?f=json"   # expect 499 (or 403), not 200
+
+# Geocoding — known-broken; documents the failure, does not assert success
+curl -s -o /dev/null -w 'geocode locator meta: %{http_code}\n' "$BASE/rest/services/World/GeocodeServer?f=json"
+time curl -s -o /dev/null -w 'geocode candidates: %{http_code} in %{time_total}s\n' \
+  "$BASE/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului"
+
+# SensorThings — expected 404 (intentional, #2434)
+curl -s -o /dev/null -w 'sta: %{http_code}\n' "$BASE/sta/v1.1/"
+
+# Adjacent regression checks (server#2991/#2993)
+curl -s -o /dev/null -w 'scenes: %{http_code}\n' "$BASE/api/scenes"                                  # expect 200
+curl -s -o /dev/null -w 'imageserver (expect timeout until #2993 deploys): %{http_code}\n' \
+  --max-time 70 "$BASE/rest/services/maui-imagery/ImageServer?f=json" || echo "still hanging (expected pre-#2993-deploy)"
+```
+
+## Remediation plan for open items (operator approval required before any step below)
+
+Everything in *As-verified live state* above marked "Live"/"Already applied" needs **no
+further action**. The items below are the only ones still open as of 2026-07-23.
+
+### 1. Geocoding — VPC egress (or provider) fix
+
+**Not runnable from this repo** — it is a network/IaC change owned by `honua-terraform`,
+which is explicitly out of this issue's scope (see *Non-goals*). Recorded here so the
+decision and rollback are visible in one place when an operator picks it up in the
+owning repo.
+
+- **Option A — NAT Gateway egress.** Add a public NAT Gateway with an Elastic IP in a
+  public subnet whose route table sends `0.0.0.0/0` to the VPC Internet Gateway. Then
+  update each private Lambda subnet's route table to send `0.0.0.0/0` to that NAT
+  Gateway (or use a correctly routed NAT instance, cost-dependent). Lambda ENIs remain
+  in the private subnets; placing the NAT Gateway there, or merely adding an Internet
+  Gateway route to those private subnets, does not provide internet egress. This is a
+  standard `honua-terraform` change; review there for cost/blast radius before applying.
+- **Option B — in-VPC-reachable provider.** Point `Geocoding__Providers__*` at a
+  provider reachable via a VPC endpoint / PrivateLink (or a self-hosted Photon/Pelias
+  instance inside the VPC) instead of the public internet. Avoids a NAT Gateway but is a
+  larger change (new provider integration + data).
+- **Rollback:** either option is additive (new NAT route / new provider config) and can
+  be torn down without touching the license, STAC, or catalog state; no coupling to the
+  other tracks.
+- **After either fix**, re-run the geocoding lines of the verification script above —
+  expect `findAddressCandidates` to return `200` with `candidates.length > 0` in well
+  under a second once the network path exists (Nominatim itself is fast; the current
+  ~15.8s is the egress timeout, not provider latency). *Only then* does a scheduled
+  keep-warm probe (e.g. an EventBridge-scheduled Lambda invocation of
+  `GET /rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului`
+  every few minutes) become a meaningful mitigation for genuine cold-start latency —
+  before the egress fix, a keep-warm probe would just be another guaranteed-timeout
+  call.
+
+### 2. Demo image redeploy (picks up PR #2993 + migrations 083–088)
+
+Routine versioned-alias deploy, no schema/env changes of its own beyond what the new
+image already contains. See the *Deployment model correction* note above for why this
+must be a real publish-and-repoint, not an env edit on `$LATEST`.
+
+- **[OPERATOR]** Once PR #2993 merges to `trunk`: build and push a new demo image from
+  `trunk` HEAD, publish a new Lambda version, and repoint the `live` alias from v33 to
+  the new version (`aws lambda update-alias --function-name honua-demo-demo-honua
+  --name live --function-version <new-version>` or the equivalent `terraform apply`).
+- **Expected verification:**
+  - `GET /rest/services/maui-imagery/ImageServer?f=json` returns within the 20s
+    statistics budget (not a 70s+ hang).
+  - A bare `GET /api/v1/tiles/pmtiles/maui-basemap` (no `Range` header) returns `413`
+    with the byte-limit message, not an opaque 500.
+  - `GET /api/v1/admin/observability/migrations` (authenticated) shows migrations
+    through `088_CreateNetworkTopologyPromotions`.
+  - Everything in the *As-verified live state* table above still holds (STAC, Pro
+    license, elevation, catalog cleanup, geocoding-fails-the-same-way, SensorThings
+    404) — this is a regression check, not expected to change any of those.
+- **Rollback:** repoint the `live` alias back to v33
+  (`aws lambda update-alias --function-name honua-demo-demo-honua --name live
+  --function-version 33`). No DB rollback needed — migrations 083–088 are additive
+  (`CreateNetworkDataset*`/`CreateOpsHealth*`/network-topology tables) and unrelated to
+  any table the demo currently reads from.
+
+### 3. SensorThings
+
+No action for this issue. `Experimental:Features:SensorThings=false` (default, no
+override) is the intended state; GA promotion is tracked in #2434. Documented here to
+close out this issue's acceptance criterion ("confirmed as intentionally gated ... and
+recorded in the runbook").

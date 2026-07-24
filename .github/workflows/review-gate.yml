@@ -8,6 +8,8 @@ on:
     types: [submitted, dismissed, edited]
   pull_request_review_comment:
     types: [created, edited, deleted]
+  issue_comment:
+    types: [created, edited, deleted]
   workflow_run:
     workflows: ["PR Gate"]
     types: [completed]
@@ -24,17 +26,22 @@ permissions:
   statuses: write
 
 concurrency:
-  group: review-gate-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.event.inputs.pr }}
+  group: review-gate-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.event.inputs.pr }}
   cancel-in-progress: true
 
 jobs:
   attest:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     name: Publish SHA-bound Codex review attestation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          # Untrusted PR events always evaluate the default-branch policy. A manual
+          # workflow_dispatch may intentionally validate a reviewed policy fix at
+          # its selected ref, which provides the bootstrap path when the default
+          # policy itself cannot recognize the connector's clean-result shape.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.repository.default_branch }}
           persist-credentials: false
 
       - name: Attest current PR head
@@ -48,6 +55,7 @@ jobs:
             // when PR Gate completes, instead of failing before publishing status.
             let prNumber = Number(
               context.payload.pull_request?.number ||
+              context.payload.issue?.number ||
               context.payload.workflow_run?.pull_requests?.[0]?.number ||
               '${{ github.event.inputs.pr }}'
             );
@@ -71,6 +79,10 @@ jobs:
                     labels(first: 100) { nodes { name } pageInfo { hasNextPage } }
                     reviews(first: 100) {
                       nodes { author { login } body submittedAt updatedAt state commit { oid } }
+                      pageInfo { hasNextPage }
+                    }
+                    comments(first: 100) {
+                      nodes { author { login } body createdAt updatedAt includesCreatedEdit }
                       pageInfo { hasNextPage }
                     }
                     reviewThreads(first: 100) {
@@ -101,6 +113,7 @@ jobs:
               if (labels.has(label)) reasons.push(`blocked by ${label}`);
             }
             if (pr.labels.pageInfo.hasNextPage || pr.reviews.pageInfo.hasNextPage ||
+                pr.comments.pageInfo.hasNextPage ||
                 pr.reviewThreads.pageInfo.hasNextPage ||
                 pr.reviewThreads.nodes.some(thread => thread.comments.pageInfo.hasNextPage)) {
               reasons.push('bounded review query truncated');
@@ -111,12 +124,32 @@ jobs:
                 isCodex(comment.author?.login) && comment.commit?.oid === head));
             if (unresolved.length) reasons.push(`${unresolved.length} unresolved Codex thread(s)`);
 
-            const { exactReview } = evaluateCodexEvidence({
-              reviews: pr.reviews.nodes, unresolvedCount: unresolved.length, head,
+            const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
+              if (!isCodex(comment.author?.login)) return comment;
+              const matches = [...(comment.body || '').matchAll(
+                /(?:\*\*Reviewed commit:\*\*|Reviewed commit:)\s*`([0-9a-f]{10,40})`/gi
+              )];
+              if (matches.length !== 1) return comment;
+              const ref = matches[0][1];
+              if (ref.length === 40) return { ...comment, resolvedCommitOid: ref };
+              try {
+                const { data: commit } = await github.rest.repos.getCommit({
+                  ...context.repo, ref,
+                });
+                return { ...comment, resolvedCommitOid: commit.sha };
+              } catch (error) {
+                core.warning(`Could not uniquely resolve reviewed commit ${ref}: ${error.message}`);
+                return comment;
+              }
+            }));
+
+            const { exactReview, exactCleanComment } = evaluateCodexEvidence({
+              reviews: pr.reviews.nodes, cleanComments,
+              unresolvedCount: unresolved.length, head,
             });
 
-            if (!exactReview) {
-              reasons.push('no commit-bound exact-head Codex review');
+            if (!exactReview && !exactCleanComment) {
+              reasons.push('no exact-head Codex review evidence');
             }
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
