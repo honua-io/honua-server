@@ -7368,7 +7368,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_HappyPath_ReturnsLocationsArray"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_HappyPath_ReturnsLocationsArray",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_Alias_WithoutEntitlement_Returns402"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -8624,7 +8625,8 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_SuggestedBatchSize_AbsentWhenBatchUnsupported",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_SuggestedBatchSize_ReflectsProviderMaxBatchSize",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_SuggestedBatchSize_VariesByProvider",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_WhenGeocodingDisabled_Returns404"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_WhenGeocodingDisabled_Returns404",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.GeocodeServerMetadata_WithoutAnyLicense_Succeeds"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -8659,7 +8661,8 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_AllProvidersFail_ReturnsError",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_PrimaryFails_FallsBackToSecondary",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_ReturnsBadRequest_WhenExplicitProviderNotFound",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.SuggestThenFindAddressCandidates_WithMagicKey_RoundTripsDeterministically"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.SuggestThenFindAddressCandidates_WithMagicKey_RoundTripsDeterministically",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ForwardGeocode_WithoutAnyLicense_Succeeds"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -8680,7 +8683,10 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_MissingRecords_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_PrimaryFails_FallsBackToSecondary",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeAddresses_WithOutFields_ProjectsAttributes"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeAddresses_WithOutFields_ProjectsAttributes",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithEnterpriseEntitlement_ReachesEndpoint",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithProEntitlement_StillReturns402",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_WithoutEntitlement_Returns402WithEntitlementDetail"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -8702,7 +8708,8 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithFeatureTypes_PassesFeatureTypesToProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithInvalidDistance_Returns400",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithLangCode_PassesLanguageCodeToProvider",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithLocationSrAndOutSr3857_ReprojectsLocation"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocode_WithLocationSrAndOutSr3857_ReprojectsLocation",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ReverseGeocode_WithoutAnyLicense_Succeeds"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",
@@ -17675,7 +17682,8 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_ReturnsLocationsArray",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_WithEsriAddressesParameter_ReturnsLocationsArray",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_WithEsriJsonOutSr_AcceptsSpatialReferenceObject",
-        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch"
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_ReturnsBadRequest_WhenExplicitProviderDoesNotSupportBatch",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.BatchGeocode_Post_WithoutEntitlement_Returns402WithEntitlementDetail"
       ],
       "proof_ledger_surface": "geocode-server",
       "maturity": "implemented",

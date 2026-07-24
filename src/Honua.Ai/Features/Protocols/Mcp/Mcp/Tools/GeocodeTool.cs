@@ -6,7 +6,6 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geoprocessing;
-using Honua.Infrastructure.Licensing;
 using Honua.Ai.Protocols.Mcp.Location;
 using Honua.Ai.Protocols.Mcp.Models;
 
@@ -21,23 +20,18 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// geocoding logic.
 /// </summary>
 /// <remarks>
-/// Edition gating follows the #1592 model: the tool is always advertised in
-/// <c>tools/list</c> (discovery is free), but invoking it requires the
-/// existing Pro <c>geocoding.forward</c> entitlement from
-/// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog"/>. Denials
-/// surface as a <c>failed_precondition</c> tool error carrying the upgrade
-/// message rather than an HTTP 402, because MCP tool failures travel inside
-/// the JSON-RPC result envelope.
+/// Single-address forward geocoding is a Community capability
+/// (<c>geocoding.forward</c> in
+/// <see cref="Honua.Core.Features.Licensing.Domain.CapabilityKeyCatalog"/>) — the
+/// demo/adoption showcase path, so this tool does not gate invocation behind any
+/// entitlement (#2981). It previously checked the Pro
+/// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog"/> entry of the
+/// same key before that key moved to Community; batch geocoding
+/// (<see cref="GeocodeAddressesTool"/>) remains the gated, Enterprise workload.
 /// </remarks>
 internal sealed class GeocodeTool : IMcpTool
 {
     public const string ToolName = "honua_geocode_address";
-
-    /// <summary>
-    /// Entitlement key gating invocation; must exist in
-    /// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog.All"/>.
-    /// </summary>
-    public const string EntitlementKey = "geocoding.forward";
 
     private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<GeocodeTool> _logger;
@@ -56,7 +50,7 @@ internal sealed class GeocodeTool : IMcpTool
     {
         Name = ToolName,
         Title = "Geocode address",
-        Description = "Forward-geocode a freeform address and return ranked candidate locations with coordinates and match scores. Requires the Pro 'geocoding.forward' entitlement.",
+        Description = "Forward-geocode a freeform address and return ranked candidate locations with coordinates and match scores.",
         InputSchema = LocationToolSchemas.GeocodeArgumentSchema,
         OutputSchema = McpToolOutputSchemas.GeocodeOutputSchema,
         // Read-only lookup; open-world because resolution can route to external
@@ -77,12 +71,7 @@ internal sealed class GeocodeTool : IMcpTool
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
             .ConfigureAwait(false);
 
-        var entitlement = LicenseGate.CheckEntitlement(httpContext.RequestServices, EntitlementKey);
-        if (!entitlement.IsActive)
-        {
-            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
-        }
-
+        // No entitlement gate: forward geocoding is a Community capability (#2981).
         var argument = McpToolHelpers.ParseArguments(arguments, LocationJsonContext.Default.McpGeocodeArgument);
         var request = ToDomainRequest(argument);
         var providerName = string.IsNullOrWhiteSpace(argument.Provider) ? null : argument.Provider.Trim();
