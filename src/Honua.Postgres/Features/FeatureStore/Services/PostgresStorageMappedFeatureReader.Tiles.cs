@@ -36,7 +36,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         ArgumentNullException.ThrowIfNull(tileOptions);
         ArgumentNullException.ThrowIfNull(tileLimits);
 
-        var effectiveQuery = query ?? new FeatureQuery();
+        var effectiveQuery = await ApplyReadSecurityAsync(
+            query ?? new FeatureQuery(),
+            cancellationToken).ConfigureAwait(false);
         var targetSrid = gridGeometry?.Srid
             ?? (effectiveQuery.OutputSrid == 4326 ? 4326 : 3857);
         var bounds = gridGeometry is null

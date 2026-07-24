@@ -118,7 +118,10 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             binding.StorageMapping,
             binding.Connection,
             _connectionEncryptionService,
-            _storageMappedReaderLogger);
+            _storageMappedReaderLogger,
+            _filterExpressionService,
+            _rlsFilterSource,
+            _fieldMaskSource);
     }
 
     public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)

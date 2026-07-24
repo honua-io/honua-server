@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
@@ -35,6 +36,22 @@ internal static class PermanentFilterResolver
         // the typed PermanentFilter from the canonical Metadata v2 resource.
         var snapshot = await v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return null;
+        }
+
+        return Resolve(resource, filterExpressionService);
+    }
+
+    /// <summary>
+    /// Resolves the permanent filter directly from a binding-scoped metadata resource.
+    /// </summary>
+    public static SqlFragment? Resolve(
+        MetadataV2Resource resource,
+        IFilterExpressionService? filterExpressionService)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        if (filterExpressionService == null)
         {
             return null;
         }
