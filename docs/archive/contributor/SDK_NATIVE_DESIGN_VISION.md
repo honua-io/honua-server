@@ -353,7 +353,7 @@ Connect protocol gives:
 - **Binary protobuf over plain HTTP/1.1** — works in browsers natively via the Fetch API, no Envoy proxy, no HTTP/2 trailers hack
 - **Typed contracts from `.proto` files** — one schema generates the C# server handler AND the TypeScript client. No hand-maintained type definitions that drift.
 - **Server streaming** — maps directly to `queryFeaturesStream()`. The server pushes feature pages as protobuf frames over a single HTTP response. The SDK yields them as an async iterable. No hand-rolled page accumulation logic.
-- **JSON fallback on the same endpoint** — `Content-Type: application/json` works too, making endpoints debuggable with curl and browser DevTools
+- **JSON fallback on the same endpoint** — `Content-Type: application/json` works too, making endpoints inspectable with generated OpenAPI clients and browser DevTools
 - **No infrastructure changes** — ASP.NET Core supports Connect via `protobuf-net.Grpc` or Buf's `connect-dotnet`. The SDK uses `@connectrpc/connect-web`.
 
 **Sketch — proto definition:**

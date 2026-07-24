@@ -65,10 +65,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check connection pool metrics**:
-   ```bash
-   curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-        https://honua-server/monitoring/metrics/connection-pool
-   ```
+> Inspect connection-pool health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review database connection configuration**:
    ```bash
@@ -115,10 +112,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check cache metrics**:
-   ```bash
-   curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-        https://honua-server/monitoring/metrics/cache
-   ```
+> Inspect cache health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review cache configuration**:
    ```bash
@@ -169,10 +163,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check memory metrics**:
-   ```bash
-   curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-        https://honua-server/monitoring/metrics/resources
-   ```
+> Inspect resource health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review GC statistics**:
    ```bash
@@ -184,11 +175,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 
 #### Immediate Actions
 1. **Force garbage collection** (temporary relief):
-   ```bash
-   # Use admin endpoint to trigger GC (if implemented)
-   curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-        https://honua-server/admin/gc/collect
-   ```
+> This archived manual-GC route is not exposed by the OpenAPI explorer. Use the current Operate workflow and its approval controls instead.
 
 2. **Restart application** (if memory leak suspected):
    ```bash
@@ -223,10 +210,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check rate limiting metrics**:
-   ```bash
-   curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-        https://honua-server/monitoring/alerts
-   ```
+> Inspect active alerts in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review rate limiting configuration**:
    ```bash
@@ -271,10 +255,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
 ### Diagnosis Steps
 
 1. **Check upload queue metrics**:
-   ```bash
-   curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-        https://honua-server/monitoring/metrics/upload-queue
-   ```
+> Inspect upload-queue health in Honua Console's Operate view; this monitoring route is not exposed by the OpenAPI explorer.
 
 2. **Review file upload configuration**:
    ```bash
@@ -323,10 +304,7 @@ rate(honua_errors_total[5m]) / rate(honua_queries_total[5m])
    ```
 
 2. **Test external service connectivity**:
-   ```bash
-   # Test from pod
-   kubectl exec deployment/honua-server -- curl -v https://external-service/health
-   ```
+> Open `https://external-service/health` in a browser.
 
 ### Resolution Steps
 
@@ -436,16 +414,7 @@ ALTER DATABASE honua SET default_transaction_read_only = on;
 - **P3 (Low)**: Monitoring alerts, no user impact
 
 #### Contact Information
-```bash
-# Notification commands
-curl -X POST $SLACK_WEBHOOK_URL \
-  -d '{"text":"Production Issue: [Description] - Severity: [Level]"}'
-
-# PagerDuty integration
-curl -X POST https://api.pagerduty.com/incidents \
-  -H "Authorization: Token $PD_TOKEN" \
-  -d '{"incident":{"type":"incident","title":"Honua Server Issue"}}'
-```
+> Send this notification through the supported Slack integration or SDK; keep the event fields and severity described below.
 
 ## Preventive Measures
 

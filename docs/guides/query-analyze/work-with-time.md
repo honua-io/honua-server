@@ -10,56 +10,44 @@ Temporal behavior is opt-in: a layer advertises a time dimension only after you 
 
 1. Mark the layer time-aware by naming its time fields. The fields must resolve to `Date`/`DateTime` columns on the layer:
 
-   ```bash
-   BASE=http://localhost:8080
-   KEY=my-admin-api-key
-   SVC=my_service
-   LAYER=0
-   curl -s -X PUT "$BASE/api/v1/admin/services/$SVC/layers/$LAYER/metadata" \
-     -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-     -d '{ "timeInfo": { "startTimeField": "event_start", "endTimeField": "event_end" } }'
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/services/{service}/layers/{layerId}/metadata` with this body:
+
+   ```json
+   {
+     "timeInfo": {
+       "startTimeField": "event_start",
+       "endTimeField": "event_end"
+     }
+   }
    ```
 
 2. Discover the temporal contract. Layer metadata now carries an ArcGIS-compatible `timeInfo` block, and a dedicated endpoint returns the actual data extent:
 
-   ```bash
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/$LAYER?f=json"
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/$LAYER/temporalExtent?f=json"
-   ```
+> Open `/rest/services/{service}/FeatureServer/{layerId}?f=json`, `/rest/services/{service}/FeatureServer/{layerId}/temporalExtent?f=json` in a browser.
 
    `temporalExtent` returns `min`/`max` as ISO 8601 plus `minEpochMs`/`maxEpochMs`; it is 404 for layers that are not time-aware.
 
 3. Filter queries by time. GeoServices takes `time=start,end`; OGC API Features takes `datetime=start/end`:
 
-   ```bash
-   curl -s "$BASE/rest/services/$SVC/FeatureServer/$LAYER/query?where=1%3D1&time=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z&f=json"
-   curl -s "$BASE/ogc/features/collections/my_layer/items?datetime=2024-01-01T00:00:00Z/2024-12-31T23:59:59Z"
-   ```
+> Open `/rest/services/{service}/FeatureServer/{layerId}/query?where=1%3D1&time=2024-01-01T00:00:00Z,2024-12-31T23:59:59Z&f=json`, `/ogc/features/collections/my_layer/items?datetime=2024-01-01T00:00:00Z/2024-12-31T23:59:59Z` in a browser.
 
    A bare instant filters to that moment; bounds are inclusive; reversed ranges are rejected with 400.
 
 4. Render time slices over WMS with the standard `TIME` parameter. GetCapabilities advertises `<Dimension name="time">` with the layer's live extent:
 
-   ```bash
-   curl -s "$BASE/rest/services/$SVC/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=$LAYER&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=512&HEIGHT=512&FORMAT=image/png&TIME=2024-06-15T00:00:00Z/2024-06-15T23:59:59Z" -o slice.png
-   ```
+> Open `/rest/services/{service}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS={layerId}&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=512&HEIGHT=512&FORMAT=image/png&TIME=2024-06-15T00:00:00Z/2024-06-15T23:59:59Z` in a browser.
 
    WMTS GetTile accepts `time=` the same way, including the `default`/`current` tokens that resolve to the layer's maximum timestamp.
 
 5. Animate vector tiles by requesting time-windowed MVT frames. Each distinct `?time=` range is cached as its own tile variant, so stepping a slider through windows stays fast:
 
-   ```bash
-   curl -s "$BASE/tiles/$LAYER/8/40/96.mvt?time=2024-01-01T00:00:00Z,2024-06-30T23:59:59Z" -o frame1.mvt
-   curl -s "$BASE/tiles/$LAYER/8/40/96.mvt?time=2024-07-01T00:00:00Z,2024-12-31T23:59:59Z" -o frame2.mvt
-   ```
+> Open `/tiles/{layerId}/8/40/96.mvt?time=2024-01-01T00:00:00Z,2024-06-30T23:59:59Z`, `/tiles/{layerId}/8/40/96.mvt?time=2024-07-01T00:00:00Z,2024-12-31T23:59:59Z` in a browser.
 
-   MVT `?time=` filtering requires the Pro `temporal.time-series-tiles` entitlement (402 without it). For planning animation frames, the Pro `queryDateBins` endpoint returns a time histogram (`GET .../FeatureServer/$LAYER/queryDateBins?binField=event_start&bin={"calendarBin":{"unit":"month"}}&f=json`).
+   MVT `?time=` filtering requires the Pro `temporal.time-series-tiles` entitlement (402 without it). For planning animation frames, the Pro `queryDateBins` endpoint returns a time histogram (`GET .../FeatureServer/{layerId}/queryDateBins?binField=event_start&bin={"calendarBin":{"unit":"month"}}&f=json`).
 
 ## Verify
 
-```bash
-curl -s "$BASE/rest/services/$SVC/FeatureServer/$LAYER/temporalExtent?f=json"
-```
+> Open `/rest/services/{service}/FeatureServer/{layerId}/temporalExtent?f=json` in a browser.
 
 Expected (trimmed):
 

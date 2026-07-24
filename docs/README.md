@@ -8,9 +8,10 @@ Honua is a cloud-native geospatial server that speaks every major GIS protocol �
 git clone https://github.com/honua-io/honua-server.git
 cd honua-server
 docker compose up -d
-curl http://localhost:8080/healthz/ready
-# Ready
+docker compose ps
 ```
+
+Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
 **[Start the quickstart →](get-started/quickstart.md)** — import a dataset and see it on a map in your browser.
 

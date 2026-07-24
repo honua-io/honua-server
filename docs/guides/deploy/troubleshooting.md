@@ -6,11 +6,7 @@ You'll diagnose the most common operational failures by symptom and apply the ve
 
 ## Quick triage
 
-```bash
-curl -f http://localhost:8080/healthz/live
-curl -f http://localhost:8080/healthz/ready
-docker logs --tail 200 honua-server
-```
+> Open `http://localhost:8080/healthz/live`, `http://localhost:8080/healthz/ready` in a browser.
 
 Expected: `Healthy` and `Ready`. If either fails, start with the startup or database tables below. Admin-only diagnostics: `GET /monitoring/health/production`, `GET /monitoring/health/comprehensive`, `GET /api/v1/admin/observability/errors`.
 

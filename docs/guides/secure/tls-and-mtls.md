@@ -97,11 +97,7 @@ Profiles, mappings, and revocations are also manageable without restarts under `
 
 Probe a certificate without storing it:
 
-```bash
-curl -X POST "https://gis.example.com/api/v1/admin/security/client-certificates/validate" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d "{\"certificate\":\"$(base64 -w0 client.der)\",\"encoding\":\"base64Der\"}"
-```
+> Use the authorized [API explorer](../../reference/openapi-and-explorer.md) for `POST /api/v1/admin/security/client-certificates/validate`.
 
 ```json
 { "success": true, "data": { "valid": true, "profileId": "prod-native" } }

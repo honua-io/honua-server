@@ -10,49 +10,42 @@ Every published layer serves Mapbox Vector Tiles immediately; tile operations jo
 
 ### 1. Fetch tile metadata and a tile
 
-```bash
-HONUA_URL=http://localhost:8080
-LAYER_ID=1
-curl "$HONUA_URL/tiles/$LAYER_ID/tile.json"
-```
+Open `http://localhost:8080/tiles/{layerId}/tile.json` in a browser, substituting the layer id.
 
 The TileJSON `tiles` template is `/tiles/{layerId}/{z}/{x}/{y}.mvt`. Point any MapLibre vector source at the `tile.json` URL; the source-layer name is `layer`.
 
 ### 2. Seed the cache
 
-```bash
-HONUA_API_KEY=your-admin-api-key
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"operation":"seed","layerId":1,"minZoom":8,"maxZoom":12,"bbox":[-123.0,37.0,-121.0,38.0],"maxTiles":5000}' \
-  "$HONUA_URL/api/v1/admin/tile-operations/jobs"
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/tile-operations/jobs` with this body:
+
+```json
+{
+  "operation": "seed",
+  "layerId": 1,
+  "minZoom": 8,
+  "maxZoom": 12,
+  "bbox": [-123.0, 37.0, -121.0, 38.0],
+  "maxTiles": 5000
+}
 ```
 
 `operation` is one of `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`; scope with `serviceId`, `layerId`, `minZoom`/`maxZoom`, `bbox`, `tileMatrixSetId` (currently `WebMercatorQuad`), and the `maxTiles` safety cap. `warm` re-primes existing cache entries on the same request shape.
 
 ### 3. Poll the job
 
-```bash
-JOB_ID=paste-jobid-from-step-2
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/tile-operations/jobs/$JOB_ID"
-```
+Run `GET /api/v1/admin/tile-operations/jobs/{jobId}`, substituting the id from step 2.
 
 List jobs with `GET .../jobs?activeOnly=true`, cancel with `POST .../jobs/{jobId}/cancel`, retry failed/cancelled jobs with `POST .../jobs/{jobId}/retry` (retry creates a new job id with the original parameters).
 
 ### 4. Invalidate after data changes
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"operation":"invalidate","layerId":1}' \
-  "$HONUA_URL/api/v1/admin/tile-operations/jobs"
-```
+Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"invalidate","layerId":1}`.
 
 `invalidate` and `purge` evict output-cache entries at layer, service, or global scope; re-seed afterward for hot areas.
 
 ## Verify
 
-```bash
-curl -s -o tile.mvt -w "%{http_code} %{content_type}\n" "$HONUA_URL/tiles/$LAYER_ID/12/655/1583.mvt"
-```
+Load `/tiles/{layerId}/12/655/1583.mvt` through MapLibre or another MVT client. Browser developer tools should report:
 
 ```text
 200 application/vnd.mapbox-vector-tile
@@ -69,10 +62,16 @@ Two job operations produce PMTiles v3 archives from a layer's tiles:
 | Audience | Operator download | Browser MapLibre/PMTiles clients |
 | Partial tile failures | Tolerated | Job fails before upload (never overwrites a good artifact) |
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"operation":"publish","serviceId":"default","layerId":1,"minZoom":0,"maxZoom":12}' \
-  "$HONUA_URL/api/v1/admin/tile-operations/jobs"
+Run `POST /api/v1/admin/tile-operations/jobs` with this body:
+
+```json
+{
+  "operation": "publish",
+  "serviceId": "default",
+  "layerId": 1,
+  "minZoom": 0,
+  "maxZoom": 12
+}
 ```
 
 The completed job status carries `publishedArtifact` with `accessUrl`, `bounds`, `minZoom`/`maxZoom`, and storage details — everything a client needs for a `pmtiles://{accessUrl}` MapLibre source. Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the artifact.

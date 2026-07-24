@@ -13,13 +13,23 @@ All admin endpoints require admin authentication — see [Authentication](../../
 
 The MapLibre payload must be a valid Style Spec v8 document with at least one layer; an empty `layers` array returns `400`. Layers that omit `source` default to the auto-injected tile source `layer-{layerId}` (source-layer `layer`). `changeSummary` is capped at 1000 characters. Unsupported symbolizer codes are `RENDERER_TYPE_UNSUPPORTED`, `SYMBOL_TYPE_UNSUPPORTED`, `PICTURE_MARKER_PARTIAL`, and `RENDERER_PAYLOAD_INCOMPLETE`; the request still succeeds with a best-effort fallback.
 
-```bash
-HONUA_URL=https://honua.example.com
-API_KEY=your-admin-key
-LAYER_ID=42
-curl -X PUT "$HONUA_URL/api/v1/admin/metadata/layers/$LAYER_ID/style" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-  -d '{"mapLibreStyle":{"version":8,"sources":{},"layers":[{"id":"parcels-fill","type":"fill","paint":{"fill-color":"#2D69A5","fill-opacity":0.4}}]},"changeSummary":"Initial parcels style"}'
+In the authorized [API explorer](../openapi-and-explorer.md), run `PUT /api/v1/admin/metadata/layers/{layerId}/style` with this body:
+
+```json
+{
+  "mapLibreStyle": {
+    "version": 8,
+    "sources": {},
+    "layers": [
+      {
+        "id": "parcels-fill",
+        "type": "fill",
+        "paint": { "fill-color": "#2D69A5", "fill-opacity": 0.4 }
+      }
+    ]
+  },
+  "changeSummary": "Initial parcels style"
+}
 ```
 
 ## SLD import and export
@@ -29,11 +39,7 @@ curl -X PUT "$HONUA_URL/api/v1/admin/metadata/layers/$LAYER_ID/style" \
 | POST | `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (1 MiB body cap) |
 | GET | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | Export the stored MapLibre style as an `application/xml` SLD 1.0 document; diagnostic count in `X-Sld-Diagnostic-Count` |
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/metadata/layers/$LAYER_ID/style/import-sld" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/xml" \
-  --data-binary @parcels.sld
-```
+Run `POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld` and use `parcels.sld` as the XML request body.
 
 ## Style suggestions
 
@@ -41,10 +47,7 @@ curl -X POST "$HONUA_URL/api/v1/admin/metadata/layers/$LAYER_ID/style/import-sld
 |---|---|---|
 | POST | `/api/v1/admin/metadata/layers/{layerId}/suggest-style` | Generate a suggested style for a layer from its schema and data |
 
-```bash
-curl -X POST "$HONUA_URL/api/v1/admin/metadata/layers/$LAYER_ID/suggest-style" \
-  -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" -d '{}'
-```
+Run `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` with `{}`.
 
 ## Public style fetch and themes
 

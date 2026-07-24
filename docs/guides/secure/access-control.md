@@ -2,7 +2,7 @@
 
 Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC.
 
-**Prerequisites:** An admin API key ([Authenticate clients](authentication.md)) and a published service. Examples use `$HONUA_ADMIN_PASSWORD` and `http://localhost:8080`.
+**Prerequisites:** An admin API key ([Authenticate clients](authentication.md)) and a published service. Open the local API explorer at `http://localhost:8080/docs` and authorize it with the admin key before running these operations.
 
 Two mechanisms compose: a per-resource **access policy** (`allowAnonymous`, `allowAnonymousWrite`, `allowedRoles`, `allowedWriteRoles`) and **RBAC roles** carrying `(service, layer, operation)` permission grants with `*` wildcards. An explicit write policy on a resource stays authoritative; when none is set, a matching RBAC write grant (`insert`/`update`/`delete`), a global data-editor role (`Rbac__DataEditorRoles`), or a service-scoped `data-editor:{service}` role authorizes the mutation. Admin endpoints (`/api/v1/admin/*`) and metrics endpoints always require the `admin` role.
 
@@ -10,44 +10,54 @@ Two mechanisms compose: a per-resource **access policy** (`allowAnonymous`, `all
 
 ### 1. Restrict writes on a service
 
-```bash
-BASE=http://localhost:8080
-SERVICE=parks
-curl -X PUT "$BASE/api/v1/admin/services/$SERVICE/access-policy" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"allowAnonymous":true,"allowAnonymousWrite":false,"allowedWriteRoles":["editors"]}'
+In the [API explorer](../../reference/openapi-and-explorer.md), run `PUT /api/v1/admin/services/{service}/access-policy` with `{service}` set to `parks` and this body:
+
+```json
+{
+  "allowAnonymous": true,
+  "allowAnonymousWrite": false,
+  "allowedWriteRoles": ["editors"]
+}
 ```
 
 Reads stay public; writes now require the `editors` role. Omit `allowedRoles`/`allowedWriteRoles` fields you don't want to change — only supplied fields are patched. Per-layer metadata (including layer-level policy) is managed via `PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata`.
 
 ### 2. Create a role
 
-```bash
-curl -X POST "$BASE/api/v1/admin/roles" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"name":"editors","description":"Field data editors"}'
+Run `POST /api/v1/admin/roles` in the explorer with this body:
+
+```json
+{
+  "name": "editors",
+  "description": "Field data editors"
+}
 ```
 
 Note the returned role `id`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
 
 ### 3. Grant per-operation permissions to the role
 
-```bash
-ROLE_ID=<paste-the-role-id>
-curl -X PUT "$BASE/api/v1/admin/roles/$ROLE_ID/permissions" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"permissions":[{"service":"parks","layer":"*","operation":"update"},{"service":"parks","layer":"*","operation":"insert"}]}'
+Run `PUT /api/v1/admin/roles/{roleId}/permissions`, substituting the role id returned in step 2, with this body:
+
+```json
+{
+  "permissions": [
+    { "service": "parks", "layer": "*", "operation": "update" },
+    { "service": "parks", "layer": "*", "operation": "insert" }
+  ]
+}
 ```
 
 Operations: `query` (read), `insert`, `update`, `delete`, `export`, `metadata`, `admin`, or `*`. `service` and `layer` accept `*`; a service-level grant (`layer:"*"`) implies all its layers. Grants never hard-deny — when none matches, the resource's access policy decides.
 
 ### 4. Assign roles to users
 
-```bash
-USER_ID=<oidc-user-id>
-curl -X PUT "$BASE/api/v1/admin/users/$USER_ID/roles" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"roles":["editors"]}'
+Run `PUT /api/v1/admin/users/{userId}/roles`, substituting the user's OIDC id, with this body:
+
+```json
+{
+  "roles": ["editors"]
+}
 ```
 
 The list replaces the user's role set. `GET /api/v1/admin/users` lists known users (OIDC sign-ins appear after first login). Roles also flow from your IdP's token claims (`Rbac__RoleClaimType`, default `roles`) and from API-key permission labels.
@@ -56,10 +66,17 @@ The list replaces the user's role set. `GET /api/v1/admin/users` lists known use
 
 RBAC grants control whether a role can query a layer; **row-level security (RLS)** narrows *which features* the query returns. An RLS policy attaches a row-visibility predicate — a layer attribute compared against the caller's claim — to a `(role, service, layer)` scope. Matching policies are AND-ed into the query `WHERE` clause server-side, pushed to PostgreSQL, and applied identically across every query protocol (GeoServices REST, OGC API Features, OData).
 
-```bash
-curl -X POST "$BASE/api/v1/admin/rls-policies" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"role":"*","service":"*","layer":"*","attribute":"region","claimType":"region","comparison":"in"}'
+Run `POST /api/v1/admin/rls-policies` with this body:
+
+```json
+{
+  "role": "*",
+  "service": "*",
+  "layer": "*",
+  "attribute": "region",
+  "claimType": "region",
+  "comparison": "in"
+}
 ```
 
 With this policy in place, a caller whose token carries `region=west` sees only features where `region = 'west'`; a caller with `region=east` sees only `east` features. The claim value is bound as a query parameter, so it can never inject SQL. `comparison` is `in` (default — matches any of the caller's claim values) or `equals`. Use `*` wildcards on `role`/`service`/`layer` to scope broadly, or concrete names to target one layer. `GET /api/v1/admin/rls-policies` lists policies; `DELETE /api/v1/admin/rls-policies/{id}` removes one.
@@ -70,10 +87,7 @@ RLS controls which *rows* a role sees. Restricting which *fields* (columns) a ro
 
 ## Verify
 
-```bash
-curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-  "$BASE/api/v1/admin/users/$USER_ID/effective-permissions"
-```
+Run `GET /api/v1/admin/users/{userId}/effective-permissions` in the explorer.
 
 ```json
 { "success": true, "data": { "userId": "…", "roles": ["editors"], "permissions": [ { "service": "parks", "layer": "*", "operation": "update" } ] } }

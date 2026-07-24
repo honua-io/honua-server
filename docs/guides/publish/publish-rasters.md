@@ -12,26 +12,21 @@ Honua serves rasters from two sources: rasters imported into the PostGIS raster 
 
 ### 1. Check supported raster formats
 
-```bash
-HONUA_URL=http://localhost:8080
-HONUA_API_KEY=your-admin-api-key
-curl -H "X-API-Key: $HONUA_API_KEY" "$HONUA_URL/api/v1/admin/import/raster/formats"
-```
+In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/import/raster/formats`.
 
 GeoTIFF/COG (`.tif`, `.tiff`) carry embedded georeferencing; PNG (`.png`) and JPEG (`.jpg`, `.jpeg`) require a world-file sidecar.
 
 ### 2. Import a raster into PostGIS
 
-```bash
-LAYER_ID=1
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" \
-  -F "file=@dem.tif" \
-  -F "layerId=$LAYER_ID" \
-  -F "name=City DEM 2026" \
-  "$HONUA_URL/api/v1/admin/import/raster"
-```
+Run `POST /api/v1/admin/import/raster` with these form values:
 
-Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file (`-F "file=@dem.pgw"`) and optionally a `.prj` sidecar. The import runs synchronously and is bounded by `Limits:Imports:MaxSyncImportSize`.
+| Field | Value |
+| --- | --- |
+| `file` | `dem.tif` |
+| `layerId` | `1` |
+| `name` | `City DEM 2026` |
+
+Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file as another `file` value and optionally add a `.prj` sidecar. The import runs synchronously and is bounded by `Limits:Imports:MaxSyncImportSize`.
 
 Every raster uploaded to the same layer must match the layer's first raster in SRID and band count; mismatches return `400` with a structured homogeneity message.
 
@@ -39,10 +34,16 @@ Imported rasters are stored with `EXTERNAL` TOAST storage (out-of-line and uncom
 
 ### 3. Register a cloud-hosted COG (alternative to import)
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"layerId":1,"name":"ortho-2026","provider":"AwsS3","bucket":"my-rasters","objectKey":"ortho/2026.tif"}' \
-  "$HONUA_URL/api/v1/admin/cloud-rasters"
+Run `POST /api/v1/admin/cloud-rasters` with this body:
+
+```json
+{
+  "layerId": 1,
+  "name": "ortho-2026",
+  "provider": "AwsS3",
+  "bucket": "my-rasters",
+  "objectKey": "ortho/2026.tif"
+}
 ```
 
 Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured). Manage registrations with `GET /api/v1/admin/cloud-rasters?layerId=1`, `GET|DELETE /api/v1/admin/cloud-rasters/{id}`, and `POST /api/v1/admin/cloud-rasters/{id}/refresh` to re-scan metadata. ImageServer tile requests use PostGIS first and fall back to registered COGs; direct COG tile serving supports JPEG, DEFLATE, and uncompressed tiles, and is Pro-gated (`raster.cloud-cog-serving`).
@@ -51,16 +52,11 @@ Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured).
 
 ImageServer export:
 
-```bash
-curl "$HONUA_URL/rest/services/$LAYER_ID/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&f=json"
-```
+> Open `/rest/services/{layerId}/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&f=json` in a browser.
 
 Other protocol surfaces over the same raster backend:
 
-```bash
-curl "$HONUA_URL/ogc/coverages/collections"
-curl "$HONUA_URL/rest/services/$LAYER_ID/ImageServer/WCS?service=WCS&request=GetCapabilities"
-```
+> Open `/ogc/coverages/collections`, `/rest/services/{layerId}/ImageServer/WCS?service=WCS&request=GetCapabilities` in a browser.
 
 ```json
 {"collections": [{"id": "…", …}], …}
@@ -70,18 +66,18 @@ curl "$HONUA_URL/rest/services/$LAYER_ID/ImageServer/WCS?service=WCS&request=Get
 
 Cloud-optimized HDF5 (`.h5`, `.hdf5`) and NetCDF-4 (`.nc`, `.nc4`) sources can be registered against a layer today; metadata extraction and subset reads ship in a follow-up reader:
 
-```bash
-curl -X POST -H "X-API-Key: $HONUA_API_KEY" -H "Content-Type: application/json" \
-  -d '{
-    "layerId": 1,
-    "name": "ghrsst-l4-daily",
-    "format": "NetCdf4",
-    "provider": "AwsS3",
-    "bucket": "noaa-sst",
-    "objectKey": "ghrsst/2026/05/18.nc4",
-    "variables": ["analysed_sst", "analysis_error"]
-  }' \
-  "$HONUA_URL/api/v1/admin/multidim-coverages"
+Run `POST /api/v1/admin/multidim-coverages` with this body:
+
+```json
+{
+  "layerId": 1,
+  "name": "ghrsst-l4-daily",
+  "format": "NetCdf4",
+  "provider": "AwsS3",
+  "bucket": "noaa-sst",
+  "objectKey": "ghrsst/2026/05/18.nc4",
+  "variables": ["analysed_sst", "analysis_error"]
+}
 ```
 
 - `provider` must be `AwsS3` or `AzureBlob`; local paths are rejected. `variables` empty means "all CF data variables".

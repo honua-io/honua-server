@@ -15,9 +15,7 @@ Honua serves an ArcGIS-compatible GeoServices REST surface under `/rest/services
 | GET | `/sharing/rest/content/items/{id}`, `.../{id}/data` | Portal item metadata and data. |
 | GET, POST | `/sharing/rest/oauth2/authorize`, `/callback`, `/token` | Portal OAuth2 named-user bridge. |
 
-```bash
-curl "https://server.example.com/rest/services?f=json"
-```
+> Open `https://server.example.com/rest/services?f=json` in a browser.
 
 ## FeatureServer
 
@@ -38,14 +36,9 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 
 Registered but **not implemented** (return a spec-shaped not-implemented error): `queryContingentValues`, `sharedTemplates` (and its `query`/`add`/`update`/`delete`), `htmlPopup`, `image`, `/{layerId}/hasAssets`, `queryAssets`, `cleanupAssets`, `uploadAssets`, `convert3D`, `query3D`, `/{layerId}/metadata/update`.
 
-```bash
-curl "https://server.example.com/rest/services/roads/FeatureServer/0/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json"
-```
+> Open `https://server.example.com/rest/services/roads/FeatureServer/0/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json` in a browser.
 
-```bash
-curl -X POST "https://server.example.com/rest/services/roads/FeatureServer/0/applyEdits" \
-  -d 'adds=[{"geometry":{"x":-122.4,"y":37.8},"attributes":{"name":"New point"}}]&f=json'
-```
+Use the `@honua/sdk-js` FeatureLayer client and call `applyEdits({ adds: [{ geometry: { x: -122.4, y: 37.8 }, attributes: { name: "New point" } }] })`.
 
 ## MapServer
 
@@ -64,9 +57,7 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 | Cached tiles | `/tile/{z}/{y}/{x}` | |
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
 
-```bash
-curl -o map.png "https://server.example.com/rest/services/roads/MapServer/export?bbox=-122.5,37.7,-122.3,37.9&size=800,600&format=png&f=image"
-```
+> Open `https://server.example.com/rest/services/roads/MapServer/export?bbox=-122.5,37.7,-122.3,37.9&size=800,600&format=png&f=image` in a browser.
 
 See [GeoServices parity — MapServer](../compatibility/geoservices-parity.md#mapserver--wms--wmts) for parameter-level coverage.
 
@@ -84,9 +75,7 @@ Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
 | Metadata | `/keyProperties`, `/rasterAttributeTable`, `/rasterFunctionInfos`, `/multidimensionalInfo`, `/slices`, `/legend`, `/conf.json` | |
 | OGC pass-through | `/WCS` | WCS 2.0.1 KVP; see [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
 
-```bash
-curl -o dem.tif "https://server.example.com/rest/services/dem/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&size=512,512&format=tiff&f=image"
-```
+> Open `https://server.example.com/rest/services/dem/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&size=512,512&format=tiff&f=image` in a browser.
 
 ### Tiled-consumption metadata (`tileInfo`)
 
@@ -109,9 +98,7 @@ Base: `/rest/services/Utilities/Geometry/GeometryServer` (all operations accept 
 
 Implemented operations: `buffer`, `simplify`, `project`, `intersect`, `union`, `clip`, `difference`, `areasAndLengths`, `lengths`, `distance`, `relation`, `densify`, `convexHull`, `generalize`, `labelPoints`, `cut`, `trimExtend`, `offset`, `autoComplete`, `reshape`, `findTransformations`, `toGeoCoordinateString`, `fromGeoCoordinateString`.
 
-```bash
-curl "https://server.example.com/rest/services/Utilities/Geometry/GeometryServer/buffer?geometries=-122.4,37.8&inSR=4326&distances=100&unit=9001&f=json"
-```
+> Open `https://server.example.com/rest/services/Utilities/Geometry/GeometryServer/buffer?geometries=-122.4,37.8&inSR=4326&distances=100&unit=9001&f=json` in a browser.
 
 See [GeoServices parity — Geometry Service](../compatibility/geoservices-parity.md#geometry-service).
 

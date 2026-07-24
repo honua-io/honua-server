@@ -170,7 +170,7 @@ artifacts/client-compat/<service>-<timestamp>/
     <timestamp>-ci-bi-odata.cert.json
 ```
 
-These automated envelopes use the `ci-desktop` and `ci-bi` client lane values to distinguish curl-based protocol validation from actual client interoperability evidence. The `environment` field is `"ci"`.
+These automated envelopes use the `ci-desktop` and `ci-bi` client lane values to distinguish script-driven protocol validation from actual client interoperability evidence. The `environment` field is `"ci"`.
 
 Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require operator-produced evidence per the [Client Templates and Manual Smoke Runbook](CLIENT_TEMPLATE_RUNBOOK.md).
 
