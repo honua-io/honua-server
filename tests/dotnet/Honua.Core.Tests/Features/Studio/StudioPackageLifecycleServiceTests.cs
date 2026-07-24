@@ -541,6 +541,66 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
+    {
+        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
+        // version is ever saved, must not linger as an unopenable orphan in
+        // GET /content-items (no draft, no version, nothing to show or open).
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "orphan-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        var deleted = await service.DeleteDraftAsync(draft.DraftId);
+        Assert.True(deleted);
+
+        var items = await service.ListContentItemsAsync(new StudioContentItemQuery());
+        Assert.DoesNotContain(items.Items, i => i.ItemId == draft.ItemId);
+        Assert.Equal(0, items.Total);
+
+        // The package key must be reusable now that the orphan item is gone.
+        var recreated = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "orphan-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        Assert.NotEqual(draft.ItemId, recreated.ItemId);
+    }
+
+    [UnitTest]
+    public async Task DeleteDraft_AfterVersionSaved_KeepsContentItemListed()
+    {
+        // A draft deleted after its content was saved as a version must not remove the item:
+        // the item has openable history (the saved version) even with no remaining draft.
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "kept-query",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        var version = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(version);
+
+        var deleted = await service.DeleteDraftAsync(draft.DraftId);
+        Assert.True(deleted);
+
+        var items = await service.ListContentItemsAsync(new StudioContentItemQuery());
+        var row = Assert.Single(items.Items, i => i.ItemId == draft.ItemId);
+        Assert.Equal(StudioContentItemState.Current, row.State);
+
+        // Reopen semantics: a new draft on the existing item must still be possible after the
+        // original draft was deleted, and must not be treated as creating a fresh item.
+        var reopened = await service.ReopenVersionAsync(version!.ItemId, version.VersionId, "tester");
+        Assert.NotNull(reopened);
+        Assert.Equal(draft.ItemId, reopened!.ItemId);
+    }
+
+    [UnitTest]
     public void PackageFamilyCapabilities_AdvertisesAllFamiliesAndLifecycleOperations()
     {
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();

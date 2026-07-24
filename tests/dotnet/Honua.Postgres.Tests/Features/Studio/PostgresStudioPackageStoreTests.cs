@@ -371,6 +371,74 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
+    {
+        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
+        // version is ever saved, must not linger as an unopenable orphan in
+        // GET /content-items (no draft, no version, nothing to show or open).
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "orphan-query"));
+
+            var deleted = await store.DeleteDraftAsync(draft.DraftId);
+            deleted.Should().BeTrue();
+
+            var items = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            items.Items.Should().NotContain(i => i.ItemId == draft.ItemId);
+            items.Total.Should().Be(0);
+
+            // The package key must be reusable now that the orphan item is gone.
+            var recreated = await store.CreateDraftAsync(BuildDraft("1=1", "orphan-query"));
+            recreated.ItemId.Should().NotBe(draft.ItemId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task DeleteDraft_AfterVersionSaved_KeepsContentItemListed()
+    {
+        // A draft deleted after its content was saved as a version must not remove the item:
+        // the item has openable history (the saved version) even with no remaining draft.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "kept-query"));
+            var version = await store.CreateVersionAsync(draft, "first save", "tester");
+
+            var deleted = await store.DeleteDraftAsync(draft.DraftId);
+            deleted.Should().BeTrue();
+
+            var items = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            var row = items.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId).Subject;
+            row.State.Should().Be(StudioContentItemState.Current);
+
+            // Reopen semantics: a new draft on the existing item must still be possible after
+            // the original draft was deleted, and must not be treated as a fresh item.
+            var reopened = await store.CreateDraftAsync(draft with
+            {
+                DraftId = Guid.NewGuid(),
+                BaseVersionId = version.VersionId,
+                Generation = 1,
+            });
+            reopened.ItemId.Should().Be(draft.ItemId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureStudioTablesAsync(string schema)
     {
         var root = FindRepoRoot();

@@ -249,11 +249,53 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
     public async Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
-        var sql = $"DELETE FROM {_draftsTable} WHERE draft_id = @draft_id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease.Connection);
-        command.Parameters.AddWithValue("@draft_id", draftId);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
+        var connection = lease.Connection;
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var deleteDraftSql = $"DELETE FROM {_draftsTable} WHERE draft_id = @draft_id RETURNING item_id";
+            Guid? itemId = null;
+            await using (var command = new NpgsqlCommand(deleteDraftSql, connection, transaction))
+            {
+                command.Parameters.AddWithValue("@draft_id", draftId);
+                var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (result is Guid deletedItemId)
+                {
+                    itemId = deletedItemId;
+                }
+            }
+
+            if (itemId is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+
+            // Cascade-delete an orphan content item: if this was the item's last remaining
+            // draft and no version has ever been saved for it, the item has nothing openable
+            // (no draft, no version) and must not surface in content-item enumeration (#3003).
+            var cascadeSql = $"""
+                DELETE FROM {_itemsTable}
+                WHERE item_id = @item_id
+                  AND current_version_id IS NULL
+                  AND published_version_id IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM {_draftsTable} WHERE item_id = @item_id)
+                """;
+            await using (var cascadeCommand = new NpgsqlCommand(cascadeSql, connection, transaction))
+            {
+                cascadeCommand.Parameters.AddWithValue("@item_id", itemId.Value);
+                await cascadeCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<StudioContentVersion> CreateVersionAsync(

@@ -98,7 +98,26 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
-            return Task.FromResult(_drafts.Remove(draftId));
+            if (!_drafts.TryGetValue(draftId, out var draft))
+            {
+                return Task.FromResult(false);
+            }
+
+            _drafts.Remove(draftId);
+
+            // Cascade-delete an orphan content item: if this was the item's last remaining
+            // draft and no version has ever been saved for it, the item has nothing openable
+            // (no draft, no version) and must not surface in content-item enumeration (#3003).
+            if (_items.TryGetValue(draft.ItemId, out var item) &&
+                item.CurrentVersionId is null &&
+                item.PublishedVersionId is null &&
+                !_drafts.Values.Any(d => d.ItemId == draft.ItemId))
+            {
+                _items.Remove(draft.ItemId);
+                _versionsByItem.Remove(draft.ItemId);
+            }
+
+            return Task.FromResult(true);
         }
     }
 
