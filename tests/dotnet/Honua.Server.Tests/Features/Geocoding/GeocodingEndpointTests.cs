@@ -610,7 +610,7 @@ public sealed class GeocodingEndpointTests
             SupportsSuggest: true,
             SupportsBatch: true,
             SupportsStructuredInput: false,
-            SupportsBiasing: true)));
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
@@ -1262,7 +1262,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 37 }));
+        { MaxBatchSize = 37 }), grantEnterpriseForBatch: true);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
@@ -1287,7 +1287,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 10 }));
+        { MaxBatchSize = 10 }), grantEnterpriseForBatch: true);
         using var smallClient = smallFactory.CreateClient();
 
         using var largeFactory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
@@ -1295,7 +1295,7 @@ public sealed class GeocodingEndpointTests
             SupportsBatch: true,
             SupportsStructuredInput: false,
             SupportsBiasing: true)
-        { MaxBatchSize = 250 }));
+        { MaxBatchSize = 250 }), grantEnterpriseForBatch: true);
         using var largeClient = largeFactory.CreateClient();
 
         using var smallResponse = await smallClient.GetAsync("/rest/services/World/GeocodeServer?f=json");
