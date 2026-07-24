@@ -260,7 +260,8 @@ Lambda filesystem with no bootstrap file write.
 >
 > **Operator decision (2026-07-23): fixed via Amazon Location Service over a VPC
 > interface endpoint (PrivateLink), not a NAT gateway.** No new compute, no general
-> egress opened up. IaC: `honua-io/honua-iac#127` (place index + IAM grant + `geo`
+> egress opened up. IaC: `honua-io/honua-iac#127` (place index + IAM grant +
+> `com.amazonaws.us-west-2.geo.places`
 > interface endpoint — not applied). See *Remediation plan* item 1 below for the exact
 > env keys, sequencing, and rollback; a NAT-gateway + Nominatim fallback is kept at item
 > 1a if Amazon Location is ever rejected later.
@@ -424,7 +425,8 @@ Amazon Location's classic Places API (`SearchPlaceIndexForText` /
 index, authenticating via the Lambda execution role (`UseIamRole=true`, the default —
 no access keys). IaC PR (not applied): **honua-io/honua-iac#127** — adds an
 `enable_amazon_location_geocoding` toggle to the `aws-serverless` module (place index +
-least-privilege IAM grant) and wires a `com.amazonaws.us-west-2.geo` interface endpoint
+least-privilege IAM grant) and wires a
+`com.amazonaws.us-west-2.geo.places` interface endpoint
 into the demo's `vpc-endpoints.tf` (single-AZ, same pattern as the existing Secrets
 Manager/Bedrock endpoints — see that PR for the exact resources and a read-only AWS
 audit of the account's current VPC/endpoint state, including one piece of *unrelated*
@@ -471,7 +473,8 @@ path.
 1. **[OPERATOR]** Review and apply `honua-io/honua-iac#127` (`terraform plan` then
    `apply`, scoped to `enable_amazon_location_geocoding = true` plus the other toggles
    this environment already runs) — creates the place index, the IAM grant, and the
-   `geo` VPC interface endpoint. This alone does **not** change what's serving
+   `com.amazonaws.us-west-2.geo.places` VPC interface endpoint. This alone does **not**
+   change what's serving
    `demo.honua.io` (no Lambda env change yet, and the place index/endpoint are inert
    until referenced).
 2. **[OPERATOR]** Fold the `Geocoding__*` env block above into the image-redeploy
@@ -500,7 +503,8 @@ other option), not OpenStreetMap — this is a full provider swap, not a drop-in
 replacement with identical results. Coverage, address formatting, and attribution
 differ from Nominatim.
 
-**Cost:** `geo` VPC interface endpoint ~$7–8/month (single-AZ, same pricing as the
+**Cost:** `com.amazonaws.us-west-2.geo.places` VPC interface endpoint ~$7–8/month
+(single-AZ, same pricing as the
 existing Secrets Manager endpoint) + Amazon Location's per-request Esri pricing tier
 (low single dollars/month at demo traffic volumes). No NAT gateway (~$33/mo avoided),
 no new compute.
@@ -535,7 +539,8 @@ item 1's `Geocoding__*` env variables are folded into this same step rather than
 attempted separately.
 
 - **[OPERATOR]** Once PR #2993 merges to `trunk` and `honua-io/honua-iac#127` is
-  applied (place index + `geo` endpoint exist): build and push a new demo image from
+  applied (place index + `com.amazonaws.us-west-2.geo.places` endpoint exists): build
+  and push a new demo image from
   `trunk` HEAD, set the `Geocoding__*` env block from item 1 above on the new version,
   publish it, and repoint the `live` alias from v33 to the new version
   (`aws lambda update-alias --function-name honua-demo-demo-honua
