@@ -603,6 +603,16 @@ internal static partial class TilesEndpoints
                     $"PNG dataset tiles support at most {MaxCollectionsPerDatasetRasterTileRequest} collections per request. Narrow the request with the collections parameter.");
             }
 
+            // Dataset MVT composition is not supported. Reject before resolving a provider so
+            // mixed routed collections can never be executed through the first layer's bound
+            // connection. Multi-collection metadata advertises only the PNG path.
+            if (!isRaster && layers.Length > 1)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Dataset vector tiles currently support only a single collection selection. Request one collection or use PNG tiles.");
+            }
+
             var layer = layers[0];
 
             // DOCUMENTED DIVERGENCE (#1792 Shape A): the vertical (elevation) selection
@@ -678,39 +688,24 @@ internal static partial class TilesEndpoints
                 return tileProviderError;
             }
 
-            return layers.Length == 1
-                ? await VectorTileExecution.ExecuteAsync(
-                    context,
-                    resolvedTileProvider!,
-                    layer.StorageLayerId,
-                    tileCol,
-                    tileRow,
-                    zoomLevel,
-                    CreateVectorTileQuery(
-                        layer.SpatialReferenceSrid,
-                        isGeographic,
-                        temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
-                        gridGeometry: vectorGridGeometry),
-                    tileOptionsValue,
-                    tileLimits,
-                    cancellationToken,
-                    activity,
-                    tileMatrixSetId: tileMatrixSetEntry.Id,
-                    gridGeometry: vectorGridGeometry)
-                : await ExecuteDatasetVectorTileAsync(
-                    context,
-                    resolvedTileProvider!,
-                    layers,
-                    tileCol,
-                    tileRow,
-                    zoomLevel,
+            return await VectorTileExecution.ExecuteAsync(
+                context,
+                resolvedTileProvider!,
+                layer.StorageLayerId,
+                tileCol,
+                tileRow,
+                zoomLevel,
+                CreateVectorTileQuery(
+                    layer.SpatialReferenceSrid,
                     isGeographic,
-                    GetTemporalFilterForLayer(layer, temporalFilters),
-                    tileOptionsValue,
-                    tileLimits,
-                    activity,
-                    cancellationToken,
-                    vectorGridGeometry);
+                    temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters),
+                    gridGeometry: vectorGridGeometry),
+                tileOptionsValue,
+                tileLimits,
+                cancellationToken,
+                activity,
+                tileMatrixSetId: tileMatrixSetEntry.Id,
+                gridGeometry: vectorGridGeometry);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -825,57 +820,6 @@ internal static partial class TilesEndpoints
         return CreatePngTileResult(imageBytes, tileOptionsValue.CacheMaxAge);
     }
 
-    private static async Task<IResult> ExecuteDatasetVectorTileAsync(
-        HttpContext context,
-        ITileProvider tileProvider,
-        TileRequestLayer[] layers,
-        int tileCol,
-        int tileRow,
-        int zoomLevel,
-        bool isGeographic,
-        TemporalFilter? temporalFilter,
-        TileOptions tileOptionsValue,
-        TileLimits tileLimits,
-        Activity? activity,
-        CancellationToken cancellationToken,
-        GridGeometry? gridGeometry = null)
-    {
-        if (layers.Length > 1)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                "Dataset vector tiles currently support only a single collection selection. Request one collection or use PNG tiles.");
-        }
-
-        var mergedTile = await MergeVectorTileAsync(
-            tileProvider,
-            layers,
-            tileCol,
-            tileRow,
-            zoomLevel,
-            isGeographic,
-            temporalFilter,
-            tileOptionsValue,
-            tileLimits,
-            cancellationToken,
-            gridGeometry);
-
-        if (mergedTile == null || mergedTile.Length == 0)
-        {
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            // Cache empty tiles for the same window as populated ones so clients do
-            // not revalidate on every pan/zoom over sparse regions.
-            context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptionsValue.CacheMaxAge}";
-            return Results.NoContent();
-        }
-
-        activity?.SetStatus(ActivityStatusCode.Ok);
-        activity?.SetTag("honua.tile.bytes", mergedTile.Length);
-        context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptionsValue.CacheMaxAge}";
-        return Results.Bytes(mergedTile, MediaTypes.Mvt);
-    }
-
     private static async Task<IResult> HandleDatasetRasterTileAsync(
         HttpContext context,
         TileRequestLayer[] layers,
@@ -974,71 +918,6 @@ internal static partial class TilesEndpoints
         activity?.SetTag("honua.tile.format", "png");
 
         return CreatePngTileResult(imageBytes, tileOptionsValue.CacheMaxAge);
-    }
-
-    private static async Task<byte[]?> MergeVectorTileAsync(
-        ITileProvider tileProvider,
-        TileRequestLayer[] layers,
-        int tileCol,
-        int tileRow,
-        int zoomLevel,
-        bool isGeographic,
-        TemporalFilter? temporalFilter,
-        TileOptions tileOptionsValue,
-        TileLimits tileLimits,
-        CancellationToken cancellationToken,
-        GridGeometry? gridGeometry = null)
-    {
-        List<byte[]>? tileParts = null;
-        var totalLength = 0;
-
-        foreach (var layer in layers)
-        {
-            var query = CreateVectorTileQuery(
-                layer.SpatialReferenceSrid,
-                isGeographic,
-                temporalFilter: temporalFilter,
-                gridGeometry: gridGeometry);
-            var tileData = await tileProvider.GetMvtTileAsync(
-                layer.StorageLayerId,
-                tileCol,
-                tileRow,
-                zoomLevel,
-                query,
-                tileOptionsValue,
-                tileLimits,
-                gridGeometry,
-                cancellationToken);
-
-            if (tileData == null || tileData.Length == 0)
-            {
-                continue;
-            }
-
-            tileParts ??= new List<byte[]>(layers.Length);
-            tileParts.Add(tileData);
-            totalLength += tileData.Length;
-        }
-
-        if (tileParts is null || tileParts.Count == 0)
-        {
-            return null;
-        }
-
-        if (tileParts.Count == 1)
-        {
-            return tileParts[0];
-        }
-
-        var merged = new byte[totalLength];
-        var offset = 0;
-        foreach (var tilePart in tileParts)
-        {
-            Buffer.BlockCopy(tilePart, 0, merged, offset, tilePart.Length);
-            offset += tilePart.Length;
-        }
-
-        return merged;
     }
 
     private static FeatureQuery CreateVectorTileQuery(
