@@ -145,6 +145,10 @@ internal static class StudioPackageEndpoints
         string kind,
         Guid id,
         [FromServices] IStudioDeliverableExporter exporter,
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioAuthorizationService authorizationService,
+        [FromServices] IAuditLog auditLog,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
     {
@@ -174,6 +178,52 @@ internal static class StudioPackageEndpoints
 
         try
         {
+            // honua-server#3001: widening the /studio group also widened this export route --
+            // rendering by item id with no ownership check would let any authenticated non-admin
+            // export another principal's private map/dashboard/report by id. Decision (documented
+            // here and in docs/internal/admin-api/studio-package-lifecycle.md#authorization): a
+            // non-owner may only ever export the item's published version, never "latest" (which
+            // resolves by highest version number and could be newer, unpublished content) and
+            // never an explicit non-published versionId -- so the target version is pinned to the
+            // published pointer before the exporter ever runs, rather than trusted from the query
+            // string or the exporter's own "latest" default.
+            var pointers = await service.GetPointersAsync(id, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorizationService, auditLog, timeProvider, context,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                resourceType: "studio-content-item", resourceId: id.ToString("D"),
+                isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            if (!IsOwnerOrAdmin(authorizationService, context, pointers.OwnerId))
+            {
+                if (pointers.PublishedVersionId is not { } publishedVersionId)
+                {
+                    return Forbidden(
+                        context,
+                        "The caller does not own this Studio content item and it has no published version.",
+                        "studio_authorization/cross_user_denied");
+                }
+
+                if (versionId is { } requestedVersionId && requestedVersionId != publishedVersionId)
+                {
+                    return Forbidden(
+                        context,
+                        "The caller may only export this Studio content item's published version.",
+                        "studio_authorization/cross_user_denied");
+                }
+
+                versionId = publishedVersionId;
+            }
+
             var result = await exporter.ExportAsync(
                 family,
                 id,
@@ -963,6 +1013,32 @@ internal static class StudioPackageEndpoints
         return authorizationService.ResolveCallerId(context.User);
     }
 
+    /// <summary>
+    /// Returns whether the caller is the admin or the resource's recorded owner (honua-server#3001).
+    /// Distinct from <see cref="EnsureAuthorizedAsync"/>'s allow/deny outcome: a caller can be
+    /// authorized to reach a resource without being its owner (public-read visibility, an
+    /// elevated delegate grant), and some responses -- content-version listing, deliverable
+    /// export -- must additionally narrow their payload/target in exactly that case.
+    /// </summary>
+    private static bool IsOwnerOrAdmin(
+        IStudioAuthorizationService authorizationService,
+        HttpContext context,
+        string? resourceOwnerId)
+    {
+        if (authorizationService.IsAdmin(context.User))
+        {
+            return true;
+        }
+
+        if (resourceOwnerId is null)
+        {
+            return true;
+        }
+
+        var callerId = authorizationService.ResolveCallerId(context.User);
+        return string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
+    }
+
     private static int ClampListLimit(int requested)
         => Math.Clamp(requested <= 0 ? 25 : requested, 1, MaxListLimit);
 
@@ -1067,6 +1143,7 @@ internal static class StudioPackageEndpoints
             // hide (the list is empty either way), so the ownership check only runs when the
             // item actually exists.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            var isOwnerOrAdmin = true;
             if (pointers is not null)
             {
                 var authResult = await EnsureAuthorizedAsync(
@@ -1078,9 +1155,22 @@ internal static class StudioPackageEndpoints
                 {
                     return authResult;
                 }
+
+                isOwnerOrAdmin = IsOwnerOrAdmin(authorizationService, context, pointers.OwnerId);
             }
 
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+
+            // honua-server#3001: a published pointer only admits a non-owner into this endpoint
+            // at all (via isPubliclyReadable above) -- it must not expose the item's entire
+            // immutable history. Filter the response down to the single published version for
+            // every caller who isn't the owner (or admin); GetVersion is already scoped
+            // identically (isPubliclyReadable requires versionId == PublishedVersionId).
+            if (!isOwnerOrAdmin && pointers?.PublishedVersionId is { } publishedVersionId)
+            {
+                versions = versions.Where(v => v.VersionId == publishedVersionId).ToArray();
+            }
+
             return Results.Json(
                 ApiResponse<StudioContentVersionListResponse>.CreateSuccess(new StudioContentVersionListResponse
                 {

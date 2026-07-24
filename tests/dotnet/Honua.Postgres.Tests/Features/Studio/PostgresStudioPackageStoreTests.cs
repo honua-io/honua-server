@@ -485,10 +485,13 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         // All segments after `root` are fixed literals and can never be rooted, so Path.Combine
         // cannot drop earlier segments here (cs/path-combine false positive). Migration 090 adds
         // studio_content_items.owner_id (honua-server#3001); migration 089 adds the enumeration
-        // indexes it's applied alongside for parity with the real deployment sequence.
+        // indexes it's applied alongside for parity with the real deployment sequence, including
+        // an index on content_publication_versions -- so migration 036 (which creates that
+        // table) must run first, or 089 fails with "relation ... does not exist".
         foreach (var migrationFile in new[]
                  {
                      "035_CreateStudioPackageLifecycle.sql",
+                     "036_CreateContentPublications.sql",
                      "089_AddStudioContentEnumerationIndexes.sql",
                      "090_AddStudioContentItemOwner.sql",
                  })

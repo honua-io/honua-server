@@ -379,20 +379,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // see ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult -- authenticate
         // as role "scoped-api-key", never "admin") against a host with
         // Studio:EndUserAuthorization:Enabled=true.
-        await using var endUserFixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IStudioPackageStore>();
-                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-            });
-        await endUserFixture.InitializeAsync();
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
 
         var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
@@ -480,6 +467,306 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var response = await scopedClient.GetAsync($"/api/v1/studio/package-drafts/{Guid.NewGuid():D}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    public async Task AdminReadOnlyKey_CanReadButNotMutateStudio()
+    {
+        // PR #3018 review: the StudioLifecycle policy replaced RequireAdminAuthorization() for
+        // this group, and must preserve the scoped admin-permission boundary that gate enforced
+        // (#1985) -- an admin:read-scoped key is still stamped with the admin role (it carries an
+        // admin: grant) and must keep read access while losing write, exactly as it could not
+        // mutate any other admin-gated surface. This runs against the class fixture (flag off),
+        // matching NFR-001's "byte-identical, including scoped-key denial semantics".
+        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var readOnlyKey = await apiKeyStore.CreateAsync("read-only-admin", ["admin:read"], null, null, CancellationToken.None);
+        using var readOnlyClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", readOnlyKey.Key));
+
+        var readResponse = await readOnlyClient.GetAsync("/api/v1/studio/package-families");
+        readResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var writeResponse = await readOnlyClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = "admin-read-only-query",
+                    WorkspaceId = "studio",
+                    Envelope = BuildEnvelope("1=1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        writeResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
+    public async Task ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion()
+    {
+        // PR #3018 review: a published pointer must not open the item's entire immutable
+        // history to a non-owner. Alice's item has two saved versions; only the first is
+        // published. Bob (non-owner) must see exactly the published version in the list and
+        // must be able to fetch it by id, but must be denied the second (current, unpublished)
+        // version both by id and via the list.
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = endUserFixture.CreateAdminClient();
+        using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        // Admin provisions the item on Alice's behalf and publishes the first version itself
+        // (admin bypasses the elevated publish-request grant gate; Alice holds no StudioDraft
+        // grant in this fixture) so the fixture only exercises the read-visibility boundary
+        // under test here, not the elevated tier already covered above.
+        var ownerId = aliceKey.Record.Id.ToString("D");
+        var (itemId, publishedVersionId, currentVersionId) = await CreatePublishedTwoVersionItemAsync(adminClient, ownerId);
+
+        var bobListResponse = await bobClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
+        bobListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bobVersions = await ReadAsync<StudioContentVersionListResponse>(
+            bobListResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
+        bobVersions.Versions.Should().ContainSingle(v => v.VersionId == publishedVersionId);
+        bobVersions.Versions.Should().NotContain(v => v.VersionId == currentVersionId);
+
+        var bobGetPublishedResponse = await bobClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions/{publishedVersionId:D}");
+        bobGetPublishedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var bobGetCurrentResponse = await bobClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions/{currentVersionId:D}");
+        bobGetCurrentResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // The owner (Alice) still sees the full history via both the list and get-by-id.
+        using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        var aliceListResponse = await aliceClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
+        aliceListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var aliceVersions = await ReadAsync<StudioContentVersionListResponse>(
+            aliceListResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
+        aliceVersions.Versions.Should().HaveCount(2);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_FlagOn_OwnerCanExportTheCurrentUnpublishedVersion()
+    {
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = endUserFixture.CreateAdminClient();
+        using var aliceClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+
+        var ownerId = aliceKey.Record.Id.ToString("D");
+        var (itemId, _, currentVersionId) = await CreatePublishedTwoVersionMapItemAsync(adminClient, ownerId);
+
+        // The owner can export the current, unpublished-beyond version explicitly -- ownership
+        // grants full access, not just the published pointer.
+        var response = await aliceClient.PostAsync(
+            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}",
+            EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Take(PngMagic.Length).Should().Equal(PngMagic);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_FlagOn_NonOwnerCanExportOnlyThePublishedVersion()
+    {
+        // PR #3018 review, decision (documented in
+        // docs/internal/admin-api/studio-package-lifecycle.md#authorization): a non-owner may
+        // export a Studio content item's *published* version -- deliverable export mirrors the
+        // read-visibility boundary above -- but never "latest" (which resolves by highest
+        // version number and could be newer, unpublished content) and never an explicit
+        // non-published version id.
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = endUserFixture.CreateAdminClient();
+        using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        var ownerId = aliceKey.Record.Id.ToString("D");
+        var (itemId, publishedVersionId, currentVersionId) = await CreatePublishedTwoVersionMapItemAsync(adminClient, ownerId);
+
+        // No versionId supplied: pinned server-side to the published version rather than
+        // trusting the exporter's own "latest by version number" default.
+        var defaultResponse = await bobClient.PostAsync($"/api/v1/studio/map/{itemId:D}/export?format=png", EmptyJson());
+        defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var defaultBytes = await defaultResponse.Content.ReadAsByteArrayAsync();
+        defaultBytes.Take(PngMagic.Length).Should().Equal(PngMagic);
+
+        // Explicitly requesting the published version succeeds the same authorization check.
+        var explicitPublishedResponse = await bobClient.PostAsync(
+            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={publishedVersionId:D}",
+            EmptyJson());
+        explicitPublishedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Explicitly requesting the current (unpublished-beyond) version is denied.
+        var explicitCurrentResponse = await bobClient.PostAsync(
+            $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}",
+            EmptyJson());
+        explicitCurrentResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var explicitCurrentProblem = JsonSerializer.Deserialize<JsonElement>(await explicitCurrentResponse.Content.ReadAsStringAsync());
+        explicitCurrentProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_FlagOn_NonOwnerDeniedWhenItemHasNoPublishedVersion()
+    {
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = endUserFixture.CreateAdminClient();
+        using var bobClient = endUserFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        var ownerId = aliceKey.Record.Id.ToString("D");
+        var createResponse = await adminClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = "unpublished-export-map",
+                    WorkspaceId = "studio",
+                    OwnerId = ownerId,
+                    Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(createResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        var saveResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "never published" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var version = await ReadAsync<StudioContentVersion>(saveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        var response = await bobClient.PostAsync($"/api/v1/studio/map/{version.ItemId:D}/export?format=png", EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        problem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+    }
+
+    /// <summary>
+    /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
+    /// on and the in-memory Studio store, for the honua-server#3001 end-user role-fixture tests.
+    /// </summary>
+    private static async Task<WebAppFixture> CreateEndUserFixtureAsync()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IStudioPackageStore>();
+                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+            });
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    /// <summary>
+    /// Creates a Studio content item owned by <paramref name="ownerId"/> with two saved
+    /// versions, publishing only the first, via <paramref name="adminClient"/> (admin bypasses
+    /// the elevated publish-request operator-grant gate, so this setup helper does not need the
+    /// owner to hold a StudioDraft grant). Returns
+    /// <c>(itemId, publishedVersionId, currentUnpublishedVersionId)</c>.
+    /// </summary>
+    private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionItemAsync(
+        HttpClient adminClient,
+        string ownerId)
+        => await CreatePublishedTwoVersionItemAsync(adminClient, ownerId, BuildEnvelope("1=1"), "owner-scoped-query");
+
+    /// <summary>
+    /// Map-family variant of <see cref="CreatePublishedTwoVersionItemAsync(HttpClient, string)"/>
+    /// for the deliverable-export tests, which need a family the exporter can actually render
+    /// (kind must match family) <em>and</em> a body that satisfies
+    /// <c>StudioPackageValidator</c>'s strict <c>MapPackage</c> deserialization for the publish
+    /// request to be Accepted (required members: <c>mapPackageId</c>, <c>format</c>,
+    /// <c>status</c>, <c>createdAt</c>) -- the lighter body <see cref="BuildDeliverableEnvelope"/>
+    /// uses elsewhere in this file is fine for the composer (title/description/layers/basemap)
+    /// but throws during that stricter deserialization, which the plain export round-trip tests
+    /// never exercise (they never publish).
+    /// </summary>
+    private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionMapItemAsync(
+        HttpClient adminClient,
+        string ownerId)
+        => await CreatePublishedTwoVersionItemAsync(adminClient, ownerId, BuildExportableMapEnvelope(), "owner-scoped-map");
+
+    private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionItemAsync(
+        HttpClient adminClient,
+        string ownerId,
+        StudioPackageEnvelope envelope,
+        string packageKeyPrefix)
+    {
+        var createResponse = await adminClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = $"{packageKeyPrefix}-{Guid.NewGuid():N}",
+                    WorkspaceId = "studio",
+                    OwnerId = ownerId,
+                    Envelope = envelope,
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(createResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var firstSaveResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "v1" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        firstSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var v1 = await ReadAsync<StudioContentVersion>(firstSaveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        var publishResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/content-items/{v1.ItemId:D}/versions/{v1.VersionId:D}/publish-requests",
+            JsonContent(new CreateStudioPublicationRequest(), StudioApiJsonContext.Default.CreateStudioPublicationRequest));
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var publication = await ReadAsync<StudioPublicationRequest>(publishResponse, StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        publication.Status.Should().Be(
+            StudioPublicationRequestStatus.Accepted,
+            "a Rejected publication request never sets the item's publishedVersionId pointer: " + string.Join(
+                "; ", v1.Validation.Diagnostics.Select(d => $"{d.Severity}:{d.Code}:{d.Message}")));
+
+        // Re-fetch the draft: SaveDraftAsVersionAsync revalidates and persists it as a side
+        // effect of saving (bumping its generation), so draft.Generation captured at create time
+        // is now stale.
+        var refreshedDraftResponse = await adminClient.GetAsync($"/api/v1/studio/package-drafts/{draft.DraftId:D}");
+        refreshedDraftResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var refreshedDraft = await ReadAsync<StudioPackageDraft>(refreshedDraftResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var updateResponse = await adminClient.PutAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}",
+            JsonContent(
+                new UpdateStudioPackageDraftRequest
+                {
+                    PackageKey = refreshedDraft.PackageKey,
+                    WorkspaceId = refreshedDraft.WorkspaceId,
+                    OwnerId = ownerId,
+                    Envelope = envelope,
+                    Generation = refreshedDraft.Generation,
+                },
+                StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest));
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await ReadAsync<StudioPackageDraft>(updateResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var secondSaveResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{updated.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "v2" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        secondSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var v2 = await ReadAsync<StudioContentVersion>(secondSaveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        return (v1.ItemId, v1.VersionId, v2.VersionId);
     }
 
     [IntegrationTest]
@@ -780,6 +1067,42 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             Family = family,
             SchemaVersion = "1.0",
             Format = format,
+            Body = body.RootElement.Clone(),
+        };
+    }
+
+    /// <summary>
+    /// A map envelope whose body satisfies both <c>StudioDeliverableComposer</c> (which
+    /// reads <c>title</c>/<c>description</c>/<c>layers</c>/<c>basemap</c> loosely) and
+    /// <c>StudioPackageValidator</c>'s <c>ValidateFamilyBody</c>, which deserializes the body
+    /// strictly into the geoprocessing <c>MapPackage</c> record (required:
+    /// <c>mapPackageId</c>/<c>format</c>/<c>status</c>/<c>createdAt</c>) -- unlike
+    /// <see cref="BuildDeliverableEnvelope"/>'s body, which is fine for the composer but throws
+    /// during that stricter deserialization, producing a Rejected (not Accepted) publication
+    /// request. Needed by the honua-server#3001 end-user export-authorization tests, which
+    /// (unlike the plain export round-trip tests above) must publish the item.
+    /// </summary>
+    private static StudioPackageEnvelope BuildExportableMapEnvelope()
+    {
+        const string bodyJson = """
+            {
+              "mapPackageId": "deliverable-map",
+              "format": "honua_map_package.v1",
+              "status": "Ready",
+              "createdAt": "2026-01-01T00:00:00Z",
+              "title": "Parcels Overview",
+              "description": "Parcel coverage map.",
+              "layers": [{"title":"Parcels"},{"title":"Roads"}],
+              "basemap": "streets"
+            }
+            """;
+
+        using var body = JsonDocument.Parse(bodyJson);
+        return new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.Map,
+            SchemaVersion = "1.0",
+            Format = "honua_map_package.v1",
             Body = body.RootElement.Clone(),
         };
     }

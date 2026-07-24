@@ -74,6 +74,28 @@ With the flag on:
   regardless of ownership. Cross-user access to a non-owned, non-published
   resource is denied by default. No operator grant is required for the baseline
   tier — the flag itself is the widening switch (REQ-002).
+- **Version visibility is per-version, not per-item.** A published pointer on an
+  item does not open its entire immutable history: `GET
+  /content-items/{itemId}/versions` filters the response to exactly the
+  published version for a non-owner (the owner and admin still see every saved
+  version), and `GET .../versions/{versionId}` denies any version id other than
+  the published one for a non-owner. Publishing one version never makes a
+  newer/current or older unpublished version readable to other users.
+- **Deliverable export** (`POST /{kind}/{id}/export`) follows the same
+  ownership/publication boundary as reads. Decision: a non-owner may export a
+  content item's *published* version — export mirrors the read-visibility rule
+  above — but never "latest" (the exporter's own default resolves by highest
+  version number, which can be newer, unpublished content) and never an
+  explicit non-published `versionId`; the target version is pinned to the
+  published pointer server-side before the exporter runs rather than trusted
+  from the query string. An item with no published version is not exportable by
+  a non-owner at all.
+- **Admin permission scoping is preserved.** Widening this policy beyond
+  admin-only did not drop the pre-existing scoped-admin-key boundary (#1985): an
+  `admin:read`-only API key is still admin-role but keeps read-only access —
+  every mutating Studio request (POST/PUT/DELETE) is denied for it — exactly as
+  it was denied on every other admin-gated surface before honua-server#3001,
+  independent of the end-user flag.
 - **Elevated tier** — publish-request and rollback: always policy-gated, even for
   the resource's own owner (REQ-003). The caller must additionally hold a
   matching `StudioDraft` operator grant (`Publish` or `Rollback` operation)

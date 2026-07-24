@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Studio;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
@@ -26,10 +27,12 @@ internal sealed class StudioLifecycleRequirement : IAuthorizationRequirement;
 /// </summary>
 internal sealed class StudioLifecycleAuthorizationHandler(
     IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
+    IHttpContextAccessor httpContextAccessor,
     ILogger<StudioLifecycleAuthorizationHandler> logger)
     : AuthorizationHandler<StudioLifecycleRequirement>
 {
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options = options;
+    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<StudioLifecycleAuthorizationHandler> _logger = logger;
 
     /// <inheritdoc />
@@ -39,7 +42,25 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     {
         if (context.User.IsInRole("admin"))
         {
-            context.Succeed(requirement);
+            // Preserve the scoped admin-permission boundary this policy replaced (#1985): the
+            // prior RequireAdminAuthorization() gate for this group also ran
+            // AdminPermissionRequirement, so an admin:read-scoped key could read but never
+            // mutate Studio resources. Widening this policy to admit non-admin end users below
+            // must not silently drop that check for admin-tier callers -- enforce the identical
+            // method-scoped grant here, unconditionally and independent of the end-user flag
+            // (admin behavior must stay byte-for-byte unchanged; see AdminPermissionAuthorizationHandler,
+            // whose requirement this policy previously ran via RequireAdminAuthorization()).
+            var httpContext = context.Resource as HttpContext ?? _httpContextAccessor.HttpContext;
+            var method = httpContext?.Request.Method;
+            if (AdminApiKeyPermission.IsAuthorized(context.User, method))
+            {
+                context.Succeed(requirement);
+            }
+            else
+            {
+                AuthenticationLog.ScopedAdminKeyDenied(_logger, method ?? "(unknown)");
+            }
+
             return Task.CompletedTask;
         }
 
