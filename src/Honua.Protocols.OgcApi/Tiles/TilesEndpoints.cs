@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -21,6 +22,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Api.Tiles.Models;
+using Honua.Protocols.Ogc.Api.Tiles.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -459,6 +461,13 @@ internal static partial class TilesEndpoints
         IOptions<LimitsOptions> limitsOptions,
         ITileMatrixSetRegistry tileMatrixSetRegistry)
     {
+        // Resolved from the request container rather than taken as a formal parameter
+        // (honua-server#2962): this method and its callers are already at the
+        // architecture-enforced endpoint injected-parameter ceiling (DependencyInjectionLimitsTests),
+        // and FeatureProviderQueryRouter is optional (null in hosts/tests that never register a
+        // secondary/additional provider), matching the DI-optional pattern already used for
+        // OData/OGC API Features provider routing.
+        var providerQueryRouter = context.RequestServices.GetService<FeatureProviderQueryRouter>();
         var request = context.Request;
         var validationError = OgcCommonUtilities.ValidateQueryParameters(request, allowedQueryParameters);
         if (validationError is not null)
@@ -624,12 +633,14 @@ internal static partial class TilesEndpoints
                         renderContext,
                         GetTemporalFilterForLayer(layer, temporalFilters),
                         GetVerticalSelectionForLayer(layer, verticalSelections),
+                        providerQueryRouter,
                         cancellationToken)
                     : await HandleDatasetRasterTileAsync(
                         context,
                         layers,
                         renderContext,
                         temporalFilters,
+                        providerQueryRouter,
                         cancellationToken);
             }
 
@@ -649,10 +660,17 @@ internal static partial class TilesEndpoints
                 activity?.SetTag("honua.tile.vertical_selection", vectorVerticalSelection.RawValue);
             }
 
+            var (resolvedTileProvider, tileProviderError) = await ResolveTileProviderAsync(
+                context, layer, tileProvider, providerQueryRouter, cancellationToken).ConfigureAwait(false);
+            if (tileProviderError is not null)
+            {
+                return tileProviderError;
+            }
+
             return layers.Length == 1
                 ? await VectorTileExecution.ExecuteAsync(
                     context,
-                    tileProvider,
+                    resolvedTileProvider!,
                     layer.StorageLayerId,
                     tileCol,
                     tileRow,
@@ -670,7 +688,7 @@ internal static partial class TilesEndpoints
                     gridGeometry: vectorGridGeometry)
                 : await ExecuteDatasetVectorTileAsync(
                     context,
-                    tileProvider,
+                    resolvedTileProvider!,
                     layers,
                     tileCol,
                     tileRow,
@@ -714,6 +732,7 @@ internal static partial class TilesEndpoints
         RasterTileRenderContext renderContext,
         TemporalFilter? temporalFilter,
         VerticalSelection? verticalSelection,
+        FeatureProviderQueryRouter? providerQueryRouter,
         CancellationToken cancellationToken)
     {
         var bounds = renderContext.Bounds;
@@ -733,7 +752,9 @@ internal static partial class TilesEndpoints
 
         var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var featureReader = await ResolveFeatureReaderAsync(
+            layer, context.RequestServices.GetRequiredService<IFeatureReader>(), providerQueryRouter, cancellationToken)
+            .ConfigureAwait(false);
         var featureQuery = new FeatureQuery
         {
             SpatialFilter = spatialFilter,
@@ -819,6 +840,7 @@ internal static partial class TilesEndpoints
         TileRequestLayer[] layers,
         RasterTileRenderContext renderContext,
         IReadOnlyDictionary<int, TemporalFilter?> temporalFilters,
+        FeatureProviderQueryRouter? providerQueryRouter,
         CancellationToken cancellationToken)
     {
         var bounds = renderContext.Bounds;
@@ -828,7 +850,7 @@ internal static partial class TilesEndpoints
         var activity = renderContext.Activity;
 
         var spatialFilter = CreateBboxSpatialFilter(bounds, filterSrid);
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var fallbackFeatureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var renderedLayers = new List<TileRenderer.TileRenderLayer>(layers.Length);
         var remainingBudget = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000;
         var totalFeatureCount = 0;
@@ -840,6 +862,11 @@ internal static partial class TilesEndpoints
                 break;
             }
 
+            // Routed per layer (#2962): a multi-collection dataset raster tile request can mix
+            // primary- and secondary-provider-backed collections, so each layer's reader must be
+            // resolved independently rather than sharing one DI-registered primary reader.
+            var featureReader = await ResolveFeatureReaderAsync(
+                layer, fallbackFeatureReader, providerQueryRouter, cancellationToken).ConfigureAwait(false);
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
@@ -1603,7 +1630,62 @@ internal static partial class TilesEndpoints
             resource.Metadata.Description,
             resource,
             publication,
-            service);
+            service,
+            snapshot);
+    }
+
+    /// <summary>
+    /// Resolves the feature reader used for raster (PNG) tile rendering through
+    /// <see cref="TileFeatureProviderResolver"/> (honua-server#2962), so a layer whose
+    /// storage binding names a secondary/additional provider connection is rendered from
+    /// that provider rather than the DI-registered primary reader.
+    /// </summary>
+    private static async Task<IFeatureReader> ResolveFeatureReaderAsync(
+        TileRequestLayer layer,
+        IFeatureReader fallbackReader,
+        FeatureProviderQueryRouter? providerQueryRouter,
+        CancellationToken cancellationToken)
+        => await new TileFeatureProviderResolver(providerQueryRouter).ResolveFeatureReaderAsync(
+            layer.Snapshot,
+            layer.Service,
+            layer.Resource,
+            layer.Publication,
+            layer.StorageLayerId,
+            fallbackReader,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Resolves the tile provider used for vector (MVT) tile rendering through
+    /// <see cref="TileFeatureProviderResolver"/> (honua-server#2962). When routing resolves to
+    /// a provider that does not implement <see cref="ITileProvider"/>, this returns a 501
+    /// problem response naming the collection/provider rather than silently falling back to
+    /// the DI-registered primary tile provider.
+    /// </summary>
+    private static async Task<(ITileProvider? Provider, IResult? Error)> ResolveTileProviderAsync(
+        HttpContext context,
+        TileRequestLayer layer,
+        ITileProvider fallbackProvider,
+        FeatureProviderQueryRouter? providerQueryRouter,
+        CancellationToken cancellationToken)
+    {
+        var resolution = await new TileFeatureProviderResolver(providerQueryRouter).ResolveTileProviderAsync(
+            layer.Snapshot,
+            layer.Service,
+            layer.Resource,
+            layer.Publication,
+            layer.StorageLayerId,
+            fallbackProvider,
+            cancellationToken).ConfigureAwait(false);
+
+        if (resolution.Provider is not null)
+        {
+            return (resolution.Provider, null);
+        }
+
+        return (null, StandardErrorHelpers.CreateNotImplemented(
+            context,
+            $"Collection '{layer.CollectionId}' is backed by data provider '{resolution.UnsupportedProviderName}', " +
+            "which does not support vector tile generation."));
     }
 
     private static string ResolveCollectionId(MetadataV2Publication publication, MetadataV2Resource resource)
@@ -1918,7 +2000,8 @@ internal static partial class TilesEndpoints
         string? Description,
         MetadataV2Resource Resource,
         MetadataV2Publication Publication,
-        MetadataV2Service Service)
+        MetadataV2Service Service,
+        MetadataV2GraphSnapshot Snapshot)
     {
         public int SpatialReferenceSrid => Resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
