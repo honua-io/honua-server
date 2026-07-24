@@ -8641,6 +8641,7 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_SuggestedBatchSize_ReflectsProviderMaxBatchSize",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_SuggestedBatchSize_VariesByProvider",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.GeocodeServerMetadata_WhenGeocodingDisabled_Returns404",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.GeocodeServerMetadata_WithEnterpriseEntitlement_AdvertisesBatch",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.GeocodeServerMetadata_WithoutAnyLicense_Succeeds"
       ],
       "proof_ledger_surface": "geocode-server",
@@ -8676,6 +8677,7 @@
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_AllProvidersFail_ReturnsError",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_PrimaryFails_FallsBackToSecondary",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_ReturnsBadRequest_WhenExplicitProviderNotFound",
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ForwardGeocode_WithoutPro_DoesNotFailOverToSecondary",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.SuggestThenFindAddressCandidates_WithMagicKey_RoundTripsDeterministically",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEntitlementGateTests.ForwardGeocode_WithoutAnyLicense_Succeeds"
       ],
