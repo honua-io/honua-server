@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
@@ -30,6 +31,7 @@ namespace Honua.Server.Tests.Features.Studio;
 [Operation(Operations.StudioLifecycle)]
 public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 {
+    private readonly CapturingAuditLog _auditLog = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -53,6 +55,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 // PostgresContentPublicationStoreTests.
                 services.RemoveAll<IContentPublicationStore>();
                 services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
+                services.RemoveAll<IAuditLog>();
+                services.AddSingleton<IAuditLog>(_auditLog);
             });
     }
 
@@ -467,7 +471,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var scopedKey = await apiKeyStore.CreateAsync("carol", ["studio:enduser"], null, null, CancellationToken.None);
         using var scopedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
 
-        var response = await scopedClient.GetAsync($"/api/v1/studio/package-drafts/{Guid.NewGuid():D}");
+        var requestPath = $"/api/v1/studio/package-drafts/{Guid.NewGuid():D}";
+        var response = await scopedClient.GetAsync(requestPath);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
@@ -476,6 +481,18 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         problem.GetProperty("title").GetString().Should().Be("Forbidden");
         problem.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.Forbidden);
         problem.GetProperty("code").GetString().Should().Be("studio_authorization/end_user_mode_disabled");
+
+        var auditEvent = _auditLog.Events
+            .Should()
+            .ContainSingle(evt => evt.Action == "studio.lifecycle" && evt.ResourceId == requestPath)
+            .Subject;
+        auditEvent.EventType.Should().Be(AuditEventType.Authorization);
+        auditEvent.Actor.Should().Be(scopedKey.Record.Id.ToString("D"));
+        auditEvent.ActorType.Should().Be(AuditActorType.ApiKey);
+        auditEvent.ResourceType.Should().Be("studio");
+        auditEvent.Outcome.Should().Be(AuditOutcome.Denied);
+        auditEvent.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        auditEvent.Details.Should().Be("""{"code":"studio_authorization/end_user_mode_disabled"}""");
     }
 
     [IntegrationTest]
@@ -1543,6 +1560,17 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
+    }
+
+    private sealed class CapturingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            return Task.CompletedTask;
+        }
     }
 }
 

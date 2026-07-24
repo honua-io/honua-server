@@ -2,13 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Services;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
@@ -145,6 +148,7 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
 
         if (isEndUserModeDisabled)
         {
+            await RecordEndUserModeDisabledAuditAsync(context).ConfigureAwait(false);
             await ProblemDetailsHelpers.CreateProblem(
                 context,
                 StudioProblemType,
@@ -156,5 +160,33 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
         }
 
         await _fallback.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+    }
+
+    private static Task RecordEndUserModeDisabledAuditAsync(HttpContext context)
+    {
+        var auditLog = context.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var timeProvider = context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+        var auditEvent = new AuditEvent
+        {
+            Timestamp = timeProvider.GetUtcNow(),
+            EventType = AuditEventType.Authorization,
+            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            ActorType = actorType,
+            ResourceType = "studio",
+            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
+            Action = "studio.lifecycle",
+            Outcome = AuditOutcome.Denied,
+            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+            UserAgent = AuditContextResolver.ResolveUserAgent(context),
+            Details = """{"code":"studio_authorization/end_user_mode_disabled"}""",
+        };
+
+        return auditLog.RecordAsync(auditEvent, context.RequestAborted);
     }
 }
