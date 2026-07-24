@@ -12,9 +12,12 @@ namespace Honua.Core.Features.Studio.Services;
 /// </summary>
 public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 {
+    private const int DefaultListLimit = 25;
+    private const int MaxListLimit = 200;
+
     private readonly object _gate = new();
     private readonly Dictionary<Guid, StudioPackageDraft> _drafts = new();
-    private readonly Dictionary<Guid, StudioContentItemState> _items = new();
+    private readonly Dictionary<Guid, StudioContentItemRecord> _items = new();
     private readonly Dictionary<Guid, List<StudioContentVersion>> _versionsByItem = new();
     private readonly Dictionary<Guid, StudioPublicationRequest> _publicationRequests = new();
     private readonly Dictionary<Guid, StudioRollbackRequest> _rollbackRequests = new();
@@ -95,7 +98,26 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
-            return Task.FromResult(_drafts.Remove(draftId));
+            if (!_drafts.TryGetValue(draftId, out var draft))
+            {
+                return Task.FromResult(false);
+            }
+
+            _drafts.Remove(draftId);
+
+            // Cascade-delete an orphan content item: if this was the item's last remaining
+            // draft and no version has ever been saved for it, the item has nothing openable
+            // (no draft, no version) and must not surface in content-item enumeration (#3003).
+            if (_items.TryGetValue(draft.ItemId, out var item) &&
+                item.CurrentVersionId is null &&
+                item.PublishedVersionId is null &&
+                !_drafts.Values.Any(d => d.ItemId == draft.ItemId))
+            {
+                _items.Remove(draft.ItemId);
+                _versionsByItem.Remove(draft.ItemId);
+            }
+
+            return Task.FromResult(true);
         }
     }
 
@@ -187,6 +209,180 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 : null);
         }
     }
+
+    /// <inheritdoc />
+    public Task<StudioContentItemListResult> ListContentItemsAsync(
+        StudioContentItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        var limit = ClampLimit(query.Limit);
+
+        lock (_gate)
+        {
+            var matched = _items.Values.Where(item => MatchesItemQuery(item, query)).ToList();
+            var total = matched.Count;
+            IEnumerable<StudioContentItemRecord> ordered = matched
+                .OrderByDescending(static item => item.UpdatedAt)
+                .ThenByDescending(static item => item.ItemId);
+
+            if (StudioListCursor.TryDecode(query.Cursor, out var cursorUpdatedAt, out var cursorId))
+            {
+                ordered = ordered.Where(item =>
+                    item.UpdatedAt < cursorUpdatedAt
+                    || (item.UpdatedAt == cursorUpdatedAt && item.ItemId.CompareTo(cursorId) < 0));
+            }
+
+            var page = ordered.Take(limit + 1).ToList();
+            string? nextCursor = null;
+            if (page.Count > limit)
+            {
+                var lastKept = page[limit - 1];
+                page.RemoveAt(page.Count - 1);
+                nextCursor = StudioListCursor.Encode(lastKept.UpdatedAt, lastKept.ItemId);
+            }
+
+            IReadOnlyList<StudioContentItemSummary> items = page.Select(ToSummary).ToArray();
+            return Task.FromResult(new StudioContentItemListResult
+            {
+                Items = items,
+                Total = total,
+                NextCursor = nextCursor,
+            });
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<StudioPackageDraftListResult> ListDraftsAsync(
+        StudioPackageDraftQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        var limit = ClampLimit(query.Limit);
+
+        lock (_gate)
+        {
+            var matched = _drafts.Values.Where(draft => MatchesDraftQuery(draft, query)).ToList();
+            var total = matched.Count;
+            IEnumerable<StudioPackageDraft> ordered = matched
+                .OrderByDescending(static draft => draft.UpdatedAt)
+                .ThenByDescending(static draft => draft.DraftId);
+
+            if (StudioListCursor.TryDecode(query.Cursor, out var cursorUpdatedAt, out var cursorId))
+            {
+                ordered = ordered.Where(draft =>
+                    draft.UpdatedAt < cursorUpdatedAt
+                    || (draft.UpdatedAt == cursorUpdatedAt && draft.DraftId.CompareTo(cursorId) < 0));
+            }
+
+            var page = ordered.Take(limit + 1).ToList();
+            string? nextCursor = null;
+            if (page.Count > limit)
+            {
+                var lastKept = page[limit - 1];
+                page.RemoveAt(page.Count - 1);
+                nextCursor = StudioListCursor.Encode(lastKept.UpdatedAt, lastKept.DraftId);
+            }
+
+            IReadOnlyList<StudioPackageDraft> items = page;
+            return Task.FromResult(new StudioPackageDraftListResult
+            {
+                Items = items,
+                Total = total,
+                NextCursor = nextCursor,
+            });
+        }
+    }
+
+    private static int ClampLimit(int requested)
+        => requested <= 0 ? DefaultListLimit : Math.Min(requested, MaxListLimit);
+
+    private static bool MatchesItemQuery(StudioContentItemRecord item, StudioContentItemQuery query)
+    {
+        if (query.Families is { Count: > 0 } families && !families.Contains(item.Family))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.WorkspaceId) &&
+            !string.Equals(item.WorkspaceId ?? string.Empty, query.WorkspaceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // See StudioContentItemQuery.OwnerId: filters on the item's creator until
+        // honua-server#3001 introduces dedicated per-item ownership.
+        if (!string.IsNullOrWhiteSpace(query.OwnerId) &&
+            !string.Equals(item.CreatedBy ?? string.Empty, query.OwnerId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (query.States is { Count: > 0 } states && !states.Contains(ResolveState(item.CurrentVersionId, item.PublishedVersionId)))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchTerm) &&
+            !item.PackageKey.Contains(query.SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool MatchesDraftQuery(StudioPackageDraft draft, StudioPackageDraftQuery query)
+    {
+        if (query.Families is { Count: > 0 } families && !families.Contains(draft.Family))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.WorkspaceId) &&
+            !string.Equals(draft.WorkspaceId ?? string.Empty, query.WorkspaceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.OwnerId) &&
+            !string.Equals(draft.OwnerId ?? string.Empty, query.OwnerId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchTerm) &&
+            !draft.PackageKey.Contains(query.SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static StudioContentItemSummary ToSummary(StudioContentItemRecord item) => new()
+    {
+        ItemId = item.ItemId,
+        PackageKey = item.PackageKey,
+        WorkspaceId = item.WorkspaceId,
+        Family = item.Family,
+        State = ResolveState(item.CurrentVersionId, item.PublishedVersionId),
+        CurrentVersionId = item.CurrentVersionId,
+        PublishedVersionId = item.PublishedVersionId,
+        CreatedBy = item.CreatedBy,
+        UpdatedBy = item.UpdatedBy,
+        CreatedAt = item.CreatedAt,
+        UpdatedAt = item.UpdatedAt,
+    };
+
+    private static StudioContentItemState ResolveState(Guid? currentVersionId, Guid? publishedVersionId)
+        => publishedVersionId is not null
+            ? StudioContentItemState.Published
+            : currentVersionId is not null
+                ? StudioContentItemState.Current
+                : StudioContentItemState.Draft;
 
     /// <inheritdoc />
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
@@ -286,7 +482,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    private StudioContentItemState GetOrCreateItem(
+    private StudioContentItemRecord GetOrCreateItem(
         Guid itemId,
         string packageKey,
         string? workspaceId,
@@ -299,7 +495,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             return item;
         }
 
-        return new StudioContentItemState(
+        return new StudioContentItemRecord(
             itemId,
             packageKey,
             workspaceId,
@@ -337,7 +533,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
     }
 
-    private sealed record StudioContentItemState(
+    private sealed record StudioContentItemRecord(
         Guid ItemId,
         string PackageKey,
         string? WorkspaceId,

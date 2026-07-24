@@ -6,6 +6,8 @@ using System.Text.Json;
 using Honua.Ai.AppGeneration;
 using Honua.Ai.MapGeneration;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Publishing.Content.Abstractions;
+using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -27,6 +29,12 @@ internal static class StudioPackageEndpoints
     private const string ProblemType = "https://honua.io/problems/studio";
 
     /// <summary>
+    /// Defence-in-depth ceiling on the content-item/draft list page size, mirroring the
+    /// Console content list cap (<c>ConsoleContentEndpoints.MaxListLimit</c>).
+    /// </summary>
+    private const int MaxListLimit = 1_000;
+
+    /// <summary>
     /// Maps Studio package lifecycle endpoints.
     /// </summary>
     public static void MapStudioPackageEndpoints(this IEndpointRouteBuilder endpoints)
@@ -46,6 +54,11 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Create Studio Package Draft")
             .WithSummary("Creates a mutable Studio package draft.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        group.MapGet("/package-drafts", HandleListDrafts)
+            .WithDisplayName("List Studio Package Drafts")
+            .WithSummary("Lists mutable Studio package drafts with filters (family, workspace, owner) and cursor pagination.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapGet("/package-drafts/{draftId:guid}", HandleGetDraft)
             .WithDisplayName("Get Studio Package Draft")
@@ -71,6 +84,11 @@ internal static class StudioPackageEndpoints
         group.MapPost("/package-drafts/{draftId:guid}/content-versions", HandleCreateContentVersion)
             .WithDisplayName("Save Studio Package Draft As Content Version")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        group.MapGet("/content-items", HandleListContentItems)
+            .WithDisplayName("List Studio Content Items")
+            .WithSummary("Lists Studio content items with filters (family, workspace, owner, state), cursor pagination, and publication-registry lifecycle badges.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapGet("/content-items/{itemId:guid}/versions", HandleListVersions)
             .WithDisplayName("List Studio Content Versions")
@@ -399,6 +417,53 @@ internal static class StudioPackageEndpoints
         }
     }
 
+    private static async Task<IResult> HandleListDrafts(
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context,
+        [FromQuery] string? family = null,
+        [FromQuery] string? workspaceId = null,
+        [FromQuery] string? owner = null,
+        [FromQuery] string? q = null,
+        [FromQuery] string? cursor = null,
+        [FromQuery] int limit = 25)
+    {
+        if (!TryParseFamilyList(family, out var families, out var familyError))
+        {
+            return BadRequest(context, $"family filter is invalid: {familyError}");
+        }
+
+        try
+        {
+            var result = await service.ListDraftsAsync(
+                new StudioPackageDraftQuery
+                {
+                    Families = families,
+                    WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
+                    OwnerId = NormalizeOptionalQueryValue(owner),
+                    SearchTerm = NormalizeOptionalQueryValue(q),
+                    Cursor = cursor,
+                    Limit = ClampListLimit(limit),
+                },
+                context.RequestAborted).ConfigureAwait(false);
+
+            StudioEndpointsLog.DraftsListed(logger, result.Items.Count, result.Total);
+            return Results.Json(
+                ApiResponse<StudioPackageDraftListResponse>.CreateSuccess(new StudioPackageDraftListResponse
+                {
+                    Items = result.Items,
+                    Total = result.Total,
+                    NextCursor = result.NextCursor,
+                }),
+                StudioApiJsonContext.Default.ApiResponseStudioPackageDraftListResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "draft.list", ex);
+            return ServerError(context, "Studio package drafts could not be listed.");
+        }
+    }
+
     private static async Task<IResult> HandleGetDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
@@ -591,6 +656,219 @@ internal static class StudioPackageEndpoints
         {
             StudioEndpointsLog.EndpointFailed(logger, "version.create", ex);
             return ServerError(context, "Studio content version could not be created.");
+        }
+    }
+
+    private static async Task<IResult> HandleListContentItems(
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IContentPublicationStore publicationStore,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context,
+        [FromQuery] string? family = null,
+        [FromQuery] string? workspaceId = null,
+        [FromQuery] string? owner = null,
+        [FromQuery] string? state = null,
+        [FromQuery] string? q = null,
+        [FromQuery] string? cursor = null,
+        [FromQuery] int limit = 25)
+    {
+        if (!TryParseFamilyList(family, out var families, out var familyError))
+        {
+            return BadRequest(context, $"family filter is invalid: {familyError}");
+        }
+        if (!TryParseStateList(state, out var states, out var stateError))
+        {
+            return BadRequest(context, $"state filter is invalid: {stateError}");
+        }
+
+        try
+        {
+            var result = await service.ListContentItemsAsync(
+                new StudioContentItemQuery
+                {
+                    Families = families,
+                    WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
+                    OwnerId = NormalizeOptionalQueryValue(owner),
+                    States = states,
+                    SearchTerm = NormalizeOptionalQueryValue(q),
+                    Cursor = cursor,
+                    Limit = ClampListLimit(limit),
+                },
+                context.RequestAborted).ConfigureAwait(false);
+
+            var badges = await ResolvePublicationBadgesAsync(publicationStore, result.Items, context.RequestAborted).ConfigureAwait(false);
+            var rows = result.Items
+                .Select(item => ToListRow(item, badges.TryGetValue(item.ItemId, out var badge) ? badge : null))
+                .ToArray();
+
+            StudioEndpointsLog.ContentItemsListed(logger, rows.Length, result.Total);
+            return Results.Json(
+                ApiResponse<StudioContentItemListResponse>.CreateSuccess(new StudioContentItemListResponse
+                {
+                    Items = rows,
+                    Total = result.Total,
+                    NextCursor = result.NextCursor,
+                }),
+                StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "content-item.list", ex);
+            return ServerError(context, "Studio content items could not be listed.");
+        }
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, StudioContentItemPublicationBadge>> ResolvePublicationBadgesAsync(
+        IContentPublicationStore publicationStore,
+        IReadOnlyList<StudioContentItemSummary> items,
+        CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return new Dictionary<Guid, StudioContentItemPublicationBadge>();
+        }
+
+        // Convention: Console publishes a Studio content item with
+        // sourceContentId == itemId.ToString("D") (see docs/internal/admin-api/
+        // content-publication-registry.md and the migration 089 index comment); this is the
+        // join key REQ-004 relies on to surface lifecycle badges without one call per row.
+        var sourceContentIds = items.Select(item => item.ItemId.ToString("D")).ToArray();
+        var routesBySourceContentId = await publicationStore
+            .GetLatestRouteStatesBySourceContentIdsAsync(sourceContentIds, cancellationToken)
+            .ConfigureAwait(false);
+
+        var badges = new Dictionary<Guid, StudioContentItemPublicationBadge>(items.Count);
+        foreach (var item in items)
+        {
+            if (!routesBySourceContentId.TryGetValue(item.ItemId.ToString("D"), out var route))
+            {
+                continue;
+            }
+
+            badges[item.ItemId] = new StudioContentItemPublicationBadge
+            {
+                PublicationId = route.PublicationId,
+                RouteSlug = route.RouteSlug,
+                RoutePath = route.RoutePath,
+                Lifecycle = LifecycleToString(route.Lifecycle),
+                ActiveRevision = route.ActiveRevision,
+                UpdatedAt = route.UpdatedAt,
+            };
+        }
+
+        return badges;
+    }
+
+    private static StudioContentItemListRow ToListRow(StudioContentItemSummary item, StudioContentItemPublicationBadge? publication) => new()
+    {
+        ItemId = item.ItemId,
+        PackageKey = item.PackageKey,
+        WorkspaceId = item.WorkspaceId,
+        Family = item.Family,
+        State = item.State,
+        CurrentVersionId = item.CurrentVersionId,
+        PublishedVersionId = item.PublishedVersionId,
+        CreatedBy = item.CreatedBy,
+        UpdatedBy = item.UpdatedBy,
+        CreatedAt = item.CreatedAt,
+        UpdatedAt = item.UpdatedAt,
+        Publication = publication,
+    };
+
+    private static string LifecycleToString(ContentPublicationLifecycle lifecycle) => lifecycle switch
+    {
+        ContentPublicationLifecycle.Active => "active",
+        ContentPublicationLifecycle.Suspended => "suspended",
+        ContentPublicationLifecycle.Archived => "archived",
+        _ => "active",
+    };
+
+    private static int ClampListLimit(int requested)
+        => Math.Clamp(requested <= 0 ? 25 : requested, 1, MaxListLimit);
+
+    private static string? NormalizeOptionalQueryValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool TryParseFamilyList(string? value, out IReadOnlyList<StudioPackageFamily>? values, out string error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            values = null;
+            error = string.Empty;
+            return true;
+        }
+
+        var parsed = new List<StudioPackageFamily>();
+        foreach (var raw in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryParseFamily(raw, out var family))
+            {
+                values = null;
+                error = $"unknown value '{raw}'";
+                return false;
+            }
+
+            parsed.Add(family);
+        }
+
+        values = parsed;
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryParseStateList(string? value, out IReadOnlyList<StudioContentItemState>? values, out string error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            values = null;
+            error = string.Empty;
+            return true;
+        }
+
+        var parsed = new List<StudioContentItemState>();
+        foreach (var raw in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryParseState(raw, out var state))
+            {
+                values = null;
+                error = $"unknown value '{raw}'";
+                return false;
+            }
+
+            parsed.Add(state);
+        }
+
+        values = parsed;
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryParseFamily(string value, out StudioPackageFamily family)
+    {
+        switch (value.ToLowerInvariant())
+        {
+            case "query": family = StudioPackageFamily.Query; return true;
+            case "analysis": family = StudioPackageFamily.Analysis; return true;
+            case "map": family = StudioPackageFamily.Map; return true;
+            case "dashboard": family = StudioPackageFamily.Dashboard; return true;
+            case "report": family = StudioPackageFamily.Report; return true;
+            case "form": family = StudioPackageFamily.Form; return true;
+            case "app": family = StudioPackageFamily.App; return true;
+            case "workflow": family = StudioPackageFamily.Workflow; return true;
+            case "gp": family = StudioPackageFamily.Geoprocessing; return true;
+            case "etl": family = StudioPackageFamily.Etl; return true;
+            default: family = default; return false;
+        }
+    }
+
+    private static bool TryParseState(string value, out StudioContentItemState state)
+    {
+        switch (value.ToLowerInvariant())
+        {
+            case "draft": state = StudioContentItemState.Draft; return true;
+            case "current": state = StudioContentItemState.Current; return true;
+            case "published": state = StudioContentItemState.Published; return true;
+            default: state = default; return false;
         }
     }
 

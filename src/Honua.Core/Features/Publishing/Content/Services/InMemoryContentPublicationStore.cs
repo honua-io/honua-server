@@ -114,6 +114,52 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
+        IReadOnlyCollection<string> sourceContentIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(sourceContentIds);
+        var result = new Dictionary<string, ContentPublicationRouteState>(StringComparer.Ordinal);
+        if (sourceContentIds.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyDictionary<string, ContentPublicationRouteState>>(result);
+        }
+
+        var wanted = new HashSet<string>(sourceContentIds, StringComparer.Ordinal);
+        lock (_gate)
+        {
+            var latestBySourceContentId = new Dictionary<string, ContentPublicationVersion>(StringComparer.Ordinal);
+            foreach (var versions in _versionsByPublicationId.Values)
+            {
+                foreach (var version in versions)
+                {
+                    if (version.SourceContentId is not { } sourceContentId || !wanted.Contains(sourceContentId))
+                    {
+                        continue;
+                    }
+
+                    if (!latestBySourceContentId.TryGetValue(sourceContentId, out var existing)
+                        || version.CreatedAt > existing.CreatedAt
+                        || (version.CreatedAt == existing.CreatedAt && version.Revision > existing.Revision))
+                    {
+                        latestBySourceContentId[sourceContentId] = version;
+                    }
+                }
+            }
+
+            foreach (var (sourceContentId, version) in latestBySourceContentId)
+            {
+                if (_routesByPublicationId.TryGetValue(version.PublicationId, out var route))
+                {
+                    result[sourceContentId] = route;
+                }
+            }
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<string, ContentPublicationRouteState>>(result);
+    }
+
+    /// <inheritdoc />
     public Task AppendVersionAndSetRouteAsync(
         ContentPublicationVersion version,
         ContentPublicationRouteState routeState,
