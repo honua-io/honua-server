@@ -250,7 +250,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 1
       },
@@ -352,7 +352,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 4,
+      "provingTestCount": 5,
       "maturity": {
         "implemented": 1
       },
@@ -369,7 +369,7 @@
       "category": "Analytics",
       "edition": "Pro",
       "entryCount": 1,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 1
       },
