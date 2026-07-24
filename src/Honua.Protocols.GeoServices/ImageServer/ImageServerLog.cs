@@ -334,4 +334,10 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "ImageServer calculateVolume failed for layer {LayerId}")]
     public static partial void CalculateVolumeFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5854,
+        Level = LogLevel.Warning,
+        Message = "Raster statistics computation for layer {LayerId} exceeded the {BudgetSeconds}s request budget; returning without statistics (#2991)")]
+    public static partial void StatisticsComputeBudgetExceeded(ILogger logger, int layerId, double budgetSeconds);
 }

@@ -584,6 +584,7 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.SetVaryByRouteValue("id");
                 policy.SetVaryByQuery("f");
                 policy.Tag("layer-metadata", "metadata");
+                policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
             });
 
             // OGC API Features queryables caching policy
