@@ -5206,15 +5206,15 @@
       "capability": "streaming.feature-subscriptions"
     },
     {
-      "id": "get-api-v1-studio-content-items",
-      "route": "/api/v1/studio/content-items",
+      "id": "get-api-v1-studio-ai-capabilities",
+      "route": "/api/v1/studio/ai/capabilities",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_FiltersByFamilyOwnerAndState_JoinsPublicationBadge",
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Admin_ReturnsConfiguredProvider",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.GetCapabilities_Anonymous_Returns401"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -5243,21 +5243,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
-      ],
-      "proof_ledger_surface": "studio-package-lifecycle",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
-    },
-    {
-      "id": "get-api-v1-studio-package-drafts",
-      "route": "/api/v1/studio/package-drafts",
-      "method": "GET",
-      "family": "Admin API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_FiltersByFamilyOwnerAndState_JoinsPublicationBadge",
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -16102,6 +16087,22 @@
       "proof_ledger_surface": "saved-map-collaboration",
       "maturity": "implemented",
       "capability": "collaboration.map-sessions"
+    },
+    {
+      "id": "post-api-v1-studio-ai-chat",
+      "route": "/api/v1/studio/ai/chat",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_Anonymous_Returns401",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_KnownButUnreachableProvider_StreamsErrorEventAndRecordsOneFailureAudit",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_UnknownProvider_Returns400AndDoesNotAudit"
+      ],
+      "proof_ledger_surface": "studio-package-lifecycle",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "post-api-v1-studio-app-packages-generate",

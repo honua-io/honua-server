@@ -49,5 +49,10 @@ public static partial class EndpointRegistry
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
         // NL-assisted report/dashboard content generation (#1183).
         new("POST", "/api/v1/console/publications/generate"),
+
+        // Provider-agnostic Studio AI proxy adapters (#3000): Bedrock/Anthropic/OpenAI-compatible
+        // behind one streaming chat contract, plus capability discovery.
+        new("GET", "/api/v1/studio/ai/capabilities"),
+        new("POST", "/api/v1/studio/ai/chat"),
     ];
 }
