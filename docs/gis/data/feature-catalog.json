@@ -5895,6 +5895,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OData_Features_ReturnsAllSeededFeatures",
+        "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.OData_Features_ReturnsAllSeededFeatures",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OData_QueryFeatures_ShouldReturnODataFormat",
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientIntegrationTests.FeaturesQuery_ReturnsAllFeatures_ViaODataClient",
         "Honua.Server.Tests.Features.Protocols.OData.ODataClientIntegrationTests.FeaturesResponse_HasAbsoluteContextUrl",
@@ -7178,6 +7179,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.ProviderSmoke.Tests.DuckDbProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
+        "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.Tiles_RasterTile_ReturnsNonEmptyPng",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_UsesGeographicTileEnvelopeForMvt",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesCrsTests.GetTile_WorldCRS84Quad_WithCrs4326_ReturnsTile",
@@ -7193,7 +7195,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.TileRendererWkbTests.RenderTilePng_BigAndLittleEndian_ProduceSameImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.TileRendererWkbTests.RenderTilePng_BigEndianWkbPoint_ProducesNonEmptyImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.TileRendererWkbTests.RenderTilePng_LittleEndianWkbPoint_ProducesNonEmptyImage",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.TileRendererWkbTests.RenderTilePng_PolygonHole_RendersDifferentlyFromSolidPolygon"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.TileRendererWkbTests.RenderTilePng_PolygonHole_RendersDifferentlyFromSolidPolygon",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.TileRendererWkbTests.RenderTilePng_Wgs84SourceIntoWebMercatorGrid_ReprojectsBeforeRendering"
       ],
       "proof_ledger_surface": "ogc-api-tiles",
       "maturity": "implemented",

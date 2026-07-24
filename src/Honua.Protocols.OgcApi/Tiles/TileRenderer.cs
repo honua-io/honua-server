@@ -27,7 +27,11 @@ internal static class TileRenderer
         MultiPolygon
     }
 
-    internal readonly record struct TileRenderLayer(ImmutableArray<Feature> Features, GeometryKind GeometryKind);
+    internal readonly record struct TileRenderLayer(
+        ImmutableArray<Feature> Features,
+        GeometryKind GeometryKind,
+        int? SourceSrid = null,
+        int? TargetSrid = null);
 
     /// <summary>
     /// Renders a set of features to a PNG image for the given tile bounds.
@@ -35,13 +39,17 @@ internal static class TileRenderer
     /// <param name="features">Features to render.</param>
     /// <param name="bounds">Tile bounding box in map coordinates.</param>
     /// <param name="geometryKind">Geometry kind of the layer.</param>
+    /// <param name="sourceSrid">Optional feature-geometry SRID.</param>
+    /// <param name="targetSrid">Optional tile-bounds SRID used for rendering.</param>
     /// <returns>PNG image bytes.</returns>
     internal static byte[] RenderTilePng(
         ImmutableArray<Feature> features,
         TileBounds bounds,
-        GeometryKind geometryKind)
+        GeometryKind geometryKind,
+        int? sourceSrid = null,
+        int? targetSrid = null)
     {
-        return RenderTilePng([new TileRenderLayer(features, geometryKind)], bounds);
+        return RenderTilePng([new TileRenderLayer(features, geometryKind, sourceSrid, targetSrid)], bounds);
     }
 
     internal static byte[] RenderTilePng(
@@ -71,12 +79,21 @@ internal static class TileRenderer
         var minX = bounds.XMin;
         var maxY = bounds.YMax;
 
-        SKPoint Transform(double x, double y) => new(
-            (float)((x - minX) * scaleX),
-            (float)((maxY - y) * scaleY));
-
         foreach (var layer in layers)
         {
+            SKPoint Transform(double x, double y)
+            {
+                if (layer.SourceSrid is { } sourceSrid &&
+                    layer.TargetSrid is { } targetSrid)
+                {
+                    (x, y) = CoordinateTransformer.TransformPoint(x, y, sourceSrid, targetSrid);
+                }
+
+                return new SKPoint(
+                    (float)((x - minX) * scaleX),
+                    (float)((maxY - y) * scaleY));
+            }
+
             using var fill = CreateDefaultFillPaint(layer.GeometryKind);
             using var stroke = CreateDefaultStrokePaint(layer.GeometryKind);
 

@@ -8,9 +8,12 @@ a bounded, materialized page; Honua never falls back to the primary provider for
 This provider is read-only, so OData create/update/delete requests (including `$batch` mutations)
 return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
 
-OGC API Tiles per-collection provider routing remains the follow-up slice of
-[issue #2962](https://github.com/honua-io/honua-server/issues/2962). Until that lands, do not treat
-secondary-provider OGC tile reachability as supported.
+OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
+through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
+collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
+problem response naming the collection and provider: native MVT generation is a per-provider
+capability that only the PostGIS provider implements today, independent of the routing fix
+delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
 
 
 Honua exposes SQL Server (`geometry` and `geography`) tables as read-only feature layers
@@ -221,11 +224,11 @@ database such as `tempdb` is recommended).
 `Honua.ProviderSmoke.Tests` boots a full HTTP stack (Postgres primary + this provider
 registered as a secondary connection) against a Testcontainers
 `mcr.microsoft.com/mssql/server:2022-latest` instance and asserts real seeded-row
-correctness — not just 200s — through GeoServices FeatureServer and OGC API Features.
-Runs nightly and on demand via
+correctness — not just 200s — through GeoServices FeatureServer, OGC API Features, OData,
+and OGC API Tiles raster (PNG) tiles. Runs nightly and on demand via
 [`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
-part of standard PR CI. See [Limitations and Known Gaps](#limitations-and-known-gaps)
-below for why OData and OGC API Tiles are excluded from this suite for this provider.
+part of standard PR CI. Vector (MVT) tiles are not exercised for this provider — see
+[Limitations and Known Gaps](#limitations-and-known-gaps) below.
 
 ## Limitations and Known Gaps
 
@@ -238,14 +241,15 @@ below for why OData and OGC API Tiles are excluded from this suite for this prov
   `STEnvelope` indexing tricks beyond the explicit `EnvelopeIntersects` filter.
 - **WHERE grammar is intentionally narrow.** Use the canonical filter pipeline
   (`SqlFragment`/`Filter`) for complex predicates rather than free-form SQL.
-- **OData and OGC API Tiles do not reach SQL Server-backed layers.** Both resolve
-  `IFeatureReader`/`ITileProvider` directly via DI (always the primary provider) instead of
-  through `FeatureProviderQueryRouter`, so a layer whose storage binding routes to this
-  provider is only reachable via GeoServices FeatureServer and OGC API Features today.
-  Found during the honua-server#2947 HTTP-stack smoke-coverage work; tracked as a real
-  product gap in [honua-server#2962](https://github.com/honua-io/honua-server/issues/2962).
-  The same gap applies to every other secondary/additional provider (Oracle, Redshift,
-  Snowflake, Databricks).
+- **OGC API Tiles vector (MVT) requests do not reach SQL Server-backed layers.** Native MVT
+  generation is a per-provider capability (`ITileProvider`) that only the PostGIS provider
+  implements; a collection whose storage binding routes to SQL Server returns a
+  `501 Not Implemented` problem response naming the collection/provider instead of silently
+  serving PostGIS data for the same layer id. OData and OGC API Tiles raster (PNG) tiles do
+  reach SQL Server-backed layers, routed per layer through `FeatureProviderQueryRouter`
+  ([honua-server#2962](https://github.com/honua-io/honua-server/issues/2962)). The same MVT
+  gap applies to every other secondary/additional provider (Oracle, Redshift, Snowflake,
+  Databricks) — none of them implement `ITileProvider` either.
 
 Follow-ups for write support, admin UI wiring, native output formats, statistics, and
 temporal/H3 aggregations are tracked under epic
