@@ -91,12 +91,33 @@ With the flag on:
   authenticated under a configured alias role is never incorrectly scoped to
   ownership.
 - **Version visibility is per-version, not per-item.** A published pointer on an
-  item does not open its entire immutable history: `GET
-  /content-items/{itemId}/versions` filters the response to exactly the
-  published version for a non-owner (the owner and admin still see every saved
-  version), and `GET .../versions/{versionId}` denies any version id other than
-  the published one for a non-owner. Publishing one version never makes a
-  newer/current or older unpublished version readable to other users.
+  item does not open its entire immutable history, and item ownership does not
+  either: a version's own `ownerId` (recorded when it was saved) can diverge
+  from the immutable item `owner_id` — for example a second draft added to an
+  existing item on a different principal's behalf. `GET
+  /content-items/{itemId}/versions` applies the same owner-or-published check
+  `GET .../versions/{versionId}` uses to every version in the item's history
+  and returns only the subset the caller can see (admin still sees every saved
+  version) — this is evaluated per version, not gated once by item ownership,
+  so a caller who owns a version under an item they do not otherwise own can
+  still see that one version in the list. If no version in the item's history
+  is visible to the caller, the endpoint returns the same 403 it would have
+  returned before this per-version filtering existed. Publishing one version
+  never makes a newer/current or older unpublished version readable to other
+  users, and an item's owner is not automatically entitled to every version
+  saved under it.
+- **Publish-request and rollback authorize against the item's owner, not the
+  target version's.** Both move an item-level pointer (`publishedVersionId` or
+  the current/published pointer), so both require the caller to own the
+  *item* (`studio_content_items.owner_id`) — not merely the target version,
+  which (as above) can be recorded under a different owner. A caller who owns
+  only the target version, even with a matching `StudioDraft` operator grant,
+  cannot move another principal's item's pointer.
+- **Version comparison authorizes both requested versions individually** —
+  `leftVersionId` and `rightVersionId` are each checked against their own
+  recorded owner (never publicly readable, since a diff can expose unpublished
+  content) rather than trusting the left side's authorization to cover the
+  right.
 - **Deliverable export** (`POST /{kind}/{id}/export`) follows the same
   ownership/publication boundary as reads. Decision: a non-owner may export a
   content item's *published* version — export mirrors the read-visibility rule
@@ -149,6 +170,17 @@ Authorization denials return the shared `https://honua.io/problems/studio` RFC
 | `studio_authorization/authentication_required` | No authenticated principal. |
 | `studio_authorization/cross_user_denied` | The caller does not own the resource (and, for reads, it is not publicly readable; for the elevated tier, the caller also holds no delegate grant for it). |
 | `studio_authorization/elevated_grant_required` | Publish-request or rollback on the caller's own resource without a matching `StudioDraft` operator grant. |
+
+`end_user_mode_disabled` is the one denial that happens in the ASP.NET policy
+layer (`StudioLifecycleAuthorizationHandler`), before any endpoint handler
+runs — a dedicated `IAuthorizationMiddlewareResultHandler`
+(`StudioLifecycleAuthorizationMiddlewareResultHandler`) writes this same
+problem body, and records the same `AuditEventType.Authorization`/
+`AuditOutcome.Denied` audit event every endpoint-layer denial gets, for that
+specific denial rather than letting the bare framework 403 through
+unaudited; every other policy denial (including this same policy's
+scoped-admin-key-cannot-mutate case, #1985) is unaffected and keeps the
+framework's default response.
 
 Every denial is recorded to the audit log (`AuditEventType.Authorization`,
 `AuditOutcome.Denied`); every *allowed* elevated-tier decision is also recorded
@@ -419,9 +451,12 @@ indexes `GET /content-items` and `GET /package-drafts` rely on (`updated_at DESC
 <id> DESC`, plus per-filter composites on `family`, `created_by`/`owner_id`, and
 `workspace_id`) and a `content_publication_versions (source_content_id, created_at
 DESC, revision DESC)` index supporting the publication-badge join. Migration
-`090_AddStudioContentItemOwner.sql` adds `studio_content_items.owner_id`
-(backfilled from `created_by` for pre-existing rows) and its keyset-pagination
-owner index (honua-server#3001).
+`090_AddStudioContentItemOwner.sql` adds `studio_content_items.owner_id` and
+its keyset-pagination owner index (honua-server#3001). Pre-existing rows are
+backfilled preferentially from their earliest `studio_package_drafts` row's
+own `owner_id` (the principal a draft was explicitly assigned to, which can
+differ from who created the item), falling back to `created_by` only when the
+item has no draft with a recorded owner.
 
 The package lifecycle service emits OpenTelemetry activities under
 `Honua.Studio.PackageLifecycle` with stable tags such as `studio.item.id`,
