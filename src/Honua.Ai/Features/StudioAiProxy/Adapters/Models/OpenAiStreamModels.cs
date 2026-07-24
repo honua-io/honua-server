@@ -52,6 +52,11 @@ internal sealed class OpenAiProxyMessage
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Required on a <c>"tool"</c>-role message so the provider can correlate this result with the
+    /// tool call it answers; the tool loop otherwise cannot proceed past the first call. Omitted
+    /// for every other role.
+    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; set; }
@@ -102,6 +107,27 @@ internal sealed class OpenAiProxyFunction
 
     [JsonPropertyName("parameters")]
     public JsonElement Parameters { get; set; }
+}
+
+/// <summary>
+/// The <c>{"type":"function","function":{"name":...}}</c> shape of <c>tool_choice</c> when a
+/// request forces a specific tool. A typed DTO (rather than an anonymous type passed to
+/// <c>JsonSerializer.SerializeToElement</c>) because anonymous types can never have source-generated
+/// metadata, and the published server image runs with reflection-based JSON serialization disabled.
+/// </summary>
+internal sealed class OpenAiProxyToolChoiceSpecific
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "function";
+
+    [JsonPropertyName("function")]
+    public OpenAiProxyToolChoiceFunctionRef Function { get; set; } = new();
+}
+
+internal sealed class OpenAiProxyToolChoiceFunctionRef
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
 }
 
 internal sealed class OpenAiProxyStreamOptions

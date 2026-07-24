@@ -49,7 +49,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
     public string Kind => StudioAiProxyConfiguration.BedrockKind;
 
-    public bool IsConfigured(StudioAiProxyProviderOptions options)
+    public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options)
         => !string.IsNullOrWhiteSpace(options.Model);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(

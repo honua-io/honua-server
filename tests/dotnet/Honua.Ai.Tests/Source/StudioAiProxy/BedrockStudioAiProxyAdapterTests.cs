@@ -102,8 +102,8 @@ public sealed class BedrockStudioAiProxyAdapterTests
             NullLogger<BedrockStudioAiProxyAdapter>.Instance);
 
         adapter.Kind.Should().Be(StudioAiProxyConfiguration.BedrockKind);
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Model = "us.anthropic.claude-sonnet-4-5", Region = "us-west-2" }).Should().BeTrue();
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Region = "us-west-2" }).Should().BeFalse();
+        adapter.IsConfigured("bedrock", new StudioAiProxyProviderOptions { Model = "us.anthropic.claude-sonnet-4-5", Region = "us-west-2" }).Should().BeTrue();
+        adapter.IsConfigured("bedrock", new StudioAiProxyProviderOptions { Region = "us-west-2" }).Should().BeFalse();
     }
 
     private static BedrockStudioAiProxyAdapter CreateAdapter(List<ChatResponseUpdate> updates)

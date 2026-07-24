@@ -202,8 +202,83 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
             NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
 
         adapter.Kind.Should().Be(StudioAiProxyConfiguration.OpenAiKind);
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Endpoint = "http://localhost:8000/v1", Model = "m" }).Should().BeTrue();
-        adapter.IsConfigured(new StudioAiProxyProviderOptions { Endpoint = "http://localhost:8000/v1" }).Should().BeFalse();
+        adapter.IsConfigured("local-vllm", new StudioAiProxyProviderOptions { Endpoint = "http://localhost:8000/v1", Model = "m" }).Should().BeTrue();
+        adapter.IsConfigured("local-vllm", new StudioAiProxyProviderOptions { Endpoint = "http://localhost:8000/v1" }).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_ToolResultMessage_PreservesToolCallIdInRequestBody()
+    {
+        // honua-server#3010 review: OpenAI-compatible tool loops correlate a tool result back to
+        // the call it answers via tool_call_id; dropping it breaks every turn after the first tool
+        // call.
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+
+        var request = new StudioAiChatRequest
+        {
+            Messages =
+            [
+                new StudioAiMessage { Role = StudioAiRole.User, Content = "list open incidents" },
+                new StudioAiMessage { Role = StudioAiRole.Assistant, Content = string.Empty },
+                new StudioAiMessage
+                {
+                    Role = StudioAiRole.Tool,
+                    Content = "[]",
+                    ToolCallId = "call-123",
+                    ToolName = "list_incidents"
+                }
+            ]
+        };
+
+        await CollectAsync(adapter, DefaultOptions(), request);
+
+        handler.CapturedRequestBody.Should().NotBeNull();
+        using var document = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var toolMessage = document.RootElement
+            .GetProperty("messages")
+            .EnumerateArray()
+            .Single(m => m.GetProperty("role").GetString() == "tool");
+        toolMessage.GetProperty("tool_call_id").GetString().Should().Be("call-123");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_SpecificToolChoice_SendsTypedToolChoicePayload()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+
+        var request = new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "list open incidents" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = "list_incidents",
+                    InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement
+                }
+            ],
+            ToolChoice = new StudioAiToolChoice { Mode = StudioAiToolChoiceMode.Specific, ToolName = "list_incidents" }
+        };
+
+        var act = async () => await CollectAsync(adapter, DefaultOptions(), request);
+
+        // Before the fix this threw synchronously inside BuildRequest (an anonymous type passed to
+        // JsonSerializer.SerializeToElement has no source-generated JsonTypeInfo).
+        await act.Should().NotThrowAsync();
+
+        handler.CapturedRequestBody.Should().NotBeNull();
+        using var document = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var toolChoice = document.RootElement.GetProperty("tool_choice");
+        toolChoice.GetProperty("type").GetString().Should().Be("function");
+        toolChoice.GetProperty("function").GetProperty("name").GetString().Should().Be("list_incidents");
     }
 
     private static OpenAiCompatibleStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.TestKit.Attributes;
 
@@ -129,5 +130,38 @@ public sealed class StudioAiChatRequestMapperTests
         request.ToolChoice.ToolName.Should().Be("list_incidents");
         request.MaxTokens.Should().Be(2048);
         request.Temperature.Should().Be(0.2);
+    }
+
+    [UnitTest]
+    public void ToDomain_JsonNullMessagesArray_ReturnsValidationErrorInsteadOfThrowing()
+    {
+        // honua-server#3010 review: System.Text.Json assigns a JSON `null` straight through to
+        // Messages despite its non-nullable C# declaration -- the compiler's null-state analysis is
+        // a build-time convention, not something STJ enforces at deserialize time. Round-trip
+        // through the real deserializer (rather than forcing a null via `!`) so this test proves
+        // the actual runtime shape the endpoint receives, not just a hypothetical one.
+        var http = JsonSerializer.Deserialize(
+            """{"messages":null}""",
+            StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest)!;
+
+        http.Messages.Should().BeNull("this is exactly the System.Text.Json behavior the guard must tolerate");
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(http);
+
+        request.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [UnitTest]
+    public void ToDomain_NullMessageEntry_IsRejectedInsteadOfThrowing()
+    {
+        var http = JsonSerializer.Deserialize(
+            """{"messages":[null]}""",
+            StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest)!;
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(http);
+
+        request.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
     }
 }

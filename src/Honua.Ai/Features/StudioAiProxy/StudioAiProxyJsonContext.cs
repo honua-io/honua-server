@@ -25,7 +25,10 @@ namespace Honua.Ai.StudioAiProxy;
 [JsonSerializable(typeof(AnthropicStreamFrame))]
 [JsonSerializable(typeof(OpenAiProxyRequest))]
 [JsonSerializable(typeof(OpenAiStreamChunk))]
+[JsonSerializable(typeof(OpenAiProxyToolChoiceSpecific))]
+[JsonSerializable(typeof(OpenAiProxyToolChoiceFunctionRef))]
 [JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(string))]
 internal sealed partial class StudioAiProxyJsonContext : JsonSerializerContext
 {
 }

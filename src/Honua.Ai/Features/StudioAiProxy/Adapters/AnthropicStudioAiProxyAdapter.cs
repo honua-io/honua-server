@@ -39,12 +39,21 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
     public string Kind => StudioAiProxyConfiguration.AnthropicKind;
 
-    public bool IsConfigured(StudioAiProxyProviderOptions options)
-        => !string.IsNullOrWhiteSpace(options.Endpoint) &&
-            !string.IsNullOrWhiteSpace(options.Model) &&
-            (!string.IsNullOrWhiteSpace(options.ApiKey) ||
-             !string.IsNullOrWhiteSpace(
-                 Environment.GetEnvironmentVariable(StudioAiProxyApiKeyResolver.EnvVarName(ProviderLabel))));
+    public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.Endpoint) || string.IsNullOrWhiteSpace(options.Model))
+        {
+            return false;
+        }
+
+        // Anthropic always requires a key. A plain configured value or secret reference counts
+        // (actual secret-store resolution happens later, in StreamAsync); otherwise the
+        // per-provider environment variable must be set. Without either, the provider cannot
+        // ever be called, so it must report unconfigured here rather than let a chat request
+        // commit a 200 SSE stream that immediately errors with "API key is not configured."
+        return !string.IsNullOrWhiteSpace(options.ApiKey)
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(StudioAiProxyApiKeyResolver.EnvVarName(providerName)));
+    }
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,

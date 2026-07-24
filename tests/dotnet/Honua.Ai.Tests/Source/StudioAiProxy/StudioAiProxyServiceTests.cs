@@ -5,10 +5,12 @@ using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
+using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
@@ -46,6 +48,46 @@ public sealed class StudioAiProxyServiceTests
         capabilities.Providers[0].Provider.Should().Be("claude");
         capabilities.Providers[0].IsDefault.Should().BeTrue();
         capabilities.Providers[0].Configured.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task GetCapabilitiesAsync_AnthropicProviderWithoutApiKeyOrEnvFallback_ReportsUnconfigured()
+    {
+        // honua-server#3010 review: exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
+        // so this proves the service + adapter together, not just a mocked contract.
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.Providers["claude"].ApiKey = string.Empty;
+        var realAdapter = new AnthropicStudioAiProxyAdapter(
+            Substitute.For<IHttpClientFactory>(),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var service = CreateService(config, realAdapter);
+
+        var capabilities = await service.GetCapabilitiesAsync();
+
+        capabilities.Providers.Should().ContainSingle();
+        capabilities.Providers[0].Configured.Should().BeFalse(
+            "a provider with no ApiKey and no per-provider environment fallback can never be called");
+    }
+
+    [UnitTest]
+    public void ValidateRequest_AnthropicProviderWithoutApiKeyOrEnvFallback_IsRejectedBeforeStreamingStarts()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.Providers["claude"].ApiKey = string.Empty;
+        var realAdapter = new AnthropicStudioAiProxyAdapter(
+            Substitute.For<IHttpClientFactory>(),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var service = CreateService(config, realAdapter);
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        });
+
+        error.Should().NotBeNull(
+            "the endpoint must return a 400 before committing an SSE stream, not stream an immediate error event");
     }
 
     [UnitTest]
@@ -272,7 +314,7 @@ public sealed class StudioAiProxyServiceTests
 
         public string Kind { get; }
 
-        public bool IsConfigured(StudioAiProxyProviderOptions options) => _isConfigured;
+        public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options) => _isConfigured;
 
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options, StudioAiChatRequest request, CancellationToken cancellationToken)

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
@@ -40,7 +39,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
     public string Kind => StudioAiProxyConfiguration.OpenAiKind;
 
-    public bool IsConfigured(StudioAiProxyProviderOptions options)
+    public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options)
         => !string.IsNullOrWhiteSpace(options.Endpoint) && !string.IsNullOrWhiteSpace(options.Model);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
@@ -272,6 +271,8 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
                 _ => "user"
             },
             Content = m.Content,
+            // OpenAI-compatible tool loops correlate a tool result back to the call it answers via
+            // tool_call_id; dropping it here breaks every follow-up turn after the first tool call.
             ToolCallId = m.Role == StudioAiRole.Tool ? m.ToolCallId : null,
             ToolCalls = m.Role == StudioAiRole.Assistant && m.ToolCalls is { Count: > 0 }
                 ? m.ToolCalls.Select(static call => new OpenAiProxyMessageToolCall
@@ -305,39 +306,26 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
                 })
                 .ToArray();
 
+            // Every branch uses an explicit source-generated JsonTypeInfo rather than the
+            // parameterless SerializeToElement(value) overload: that overload resolves metadata
+            // through JsonSerializerOptions.Default, and the published server image sets
+            // JsonSerializerIsReflectionEnabledByDefault=false, so a call with no registered
+            // JsonTypeInfo (an anonymous type has none, and never can) throws instead of falling
+            // back to reflection.
             proxyRequest.ToolChoice = mode switch
             {
-                StudioAiToolChoiceMode.Required => BuildToolChoice("required", toolName: null),
-                StudioAiToolChoiceMode.Specific => BuildToolChoice("specific", request.ToolChoice!.ToolName),
-                _ => BuildToolChoice("auto", toolName: null)
+                StudioAiToolChoiceMode.Required => JsonSerializer.SerializeToElement("required", StudioAiProxyJsonContext.Default.String),
+                StudioAiToolChoiceMode.Specific => JsonSerializer.SerializeToElement(
+                    new OpenAiProxyToolChoiceSpecific
+                    {
+                        Function = new OpenAiProxyToolChoiceFunctionRef { Name = request.ToolChoice!.ToolName! }
+                    },
+                    StudioAiProxyJsonContext.Default.OpenAiProxyToolChoiceSpecific),
+                _ => JsonSerializer.SerializeToElement("auto", StudioAiProxyJsonContext.Default.String)
             };
         }
 
         return proxyRequest;
-    }
-
-    private static JsonElement BuildToolChoice(string mode, string? toolName)
-    {
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            if (mode == "specific")
-            {
-                writer.WriteStartObject();
-                writer.WriteString("type", "function");
-                writer.WriteStartObject("function");
-                writer.WriteString("name", toolName);
-                writer.WriteEndObject();
-                writer.WriteEndObject();
-            }
-            else
-            {
-                writer.WriteStringValue(mode);
-            }
-        }
-
-        using var document = JsonDocument.Parse(buffer.WrittenMemory);
-        return document.RootElement.Clone();
     }
 
     private static StudioAiStopReason MapStopReason(string finishReason) => finishReason switch

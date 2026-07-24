@@ -22,9 +22,14 @@ public interface IStudioAiProxyAdapter
     /// <summary>
     /// Whether <paramref name="options"/> has everything this adapter needs to place a call
     /// (model id, and credentials the adapter can resolve without a network round trip's worth of
-    /// blocking — actual key resolution happens inside <see cref="StreamAsync"/>).
+    /// blocking — actual key resolution happens inside <see cref="StreamAsync"/>). Takes
+    /// <paramref name="providerName"/> because credential resolution can fall back to a
+    /// per-provider environment variable keyed by that name (<see cref="StudioAiProxyApiKeyResolver.EnvVarName"/>);
+    /// an adapter whose kind requires a key must treat "no configured key and no matching env var"
+    /// as unconfigured so <c>GET /capabilities</c> and request validation are honest about it
+    /// instead of committing an SSE stream that immediately errors.
     /// </summary>
-    bool IsConfigured(StudioAiProxyProviderOptions options);
+    bool IsConfigured(string providerName, StudioAiProxyProviderOptions options);
 
     /// <summary>
     /// Streams one chat turn against the upstream provider named by <paramref name="options"/>,

@@ -16,15 +16,24 @@ public static class StudioAiChatRequestMapper
     {
         ArgumentNullException.ThrowIfNull(http);
 
-        if (http.Messages is not { Count: > 0 } sourceMessages)
+        // System.Text.Json assigns a JSON `null` straight through to this property despite its
+        // non-nullable C# declaration — the compiler's null-state analysis is a build-time
+        // convention, not a runtime guarantee STJ enforces. A caller sending {"messages": null}
+        // would otherwise NRE on `.Count` before this method could return its intended 400.
+        if (http.Messages is not { Count: > 0 } httpMessages)
         {
             return (null, "At least one message is required.");
         }
 
-        var messages = new List<StudioAiMessage>(sourceMessages.Count);
-        foreach (var message in sourceMessages)
+        var messages = new List<StudioAiMessage>(httpMessages.Count);
+        foreach (var message in httpMessages)
         {
-            if (message is null || message.Content is null)
+            if (message is null)
+            {
+                return (null, "messages[] cannot contain a null entry.");
+            }
+
+            if (message.Content is null)
             {
                 return (null, "Message content must not be null.");
             }

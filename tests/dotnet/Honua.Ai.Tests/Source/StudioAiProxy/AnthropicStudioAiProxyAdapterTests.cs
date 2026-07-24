@@ -212,32 +212,48 @@ public sealed class AnthropicStudioAiProxyAdapterTests
             new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
 
-        var envVar = StudioAiProxyApiKeyResolver.EnvVarName("anthropic");
-        var previous = Environment.GetEnvironmentVariable(envVar);
+        adapter.Kind.Should().Be(StudioAiProxyConfiguration.AnthropicKind);
+        adapter.IsConfigured("claude", new StudioAiProxyProviderOptions { Endpoint = "https://api.anthropic.com", Model = "claude", ApiKey = "key" }).Should().BeTrue();
+        adapter.IsConfigured("claude", new StudioAiProxyProviderOptions { Endpoint = "https://api.anthropic.com", ApiKey = "key" }).Should().BeFalse("Model is missing");
+        adapter.IsConfigured("claude", new StudioAiProxyProviderOptions { Model = "claude", ApiKey = "key" }).Should().BeFalse("Endpoint is missing");
+    }
+
+    [UnitTest]
+    public void IsConfigured_EndpointAndModelPresent_ButNoApiKeyAndNoEnvFallback_ReturnsFalse()
+    {
+        // honua-server#3010 review: a provider declared without ApiKey and without the per-provider
+        // env var fallback can never actually be called, so it must not report configured — otherwise
+        // GET /capabilities lies and POST /chat commits a 200 SSE stream before erroring.
+        var adapter = new AnthropicStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(new StudioAiProxyMockHttpMessageHandler(string.Empty)),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+
+        var options = new StudioAiProxyProviderOptions { Endpoint = "https://api.anthropic.com", Model = "claude", ApiKey = string.Empty };
+
+        adapter.IsConfigured("keyless-anthropic-3010-test", options).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsConfigured_NoApiKeyButPerProviderEnvVarFallbackSet_ReturnsTrue()
+    {
+        var adapter = new AnthropicStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(new StudioAiProxyMockHttpMessageHandler(string.Empty)),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+
+        var options = new StudioAiProxyProviderOptions { Endpoint = "https://api.anthropic.com", Model = "claude", ApiKey = string.Empty };
+        const string providerName = "env-fallback-anthropic-3010-test";
+        var envVarName = StudioAiProxyApiKeyResolver.EnvVarName(providerName);
+
+        Environment.SetEnvironmentVariable(envVarName, "from-env");
         try
         {
-            Environment.SetEnvironmentVariable(envVar, null);
-            adapter.Kind.Should().Be(StudioAiProxyConfiguration.AnthropicKind);
-            adapter.IsConfigured(new StudioAiProxyProviderOptions
-            {
-                Endpoint = "https://api.anthropic.com",
-                Model = "claude",
-                ApiKey = "secret-ref-or-key"
-            }).Should().BeTrue();
-            adapter.IsConfigured(new StudioAiProxyProviderOptions
-            {
-                Endpoint = "https://api.anthropic.com",
-                Model = "claude"
-            }).Should().BeFalse();
-            adapter.IsConfigured(new StudioAiProxyProviderOptions
-            {
-                Endpoint = "https://api.anthropic.com",
-                ApiKey = "key"
-            }).Should().BeFalse();
+            adapter.IsConfigured(providerName, options).Should().BeTrue("the per-provider environment variable is a valid credential source");
         }
         finally
         {
-            Environment.SetEnvironmentVariable(envVar, previous);
+            Environment.SetEnvironmentVariable(envVarName, null);
         }
     }
 

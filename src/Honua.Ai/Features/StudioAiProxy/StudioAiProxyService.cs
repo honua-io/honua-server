@@ -103,7 +103,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return $"Provider '{providerName}' declares unsupported kind '{providerOptions.Kind}'.";
         }
 
-        if (!adapter.IsConfigured(providerOptions))
+        if (!adapter.IsConfigured(providerName, providerOptions))
         {
             return $"Provider '{providerName}' is missing required configuration (model or credentials).";
         }
@@ -243,7 +243,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
 
     private StudioAiCapability BuildCapability(string name, StudioAiProxyProviderOptions options)
     {
-        var configured = _adaptersByKind.TryGetValue(options.Kind, out var adapter) && adapter.IsConfigured(options);
+        var configured = _adaptersByKind.TryGetValue(options.Kind, out var adapter) && adapter.IsConfigured(name, options);
         return new StudioAiCapability
         {
             Provider = name,
