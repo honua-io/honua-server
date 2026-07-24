@@ -13,6 +13,7 @@ using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -68,7 +69,19 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_get_style",
         "honua_apply_style_preset",
         "honua_resolve_entity",
-        "honua_list_capabilities"
+        "honua_list_capabilities",
+        "honua_studio_create_draft",
+        "honua_studio_get_draft",
+        "honua_studio_update_draft",
+        "honua_studio_validate_draft",
+        "honua_studio_preview_draft",
+        "honua_studio_add_layer",
+        "honua_studio_remove_layer",
+        "honua_studio_set_layer_style",
+        "honua_studio_set_view",
+        "honua_studio_add_widget",
+        "honua_studio_remove_widget",
+        "honua_studio_propose_publication"
     };
 
     private static readonly string[] TaxonomyResourceUris =
@@ -255,6 +268,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_get_style",
         "honua_resolve_entity",
         "honua_list_capabilities",
+        "honua_studio_get_draft",
+        "honua_studio_validate_draft",
+        "honua_studio_preview_draft",
     };
 
     /// <summary>
@@ -273,6 +289,18 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_create_map_package"] = (Destructive: false, Idempotent: false),
             ["honua_create_app_package"] = (Destructive: false, Idempotent: false),
             ["honua_apply_style_preset"] = (Destructive: false, Idempotent: true),
+            // Studio draft lifecycle + composition tools (honua-server#3002).
+            // No honua_studio_publish/honua_studio_rollback tool exists — only
+            // honua_studio_propose_publication, which records intent (REQ-003).
+            ["honua_studio_create_draft"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_update_draft"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_add_layer"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_remove_layer"] = (Destructive: true, Idempotent: false),
+            ["honua_studio_set_layer_style"] = (Destructive: false, Idempotent: true),
+            ["honua_studio_set_view"] = (Destructive: false, Idempotent: true),
+            ["honua_studio_add_widget"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_remove_widget"] = (Destructive: true, Idempotent: false),
+            ["honua_studio_propose_publication"] = (Destructive: false, Idempotent: true),
         };
 
     [UnitTest]
@@ -775,7 +803,19 @@ public sealed partial class McpTaxonomyAlignmentTests
             new Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ResolveEntityTool>.Instance),
             new Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool(
-                jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool>.Instance)
+                jobService, NullLogger<Honua.Ai.Protocols.Mcp.Discovery.ListCapabilitiesTool>.Instance),
+            new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
+            new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
+            new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
+            new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
+            new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
+            new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
+            new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
+            new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
+            new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
+            new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
+            new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
+            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance)
         ];
     }
 

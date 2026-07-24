@@ -35,6 +35,13 @@ namespace Honua.Core.Features.Studio.Domain;
 [JsonSerializable(typeof(StudioValidationDiagnostic[]))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(StudioCompositionBody))]
+[JsonSerializable(typeof(StudioCompositionLayer))]
+[JsonSerializable(typeof(StudioCompositionLayer[]))]
+[JsonSerializable(typeof(StudioCompositionView))]
+[JsonSerializable(typeof(StudioCompositionWidget))]
+[JsonSerializable(typeof(StudioCompositionWidget[]))]
+[JsonSerializable(typeof(double[]))]
 public sealed partial class StudioJsonContext : JsonSerializerContext
 {
 }
