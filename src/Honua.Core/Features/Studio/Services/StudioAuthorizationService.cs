@@ -82,15 +82,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             return false;
         }
 
-        foreach (var alias in aliases)
-        {
-            if (!string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return aliases.Any(alias => !string.IsNullOrWhiteSpace(alias) && principal.IsInRole(alias));
     }
 
     /// <inheritdoc />
