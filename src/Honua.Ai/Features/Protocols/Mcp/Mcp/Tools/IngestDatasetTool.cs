@@ -264,6 +264,9 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
         }
 
+        var allowFailover = LicenseGate
+            .CheckEntitlement(httpContext.RequestServices, GeocodeTool.FailoverEntitlementKey)
+            .IsActive;
         var sourceSrid = validated.SourceSrid;
         return new CsvImportOptions
         {
@@ -277,7 +280,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                         Query: address,
                         MaxResults: 1,
                         SpatialReferenceWkid: sourceSrid);
-                    var result = await coordinator.ForwardGeocodeAsync(request, providerName: null, cancellationToken)
+                    var result = await coordinator
+                        .ForwardGeocodeAsync(request, providerName: null, allowFailover, cancellationToken)
                         .ConfigureAwait(false);
                     if (!result.IsSuccess)
                     {

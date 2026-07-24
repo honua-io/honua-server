@@ -45,6 +45,7 @@ public sealed class GeocodeCoordinatorTelemetryTests
         var result = await coordinator.SuggestAsync(
             new SuggestGeocodeRequest(queryText),
             providerName: null,
+            allowFailover: true,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -76,7 +77,11 @@ public sealed class GeocodeCoordinatorTelemetryTests
         ActivitySource.AddActivityListener(listener);
 
         var request = new BatchGeocodeRequest(["1 Test St", "2 Test Ave"]);
-        var result = await coordinator.BatchGeocodeAsync(request, providerName: null, CancellationToken.None);
+        var result = await coordinator.BatchGeocodeAsync(
+            request,
+            providerName: null,
+            allowFailover: true,
+            CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         var span = Assert.Single(

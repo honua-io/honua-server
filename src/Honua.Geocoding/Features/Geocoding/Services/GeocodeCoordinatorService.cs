@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Microsoft.Extensions.Logging;
@@ -190,7 +192,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         ReverseGeocodeRequest request,
         string? providerName = null,
         CancellationToken cancellationToken = default)
-        => ReverseGeocodeAsync(request, providerName, allowFailover: true, cancellationToken);
+        => ReverseGeocodeAsync(request, providerName, allowFailover: false, cancellationToken);
 
     public async Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
         ReverseGeocodeRequest request,
@@ -313,7 +315,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         SuggestGeocodeRequest request,
         string? providerName = null,
         CancellationToken cancellationToken = default)
-        => SuggestAsync(request, providerName, allowFailover: true, cancellationToken);
+        => SuggestAsync(request, providerName, allowFailover: false, cancellationToken);
 
     public async Task<GeocodeResult<IReadOnlyList<GeocodeSuggestion>>> SuggestAsync(
         SuggestGeocodeRequest request,
@@ -438,7 +440,7 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         BatchGeocodeRequest request,
         string? providerName = null,
         CancellationToken cancellationToken = default)
-        => BatchGeocodeAsync(request, providerName, allowFailover: true, cancellationToken);
+        => BatchGeocodeAsync(request, providerName, allowFailover: false, cancellationToken);
 
     public async Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
         BatchGeocodeRequest request,
@@ -673,13 +675,16 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
 {
     private readonly IGeocodeCoordinatorService _coordinatorService;
     private readonly IGeocodeProviderRegistry _providerRegistry;
+    private readonly ILicenseEntitlementService _entitlementService;
 
     public GeocodeProviderCoordinator(
         IGeocodeCoordinatorService coordinatorService,
-        IGeocodeProviderRegistry providerRegistry)
+        IGeocodeProviderRegistry providerRegistry,
+        ILicenseEntitlementService entitlementService)
     {
         _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
         _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
+        _entitlementService = entitlementService ?? throw new ArgumentNullException(nameof(entitlementService));
     }
 
     public IGeocodeProvider? GetProvider(string? providerName = null)
@@ -703,7 +708,11 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
         string? providerName = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _coordinatorService.ForwardGeocodeAsync(request, providerName, cancellationToken).ConfigureAwait(false);
+        var result = await _coordinatorService.ForwardGeocodeAsync(
+            request,
+            providerName,
+            IsFailoverEntitled(),
+            cancellationToken).ConfigureAwait(false);
 
         // A successful result with zero candidates is a genuine "no match" and is
         // returned as an empty list. A failure means every attempted provider errored
@@ -722,7 +731,11 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
         string? providerName = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _coordinatorService.ReverseGeocodeAsync(request, providerName, cancellationToken).ConfigureAwait(false);
+        var result = await _coordinatorService.ReverseGeocodeAsync(
+            request,
+            providerName,
+            IsFailoverEntitled(),
+            cancellationToken).ConfigureAwait(false);
 
         // A successful result with a null match is a genuine "no match". A failure means
         // every attempted provider errored, which must not be collapsed into null (that
@@ -749,6 +762,11 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
             ErrorCode = GeocodeErrorCodes.ServiceUnavailable,
         };
     }
+
+    private bool IsFailoverEntitled()
+        => _entitlementService
+            .CheckEntitlement(FeatureCatalog.GeocodingFailoverKey)
+            .IsActive;
 
     public async Task<IReadOnlyList<GeocodeProviderHealth>> CheckAllProvidersHealthAsync(CancellationToken cancellationToken = default)
     {

@@ -97,6 +97,9 @@ internal sealed class GeocodeAddressesTool : IMcpTool
         // registrations), so it is resolved from the request scope instead of
         // being captured by this singleton tool.
         var coordinator = httpContext.RequestServices.GetRequiredService<IGeocodeCoordinatorService>();
+        var allowFailover = LicenseGate
+            .CheckEntitlement(httpContext.RequestServices, GeocodeTool.FailoverEntitlementKey)
+            .IsActive;
 
         var results = new List<McpGeocodeAddressResult>(addresses.Count);
         var succeeded = 0;
@@ -104,7 +107,14 @@ internal sealed class GeocodeAddressesTool : IMcpTool
         foreach (var address in addresses)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var item = await GeocodeOneAsync(coordinator, address, outSrid, countryCodes, providerName, cancellationToken)
+            var item = await GeocodeOneAsync(
+                coordinator,
+                address,
+                outSrid,
+                countryCodes,
+                providerName,
+                allowFailover,
+                cancellationToken)
                 .ConfigureAwait(false);
             if (item.Ok)
             {
@@ -171,6 +181,7 @@ internal sealed class GeocodeAddressesTool : IMcpTool
         int outSrid,
         string? countryCodes,
         string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken)
     {
         var item = new McpGeocodeAddressResult { Input = address };
@@ -183,7 +194,7 @@ internal sealed class GeocodeAddressesTool : IMcpTool
                 CountryCodes: countryCodes);
 
             var result = await coordinator
-                .ForwardGeocodeAsync(request, providerName, cancellationToken)
+                .ForwardGeocodeAsync(request, providerName, allowFailover, cancellationToken)
                 .ConfigureAwait(false);
 
             if (!result.IsSuccess)

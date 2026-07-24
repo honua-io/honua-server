@@ -46,6 +46,7 @@ public sealed class McpGeocodeAddressesToolTests
         coordinator.ForwardGeocodeAsync(
                 Arg.Is<ForwardGeocodeRequest>(r => r.Query == "1100 Congress Ave" && r.MaxResults == 1),
                 null,
+                true,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
             [
@@ -63,11 +64,13 @@ public sealed class McpGeocodeAddressesToolTests
         coordinator.ForwardGeocodeAsync(
                 Arg.Is<ForwardGeocodeRequest>(r => r.Query == "nowhere at all"),
                 null,
+                true,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>([], "mock"));
         coordinator.ForwardGeocodeAsync(
                 Arg.Is<ForwardGeocodeRequest>(r => r.Query == "provider down st"),
                 null,
+                true,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>("all providers failed", "mock"));
 
@@ -233,6 +236,14 @@ public sealed class McpGeocodeAddressesToolTests
                 HonuaEdition.Enterprise,
                 LicenseValidationState.Valid,
                 HonuaEdition.Enterprise,
+                string.Empty));
+        license.CheckEntitlement(GeocodeTool.FailoverEntitlementKey)
+            .Returns(new LicenseEntitlementDecision(
+                GeocodeTool.FailoverEntitlementKey,
+                true,
+                HonuaEdition.Enterprise,
+                LicenseValidationState.Valid,
+                HonuaEdition.Pro,
                 string.Empty));
         return license;
     }
