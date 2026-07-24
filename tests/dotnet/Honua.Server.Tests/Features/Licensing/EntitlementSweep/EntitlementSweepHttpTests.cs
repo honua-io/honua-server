@@ -44,7 +44,7 @@ namespace Honua.Server.Tests.Features.Licensing.EntitlementSweep;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-[Operation(Operations.LicenseManagement)]
+[Operation(Operations.ContractTesting)]
 public abstract class EntitlementSweepEditionTestsBase : IAsyncLifetime
 {
     private HttpClient _adminClient = null!;
