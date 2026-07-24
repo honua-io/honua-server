@@ -38,6 +38,15 @@ internal sealed class AdminPermissionAuthorizationHandler(
         AuthorizationHandlerContext context,
         AdminPermissionRequirement requirement)
     {
+        // The Studio lifecycle policy also admits non-admin end users behind its feature flag.
+        // This requirement narrows scoped admin principals only; role/feature requirements on
+        // the containing policy remain responsible for deciding whether a non-admin may enter.
+        if (!context.User.IsInRole("admin"))
+        {
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
+
         // The HTTP method is the behavior-changing input. Prefer the resource the
         // authorization middleware supplies (HttpContext in minimal APIs) and fall
         // back to the ambient accessor so the requirement also works when invoked

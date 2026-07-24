@@ -371,7 +371,11 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("PUT /api/v1/studio/package-drafts/{draftId}")]
     [Endpoint("DELETE /api/v1/studio/package-drafts/{draftId}")]
     [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant()
     {
         // honua-server#3001 role-fixture matrix: two genuinely non-admin principals (scoped
@@ -411,7 +415,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                     PackageKey = "enduser-owner-query",
                     WorkspaceId = "studio",
                     OwnerId = "someone-else",
-                    Envelope = BuildEnvelope("1=1"),
+                    Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
                 },
                 StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -429,7 +433,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 {
                     PackageKey = draft.PackageKey,
                     WorkspaceId = draft.WorkspaceId,
-                    Envelope = BuildEnvelope("POPULATION > 1000"),
+                    Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
                     Generation = draft.Generation,
                 },
                 StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest));
@@ -463,6 +467,59 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         publishResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var publishProblem = JsonSerializer.Deserialize<JsonElement>(await publishResponse.Content.ReadAsStringAsync());
         publishProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
+
+        // An admin may publish Alice's first immutable version. Publishing one version must not
+        // make every other version in the item public.
+        using var adminClient = endUserFixture.CreateAdminClient();
+        var adminPublishResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests",
+            JsonContent(new CreateStudioPublicationRequest(), StudioApiJsonContext.Default.CreateStudioPublicationRequest));
+        adminPublishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Alice creates a newer, unpublished version under the same item.
+        var reopenResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/reopen",
+            EmptyJson());
+        reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var reopened = await ReadAsync<StudioPackageDraft>(
+            reopenResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        var secondSaveResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{reopened.DraftId:D}/content-versions",
+            JsonContent(
+                new SaveStudioContentVersionRequest { ChangeNote = "unpublished owner edit" },
+                StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        secondSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var unpublishedVersion = await ReadAsync<StudioContentVersion>(
+            secondSaveResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        // Bob may read only the published version. The list cannot expose the newer unpublished
+        // version, and default export (which targets latest) must be denied before rendering.
+        var bobVersionsResponse = await bobClient.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions");
+        bobVersionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bobVersions = await ReadAsync<StudioContentVersionListResponse>(
+            bobVersionsResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
+        bobVersions.Versions.Should().ContainSingle(candidate => candidate.VersionId == version.VersionId);
+        bobVersions.Versions.Should().NotContain(candidate => candidate.VersionId == unpublishedVersion.VersionId);
+
+        var bobPublishedResponse = await bobClient.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}");
+        bobPublishedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bobUnpublishedResponse = await bobClient.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{unpublishedVersion.VersionId:D}");
+        bobUnpublishedResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var bobLatestExportResponse = await bobClient.PostAsync(
+            $"/api/v1/studio/map/{version.ItemId:D}/export?format=png",
+            EmptyJson());
+        bobLatestExportResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var bobPublishedExportResponse = await bobClient.PostAsync(
+            $"/api/v1/studio/map/{version.ItemId:D}/export?format=png&versionId={version.VersionId:D}",
+            EmptyJson());
+        bobPublishedExportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -478,6 +535,34 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         using var scopedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
 
         var response = await scopedClient.GetAsync($"/api/v1/studio/package-drafts/{Guid.NewGuid():D}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    public async Task StudioLifecycleEndpoints_AdminReadOnlyKey_CannotMutate()
+    {
+        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var readOnlyKey = await apiKeyStore.CreateAsync(
+            "studio-admin-read-only",
+            ["admin:read"],
+            null,
+            null,
+            CancellationToken.None);
+        using var readOnlyClient = _fixture.CreateClient(
+            client => client.DefaultRequestHeaders.Add("X-API-Key", readOnlyKey.Key));
+
+        var response = await readOnlyClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = "read-only-admin-cannot-create",
+                    WorkspaceId = "studio",
+                    Envelope = BuildEnvelope("1=1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -767,7 +852,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var bodyJson = family switch
         {
             StudioPackageFamily.Map =>
-                $$"""{"format":"{{format}}","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
+                $$"""{"mapPackageId":"test-map","format":"{{format}}","status":"Draft","sourceBindings":[],"styleRefs":[],"createdAt":"2026-01-01T00:00:00Z","title":"Parcels Overview","description":"Parcel coverage map.","layers":[{"title":"Parcels"},{"title":"Roads"}],"basemap":"streets"}""",
             StudioPackageFamily.Dashboard =>
                 """{"title":"Operations Dashboard","description":"Live operations metrics.","widgets":[{"title":"Throughput","type":"chart"},{"title":"Map","type":"map"}]}""",
             _ =>

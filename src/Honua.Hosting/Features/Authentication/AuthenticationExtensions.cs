@@ -176,8 +176,9 @@ public static class AuthenticationExtensions
 
     /// <summary>
     /// Configures the Studio package lifecycle authorization policy (honua-server#3001). Any
-    /// authenticated principal may satisfy the ASP.NET policy gate — admin unconditionally, a
-    /// non-admin only once <see cref="StudioLifecycleRequirement"/>'s
+    /// authenticated principal may satisfy the ASP.NET policy gate. Admins retain their
+    /// method-scoped <see cref="AdminPermissionRequirement"/>, while a non-admin is admitted only
+    /// once <see cref="StudioLifecycleRequirement"/>'s
     /// <c>Studio:EndUserAuthorization:Enabled</c> check passes — with per-resource ownership and
     /// the elevated-operation operator-grant check enforced inside each endpoint handler.
     /// </summary>
@@ -200,6 +201,7 @@ public static class AuthenticationExtensions
     {
         _ = policy.RequireAuthenticatedUser();
         _ = policy.AddRequirements(new StudioLifecycleRequirement());
+        _ = policy.AddRequirements(new AdminPermissionRequirement());
         if (oidcEnabled)
         {
             policy.AuthenticationSchemes.Add(OidcAuthenticationExtensions.CompositeScheme);
@@ -262,8 +264,9 @@ public static class AuthenticationExtensions
 
     /// <summary>
     /// Requires Studio package lifecycle authorization for an endpoint or group
-    /// (honua-server#3001). Admits admin unconditionally and any authenticated principal once
-    /// <c>Studio:EndUserAuthorization:Enabled</c> is on; per-resource ownership and the
+    /// (honua-server#3001). Admits admins whose scoped permissions authorize the request, and
+    /// any authenticated principal once <c>Studio:EndUserAuthorization:Enabled</c> is on;
+    /// per-resource ownership and the
     /// elevated-operation (publish-request, rollback) operator-grant check must additionally be
     /// enforced inside the endpoint handler via <c>IStudioAuthorizationService</c>. With the flag
     /// off, this policy is equivalent to <see cref="RequireAdminAuthorization{TBuilder}"/>.
