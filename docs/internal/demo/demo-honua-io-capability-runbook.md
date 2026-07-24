@@ -447,6 +447,7 @@ attempting a separate env-only change:
 ```
 Geocoding__Enabled                                   = true
 Geocoding__DefaultProvider                           = amazon-location
+Geocoding__EnableFailover                            = false
 Geocoding__Providers__Nominatim__Enabled             = false
 Geocoding__Providers__AmazonLocation__Enabled        = true
 Geocoding__Providers__AmazonLocation__Region         = us-west-2
@@ -455,14 +456,16 @@ Geocoding__Providers__AmazonLocation__UseIamRole     = true
 Geocoding__Providers__AmazonLocation__MaxResults     = 10
 ```
 
-`Geocoding__Providers__Nominatim__Enabled=false` is not optional cleanup —
-`NominatimProviderConfiguration` defaults `Enabled=true` in its own constructor, so
-without this override Nominatim stays registered as a failover candidate
-(`GeocodeCoordinatorService` tries the default provider first, then every other
-registered provider when `EnableFailover` is on, the server default). Leaving it on
-would mean any Amazon Location error (e.g. a place-index typo) triggers a failover
-attempt to Nominatim, which hangs its own ~15.8s before failing — compounding, not
-fixing, latency on an already-broken path.
+`Geocoding__EnableFailover=false` is the effective safeguard against the existing
+Nominatim timeout. The current server registration path always registers Nominatim for
+backward compatibility, even when
+`Geocoding__Providers__Nominatim__Enabled=false`; with failover enabled, the coordinator
+would therefore still try it after any Amazon Location error (for example, a place-index
+typo) and hang for another ~15.8 seconds. Keep the provider-specific flag false to record
+the intended provider set, but do not rely on it until runtime registration honors that
+flag. This demo deployment deliberately runs Amazon Location as its only attempted
+provider; re-enable failover only after every registered fallback has a working network
+path.
 
 **Sequencing:**
 1. **[OPERATOR]** Review and apply `honua-io/honua-iac#127` (`terraform plan` then
