@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
+
 namespace Honua.Ai.StudioAiProxy.Domain;
 
 /// <summary>
@@ -80,11 +82,32 @@ public static class StudioAiChatRequestMapper
         }
 
         List<StudioAiToolDefinition>? tools = null;
-        if (http.Tools is { Count: > 0 })
+        if (http.Tools is { Count: > 0 } httpTools)
         {
-            tools = http.Tools
-                .Select(t => new StudioAiToolDefinition { Name = t.Name, Description = t.Description, InputSchema = t.InputSchema })
-                .ToList();
+            tools = new List<StudioAiToolDefinition>(httpTools.Count);
+            foreach (var tool in httpTools)
+            {
+                if (tool is null)
+                {
+                    return (null, "tools[] cannot contain a null entry.");
+                }
+
+                if (string.IsNullOrWhiteSpace(tool.Name))
+                {
+                    return (null, "tools[].name is required.");
+                }
+
+                // A missing `inputSchema` deserializes to a default (Undefined) JsonElement, not an
+                // object — reject both that and any non-object shape (array/string/number/etc) here
+                // rather than forwarding it to a provider, which would reject it with a confusing,
+                // provider-specific error deep inside the SSE stream.
+                if (tool.InputSchema.ValueKind != JsonValueKind.Object)
+                {
+                    return (null, $"tools[].inputSchema for tool '{tool.Name}' must be a JSON object.");
+                }
+
+                tools.Add(new StudioAiToolDefinition { Name = tool.Name, Description = tool.Description, InputSchema = tool.InputSchema });
+            }
         }
 
         StudioAiToolChoice? toolChoice = null;

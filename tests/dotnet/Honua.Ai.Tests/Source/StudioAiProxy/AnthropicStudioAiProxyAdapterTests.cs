@@ -257,6 +257,81 @@ public sealed class AnthropicStudioAiProxyAdapterTests
         }
     }
 
+    [UnitTest]
+    public async Task StreamAsync_TopLevelSystemField_RoundTripsToAnthropicSystemParam()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new AnthropicStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+
+        var request = new StudioAiChatRequest
+        {
+            System = "You are a GIS analyst.",
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+        };
+
+        await CollectAsync(adapter, DefaultOptions(), request);
+
+        handler.CapturedRequestBody.Should().Contain("\"system\":\"You are a GIS analyst.\"");
+        // Anthropic's Messages API has no "system" role in messages[]; the top-level field is the
+        // only carrier, so no message in the wire payload should be role "system".
+        handler.CapturedRequestBody.Should().NotContain("\"role\":\"system\"");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_SystemRoleMessage_IsFoldedIntoAnthropicSystemParamNotDropped()
+    {
+        // honua-server#3010 review: the mapper accepts a messages[] entry with role=system (the
+        // OpenAI adapter forwards it as an OpenAI "system"-role message), but Anthropic's Messages
+        // API has no such role -- it must be folded into the top-level `system` string instead of
+        // silently disappearing.
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new AnthropicStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+
+        var request = new StudioAiChatRequest
+        {
+            Messages =
+            [
+                new StudioAiMessage { Role = StudioAiRole.System, Content = "Be terse." },
+                new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }
+            ]
+        };
+
+        await CollectAsync(adapter, DefaultOptions(), request);
+
+        handler.CapturedRequestBody.Should().Contain("\"system\":\"Be terse.\"");
+        handler.CapturedRequestBody.Should().NotContain("\"role\":\"system\"", "Anthropic rejects a system role inside messages[]");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_TopLevelSystemAndSystemRoleMessage_AreConcatenatedInOrder()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new AnthropicStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+
+        var request = new StudioAiChatRequest
+        {
+            System = "You are a GIS analyst.",
+            Messages =
+            [
+                new StudioAiMessage { Role = StudioAiRole.System, Content = "Be terse." },
+                new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }
+            ]
+        };
+
+        await CollectAsync(adapter, DefaultOptions(), request);
+
+        handler.CapturedRequestBody.Should().Contain("\"system\":\"You are a GIS analyst.\\n\\nBe terse.\"");
+    }
+
     private static AnthropicStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);

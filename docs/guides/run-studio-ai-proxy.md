@@ -185,7 +185,24 @@ match the result to the pending call:
 A request that names an unknown or unconfigured provider, has no messages, exceeds
 `MaxPromptCharacters`, or asks for tools against a provider with `SupportsTools: false` is rejected
 with a normal `400` JSON problem response **before** any SSE headers are written — once the stream
-starts, the call has already been validated against a real, configured provider.
+starts, the call has already been validated against a real, configured provider. A tool declaration
+with an empty/whitespace `name` or a non-object `inputSchema` is rejected the same way — the tool
+never reaches an adapter.
+
+**System prompts**: both the top-level `system` field and any `messages[]` entry with
+`"role": "system"` are accepted, in request order — there is no restriction on position within
+`messages[]`. Every adapter forwards the *same* effective system content; only the wire shape
+differs because the two provider families model "system" differently:
+
+- **OpenAI-compatible** has a `system`-role chat message, so the top-level `system` field (if
+  present) becomes a leading `system` message, followed by every `messages[]` entry that already
+  carries `"role": "system"`, each forwarded as its own `system`-role message, in order.
+- **Anthropic** has no `system`-role message — its Messages API takes system content as a single
+  top-level `system` string field, and rejects a `"system"` role inside `messages[]` outright. The
+  adapter concatenates the same content the OpenAI adapter would have emitted as messages — the
+  top-level `system` field first, then each `messages[]` `"role": "system"` entry's content, in
+  order — into one string, joined with a blank line, and sends it as Anthropic's `system` field.
+  Non-system messages map through unchanged.
 
 The response is a sequence of named SSE events, each carrying a JSON body shaped like the
 provider-neutral `StudioAiChatEvent` contract:

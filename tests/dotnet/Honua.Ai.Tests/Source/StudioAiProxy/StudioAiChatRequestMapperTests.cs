@@ -164,4 +164,73 @@ public sealed class StudioAiChatRequestMapperTests
         request.Should().BeNull();
         error.Should().NotBeNullOrWhiteSpace();
     }
+
+    [UnitTest]
+    public void ToDomain_ToolWithEmptyName_IsRejected()
+    {
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(new StudioAiChatHttpRequest
+        {
+            Messages = [new StudioAiChatHttpMessage { Role = "user", Content = "hi" }],
+            Tools =
+            [
+                new StudioAiChatHttpTool
+                {
+                    Name = "   ",
+                    InputSchema = JsonDocument.Parse("""{"type":"object"}""").RootElement
+                }
+            ]
+        });
+
+        request.Should().BeNull();
+        error.Should().Contain("name");
+    }
+
+    [UnitTest]
+    public void ToDomain_ToolWithMissingInputSchema_IsRejected()
+    {
+        // honua-server#3010 review: a JSON body that omits `inputSchema` entirely deserializes it
+        // to a default (Undefined) JsonElement, not an object -- the mapper must catch this rather
+        // than forwarding an undefined schema to a provider.
+        var http = JsonSerializer.Deserialize(
+            """{"messages":[{"role":"user","content":"hi"}],"tools":[{"name":"list_incidents"}]}""",
+            StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest)!;
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(http);
+
+        request.Should().BeNull();
+        error.Should().Contain("inputSchema").And.Contain("list_incidents");
+    }
+
+    [UnitTest]
+    public void ToDomain_ToolWithNonObjectInputSchema_IsRejected()
+    {
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(new StudioAiChatHttpRequest
+        {
+            Messages = [new StudioAiChatHttpMessage { Role = "user", Content = "hi" }],
+            Tools =
+            [
+                new StudioAiChatHttpTool
+                {
+                    Name = "list_incidents",
+                    InputSchema = JsonDocument.Parse("""["not", "an", "object"]""").RootElement
+                }
+            ]
+        });
+
+        request.Should().BeNull();
+        error.Should().Contain("inputSchema");
+    }
+
+    [UnitTest]
+    public void ToDomain_NullToolEntry_IsRejectedInsteadOfThrowing()
+    {
+        var http = JsonSerializer.Deserialize(
+            """{"messages":[{"role":"user","content":"hi"}],"tools":[null]}""",
+            StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest)!;
+
+        var (request, error) = StudioAiChatRequestMapper.ToDomain(http);
+
+        request.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+    }
 }

@@ -207,6 +207,43 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     }
 
     [UnitTest]
+    public async Task StreamAsync_TopLevelSystemAndSystemRoleMessage_BothForwardAsSystemRoleMessages()
+    {
+        // honua-server#3010 review: documents/locks in the contract the Anthropic adapter's system-
+        // prompt handling is aligned to -- the top-level `system` field becomes a leading "system"
+        // chat message, and any messages[] entry already carrying role=system is forwarded as its
+        // own "system"-role message, in request order, with no restriction on position.
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+
+        var request = new StudioAiChatRequest
+        {
+            System = "You are a GIS analyst.",
+            Messages =
+            [
+                new StudioAiMessage { Role = StudioAiRole.System, Content = "Be terse." },
+                new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }
+            ]
+        };
+
+        await CollectAsync(adapter, DefaultOptions(), request);
+
+        handler.CapturedRequestBody.Should().NotBeNull();
+        using var document = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var systemMessages = document.RootElement
+            .GetProperty("messages")
+            .EnumerateArray()
+            .Where(m => m.GetProperty("role").GetString() == "system")
+            .Select(m => m.GetProperty("content").GetString())
+            .ToList();
+
+        systemMessages.Should().Equal("You are a GIS analyst.", "Be terse.");
+    }
+
+    [UnitTest]
     public async Task StreamAsync_ToolResultMessage_PreservesToolCallIdInRequestBody()
     {
         // honua-server#3010 review: OpenAI-compatible tool loops correlate a tool result back to

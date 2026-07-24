@@ -256,7 +256,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
             Model = model,
             MaxTokens = request.MaxTokens ?? options.MaxTokens,
             Temperature = request.Temperature,
-            System = request.System,
+            System = BuildSystemPrompt(request),
             Messages = request.Messages
                 .Where(m => m.Role != StudioAiRole.System)
                 .Select(m => new AnthropicProxyMessage
@@ -332,6 +332,34 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// Builds the Anthropic top-level <c>system</c> string. Anthropic's Messages API has no
+    /// <c>system</c>-role message — system content is a single top-level field, not a
+    /// <c>messages[]</c> entry — so a <see cref="StudioAiRole.System"/> message would otherwise be
+    /// silently dropped by the <c>Where(m =&gt; m.Role != StudioAiRole.System)</c> filter above (they
+    /// cannot be sent to Anthropic as chat turns; the API rejects a <c>"system"</c> role in
+    /// <c>messages[]</c>). To keep behavior aligned with the OpenAI-compatible adapter — which
+    /// forwards <see cref="StudioAiChatRequest.System"/> and every <see cref="StudioAiRole.System"/>
+    /// message as OpenAI <c>system</c>-role chat messages, in request order, with no restriction on
+    /// position — this concatenates the same content (the top-level <c>System</c> field first, then
+    /// each <see cref="StudioAiRole.System"/> message's content in order) into Anthropic's single
+    /// <c>system</c> string, joined with a blank line between parts.
+    /// </summary>
+    private static string? BuildSystemPrompt(StudioAiChatRequest request)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(request.System))
+        {
+            parts.Add(request.System);
+        }
+
+        parts.AddRange(request.Messages
+            .Where(m => m.Role == StudioAiRole.System && !string.IsNullOrWhiteSpace(m.Content))
+            .Select(m => m.Content));
+
+        return parts.Count == 0 ? null : string.Join("\n\n", parts);
     }
 
     private static StudioAiStopReason MapStopReason(string? stopReason) => stopReason switch
