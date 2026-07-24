@@ -121,14 +121,10 @@ public static class I3sNodePageProjector
         // (unresolved child ids are skipped) and projects (childIndex) in one lookup;
         // splitting into Where+Select would require a second, redundant dictionary lookup.
         var children = new List<int>(entry.ChildIds.Count);
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var childId in entry.ChildIds)
-        {
-            if (indexById.TryGetValue(childId, out var childIndex))
-            {
-                children.Add(childIndex);
-            }
-        }
+        children.AddRange(entry.ChildIds
+            .Select(childId => indexById.TryGetValue(childId, out var childIndex) ? (int?)childIndex : null)
+            .Where(childIndex => childIndex.HasValue)
+            .Select(childIndex => childIndex.GetValueOrDefault()));
 
         var node = new I3sNodePageEntry
         {

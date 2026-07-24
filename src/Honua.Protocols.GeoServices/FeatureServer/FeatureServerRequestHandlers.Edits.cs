@@ -803,16 +803,13 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
-        // codeql[cs/linq/missed-where] -- the predicate binds the parsed object ID through an out variable.
-        foreach (var entry in attributes.Where(e => string.Equals(e.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)))
-        {
-            if (FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
-            {
-                return objectId;
-            }
-        }
-
-        return null;
+        return attributes
+            .Where(entry => string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            .Select(entry =>
+                FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId)
+                    ? (long?)objectId
+                    : null)
+            .FirstOrDefault(objectId => objectId.HasValue);
     }
 
     private static GeoServicesFeature[]? ConcatFeatures(GeoServicesFeature[]? first, GeoServicesFeature[]? second)
@@ -1301,18 +1298,23 @@ internal static partial class FeatureServerEndpoints
     private static Dictionary<string, StringValues>? ExtractDeleteFilterParameters(
         IReadOnlyDictionary<string, StringValues> values)
     {
-        Dictionary<string, StringValues>? filter = null;
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in DeleteFilterParameterKeys)
+        var entries = DeleteFilterParameterKeys
+            .Select(key => (
+                Key: key,
+                Found: TryGetValue(values, key, out var raw) && !StringValues.IsNullOrEmpty(raw),
+                Value: raw))
+            .Where(entry => entry.Found)
+            .ToArray();
+
+        if (entries.Length == 0)
         {
-            if (TryGetValue(values, key, out var raw) && !StringValues.IsNullOrEmpty(raw))
-            {
-                filter ??= new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
-                filter[key] = raw;
-            }
+            return null;
         }
 
-        return filter;
+        return entries.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value,
+            StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

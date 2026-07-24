@@ -80,9 +80,17 @@ public sealed class GdalErrorSanitizerTests
         }
         finally
         {
-            // Best-effort cleanup: a lingering file handle on the scratch directory must not fail the test.
-            // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
-            try { if (Directory.Exists(scratch)) Directory.Delete(scratch, recursive: true); } catch (IOException) { }
+            try
+            {
+                if (Directory.Exists(scratch))
+                {
+                    Directory.Delete(scratch, recursive: true);
+                }
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
         }
     }
 }

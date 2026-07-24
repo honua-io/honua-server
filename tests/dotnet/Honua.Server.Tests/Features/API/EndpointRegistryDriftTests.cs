@@ -549,12 +549,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     private static string FindServerTestSourceRoot()
     {
-        // Not a missed-select: this walks up the directory tree per start path and returns early
-        // on the first match, it does not map each element of the outer sequence to an output.
-        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        var starts = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory };
+        for (var i = 0; i < starts.Length; i++)
         {
-            // codeql[cs/linq/missed-select] -- the directory cursor is reassigned while walking parents.
-            var directory = new DirectoryInfo(start);
+            var directory = new DirectoryInfo(starts[i]);
             while (directory is not null)
             {
                 // "tests", "dotnet", "Honua.Server.Tests" are fixed relative literals (never rooted),

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
@@ -80,11 +81,7 @@ public sealed class FeatureStreamHealthCheckTests
             // A `using` declaration doesn't apply cleanly to a dynamically-sized List<T> of
             // disposables created via LINQ; disposing each item in a finally block is the
             // correct idiom here.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            foreach (var session in sessions)
-            {
-                session.Dispose();
-            }
+            DeferredDisposal.DisposeAll(sessions);
         }
     }
 

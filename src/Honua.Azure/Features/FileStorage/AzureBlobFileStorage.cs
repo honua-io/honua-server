@@ -224,10 +224,9 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
             // call. The cancel path is responsible for disposing when it removes the CTS.
             // Not a `using` statement: the CTS is not owned/created in this scope, it is
             // conditionally reclaimed from a shared dictionary via TryRemove.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             if (UploadCancellationTokens.TryRemove(uploadId, out var removedSource))
             {
-                removedSource.Dispose();
+                DeferredDisposal.Dispose(removedSource);
             }
         }
     }

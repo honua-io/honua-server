@@ -79,16 +79,10 @@ public static class GdalInfoCoverageEnricher
         }
 
         var values = new List<double>();
-        // Not a simple filter: TryGetDouble's out-param is the value being collected, so
-        // `.Where(...)` can't express this without duplicating the TryGetDouble call.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var entry in gt.EnumerateArray())
-        {
-            if (entry.TryGetDouble(out var v))
-            {
-                values.Add(v);
-            }
-        }
+        values.AddRange(gt.EnumerateArray()
+            .Select(entry => entry.TryGetDouble(out var value) ? (double?)value : null)
+            .Where(value => value.HasValue)
+            .Select(value => value.GetValueOrDefault()));
 
         // geoTransform = [originX, pixelWidth, rowRotation, originY, colRotation, pixelHeight]
         return values.Count == 6 ? (Math.Abs(values[1]), Math.Abs(values[5])) : null;
@@ -219,16 +213,10 @@ public static class GdalInfoCoverageEnricher
         }
 
         var coords = new List<double>();
-        // Not a simple filter: TryGetDouble's out-param is the value being collected, so
-        // `.Where(...)` can't express this without duplicating the TryGetDouble call.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var entry in point.EnumerateArray())
-        {
-            if (entry.TryGetDouble(out var v))
-            {
-                coords.Add(v);
-            }
-        }
+        coords.AddRange(point.EnumerateArray()
+            .Select(entry => entry.TryGetDouble(out var value) ? (double?)value : null)
+            .Where(value => value.HasValue)
+            .Select(value => value.GetValueOrDefault()));
 
         if (coords.Count < 2)
         {
@@ -259,16 +247,16 @@ public static class GdalInfoCoverageEnricher
     private static List<double> ParseBraceValues(string? value)
     {
         var result = new List<double>();
-        // Not a simple filter: TryParse's out-param is the value being collected, so
-        // `.Where(...)` can't express this without duplicating the TryParse call.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var part in ParseBraceList(value))
-        {
-            if (double.TryParse(part, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
-            {
-                result.Add(v);
-            }
-        }
+        result.AddRange(ParseBraceList(value)
+            .Select(part => double.TryParse(
+                part,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var parsed)
+                    ? (double?)parsed
+                    : null)
+            .Where(parsed => parsed.HasValue)
+            .Select(parsed => parsed.GetValueOrDefault()));
 
         return result;
     }

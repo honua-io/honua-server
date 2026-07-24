@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -320,7 +321,6 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
     private const string ClientLane = "cli";
     private const string Protocol = "odata";
 
-    // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
     private HttpClient? _adminClient;
 
     public ODataClientCertificationFixture()
@@ -392,7 +392,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
         }
         finally
         {
-            _adminClient?.Dispose();
+            DeferredDisposal.Dispose(_adminClient);
             await WebApp.DisposeAsync();
         }
     }

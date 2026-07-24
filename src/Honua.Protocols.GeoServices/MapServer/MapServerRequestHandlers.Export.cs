@@ -1674,14 +1674,17 @@ internal static partial class MapServerEndpoints
         // Not rewritten as .Where(...): int.TryParse uses the Try-pattern (bool + out id),
         // so a LINQ equivalent would need an intermediate nullable projection that is
         // harder to read than the loop.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var part in idList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-            {
-                ids.Add(id);
-            }
-        }
+        ids.UnionWith(idList
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => int.TryParse(
+                part,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var id)
+                    ? (int?)id
+                    : null)
+            .Where(id => id.HasValue)
+            .Select(id => id.GetValueOrDefault()));
 
         return ids;
     }

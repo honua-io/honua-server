@@ -338,8 +338,7 @@ public sealed class PointCloudTilesetBuilderTests
         // Exact equality is intentional: leaf geometricError is a literal sentinel
         // (0.0) written by the partitioner, not a computed/accumulated value, so
         // there is no rounding error to tolerate.
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        leafErrors.Should().OnlyContain(error => error == 0.0);
+        leafErrors.Should().OnlyContain(error => error.Equals(0d));
     }
 
     private static void CollectLeafGeometricErrors(JsonElement node, List<double> sink)

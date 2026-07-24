@@ -308,18 +308,20 @@ internal sealed class QueryFormatter : IQueryFormatter
         // where the layer's date fields are known).
         if (dateFieldNames.Count > 0)
         {
-            // Not rewritten as .Where: the filter condition and the loop-body assignment both
-            // depend on the same TryConvertToEpochMilliseconds `out` value (epochMs), which a
-            // Where lambda cannot hand back to the loop body without recomputing the conversion.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var fieldName in dateFieldNames)
+            foreach (var converted in dateFieldNames
+                         .Select(fieldName => (
+                             FieldName: fieldName,
+                             EpochMilliseconds:
+                                 attributes.TryGetValue(fieldName, out var dateValue) &&
+                                 dateValue is not null &&
+                                 GeoServicesFieldConventions.TryConvertToEpochMilliseconds(
+                                     dateValue,
+                                     out var epochMilliseconds)
+                                     ? (long?)epochMilliseconds
+                                     : null))
+                         .Where(converted => converted.EpochMilliseconds.HasValue))
             {
-                if (attributes.TryGetValue(fieldName, out var dateValue)
-                    && dateValue is not null
-                    && GeoServicesFieldConventions.TryConvertToEpochMilliseconds(dateValue, out var epochMs))
-                {
-                    attributes[fieldName] = epochMs;
-                }
+                attributes[converted.FieldName] = converted.EpochMilliseconds.GetValueOrDefault();
             }
         }
 

@@ -108,21 +108,16 @@ internal static class GdalNoData
                 return null;
             }
 
-            // Not a .Where(...)/.Select(...) candidate: TryGetProperty/TryGetDouble's out
-            // values feed directly into the returned result, so a LINQ split would need
-            // to re-parse each band's JSON value a second time.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var band in bands.EnumerateArray())
-            {
-                if (band.TryGetProperty("noDataValue", out var noData)
-                    && noData.ValueKind == JsonValueKind.Number
-                    && noData.TryGetDouble(out var value)
-                    && !double.IsNaN(value)
-                    && !double.IsInfinity(value))
-                {
-                    return value;
-                }
-            }
+            var value = bands.EnumerateArray()
+                .Select(band =>
+                    band.TryGetProperty("noDataValue", out var noData) &&
+                    noData.ValueKind == JsonValueKind.Number &&
+                    noData.TryGetDouble(out var candidate) &&
+                    double.IsFinite(candidate)
+                        ? (double?)candidate
+                        : null)
+                .FirstOrDefault(candidate => candidate.HasValue);
+            if (value.HasValue) return value.Value;
 
             return null;
         }

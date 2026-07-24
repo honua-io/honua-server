@@ -406,8 +406,7 @@ public sealed class OgcTileCacheExportServiceTests
         {
             RequestUris.Add(request.RequestUri!);
             var payload = Encoding.UTF8.GetBytes($"tile:{request.RequestUri}");
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(payload)
                 {
@@ -422,8 +421,7 @@ public sealed class OgcTileCacheExportServiceTests
         // Response ownership transfers to the caller via the return value
         // (HttpClient's pipeline disposes it); nothing leaks here.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError)
             {
                 Content = new StringContent("upstream error", Encoding.UTF8, "text/plain")
             });

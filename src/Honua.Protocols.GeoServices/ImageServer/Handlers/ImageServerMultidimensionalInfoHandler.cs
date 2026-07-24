@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
@@ -50,7 +51,6 @@ internal sealed class ImageServerMultidimensionalInfoHandler
         // through the catch block below so RecordException can still attach the exception to
         // the in-flight activity. Disposing via a using-scope ending inside the try would stop
         // the activity before the catch runs, dropping exception telemetry.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? activity = null;
 
         try
@@ -99,7 +99,7 @@ internal sealed class ImageServerMultidimensionalInfoHandler
         }
         finally
         {
-            activity?.Dispose();
+            DeferredDisposal.Dispose(activity);
         }
     }
 }

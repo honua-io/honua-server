@@ -223,17 +223,19 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // Map layer_id -> resource ids (a layer may be published into multiple services).
         var affectedResourceIds = new HashSet<string>(StringComparer.Ordinal);
         var extentByResourceId = new Dictionary<string, LayerExtentInsert?>(StringComparer.Ordinal);
-        // Not rewritten as .Where(...): each guard short-circuits the next, and the loop body
-        // populates two collections together (the HashSet.Add result gates the dictionary write).
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var publication in graph.Publications)
+        foreach (var refreshed in graph.Publications
+                     .Where(publication => publication.LayerIndex.HasValue)
+                     .Select(publication => (
+                         Publication: publication,
+                         Found: refreshedExtents.TryGetValue(
+                             publication.LayerIndex.GetValueOrDefault(),
+                             out var extent),
+                         Extent: extent))
+                     .Where(refreshed => refreshed.Found)
+                     .DistinctBy(refreshed => refreshed.Publication.ResourceId))
         {
-            if (publication.LayerIndex is not int layerIndex) continue;
-            if (!refreshedExtents.TryGetValue(layerIndex, out var extent)) continue;
-            if (affectedResourceIds.Add(publication.ResourceId))
-            {
-                extentByResourceId[publication.ResourceId] = extent;
-            }
+            affectedResourceIds.Add(refreshed.Publication.ResourceId);
+            extentByResourceId[refreshed.Publication.ResourceId] = refreshed.Extent;
         }
         if (affectedResourceIds.Count == 0)
         {

@@ -17,6 +17,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// </summary>
 internal static class ImageServerGeometryHelpers
 {
+    private static readonly string[] CompositeCoordinatePropertyNames = ["paths", "rings"];
+
     /// <summary>Axis-aligned bounding box of an Esri geometry.</summary>
     internal readonly record struct GeometryEnvelope(double XMin, double YMin, double XMax, double YMax, int? Srid);
 
@@ -190,16 +192,17 @@ internal static class ImageServerGeometryHelpers
         }
 
         // paths: [[[x,y], ...], ...] and rings: [[[x,y], ...], ...]
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in new[] { "paths", "rings" })
+        foreach (var part in CompositeCoordinatePropertyNames
+                     .Select(name =>
+                         root.TryGetProperty(name, out var element) &&
+                         element.ValueKind == JsonValueKind.Array
+                             ? (JsonElement?)element
+                             : null)
+                     .Where(element => element.HasValue)
+                     .SelectMany(element => element.GetValueOrDefault().EnumerateArray())
+                     .Where(part => part.ValueKind == JsonValueKind.Array))
         {
-            if (root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var part in element.EnumerateArray().Where(part => part.ValueKind == JsonValueKind.Array))
-                {
-                    AppendCoordinatePairs(part, result);
-                }
-            }
+            AppendCoordinatePairs(part, result);
         }
 
         return result;

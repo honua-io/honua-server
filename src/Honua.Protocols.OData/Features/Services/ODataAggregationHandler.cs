@@ -465,17 +465,15 @@ internal sealed class ODataAggregationHandler
 
     private static void UpdateAccumulators(List<AggregateAccumulator> accumulators, Feature feature)
     {
-        // Not rewritten as `.Where(...)`: the filter predicate and the extracted `value` both
-        // come from the same `TryGetNumericValue` out-parameter call, so a LINQ `Where` would
-        // need to invoke it twice (once to filter, once to re-extract the value) or project
-        // through an intermediate tuple - neither is clearer than the explicit loop.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var accumulator in accumulators)
+        foreach (var candidate in accumulators
+                     .Select(accumulator => (
+                         Accumulator: accumulator,
+                         Value: TryGetNumericValue(feature, accumulator.Field, out var value)
+                             ? (double?)value
+                             : null))
+                     .Where(candidate => candidate.Value.HasValue))
         {
-            if (TryGetNumericValue(feature, accumulator.Field, out var value))
-            {
-                accumulator.AddValue(value);
-            }
+            candidate.Accumulator.AddValue(candidate.Value.GetValueOrDefault());
         }
     }
 

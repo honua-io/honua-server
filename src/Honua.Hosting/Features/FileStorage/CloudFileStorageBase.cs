@@ -165,13 +165,9 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             // Not converted to `.Where(...)`: the predicate is an awaited async delete call
             // that must run sequentially per file (not fanned out via Task.WhenAll), so a
             // synchronous LINQ filter cannot express it.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var fileId in fileIds.Keys)
             {
-                if (await DeleteBatchFileAsync(fileId, cancellationToken))
-                {
-                    deletedCount++;
-                }
+                deletedCount += await DeleteBatchFileAsync(fileId, cancellationToken).ConfigureAwait(false) ? 1 : 0;
             }
 
             if (deletedCount > 0)

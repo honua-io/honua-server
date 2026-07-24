@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
@@ -137,7 +138,6 @@ internal sealed partial class FeatureChangeRetryQueue(
         // Not scoped with `using`: disposal must happen only after cancelling the renewal
         // loop, awaiting its completion, and awaiting the async lease release — see the
         // `finally` block below, which performs that ordered teardown explicitly.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         var leaseCoordinator = await TryAcquireClaimLeaseAsync(pendingId).ConfigureAwait(false);
         if (_redisDb != null && leaseCoordinator == null)
         {
@@ -243,7 +243,7 @@ internal sealed partial class FeatureChangeRetryQueue(
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-                leaseCoordinator.Dispose();
+                DeferredDisposal.Dispose(leaseCoordinator);
             }
         }
     }

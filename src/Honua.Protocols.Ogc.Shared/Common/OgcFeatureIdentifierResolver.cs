@@ -311,13 +311,15 @@ internal static class OgcFeatureIdentifierResolver
             // non-canonical ids) and binds the extracted `objectId` used below; a .Where() would
             // have to re-parse the id, so the guard-clause form here is clearer.
             var tokensByObjectId = new Dictionary<long, string>(distinctIds.Count);
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var featureId in distinctIds)
+            foreach (var candidate in distinctIds
+                         .Select(featureId => (
+                             FeatureId: featureId,
+                             ObjectId: TryParseCanonicalPositiveObjectId(featureId, out var objectId)
+                                 ? (long?)objectId
+                                 : null))
+                         .Where(candidate => candidate.ObjectId.HasValue))
             {
-                if (TryParseCanonicalPositiveObjectId(featureId, out var objectId))
-                {
-                    tokensByObjectId.TryAdd(objectId, featureId);
-                }
+                tokensByObjectId.TryAdd(candidate.ObjectId.GetValueOrDefault(), candidate.FeatureId);
             }
 
             if (tokensByObjectId.Count > 0)
@@ -332,16 +334,16 @@ internal static class OgcFeatureIdentifierResolver
                     cancellationToken).ConfigureAwait(false);
                 if (!fastPathResult.Items.IsDefaultOrEmpty)
                 {
-                    // judgment call: TryGetValue both filters (skips features whose id was not
-                    // requested) and binds the extracted `token` used below; a .Where() would
-                    // have to re-look-up the token, so the guard-clause form here is clearer.
-                    // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                    foreach (var feature in fastPathResult.Items)
+                    foreach (var resolvedFeature in fastPathResult.Items
+                                 .Select(feature => (
+                                     Feature: feature,
+                                     Found: tokensByObjectId.TryGetValue(feature.Id, out var token),
+                                     Token: token))
+                                 .Where(resolvedFeature => resolvedFeature.Found))
                     {
-                        if (tokensByObjectId.TryGetValue(feature.Id, out var token))
-                        {
-                            resolved.TryAdd(token, new ResolvedFeature(feature.Id, feature));
-                        }
+                        resolved.TryAdd(
+                            resolvedFeature.Token!,
+                            new ResolvedFeature(resolvedFeature.Feature.Id, resolvedFeature.Feature));
                     }
                 }
             }

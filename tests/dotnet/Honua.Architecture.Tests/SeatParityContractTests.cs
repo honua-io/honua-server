@@ -223,11 +223,10 @@ public sealed class SeatParityContractTests
 
             var propertyMatch = RoutePropertyRegex.Match(rawLine);
             propertyMatch.Success.Should().BeTrue($"line '{rawLine}' must be a route key or route property");
-            // Intentional: FluentAssertions' Should() extension is null-safe (extension methods
-            // never NRE on a null receiver), so this *is* the explicit null guard for currentRoute,
-            // not an unguarded dereference.
-            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-            currentRoute.Should().NotBeNull($"line '{rawLine}' must belong to a route entry");
+            if (currentRoute is null)
+            {
+                throw new InvalidOperationException($"Line '{rawLine}' must belong to a route entry.");
+            }
 
             var value = Unquote(propertyMatch.Groups["value"].Value.Trim());
             currentEntry = propertyMatch.Groups["key"].Value switch

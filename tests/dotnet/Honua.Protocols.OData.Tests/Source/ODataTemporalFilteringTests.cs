@@ -207,15 +207,13 @@ public sealed class ODataTemporalFilteringTests : IClassFixture<WebAppFixture>
         var features = await ParseFeaturesAsync(response);
 
         // All returned features should have matching created_date
-        foreach (var dateValue in (features.Select(ParseAttributes)
+        foreach (var dateValue in features.Select(ParseAttributes)
                      .Where(attributes => attributes.TryGetProperty("created_date", out _))
-                     .Select(attributes => attributes.GetProperty("created_date"))).Select(dateElement => dateElement.GetString()))
+                     .Select(attributes => attributes.GetProperty("created_date").GetString())
+                     .OfType<string>())
         {
-            if (dateValue != null)
-            {
-                var parsedDate = DateTime.Parse(dateValue, CultureInfo.InvariantCulture);
-                parsedDate.Date.Should().Be(testDate.Date, "Date portion should match");
-            }
+            var parsedDate = DateTime.Parse(dateValue, CultureInfo.InvariantCulture);
+            parsedDate.Date.Should().Be(testDate.Date, "Date portion should match");
         }
     }
 

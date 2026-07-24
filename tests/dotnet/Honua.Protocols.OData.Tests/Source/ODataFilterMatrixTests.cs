@@ -166,11 +166,7 @@ public sealed class ODataFilterMatrixTests : IAsyncLifetime
         foreach (var attrs in features.Select(ParseAttributes))
         {
             var state = attrs.TryGetProperty("state", out var s) ? s.GetString() : null;
-            // Intentionally asserted on a possibly-null value: FluentAssertions'
-            // Should()/NotBe() are null-safe, and the null-state feature (Virtual
-            // City) is exactly the case this test is verifying is included above.
-            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-            state.Should().NotBe("California");
+            Assert.NotEqual("California", state);
         }
     }
 

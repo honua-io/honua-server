@@ -241,10 +241,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             // call. The cancel path is responsible for disposing when it removes the CTS.
             // Not a `using` statement: the CTS is not owned/created in this scope, it is
             // conditionally reclaimed from a shared dictionary via TryRemove.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
             if (UploadCancellationTokens.TryRemove(uploadId, out var removedSource))
             {
-                removedSource.Dispose();
+                DeferredDisposal.Dispose(removedSource);
             }
         }
     }
@@ -670,13 +669,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             // SDK v4: S3Objects is null (not empty) when the listing has no results.
             // Not rewritten with .Where(): the filter predicate (DeleteObjectAsync) is
             // async, which plain LINQ .Where() cannot express without buffering tasks.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var item in response.S3Objects ?? [])
             {
-                if (await DeleteObjectAsync(item.Key, cancellationToken))
-                {
-                    deletedCount++;
-                }
+                deletedCount += await DeleteObjectAsync(item.Key, cancellationToken).ConfigureAwait(false) ? 1 : 0;
             }
 
             continuationToken = response.IsTruncated == true ? response.NextContinuationToken : null;

@@ -157,18 +157,9 @@ internal static class TemplateBuildHelpers
     /// </summary>
     public static string? FirstArtifactMetadata(AnalysisResultPackage package, string key)
     {
-        // Not a simple filter: TryGetValue's out-param is the value being returned, so
-        // `.Where(...)` can't express this without duplicating the TryGetValue call.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var artifact in package.Artifacts)
-        {
-            if (artifact.Metadata.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value))
-            {
-                return value;
-            }
-        }
-
-        return null;
+        return package.Artifacts
+            .Select(artifact => artifact.Metadata.TryGetValue(key, out var value) ? value : null)
+            .FirstOrDefault(value => !string.IsNullOrEmpty(value));
     }
 
     /// <summary>

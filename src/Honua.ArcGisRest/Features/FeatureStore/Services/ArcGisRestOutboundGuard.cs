@@ -4,6 +4,7 @@
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.ArcGisRest.Features.FeatureStore.Services;
 
@@ -116,19 +117,15 @@ internal static class ArcGisRestOutboundGuard
         Exception? lastException = null;
         foreach (var address in addresses)
         {
-            // Not converted to a `using` statement: ownership of the socket transfers
-            // to the returned NetworkStream (ownsSocket: true) on success, so the
-            // socket must survive past this scope in that case. The manual dispose
-            // in `finally` only runs when the connect attempt did not succeed.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            var connected = false;
+            using var socketOwner = new SocketConnectionOwner(
+                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
 
             try
             {
-                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
-                connected = true;
-                return new NetworkStream(socket, ownsSocket: true);
+                await socketOwner.Socket
+                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
+                    .ConfigureAwait(false);
+                return socketOwner.TransferToNetworkStream();
             }
             catch (OperationCanceledException)
             {
@@ -137,13 +134,6 @@ internal static class ArcGisRestOutboundGuard
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
             {
                 lastException = ex;
-            }
-            finally
-            {
-                if (!connected)
-                {
-                    socket.Dispose();
-                }
             }
         }
 

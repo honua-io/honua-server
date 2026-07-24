@@ -17,6 +17,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 internal static class ImageServerClassDescriptions
 {
     private static readonly WKBWriter WkbWriter = new();
+    private static readonly string[] ClassIdPropertyNames = ["classId", "classValue", "id", "value"];
+    private static readonly string[] ClassNamePropertyNames = ["name", "classname", "className"];
 
     /// <summary>A parsed class description: identity plus its training AOI clip geometry (WKB).</summary>
     internal readonly record struct ParsedClass(int ClassId, string? Name, byte[] ClipGeometry, int? ClipSrid);
@@ -95,32 +97,26 @@ internal static class ImageServerClassDescriptions
 
     private static int ReadClassId(JsonElement classElement, int ordinal)
     {
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in new[] { "classId", "classValue", "id", "value" })
-        {
-            if (classElement.TryGetProperty(name, out var element) &&
+        return ClassIdPropertyNames
+            .Select(name =>
+                classElement.TryGetProperty(name, out var element) &&
                 element.ValueKind == JsonValueKind.Number &&
-                element.TryGetInt32(out var id))
-            {
-                return id;
-            }
-        }
-
-        return ordinal;
+                element.TryGetInt32(out var id)
+                    ? (int?)id
+                    : null)
+            .FirstOrDefault(id => id.HasValue)
+            ?? ordinal;
     }
 
     private static string? ReadName(JsonElement classElement)
     {
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in new[] { "name", "classname", "className" })
-        {
-            if (classElement.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String)
-            {
-                return element.GetString();
-            }
-        }
-
-        return null;
+        return ClassNamePropertyNames
+            .Select(name =>
+                classElement.TryGetProperty(name, out var element) &&
+                element.ValueKind == JsonValueKind.String
+                    ? element.GetString()
+                    : null)
+            .FirstOrDefault(value => value is not null);
     }
 
     private static bool TryBuildClipGeometry(

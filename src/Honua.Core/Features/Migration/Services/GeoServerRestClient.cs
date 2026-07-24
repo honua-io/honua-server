@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using System.Globalization;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Import.Abstractions;
@@ -261,20 +262,15 @@ internal sealed partial class GeoServerRestClient
         Exception? lastException = null;
         foreach (var address in addresses)
         {
-            // Intentionally not `using var socket = ...`: on success the socket's ownership
-            // transfers to the returned NetworkStream (ownsSocket: true). A `using`
-            // declaration would dispose the socket during the `return` unwind, before the
-            // caller ever sees the stream, closing the connection out from under it. The
-            // `connected` flag makes disposal conditional on transfer *not* having happened.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            var connected = false;
+            using var socketOwner = new SocketConnectionOwner(
+                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
 
             try
             {
-                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
-                connected = true;
-                return new NetworkStream(socket, ownsSocket: true);
+                await socketOwner.Socket
+                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
+                    .ConfigureAwait(false);
+                return socketOwner.TransferToNetworkStream();
             }
             catch (OperationCanceledException)
             {
@@ -283,13 +279,6 @@ internal sealed partial class GeoServerRestClient
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
             {
                 lastException = ex;
-            }
-            finally
-            {
-                if (!connected)
-                {
-                    socket.Dispose();
-                }
             }
         }
 
@@ -452,25 +441,31 @@ internal sealed partial class GeoServerRestClient
         {
             var connectionParams = new Dictionary<string, object>();
 
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var entry in EnumerateCollectionItems(dataStoreElement, "connectionParameters", "entry"))
+            foreach (var parameter in EnumerateCollectionItems(
+                         dataStoreElement,
+                         "connectionParameters",
+                         "entry")
+                     .Select(entry => (
+                         Key: entry.TryGetProperty("@key", out var keyProperty)
+                             ? keyProperty.GetString()
+                             : null,
+                         Value: entry.TryGetProperty("$", out var valueProperty)
+                             ? valueProperty.GetString()
+                             : null))
+                     .Where(parameter =>
+                         parameter.Key is not null &&
+                         parameter.Value is not null))
             {
-                if (entry.TryGetProperty("@key", out var keyProp) &&
-                    entry.TryGetProperty("$", out var valueProp))
-                {
-                    var key = keyProp.GetString();
-                    var value = valueProp.GetString();
-                    if (key != null && value != null)
-                    {
-                        // Redact credentials (e.g. JDBC 'passwd') at the capture point:
-                        // discovery results are serialized verbatim by the admin endpoint,
-                        // and downstream consumers only read non-sensitive keys such as
-                        // dbtype/host/database/schema/url/directory.
-                        connectionParams[key] = MigrationInventoryHelpers.IsSensitiveKey(key)
-                            ? MigrationInventoryHelpers.RedactedValue
-                            : value;
-                    }
-                }
+                var key = parameter.Key!;
+                var value = parameter.Value!;
+                // Redact credentials (e.g. JDBC 'passwd') at the capture point:
+                // discovery results are serialized verbatim by the admin endpoint,
+                // and downstream consumers only read non-sensitive keys such as
+                // dbtype/host/database/schema/url/directory.
+                connectionParams[key] =
+                    MigrationInventoryHelpers.IsSensitiveKey(key)
+                        ? MigrationInventoryHelpers.RedactedValue
+                        : value;
             }
 
             var dataStoreType = ResolveDataStoreType(dataStoreElement, connectionParams);

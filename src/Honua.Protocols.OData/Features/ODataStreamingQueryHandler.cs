@@ -72,7 +72,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         // layer id), and both the catch blocks (RecordException) and the finally need to
         // observe whatever value it holds - including null if validation short-circuited
         // before the activity was started.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -633,7 +632,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -995,7 +994,6 @@ internal sealed partial class ODataStreamingQueryHandler(
         // layer id), and both the catch blocks (RecordException) and the finally need to
         // observe whatever value it holds - including null if validation short-circuited
         // before the activity was started.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -1115,7 +1113,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -1254,8 +1252,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             // Intentional exact check: doubleValue is a literal parsed directly from the
             // $filter text (e.g. LayerId eq 5.0), not the result of floating-point
             // arithmetic, so testing for an exact whole number is well-defined here.
-            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-            if (doubleValue % 1 != 0)
+            if (!double.IsFinite(doubleValue) || !doubleValue.Equals(Math.Truncate(doubleValue)))
             {
                 return false;
             }

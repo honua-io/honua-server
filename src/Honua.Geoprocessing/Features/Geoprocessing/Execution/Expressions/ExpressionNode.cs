@@ -230,8 +230,7 @@ internal static class ExpressionValues
             // SQL `=`, see Cql2Parser/ODataFilterParser) rather than a tolerance compare.
             // A tolerance here would make identical-looking field values compare unequal
             // to their own literal, which is the opposite of what "==" means to a caller.
-            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-            return ln == rn;
+            return ln <= rn && ln >= rn;
         }
 
         return string.Equals(

@@ -221,10 +221,8 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var mediaType = response.Content.Headers.ContentType?.MediaType;
-        // FluentAssertions' NotBeNull()/BeOneOf() are null-safe extension methods, not dereferences.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        mediaType.Should().NotBeNull();
+        var mediaType = response.Content.Headers.ContentType?.MediaType
+            ?? throw new InvalidOperationException("Metrics response did not include a content type.");
         mediaType.Should().BeOneOf("text/plain", "application/openmetrics-text");
 
         var content = await response.Content.ReadAsStringAsync();

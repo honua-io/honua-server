@@ -849,20 +849,24 @@ public sealed class FormPackageValidator
         }
 
         long totalSize = 0;
-        // Not folded into a trailing .Where(): the guard condition also derives `maxFieldCount`,
-        // which the AddError message below needs, so filtering here would require recomputing
-        // the lookup instead of reusing it.
-        // codeql[cs/linq/missed-where] -- the predicate binds field policy state used by the diagnostic.
-        foreach (var group in request.Attachments
+        foreach (var exceeded in request.Attachments
             .Where(static attachment => !string.IsNullOrWhiteSpace(attachment.FieldId))
-            .GroupBy(static attachment => attachment.FieldId!, StringComparer.OrdinalIgnoreCase))
+            .GroupBy(static attachment => attachment.FieldId!, StringComparer.OrdinalIgnoreCase)
+            .Select(group => (
+                Group: group,
+                MaxCount: fieldPolicies.TryGetValue(group.Key, out var policy)
+                    ? policy.MaxCount
+                    : null))
+            .Where(candidate =>
+                candidate.MaxCount.HasValue &&
+                candidate.Group.Count() > candidate.MaxCount.Value))
         {
-            if (fieldPolicies.TryGetValue(group.Key, out var fieldPolicy) &&
-                fieldPolicy.MaxCount is int maxFieldCount &&
-                group.Count() > maxFieldCount)
-            {
-                AddError(issues, "attachmentFieldCountExceeded", $"Attachment field '{group.Key}' includes {group.Count()} attachments; maximum is {maxFieldCount}.", group.Key);
-            }
+            var fieldMaxCount = exceeded.MaxCount.GetValueOrDefault();
+            AddError(
+                issues,
+                "attachmentFieldCountExceeded",
+                $"Attachment field '{exceeded.Group.Key}' includes {exceeded.Group.Count()} attachments; maximum is {fieldMaxCount}.",
+                exceeded.Group.Key);
         }
 
         foreach (var attachment in request.Attachments)
@@ -1013,14 +1017,13 @@ public sealed class FormPackageValidator
             // above and the non-null/non-empty narrowing on GetString() don't fold cleanly into
             // a LINQ chain without fighting nullable-reference analysis.
             var list = new List<string>(element.GetArrayLength());
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var item in element.EnumerateArray())
+            foreach (var value in element.EnumerateArray()
+                .Where(static item => item.ValueKind == JsonValueKind.String)
+                .Select(static item => item.GetString())
+                .OfType<string>()
+                .Where(static value => value.Length > 0))
             {
-                if (item.ValueKind == JsonValueKind.String &&
-                    item.GetString() is { Length: > 0 } value)
-                {
-                    list.Add(value);
-                }
+                list.Add(value);
             }
 
             if (list.Count > 0)

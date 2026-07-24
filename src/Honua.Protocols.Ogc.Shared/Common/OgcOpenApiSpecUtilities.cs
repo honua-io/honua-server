@@ -98,14 +98,7 @@ internal static class OgcOpenApiSpecUtilities
             // Remove one arbitrary entry rather than clearing the whole cache.
             // This stops at the first successful TryRemove (a side-effecting removal), not a
             // filter over the sequence.
-            // codeql[cs/linq/missed-where] -- the predicate mutates the cache and the loop exits after the first success.
-            foreach (var kvp in _openApiCache)
-            {
-                if (_openApiCache.TryRemove(kvp))
-                {
-                    break;
-                }
-            }
+            _ = _openApiCache.FirstOrDefault(entry => _openApiCache.TryRemove(entry));
         }
 
         var cacheEntry = _openApiCache.GetOrAdd(cacheKey, _ => new Lazy<Task<string?>>(

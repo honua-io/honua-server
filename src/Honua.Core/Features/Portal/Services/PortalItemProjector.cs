@@ -295,18 +295,14 @@ public sealed class PortalItemProjector : IPortalItemProjector
     private static (IReadOnlyList<IReadOnlyList<double>> Extent, string? SpatialReference) BuildExtent(
         MetadataV2Resource? resource)
     {
-        var spatial = resource?.Spatial;
-        var bbox = spatial?.Bbox;
+        if (resource?.Spatial is not { Bbox: { } bbox } spatial)
+        {
+            return (Array.Empty<IReadOnlyList<double>>(), null);
+        }
         // `spatial is null` is logically implied by `bbox is null` here (bbox comes from
         // `spatial?.Bbox`), but the explicit check is kept so the compiler's nullable-flow
         // analysis narrows `spatial` to non-null below — dropping it would reintroduce a
         // possible-null-dereference warning on `spatial.SpatialReference` further down.
-        // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-        if (bbox is null || spatial is null)
-        {
-            return (Array.Empty<IReadOnlyList<double>>(), null);
-        }
-
         // `spatial` is already proven non-null above (it is the source of `bbox`),
         // so no need to re-navigate from `resource` here — that would repeat the
         // same null check the compiler just narrowed away.

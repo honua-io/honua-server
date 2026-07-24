@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Options;
 
@@ -48,7 +49,6 @@ internal sealed partial class PerformanceMonitoringMiddleware
         // reassigned below (only when EnableDetailedRequestTracking is on); C# does not
         // allow reassigning a `using`-declared local, so it is disposed explicitly in the
         // `finally` block instead.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         IOperationScope? operationScope = null;
         var requestErrored = false;
 
@@ -132,7 +132,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
                     _options.SlowRequestThreshold.TotalMilliseconds);
             }
 
-            operationScope?.Dispose();
+            DeferredDisposal.Dispose(operationScope);
         }
     }
 

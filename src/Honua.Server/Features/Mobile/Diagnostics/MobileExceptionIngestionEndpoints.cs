@@ -74,16 +74,13 @@ internal static class MobileExceptionIngestionEndpoints
         // Not a simple .Where(): the filter condition depends on TryGetProperty's `out`
         // value, which the returned GetString() also needs, so a LINQ predicate can't
         // cleanly carry that state without re-running the lookup per candidate.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in names)
-        {
-            if (report.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
-            {
-                return value.GetString();
-            }
-        }
-
-        return null;
+        return names
+            .Select(name =>
+                report.TryGetProperty(name, out var value) &&
+                value.ValueKind == JsonValueKind.String
+                    ? value.GetString()
+                    : null)
+            .FirstOrDefault(value => value is not null);
     }
 
     private static void ApplyNoStoreHeaders(HttpResponse response)

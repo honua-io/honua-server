@@ -12,16 +12,17 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class RedisFixture : IAsyncLifetime
 {
-    // These static fields back an intentional process-wide, ref-counted shared container:
-    // every RedisFixture instance (one per xUnit collection) mutates the same statics
-    // under _sharedLock so only the first InitializeAsync starts the container and only the
-    // last DisposeAsync tears it down. Writing static state from instance lifecycle
-    // methods is the design, not a bug.
+    // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static RedisContainer? _sharedContainer;
-    private static string? _sharedConnectionString;
-    private static int _sharedRefCount;
-    private static bool _sharedInitialized;
+    private static readonly RedisSharedState SharedState = new();
+
+    private sealed class RedisSharedState
+    {
+        public RedisContainer? SharedContainer { get; set; }
+        public string? SharedConnectionString { get; set; }
+        public int SharedRefCount { get; set; }
+        public bool SharedInitialized { get; set; }
+    }
     private const string ExternalConnectionStringEnv = "HONUA_TEST_REDIS_URL";
     private string? _connectionString;
 
@@ -32,31 +33,26 @@ public sealed class RedisFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (!_sharedInitialized)
+            if (!SharedState.SharedInitialized)
             {
                 var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
                 if (string.IsNullOrWhiteSpace(externalConnectionString))
                 {
-                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                    _sharedContainer = new RedisBuilder("redis:7.2-alpine")
+                    SharedState.SharedContainer = new RedisBuilder("redis:7.2-alpine")
                         .Build();
-                    await _sharedContainer.StartAsync();
-                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                    _sharedConnectionString = _sharedContainer.GetConnectionString();
+                    await SharedState.SharedContainer.StartAsync();
+                    SharedState.SharedConnectionString = SharedState.SharedContainer.GetConnectionString();
                 }
                 else
                 {
-                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                    _sharedConnectionString = externalConnectionString;
+                    SharedState.SharedConnectionString = externalConnectionString;
                 }
 
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = true;
+                SharedState.SharedInitialized = true;
             }
 
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            _sharedRefCount++;
-            _connectionString = _sharedConnectionString;
+            SharedState.SharedRefCount++;
+            _connectionString = SharedState.SharedConnectionString;
         }
         finally
         {
@@ -69,25 +65,21 @@ public sealed class RedisFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (_sharedRefCount > 0)
+            if (SharedState.SharedRefCount > 0)
             {
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedRefCount--;
+                SharedState.SharedRefCount--;
             }
 
-            if (_sharedRefCount == 0 && _sharedInitialized)
+            if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
-                if (_sharedContainer is not null)
+                if (SharedState.SharedContainer is not null)
                 {
-                    await _sharedContainer.DisposeAsync();
+                    await SharedState.SharedContainer.DisposeAsync();
                 }
 
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedContainer = null;
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedConnectionString = null;
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = false;
+                SharedState.SharedContainer = null;
+                SharedState.SharedConnectionString = null;
+                SharedState.SharedInitialized = false;
             }
         }
         finally

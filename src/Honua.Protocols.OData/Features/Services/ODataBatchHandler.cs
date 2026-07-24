@@ -137,21 +137,18 @@ internal sealed partial class ODataBatchHandler
             var dependencyOrder = OrderRequestsByDependencies(groupRequests);
             if (dependencyOrder.ErrorsById.Count > 0)
             {
-                // Not rewritten as `.Where(...)`: the filter predicate (TryGetValue) both
-                // produces the `error` value used in the loop body and de-duplicates via the
-                // side-effecting `addedErrors.Add`, so a LINQ `Where` would need to either
-                // re-run the lookup inside the loop or project through an intermediate tuple -
-                // neither is clearer than the explicit loop.
-                var addedErrors = new HashSet<string>(StringComparer.Ordinal);
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var request in groupRequests)
+                foreach (var dependencyError in groupRequests
+                             .DistinctBy(request => request.Id, StringComparer.Ordinal)
+                             .Select(request => (
+                                 Request: request,
+                                 Found: dependencyOrder.ErrorsById.TryGetValue(
+                                     request.Id,
+                                     out var error),
+                                 Error: error))
+                             .Where(dependencyError => dependencyError.Found))
                 {
-                    if (dependencyOrder.ErrorsById.TryGetValue(request.Id, out var error) &&
-                        addedErrors.Add(request.Id))
-                    {
-                        responses.Add(error);
-                        responsesById[request.Id] = error;
-                    }
+                    responses.Add(dependencyError.Error!);
+                    responsesById[dependencyError.Request.Id] = dependencyError.Error!;
                 }
             }
 

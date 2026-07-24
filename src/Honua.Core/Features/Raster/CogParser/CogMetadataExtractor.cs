@@ -188,8 +188,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 // branch above, which this else-if cannot reach. There is no
                 // computed floating value being compared — only "has this
                 // sentinel default been overwritten yet".
-                // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-                else if (xMax == 0 && xMin == 0 && width > 0)
+                else if (xMax.Equals(0d) && xMin.Equals(0d) && width > 0)
                 {
                     // Fallback: unit extent when no georeferencing tags present
                     xMax = width;

@@ -424,18 +424,13 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             // actually sends. The generation observed at match time travels
             // with the frame so the writer can reject queued frames whose
             // subscription was unsubscribed or replaced before drain.
-            // codeql[cs/linq/missed-where] -- queue writes are ordered side effects, not a filtering operation.
-            foreach (var match in matches)
+            foreach (var subscriptionMessage in matches.Select(match => message with
             {
-                var subscriptionMessage = message with
-                {
-                    Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
-                    SubscriptionGeneration = match.Generation
-                };
-                if (TryQueueMessage(id, entry, subscriptionMessage))
-                {
-                    delivered++;
-                }
+                Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
+                SubscriptionGeneration = match.Generation
+            }))
+            {
+                delivered += TryQueueMessage(id, entry, subscriptionMessage) ? 1 : 0;
             }
         }
 

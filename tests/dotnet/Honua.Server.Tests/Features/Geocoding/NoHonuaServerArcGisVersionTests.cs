@@ -80,13 +80,11 @@ public sealed class NoHonuaServerArcGisVersionTests
                     && property.PropertyType.GetGenericTypeDefinition() == typeof(JsonTypeInfo<>))
                 .OrderBy(static property => property.Name, StringComparer.Ordinal);
 
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var property in typeInfoProperties)
+            foreach (var typeInfo in typeInfoProperties
+                .Select(property => property.GetValue(context))
+                .OfType<JsonTypeInfo>())
             {
-                if (property.GetValue(context) is JsonTypeInfo typeInfo)
-                {
-                    yield return (typeInfo.Type.FullName ?? typeInfo.Type.Name, typeInfo);
-                }
+                yield return (typeInfo.Type.FullName ?? typeInfo.Type.Name, typeInfo);
             }
         }
     }

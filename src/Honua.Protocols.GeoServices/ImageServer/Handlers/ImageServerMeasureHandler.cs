@@ -472,7 +472,8 @@ internal sealed class ImageServerMeasureHandler
 
         var metadata = await _rasterStore.GetSensorMetadataAsync([raster.Id], cancellationToken).ConfigureAwait(false);
         var sensor = metadata.TryGetValue(raster.Id, out var meta) ? meta : raster.SensorMetadata;
-        if (ImageServerSensorModel.TryReadSunGeometry(sensor) is not { } sun)
+        if (sensor is not { } resolvedSensor ||
+            ImageServerSensorModel.TryReadSunGeometry(resolvedSensor) is not { } sun)
         {
             return StandardErrorHelpers.CreateNotImplemented(context, SunGeometryMissing);
         }
@@ -485,8 +486,7 @@ internal sealed class ImageServerMeasureHandler
         var response = new ImageServerMeasureResponse
         {
             Name = raster.Name,
-            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-            SensorName = sensor?.SensorName ?? "Unknown",
+            SensorName = resolvedSensor.SensorName ?? "Unknown",
             Height = CreateValue(height, unit),
         };
 

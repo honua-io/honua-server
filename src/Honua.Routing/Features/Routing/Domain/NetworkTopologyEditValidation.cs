@@ -84,40 +84,61 @@ public static class NetworkTopologyEditValidation
             return false;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var edge in batch.AddEdges.Concat(batch.UpdateEdges))
-        {
-            if (!TryValidateEdge(edge, generationSrid, allowedAttributeKeys, out error))
+        var edgeFailure = batch.AddEdges
+            .Concat(batch.UpdateEdges)
+            .Select(edge =>
             {
-                return false;
-            }
+                var isValid = TryValidateEdge(edge, generationSrid, allowedAttributeKeys, out var validationError);
+                return (IsFailure: !isValid, Error: validationError);
+            })
+            .FirstOrDefault(result => result.IsFailure);
+        if (edgeFailure.IsFailure)
+        {
+            error = edgeFailure.Error;
+            return false;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var edgeId in batch.DeleteEdgeIds)
-        {
-            if (!TryValidateStableId(edgeId, "edge id", out error))
+        var edgeIdFailure = batch.DeleteEdgeIds
+            .Select(edgeId =>
             {
-                return false;
-            }
+                var isValid = TryValidateStableId(edgeId, "edge id", out var validationError);
+                return (IsFailure: !isValid, Error: validationError);
+            })
+            .FirstOrDefault(result => result.IsFailure);
+        if (edgeIdFailure.IsFailure)
+        {
+            error = edgeIdFailure.Error;
+            return false;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var restriction in batch.AddRestrictions.Concat(batch.UpdateRestrictions))
-        {
-            if (!TryValidateRestriction(restriction, out error))
+        var restrictionFailure = batch.AddRestrictions
+            .Concat(batch.UpdateRestrictions)
+            .Select(restriction =>
             {
-                return false;
-            }
+                var isValid = TryValidateRestriction(restriction, out var validationError);
+                return (IsFailure: !isValid, Error: validationError);
+            })
+            .FirstOrDefault(result => result.IsFailure);
+        if (restrictionFailure.IsFailure)
+        {
+            error = restrictionFailure.Error;
+            return false;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var restrictionId in batch.DeleteRestrictionIds)
-        {
-            if (!TryValidateStableId(restrictionId, "turn restriction id", out error))
+        var restrictionIdFailure = batch.DeleteRestrictionIds
+            .Select(restrictionId =>
             {
-                return false;
-            }
+                var isValid = TryValidateStableId(
+                    restrictionId,
+                    "turn restriction id",
+                    out var validationError);
+                return (IsFailure: !isValid, Error: validationError);
+            })
+            .FirstOrDefault(result => result.IsFailure);
+        if (restrictionIdFailure.IsFailure)
+        {
+            error = restrictionIdFailure.Error;
+            return false;
         }
 
         error = string.Empty;
@@ -386,14 +407,13 @@ public static class NetworkTopologyEditValidation
                 return false;
             }
 
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var ordinate in position.EnumerateArray())
+            if (position.EnumerateArray().Any(ordinate =>
+                    ordinate.ValueKind != JsonValueKind.Number ||
+                    !ordinate.TryGetDouble(out var value) ||
+                    !double.IsFinite(value)))
             {
-                if (ordinate.ValueKind != JsonValueKind.Number || !ordinate.TryGetDouble(out var value) || !double.IsFinite(value))
-                {
-                    error = "each coordinate ordinate must be a finite number.";
-                    return false;
-                }
+                error = "each coordinate ordinate must be a finite number.";
+                return false;
             }
         }
 

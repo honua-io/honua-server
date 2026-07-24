@@ -587,8 +587,7 @@ public class CogMetadataExtractorTests
             var bytesToRead = Math.Min(length, available);
             // Stream ownership transfers to the caller via the return value; the
             // reader consuming this stream is responsible for disposing it.
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult<Stream>(new MemoryStream(_data, (int)offset, bytesToRead));
+            return Task.FromResult<Stream>(new Honua.TestKit.CallerOwnedMemoryStream(_data, (int)offset, bytesToRead));
         }
         public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
             => Task.FromResult((long)_data.Length);

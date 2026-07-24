@@ -1099,18 +1099,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
-            // codeql[cs/useless-assignment-to-local] -- the value is consumed by the following span or dictionary operation despite the conservative analysis.
             var deserialized = string.IsNullOrWhiteSpace(attributesJson)
                 ? new Dictionary<string, object?>()
                 : JsonSerializer.Deserialize(
                     attributesJson,
                     FeatureAttributesJsonContext.Default.DictionaryStringObject) ?? new Dictionary<string, object?>();
 
-            foreach (var (key, value) in deserialized)
+            foreach (var entry in deserialized)
             {
-                attributesDictionary[key] = value is JsonElement element
+                attributesDictionary[entry.Key] = entry.Value is JsonElement element
                     ? JsonElementConverter.ConvertToScalar(element)
-                    : value;
+                    : entry.Value;
             }
 
             attributesDictionary[FieldNames.ObjectId] = id;

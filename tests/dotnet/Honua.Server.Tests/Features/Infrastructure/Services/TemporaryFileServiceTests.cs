@@ -873,8 +873,7 @@ public sealed class TemporaryFileServiceTests : IDisposable
             // Task<Stream?>; the caller is responsible for disposing it (mirrors the
             // real ICloudFileStorage contract), so it is intentionally not disposed here.
             return Task.FromResult<Stream?>(_payloads.TryGetValue(fileId, out var payload)
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                ? new MemoryStream(payload, writable: false)
+                ? new Honua.TestKit.CallerOwnedMemoryStream(payload, writable: false)
                 : null);
         }
         public Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)

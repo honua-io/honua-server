@@ -1531,15 +1531,13 @@ internal static partial class MapServerEndpoints
         // needs to produce a correlated output (the resolved value) from a single pass, which a
         // filter predicate can't express as clearly as the loop.
         var values = new List<object?>(features.Length);
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var feature in features)
-        {
-            if (feature.Attributes.TryGetValue(leftKeyField, out var value) ||
-                TryGetAttributeCaseInsensitive(feature.Attributes, leftKeyField, out value))
-            {
-                values.Add(value);
-            }
-        }
+        values.AddRange(features
+            .Select(feature => (
+                Found: feature.Attributes.TryGetValue(leftKeyField, out var value) ||
+                    TryGetAttributeCaseInsensitive(feature.Attributes, leftKeyField, out value),
+                Value: value))
+            .Where(candidate => candidate.Found)
+            .Select(candidate => candidate.Value));
 
         return values;
     }

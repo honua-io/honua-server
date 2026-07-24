@@ -264,32 +264,30 @@ internal static class ImageServerSensorModel
 
     private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] names)
     {
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var name in names)
-        {
-            if (root.TryGetProperty(name, out array) && array.ValueKind == JsonValueKind.Array)
-            {
-                return true;
-            }
-        }
+        var resolved = names
+            .Select(name =>
+                root.TryGetProperty(name, out var candidate) &&
+                candidate.ValueKind == JsonValueKind.Array
+                    ? (JsonElement?)candidate
+                    : null)
+            .FirstOrDefault(candidate => candidate.HasValue);
 
-        array = default;
-        return false;
+        array = resolved.GetValueOrDefault();
+        return resolved.HasValue;
     }
 
     private static bool TryGetObject(JsonElement root, out JsonElement value, params string[] names)
     {
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var name in names)
-        {
-            if (root.TryGetProperty(name, out value) && value.ValueKind == JsonValueKind.Object)
-            {
-                return true;
-            }
-        }
+        var resolved = names
+            .Select(name =>
+                root.TryGetProperty(name, out var candidate) &&
+                candidate.ValueKind == JsonValueKind.Object
+                    ? (JsonElement?)candidate
+                    : null)
+            .FirstOrDefault(candidate => candidate.HasValue);
 
-        value = default;
-        return false;
+        value = resolved.GetValueOrDefault();
+        return resolved.HasValue;
     }
 
     private static int? ReadWkid(JsonElement element)
@@ -319,19 +317,12 @@ internal static class ImageServerSensorModel
     private static bool TryReadAny(JsonElement root, out double value, params string[] names)
     {
         // Not rewritten as .Where(...): this is a first-match short-circuit over the
-        // Try-pattern (bool + out), not a pure filter — a LINQ equivalent would need an
-        // intermediate nullable projection and would be harder to read than the loop.
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var name in names)
-        {
-            if (TryGetDouble(root, name, out value))
-            {
-                return true;
-            }
-        }
+        var resolved = names
+            .Select(name => TryGetDouble(root, name, out var candidate) ? (double?)candidate : null)
+            .FirstOrDefault(candidate => candidate.HasValue);
 
-        value = 0;
-        return false;
+        value = resolved.GetValueOrDefault();
+        return resolved.HasValue;
     }
 
     private static bool TryGetDouble(JsonElement root, string name, out double value)

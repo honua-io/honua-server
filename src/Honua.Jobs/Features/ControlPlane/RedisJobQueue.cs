@@ -429,16 +429,14 @@ internal sealed partial class RedisJobQueue(
 
     private static DateTimeOffset? GetVisibleAfter(HashEntry[] meta)
     {
-        // codeql[cs/linq/missed-where] -- the predicate binds the parsed timestamp through an out variable.
-        foreach (var entry in meta.Where(e => e.Name == "visibleAfter"))
-        {
-            if (long.TryParse(entry.Value.ToString(), out var ms))
-            {
-                return DateTimeOffset.FromUnixTimeMilliseconds(ms);
-            }
-        }
+        var visibleAfterMs = meta
+            .Where(entry => entry.Name == "visibleAfter")
+            .Select(entry => long.TryParse(entry.Value.ToString(), out var value) ? (long?)value : null)
+            .FirstOrDefault(value => value.HasValue);
 
-        return null;
+        return visibleAfterMs.HasValue
+            ? DateTimeOffset.FromUnixTimeMilliseconds(visibleAfterMs.Value)
+            : null;
     }
 
     private static string GetClaimMetaKey(string operationId) => $"controlplane:jobqueue:meta:{operationId}";

@@ -127,11 +127,10 @@ public class ImageServerSensorModelTests
 
         var rpc = ImageServerSensorModel.TryReadRpc(metadata);
 
-        rpc.Should().NotBeNull();
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        rpc.Value.LineScale.Should().Be(800);
-        rpc.Value.LongitudeScale.Should().Be(0.05);
-        rpc.Value.LatitudeScale.Should().Be(0.04);
+        var rpcValue = rpc ?? throw new InvalidOperationException("Expected RPC metadata.");
+        rpcValue.LineScale.Should().Be(800);
+        rpcValue.LongitudeScale.Should().Be(0.05);
+        rpcValue.LatitudeScale.Should().Be(0.04);
     }
 
     [UnitTest]
@@ -231,10 +230,9 @@ public class ImageServerSensorModelTests
         };
 
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
-        sun.Should().NotBeNull();
-        sun!.Value.SunElevationDegrees.Should().Be(45.0);
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        sun.Value.SunAzimuthDegrees.Should().Be(137.5);
+        var sunValue = sun ?? throw new InvalidOperationException("Expected sun geometry.");
+        sunValue.SunElevationDegrees.Should().Be(45.0);
+        sunValue.SunAzimuthDegrees.Should().Be(137.5);
     }
 
     [UnitTest]
@@ -247,10 +245,9 @@ public class ImageServerSensorModelTests
         };
 
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
-        sun.Should().NotBeNull();
-        sun!.Value.SunElevationDegrees.Should().Be(62.0);
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        sun.Value.SunAzimuthDegrees.Should().BeNull();
+        var sunValue = sun ?? throw new InvalidOperationException("Expected sun geometry.");
+        sunValue.SunElevationDegrees.Should().Be(62.0);
+        sunValue.SunAzimuthDegrees.Should().BeNull();
     }
 
     [UnitTest]
@@ -263,10 +260,9 @@ public class ImageServerSensorModelTests
         };
 
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
-        sun.Should().NotBeNull();
-        sun!.Value.SunElevationDegrees.Should().Be(30.0);
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        sun.Value.SunAzimuthDegrees.Should().Be(200.0);
+        var sunValue = sun ?? throw new InvalidOperationException("Expected sun geometry.");
+        sunValue.SunElevationDegrees.Should().Be(30.0);
+        sunValue.SunAzimuthDegrees.Should().Be(200.0);
     }
 
     [UnitTest]
@@ -280,10 +276,9 @@ public class ImageServerSensorModelTests
         };
 
         var sun = ImageServerSensorModel.TryReadSunGeometry(metadata);
-        sun.Should().NotBeNull();
-        sun!.Value.SunElevationDegrees.Should().BeApproximately(45.0, 1e-9);
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        sun.Value.SunAzimuthDegrees.Should().BeApproximately(90.0, 1e-9);
+        var sunValue = sun ?? throw new InvalidOperationException("Expected sun geometry.");
+        sunValue.SunElevationDegrees.Should().BeApproximately(45.0, 1e-9);
+        sunValue.SunAzimuthDegrees.Should().BeApproximately(90.0, 1e-9);
     }
 
     [UnitTest]

@@ -69,15 +69,9 @@ public static class MemoryMonitor
     /// <returns>Memory usage after forced garbage collection</returns>
     public static MemoryUsage ForceGarbageCollectionAndMeasure()
     {
-        // Deliberate GC.Collect(): this is an explicit, opt-in diagnostic snapshot (not called
-        // from any hot/production path today), so forcing a full collect-drain-collect cycle to
-        // get an accurate post-GC reading is intentional. Worth revisiting if this is ever wired
-        // into a request path, where forcing a full GC would be a real cost.
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
         GC.WaitForPendingFinalizers();
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
 
         return GetMemoryUsage();
     }

@@ -25,6 +25,7 @@ internal static class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
     private const string ProtocolName = "GPServer";
+    private static readonly string[] SpatialReferenceParameterKeys = ["srid", "toSrid", "targetSrid", "outSr"];
     private static readonly HashSet<string> FormContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/x-www-form-urlencoded",
@@ -1618,20 +1619,21 @@ internal static class GPServerEndpoints
         IReadOnlyDictionary<string, string> rawParameters,
         int? derivedSrid)
     {
-        // Not rewritten as .Where(...): this is a priority-ordered first-match search over
-        // the Try-pattern (TryGetValue + int.TryParse), not a pure filter — it needs the
-        // parsed int value, not just the matching key, so a LINQ equivalent would need an
-        // intermediate nullable projection and would be harder to read than the loop.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in new[] { "srid", "toSrid", "targetSrid", "outSr" })
+        var resolvedSrid = SpatialReferenceParameterKeys
+            .Select(key =>
+                rawParameters.TryGetValue(key, out var value) &&
+                int.TryParse(
+                    value,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var parsed) &&
+                parsed > 0
+                    ? (int?)parsed
+                    : null)
+            .FirstOrDefault(srid => srid.HasValue);
+        if (resolvedSrid.HasValue)
         {
-            if (rawParameters.TryGetValue(key, out var value) &&
-                int.TryParse(value, System.Globalization.NumberStyles.Integer,
-                    System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
-                parsed > 0)
-            {
-                return parsed;
-            }
+            return resolvedSrid.Value;
         }
 
         return derivedSrid ?? 0;

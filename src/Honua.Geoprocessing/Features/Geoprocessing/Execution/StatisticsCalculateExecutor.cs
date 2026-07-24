@@ -48,16 +48,10 @@ internal sealed class StatisticsCalculateExecutor(
         foreach (var feature in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            // Not a .Where(...) candidate: TryReadNumeric's out value feeds two running
-            // aggregates in the body, so filtering separately would mean parsing twice.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var field in fields)
+            foreach (var (field, value) in StatisticsSupport.ReadNumericValues(feature, fields))
             {
-                if (StatisticsSupport.TryReadNumeric(feature, field, out var value))
-                {
-                    accumulators[field].Add(value);
-                    counts[field]++;
-                }
+                accumulators[field].Add(value);
+                counts[field]++;
             }
         }
 

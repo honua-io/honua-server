@@ -91,17 +91,8 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
     private int Broadcast(string method)
     {
         var notification = Serialize(method, parameters: null);
-        // Not rewritten as .Count(...): TryEnqueue has the delivery side effect,
-        // and folding a side-effecting call into a LINQ predicate/counter is
-        // less readable than the explicit loop, not more.
-        var delivered = 0;
-        foreach (var sessionId in _sessions.ActiveSessionIds)
-        {
-            if (_sessions.TryEnqueue(sessionId, notification))
-            {
-                delivered++;
-            }
-        }
+        var delivered = _sessions.ActiveSessionIds.Count(
+            sessionId => _sessions.TryEnqueue(sessionId, notification));
 
         if (delivered > 0)
         {

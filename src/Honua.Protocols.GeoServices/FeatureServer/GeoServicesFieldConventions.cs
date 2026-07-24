@@ -161,18 +161,18 @@ internal static class GeoServicesFieldConventions
             return;
         }
 
-        // Not rewritten as .Where(...): the loop mutates the shared attributes dictionary
-        // in place (attributes[fieldName] = epochMs) rather than filtering into a new
-        // sequence, and the condition threads a Try-pattern out-var into that mutation.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var fieldName in dateFieldNames)
+        foreach (var converted in dateFieldNames
+                     .Select(fieldName => (
+                         FieldName: fieldName,
+                         EpochMilliseconds:
+                             attributes.TryGetValue(fieldName, out var dateValue) &&
+                             dateValue is not null &&
+                             TryConvertToEpochMilliseconds(dateValue, out var epochMilliseconds)
+                                 ? (long?)epochMilliseconds
+                                 : null))
+                     .Where(converted => converted.EpochMilliseconds.HasValue))
         {
-            if (attributes.TryGetValue(fieldName, out var dateValue)
-                && dateValue is not null
-                && TryConvertToEpochMilliseconds(dateValue, out var epochMs))
-            {
-                attributes[fieldName] = epochMs;
-            }
+            attributes[converted.FieldName] = converted.EpochMilliseconds.GetValueOrDefault();
         }
     }
 }

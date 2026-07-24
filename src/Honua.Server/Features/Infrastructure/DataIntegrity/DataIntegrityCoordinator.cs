@@ -109,7 +109,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
         // instances can legitimately be constructed concurrently (DI does not guarantee this type
         // is a singleton), so the write uses CompareExchange instead of a plain '??=' to avoid a
         // benign-looking but still racy read-then-write on shared static state.
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
+        CaptureCleanupLogger(logger);
+    }
+
+    private static void CaptureCleanupLogger(ILogger<DataIntegrityCoordinator> logger)
+    {
         Interlocked.CompareExchange(ref _cleanupLogger, logger, null);
     }
 
@@ -493,14 +497,8 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // referenced (a legitimately long-running holder or queued waiters)
             // are left untouched and revisited on a later sweep.
             var removedCount = 0;
-            // codeql[cs/linq/missed-where] -- TryRemoveIdleEntry mutates and disposes lock state.
-            foreach (var key in expiredKeys)
+            foreach (var key in expiredKeys.Where(TryRemoveIdleEntry))
             {
-                if (!TryRemoveIdleEntry(key))
-                {
-                    continue;
-                }
-
                 _lockOwnership.TryRemove(key, out _);
                 removedCount++;
             }
@@ -511,14 +509,11 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
                 var orphanedRemoved = 0;
-                // codeql[cs/linq/missed-where] -- TryRemoveIdleEntry mutates and disposes lock state.
-                foreach (var lockKey in _globalLocks.Keys)
+                foreach (var lockKey in _globalLocks.Keys
+                             .Where(lockKey =>
+                                 !_lockOwnership.ContainsKey(lockKey) &&
+                                 TryRemoveIdleEntry(lockKey)))
                 {
-                    if (_lockOwnership.ContainsKey(lockKey) || !TryRemoveIdleEntry(lockKey))
-                    {
-                        continue;
-                    }
-
                     orphanedRemoved++;
                 }
 

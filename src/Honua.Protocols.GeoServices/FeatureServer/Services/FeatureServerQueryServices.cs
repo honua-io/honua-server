@@ -10,11 +10,11 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 internal sealed class FeatureServerQueryServices(
     IQueryFormatter queryFormatter,
     IFeatureQueryValidator queryValidator,
-    SpatialReferenceResolver spatialReferenceResolver) : IFeatureServerQueryServices
+    FeatureServerSpatialReferenceResolver spatialReferenceResolver) : IFeatureServerQueryServices
 {
     private readonly IQueryFormatter _queryFormatter = queryFormatter ?? throw new ArgumentNullException(nameof(queryFormatter));
     private readonly IFeatureQueryValidator _queryValidator = queryValidator ?? throw new ArgumentNullException(nameof(queryValidator));
-    private readonly SpatialReferenceResolver _spatialReferenceResolver =
+    private readonly FeatureServerSpatialReferenceResolver _spatialReferenceResolver =
         spatialReferenceResolver ?? throw new ArgumentNullException(nameof(spatialReferenceResolver));
 
     public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)

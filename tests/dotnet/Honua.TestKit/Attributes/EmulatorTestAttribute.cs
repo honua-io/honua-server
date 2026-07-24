@@ -38,17 +38,15 @@ public sealed class EmulatorTestAttribute : FactAttribute, ITraitAttribute
             return;
         }
 
-        // Not rewritten to `.Where(...)`: this loop applies a side effect
-        // (Environment.SetEnvironmentVariable) to matching entries rather than
-        // filtering a sequence for later use, so a LINQ filter would be misleading here.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in requiredEnvironmentVariables)
+        foreach (var fallback in requiredEnvironmentVariables
+                     .Where(name => string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)))
+                     .Select(name => (
+                         Name: name,
+                         Found: _defaultEmulatorValues.TryGetValue(name, out var value),
+                         Value: value))
+                     .Where(fallback => fallback.Found))
         {
-            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)) &&
-                _defaultEmulatorValues.TryGetValue(name, out var defaultValue))
-            {
-                Environment.SetEnvironmentVariable(name, defaultValue);
-            }
+            Environment.SetEnvironmentVariable(fallback.Name, fallback.Value);
         }
 
         var missing = requiredEnvironmentVariables

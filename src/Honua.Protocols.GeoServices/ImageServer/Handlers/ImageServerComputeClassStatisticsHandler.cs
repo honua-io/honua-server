@@ -137,13 +137,13 @@ internal sealed class ImageServerComputeClassStatisticsHandler
             long[] rasterIds;
             if (requestedRasterIds is { Length: > 0 })
             {
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (var id in requestedRasterIds)
                 {
-                    if (await _rasterStore.GetRasterInfoAsync(layerId, id, cancellationToken).ConfigureAwait(false) is null)
+                    switch (await _rasterStore.GetRasterInfoAsync(layerId, id, cancellationToken).ConfigureAwait(false))
                     {
-                        ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, $"rasterId {id} not found");
-                        return StandardErrorHelpers.CreateBadRequest(context, $"rasterId '{id}' not found in layer.");
+                        case null:
+                            ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, $"rasterId {id} not found");
+                            return StandardErrorHelpers.CreateBadRequest(context, $"rasterId '{id}' not found in layer.");
                     }
                 }
 

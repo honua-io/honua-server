@@ -106,8 +106,7 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
     {
         // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
         // it disposes the response after the caller finishes with it.
-        // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-        return Task.FromResult(new HttpResponseMessage(_statusCode));
+        return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(_statusCode));
     }
 }
 internal sealed class CapturingHttpMessageHandler : HttpMessageHandler

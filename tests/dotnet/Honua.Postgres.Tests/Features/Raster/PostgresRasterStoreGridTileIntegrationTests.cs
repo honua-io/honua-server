@@ -161,14 +161,14 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             var result = await store.GetMosaicImageTileAsync(
                 LayerId, [west, east], RasterMergeStrategy.Newest, window, RasterFormat.TIFF);
 
-            result.Should().NotBeNull("the gridset mosaic tile SQL must return a rendered tile");
-            result!.Value.Width.Should().Be(256);
-            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-            result.Value.Height.Should().Be(256);
-            result.Value.Srid.Should().Be(4326);
-            result.Value.Data.Should().NotBeEmpty();
+            var tile = result
+                ?? throw new InvalidOperationException("The gridset mosaic tile SQL must return a rendered tile.");
+            tile.Width.Should().Be(256);
+            tile.Height.Should().Be(256);
+            tile.Srid.Should().Be(4326);
+            tile.Data.Should().NotBeEmpty();
 
-            var decoded = await InspectGeoTiffTileAsync(schemaName, result.Value.Data);
+            var decoded = await InspectGeoTiffTileAsync(schemaName, tile.Data);
             decoded.Srid.Should().Be(4326, "the mosaic must be reprojected into the 4326 gridset SRID");
 
             // West ground point must carry the west source, east ground point the east source: the

@@ -53,7 +53,7 @@ internal static class ProviderSmokeHostConfiguration
     /// </summary>
     private static Dictionary<string, string?> Build(IDictionary<string, string?> providerSettings)
     {
-        var attachmentsPath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
+        var attachmentsPath = Path.Join(Directory.GetCurrentDirectory(), "tmp", "attachments");
         var settings = new Dictionary<string, string?>
         {
             ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,

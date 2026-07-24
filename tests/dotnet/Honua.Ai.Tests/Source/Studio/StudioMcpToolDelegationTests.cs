@@ -50,9 +50,11 @@ public sealed class StudioMcpToolDelegationTests
             McpTestFactory.ParseJson("""{"packageKey":"parcels-map","family":"map","schemaVersion":"1.0"}"""),
             CancellationToken.None);
         createResult.IsError.Should().BeFalse();
-        var draftId = createResult.StructuredContent!.Value.GetProperty("draftId").GetGuid();
-        var itemId = createResult.StructuredContent.Value.GetProperty("itemId").GetGuid();
-        createResult.StructuredContent.Value.GetProperty("generation").GetInt64().Should().Be(1);
+        var createContent = createResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured MCP content.");
+        var draftId = createContent.GetProperty("draftId").GetGuid();
+        var itemId = createContent.GetProperty("itemId").GetGuid();
+        createContent.GetProperty("generation").GetInt64().Should().Be(1);
 
         // 2. Add a layer.
         var addLayerTool = new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance);
@@ -204,9 +206,11 @@ public sealed class StudioMcpToolDelegationTests
             httpContext, McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}"}"""), CancellationToken.None);
 
         getResult.IsError.Should().BeFalse();
-        getResult.StructuredContent!.Value.GetProperty("generation").GetInt64().Should().Be(1);
-        getResult.StructuredContent.Value.GetProperty("packageKey").GetString().Should().Be("apps-demo");
-        getResult.StructuredContent.Value.GetProperty("family").GetString().Should().Be("app");
+        var getContent = getResult.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured MCP content.");
+        getContent.GetProperty("generation").GetInt64().Should().Be(1);
+        getContent.GetProperty("packageKey").GetString().Should().Be("apps-demo");
+        getContent.GetProperty("family").GetString().Should().Be("app");
     }
 
     private static ServiceProvider BuildServiceProvider()

@@ -244,8 +244,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
 
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
             // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             });
@@ -273,8 +272,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             // (cs/local-not-disposed false positive).
             return sanitizedPath switch
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                "/arcgis/rest/services/Private/FeatureServer/0?f=json" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                "/arcgis/rest/services/Private/FeatureServer/0?f=json" => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
                         """
@@ -293,13 +291,11 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                         Encoding.UTF8,
                         "application/json")
                 }),
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("""{"count":2}""", Encoding.UTF8, "application/json")
                 }),
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                _ => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.Unauthorized)
                 {
                     Content = new StringContent("Unauthorized", Encoding.UTF8, "text/plain")
                 })

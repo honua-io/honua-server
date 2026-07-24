@@ -116,12 +116,11 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
             request.RequestUri!.ToString().Should().Be(expectedUrl);
 
             // Ownership transfers to the HttpClient pipeline, which disposes the response.
-            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, contentType)
             };
-            return Task.FromResult(response);
+            return Task.FromResult<HttpResponseMessage>(response);
         }
     }
 }

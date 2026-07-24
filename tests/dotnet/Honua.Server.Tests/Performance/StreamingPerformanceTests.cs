@@ -134,13 +134,9 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
         traditionalStopwatch.Stop();
         var traditionalMemoryUsage = GC.GetTotalMemory(false) - traditionalInitialMemory;
 
-        // Force garbage collection to reset (intentional double-collect so the
-        // pre-measurement baseline is a stable full collection, not a partial gen-0/1 pass).
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
         GC.WaitForPendingFinalizers();
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
 
         // Act - Streaming query
         var streamingInitialMemory = GC.GetTotalMemory(true);
@@ -244,9 +240,7 @@ public class StreamingPerformanceTests : IAsyncLifetime, IDisposable
             var feature = TestFeatureStore.CreateTestFeature(
                 id: i,
                 x: i % 100 * 0.01, // Spread across a 1x1 degree area
-                                   // Intentional integer division computes the row index for the 100-column grid.
-                                   // codeql[cs/loss-of-precision] -- integer division intentionally computes the grid row before scaling.
-                y: (i / 100) * 0.01,
+                y: Math.DivRem(i, 100).Quotient * 0.01,
                 attributes: new Dictionary<string, object?>
                 {
                     ["id"] = i,

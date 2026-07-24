@@ -72,7 +72,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         var request = context.Request;
 
@@ -546,7 +545,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -561,7 +560,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         var request = context.Request;
 
@@ -801,7 +799,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -1327,14 +1325,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
             lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var fieldName in propertyFields)
+        foreach (var field in propertyFields
+                     .Select(fieldName => (
+                         Name: fieldName,
+                         Found: lookup.TryGetValue(fieldName, out var value),
+                         Value: value))
+                     .Where(field => field.Found))
         {
-            if (lookup.TryGetValue(fieldName, out var value))
-            {
-                writer.WritePropertyName(fieldName);
-                value.WriteTo(writer);
-            }
+            writer.WritePropertyName(field.Name);
+            field.Value.WriteTo(writer);
         }
 
         writer.WriteEndObject();

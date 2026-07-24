@@ -60,20 +60,21 @@ public static class SpatialReferenceExtensions
             ? "http://" + crsUri["https://".Length..]
             : crsUri;
 
-        return normalized switch
+        if (normalized == "http://www.opengis.net/def/crs/OGC/1.3/CRS84")
         {
-            // Preserve the original WKT-populated WGS84 instance for the canonical CRS84 URI.
-            "http://www.opengis.net/def/crs/OGC/1.3/CRS84" => SpatialReference.WGS84,
-            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-            var uri when uri.StartsWith("http://www.opengis.net/def/crs/EPSG/0/", StringComparison.Ordinal)
-                && int.TryParse(uri.AsSpan("http://www.opengis.net/def/crs/EPSG/0/".Length), out int epsgCode)
-                    => SpatialReference.Create(epsgCode),
-            // Delegate everything else to the shared, more complete CRS parser
-            // (case-insensitive prefixes, CRS84/OGC:CRS84/EPSG: short forms, /EPSG/ variants).
-            _ => ExtentExtensions.TryExtractSridFromCrs(normalized, out var srid)
-                    ? SpatialReference.Create(srid)
-                    : null
-        };
+            return SpatialReference.WGS84;
+        }
+
+        const string epsgUriPrefix = "http://www.opengis.net/def/crs/EPSG/0/";
+        if (normalized.StartsWith(epsgUriPrefix, StringComparison.Ordinal) &&
+            int.TryParse(normalized.AsSpan(epsgUriPrefix.Length), out var epsgCode))
+        {
+            return SpatialReference.Create(epsgCode);
+        }
+
+        return ExtentExtensions.TryExtractSridFromCrs(normalized, out var srid)
+            ? SpatialReference.Create(srid)
+            : null;
     }
 
     /// <summary>

@@ -212,19 +212,10 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            // Not a pure map: mutates the outer `results` accumulator and breaks out of the inner
-            // loop once pageSize is reached, so this doesn't reduce cleanly to a '.Select(...)'.
-            foreach (var value in (page.Items).Select(item => MapAlertEvent(item)))
-            {
-                if (MatchesFilter(filter, value))
-                {
-                    results.Add(value);
-                    if (results.Count == pageSize)
-                    {
-                        break;
-                    }
-                }
-            }
+            results.AddRange(page.Items
+                .Select(MapAlertEvent)
+                .Where(value => MatchesFilter(filter, value))
+                .Take(pageSize - results.Count));
 
             if (string.IsNullOrEmpty(page.NextCursor) ||
                 string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
@@ -279,20 +270,12 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            // Not a pure map: mutates the outer `results` accumulator and breaks out of the inner
-            // loop once pageSize is reached, so this doesn't reduce cleanly to a '.Select(...)'.
-            foreach (var value in (page.Items).Select(item => MapAuditRecord(item)))
-            {
-                if (MatchesFilter(filter, value, matchResourceRef: false) &&
+            results.AddRange(page.Items
+                .Select(MapAuditRecord)
+                .Where(value =>
+                    MatchesFilter(filter, value, matchResourceRef: false) &&
                     MatchesAuditResourceFilter(resourceFilter, value.ResourceRef))
-                {
-                    results.Add(value);
-                    if (results.Count == pageSize)
-                    {
-                        break;
-                    }
-                }
-            }
+                .Take(pageSize - results.Count));
 
             if (string.IsNullOrEmpty(page.NextCursor) ||
                 string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))

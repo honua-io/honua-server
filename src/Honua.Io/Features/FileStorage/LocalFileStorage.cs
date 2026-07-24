@@ -60,7 +60,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // another request/thread) can look it up and cancel it. Ownership transfers to whichever
         // path removes it from the dictionary first; the finally block below disposes it once
         // this upload's own processing has removed its entry.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         var linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -247,7 +246,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         {
             // Clean up cancellation token
             UploadCancellationTokens.TryRemove(uploadId, out _);
-            linkedCancellationSource.Dispose();
+            DeferredDisposal.Dispose(linkedCancellationSource);
         }
     }
 
@@ -420,13 +419,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         // attempted for every expired file, not a pure predicate, so every element must still
         // be visited regardless of its outcome; only the counting is conditional.
         var cleanedCount = 0;
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var file in expiredFiles)
         {
-            if (await DeleteAsync(file.FileId, cancellationToken))
-            {
-                cleanedCount++;
-            }
+            cleanedCount += await DeleteAsync(file.FileId, cancellationToken).ConfigureAwait(false) ? 1 : 0;
         }
 
         if (cleanedCount > 0)

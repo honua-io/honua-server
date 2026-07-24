@@ -499,17 +499,12 @@ public sealed class EndpointRegistryDriftTests
             return true;
         }
 
-        foreach (var pattern in (publicMapMethods.Select(match => match.Groups["name"].Value)).Select(name => new Regex(
+        return publicMapMethods
+            .Select(match => match.Groups["name"].Value)
+            .Select(name => new Regex(
                 @"(?:^|[^\w])" + Regex.Escape(name) + @"\s*\(",
-                RegexOptions.CultureInvariant)))
-        {
-            if (pattern.Count(hostWiring) >= 2)
-            {
-                return true;
-            }
-        }
-
-        return false;
+                RegexOptions.CultureInvariant))
+            .Any(pattern => pattern.Count(hostWiring) >= 2);
     }
 
     private static IEnumerable<string> EnumerateEndpointFiles(string featuresRoot)

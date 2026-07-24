@@ -333,9 +333,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         }
 
         deliveredSubscriptions.Should().Contain("sub-a").And.Contain("sub-b");
-        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        deliveredEventId.Should().NotBeNull();
+        Assert.NotNull(deliveredEventId);
 
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
     }
