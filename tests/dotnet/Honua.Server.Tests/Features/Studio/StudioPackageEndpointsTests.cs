@@ -286,9 +286,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         publishedRow.State.Should().Be(StudioContentItemState.Published);
         publishedRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
 
-        // `owner` filters the item's recorded creator (createdBy) as an ownership stand-in
-        // until honua-server#3001 adds a dedicated per-item ownership column; see
-        // docs/internal/admin-api/studio-package-lifecycle.md.
+        // `owner` filters the item's real owner_id column (honua-server#3001). No explicit
+        // ownerId was supplied when the draft was created above, so owner_id defaulted to the
+        // creating actor -- the same value recorded as createdBy -- and this filter matches it.
         var byOwner = await _client.GetAsync($"/api/v1/studio/content-items?owner={Uri.EscapeDataString(publishedRow.CreatedBy!)}");
         byOwner.StatusCode.Should().Be(HttpStatusCode.OK);
         var byOwnerItems = await ReadAsync<StudioContentItemListResponse>(byOwner, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);

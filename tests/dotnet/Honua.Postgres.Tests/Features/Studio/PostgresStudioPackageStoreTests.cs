@@ -345,6 +345,46 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ContentItemOwner_SetOnceAtCreate_ImmutableAcrossUpdatesAndVersions()
+    {
+        // honua-server#3001: studio_content_items.owner_id is populated once, from the owning
+        // draft, and never overwritten by a later draft update or version create for the same
+        // item -- even when a later UpdateDraftAsync call carries a different OwnerId.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "owner-immutable-query", owner: "alice"));
+
+            var itemsAfterCreate = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            itemsAfterCreate.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+
+            // A later update carrying a different OwnerId must not transfer ownership of the
+            // content item (the endpoint layer prevents this for non-admin callers; the store
+            // itself never overwrites owner_id on conflict regardless of caller).
+            var reassigned = draft with { OwnerId = "mallory", Generation = draft.Generation };
+            var updated = await store.UpdateDraftAsync(reassigned);
+            updated.Should().NotBeNull();
+
+            var itemsAfterUpdate = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            itemsAfterUpdate.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+
+            var version = await store.CreateVersionAsync(updated!, "first save", "mallory");
+            version.OwnerId.Should().Be("mallory", "the immutable version snapshots whatever OwnerId the draft carried at save time");
+
+            var itemsAfterVersion = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            itemsAfterVersion.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ListDrafts_FiltersByOwnerAndSearchTerm()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
@@ -443,11 +483,21 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     {
         var root = FindRepoRoot();
         // All segments after `root` are fixed literals and can never be rooted, so Path.Combine
-        // cannot drop earlier segments here (cs/path-combine false positive).
-        var migrationPath = Path.Join(root, "src", "Honua.Server", "Migrations", "035_CreateStudioPackageLifecycle.sql");
-        var sql = await File.ReadAllTextAsync(migrationPath);
-        sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
-        await fixture.ExecuteAsync(sql, schema);
+        // cannot drop earlier segments here (cs/path-combine false positive). Migration 090 adds
+        // studio_content_items.owner_id (honua-server#3001); migration 089 adds the enumeration
+        // indexes it's applied alongside for parity with the real deployment sequence.
+        foreach (var migrationFile in new[]
+                 {
+                     "035_CreateStudioPackageLifecycle.sql",
+                     "089_AddStudioContentEnumerationIndexes.sql",
+                     "090_AddStudioContentItemOwner.sql",
+                 })
+        {
+            var migrationPath = Path.Join(root, "src", "Honua.Server", "Migrations", migrationFile);
+            var sql = await File.ReadAllTextAsync(migrationPath);
+            sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+            await fixture.ExecuteAsync(sql, schema);
+        }
     }
 
     private async Task<int> CountDependencyRowsAsync(string schema, Guid versionId)

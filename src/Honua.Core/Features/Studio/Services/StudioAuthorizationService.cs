@@ -143,29 +143,30 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             or StudioAuthorizationOperation.ListOwn;
         var isOwn = resourceOwnerId is null || string.Equals(resourceOwnerId, callerId, StringComparison.Ordinal);
 
-        if (!isOwn && !(isRead && isPubliclyReadable))
-        {
-            return StudioAuthorizationDecision.Deny(
-                CrossUserDeniedCode,
-                "The caller does not own this Studio resource.",
-                isElevated);
-        }
-
         if (!isElevated)
         {
             // Baseline tier: ownership (or public-read visibility) alone authorizes the
             // operation. No operator grant is required -- the flag itself is the widening
             // switch for REQ-002's "non-admin sessions can complete the draft->version flow on
             // their own items".
-            return StudioAuthorizationDecision.Allow();
+            if (isOwn || (isRead && isPubliclyReadable))
+            {
+                return StudioAuthorizationDecision.Allow();
+            }
+
+            return StudioAuthorizationDecision.Deny(
+                CrossUserDeniedCode,
+                "The caller does not own this Studio resource.");
         }
 
-        // Elevated tier (REQ-003): publish-request and rollback additionally require a matching
+        // Elevated tier (REQ-003): publish-request and rollback always require a matching
         // StudioDraft operator grant, evaluated through the platform's existing role/grant
-        // infrastructure rather than a parallel mechanism. A grant scoped to the "own" sentinel
-        // authorizes every resource the caller owns; a grant scoped to the concrete resourceId
-        // (or the "*" wildcard) authorizes an operator-provisioned delegate, independent of
-        // ownership.
+        // infrastructure rather than a parallel mechanism -- ownership alone never suffices, and
+        // (unlike the baseline tier) a cross-user caller is not rejected before the grant check
+        // runs, since an operator-provisioned delegate grant is scoped to the concrete resource
+        // id regardless of who owns it. A grant scoped to the "own" sentinel authorizes every
+        // resource the caller owns; a grant scoped to the concrete resourceId (or the "*"
+        // wildcard) authorizes an operator-provisioned delegate, independent of ownership.
         var operatorOperation = operation == StudioAuthorizationOperation.PublishRequest
             ? OperatorOperation.Publish
             : OperatorOperation.Rollback;
@@ -179,6 +180,14 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             && await HasOperatorGrantAsync(principal, operatorOperation, resourceId, cancellationToken).ConfigureAwait(false))
         {
             return StudioAuthorizationDecision.Allow(elevated: true);
+        }
+
+        if (!isOwn)
+        {
+            return StudioAuthorizationDecision.Deny(
+                CrossUserDeniedCode,
+                "The caller does not own this Studio resource and holds no delegate operator grant for it.",
+                elevated: true);
         }
 
         return StudioAuthorizationDecision.Deny(

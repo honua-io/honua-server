@@ -105,6 +105,12 @@ public static class AuthenticationExtensions
         // once here (composition time) rather than per-policy-evaluation.
         var mtlsCapabilityEnabled = ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration);
 
+        // honua-server#3001: whether OIDC is configured at all, resolved once here so
+        // ConfigureStudioLifecyclePolicy can route through the composite ApiKey/JWT-Bearer
+        // scheme (the only way an OIDC end-user session can satisfy the policy) instead of
+        // referencing a scheme that was never registered when OIDC is off.
+        var oidcEnabled = configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
+
         // Add authorization policies
         _ = services.AddAuthorization(options =>
         {
@@ -114,7 +120,7 @@ public static class AuthenticationExtensions
             options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
-            options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled));
         });
 
         return services;
@@ -178,16 +184,33 @@ public static class AuthenticationExtensions
     /// <param name="policy">The policy builder to configure.</param>
     /// <param name="mtlsCapabilityEnabled">
     /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958); see
-    /// <see cref="ConfigureAdminPolicy"/>.
+    /// <see cref="ConfigureAdminPolicy"/>. Only consulted when <paramref name="oidcEnabled"/> is
+    /// <see langword="false"/> — the composite scheme already routes mTLS itself.
     /// </param>
-    private static void ConfigureStudioLifecyclePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
+    /// <param name="oidcEnabled">
+    /// Whether OIDC authentication is configured (<c>Oidc:Enabled</c>). When
+    /// <see langword="true"/>, the policy is pinned to <see cref="OidcAuthenticationExtensions.CompositeScheme"/>
+    /// instead of <see cref="ApiKeyScheme"/> alone: the composite scheme is what actually routes
+    /// a bearer token to JWT Bearer, letting an OIDC-authenticated non-admin session satisfy
+    /// this policy at all (an admin-only policy pinned to <see cref="ApiKeyScheme"/> can never
+    /// see an OIDC principal). Pinning to the composite scheme unconditionally would throw when
+    /// OIDC is disabled, because that scheme is then never registered.
+    /// </param>
+    private static void ConfigureStudioLifecyclePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled, bool oidcEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
         _ = policy.AddRequirements(new StudioLifecycleRequirement());
-        policy.AuthenticationSchemes.Add(ApiKeyScheme);
-        if (mtlsCapabilityEnabled)
+        if (oidcEnabled)
         {
-            policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+            policy.AuthenticationSchemes.Add(OidcAuthenticationExtensions.CompositeScheme);
+        }
+        else
+        {
+            policy.AuthenticationSchemes.Add(ApiKeyScheme);
+            if (mtlsCapabilityEnabled)
+            {
+                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+            }
         }
     }
 
