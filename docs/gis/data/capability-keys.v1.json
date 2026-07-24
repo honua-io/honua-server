@@ -323,15 +323,15 @@
       "key": "geocoding.forward",
       "displayName": "Forward Geocoding",
       "category": "Geocoding",
-      "edition": "Pro",
-      "description": "Convert addresses to coordinates using configured providers."
+      "edition": "Community",
+      "description": "Convert a freeform address to coordinates using configured providers."
     },
     {
       "key": "geocoding.reverse",
       "displayName": "Reverse Geocoding",
       "category": "Geocoding",
-      "edition": "Pro",
-      "description": "Convert coordinates to addresses using configured providers."
+      "edition": "Community",
+      "description": "Convert coordinates to a nearest-address match using configured providers."
     },
     {
       "key": "identity.claims-mapping",
@@ -548,7 +548,7 @@
       "displayName": "GeocodeServer Discovery",
       "category": "Serve",
       "edition": "Community",
-      "description": "Discover GeocodeServer service and layer metadata. Forward/reverse/batch geocode execution is gated by the geocoding.* entitlement keys."
+      "description": "Discover GeocodeServer service and layer metadata. Batch geocode execution is gated by the geocoding.batch entitlement key (Enterprise); forward and reverse geocode execution are Community (#2981)."
     },
     {
       "key": "serve.geoservices-geometry-service",
