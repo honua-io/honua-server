@@ -862,7 +862,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     public async Task ForwardGeocode_PrimaryFails_FallsBackToSecondary()
     {
-        using var factory = CreateFailoverFactory();
+        using var factory = CreateFailoverFactory(grantEdition: "Pro");
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test+address&f=json");
@@ -876,10 +876,24 @@ public sealed class GeocodingEndpointTests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task ForwardGeocode_WithoutPro_DoesNotFailOverToSecondary()
+    {
+        using var factory = CreateFailoverFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=test+address&f=json");
+
+        await response.AssertGeoServicesErrorAsync(500);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_PrimaryFails_FallsBackToSecondary()
     {
-        using var factory = CreateFailoverFactory(grantEnterpriseForBatch: true);
+        using var factory = CreateFailoverFactory(grantEdition: "Enterprise");
         using var client = factory.CreateClient();
 
         var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]""";
@@ -1527,7 +1541,7 @@ public sealed class GeocodingEndpointTests
         });
     }
 
-    private static WebApplicationFactory<Program> CreateFailoverFactory(bool grantEnterpriseForBatch = false)
+    private static WebApplicationFactory<Program> CreateFailoverFactory(string? grantEdition = null)
     {
         var failingProvider = new FailingGeocodeProvider("failing-primary");
         var workingProvider = new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
@@ -1554,9 +1568,9 @@ public sealed class GeocodingEndpointTests
 
             // See CreateFactory above: Licensing:DevGrantEdition must go through UseSetting, not
             // ConfigureAppConfiguration, to be honored by AddHonuaLicensing.
-            if (grantEnterpriseForBatch)
+            if (!string.IsNullOrWhiteSpace(grantEdition))
             {
-                builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
+                builder.UseSetting("Licensing:DevGrantEdition", grantEdition);
             }
 
             builder.ConfigureServices(services =>

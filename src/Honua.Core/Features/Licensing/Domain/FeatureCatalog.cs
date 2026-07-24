@@ -204,6 +204,12 @@ public static class FeatureCatalog
     public const string BatchGeocodingKey = "geocoding.batch";
 
     /// <summary>
+    /// Entitlement key for automatically retrying a geocoding request against backup providers.
+    /// Pro-tier: Community geocoding requests remain pinned to their selected/default provider.
+    /// </summary>
+    public const string GeocodingFailoverKey = "geocoding.failover";
+
+    /// <summary>
     /// Entitlement key for basic single-provider OpenID Connect authentication. Pro-tier:
     /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider.
     /// </summary>
@@ -305,7 +311,7 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Aggregate and deliver batched alert summaries."),
 
         // Geocoding — Pro
-        new("geocoding.failover", "Provider Failover", Categories.Geocoding,
+        new(GeocodingFailoverKey, "Provider Failover", Categories.Geocoding,
             HonuaEdition.Pro, "Automatic failover between geocoding providers on error."),
 
         // Geocoding — Enterprise. geocoding.forward and geocoding.reverse moved to

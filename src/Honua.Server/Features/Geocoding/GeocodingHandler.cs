@@ -212,7 +212,11 @@ internal sealed class GeocodingHandler(
             };
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await _coordinatorService.ForwardGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.ForwardGeocodeAsync(
+                providerRequest,
+                providerName,
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -361,7 +365,11 @@ internal sealed class GeocodingHandler(
             };
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await _coordinatorService.ReverseGeocodeAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.ReverseGeocodeAsync(
+                providerRequest,
+                providerName,
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -505,7 +513,11 @@ internal sealed class GeocodingHandler(
 
             var stopwatch = Stopwatch.StartNew();
 
-            var result = await _coordinatorService.SuggestAsync(providerRequest, providerName, cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.SuggestAsync(
+                providerRequest,
+                providerName,
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -639,7 +651,11 @@ internal sealed class GeocodingHandler(
                 CountryCodes: GetValue(values, "countryCodes") ?? GetValue(values, "countryCode"));
 
             var stopwatch = Stopwatch.StartNew();
-            var result = await _coordinatorService.BatchGeocodeAsync(batchRequest, NormalizeProviderName(requestedProviderName), cancellationToken).ConfigureAwait(false);
+            var result = await _coordinatorService.BatchGeocodeAsync(
+                batchRequest,
+                NormalizeProviderName(requestedProviderName),
+                allowFailover: IsFailoverEntitled(context),
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             if (!result.IsSuccess)
@@ -932,6 +948,12 @@ internal sealed class GeocodingHandler(
     {
         return NormalizeProviderName(providerName) ?? _options.DefaultProvider;
     }
+
+    private static bool IsFailoverEntitled(HttpContext context)
+        => context.RequestServices
+            .GetRequiredService<ILicenseEntitlementService>()
+            .CheckEntitlement(FeatureCatalog.GeocodingFailoverKey)
+            .IsActive;
 
     private IResult? ValidateLocatorName(HttpContext context, string? locatorName)
     {
