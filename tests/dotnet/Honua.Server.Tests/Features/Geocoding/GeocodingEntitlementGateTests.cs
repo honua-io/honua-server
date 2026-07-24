@@ -73,6 +73,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_Post_WithoutEntitlement_Returns402WithEntitlementDetail()
     {
@@ -92,6 +93,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_Alias_WithoutEntitlement_Returns402()
     {
@@ -106,6 +108,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_WithProEntitlement_StillReturns402()
     {
@@ -122,6 +125,7 @@ public sealed class GeocodingEntitlementGateTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_WithEnterpriseEntitlement_ReachesEndpoint()
     {
