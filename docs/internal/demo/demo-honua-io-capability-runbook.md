@@ -394,11 +394,11 @@ curl -s -o /dev/null -w '%{http_code}\n' "$BASE/rest/services/test_service/Featu
 
 # Geocoding — known-broken today (Nominatim, no NAT egress); documents the failure,
 # does not assert success. After the Amazon Location switch (Remediation plan item 1)
-# ships, re-run these two and expect: Provider "amazon-location", and the second call
-# in well under 1s with candidates.length > 0 (no more ~15.8s egress timeout).
+# ships, re-run these two and expect: Provider "amazon-location", and the CLI call
+# in well under 1s with at least one candidate (no more ~15.8s egress timeout).
 curl -s "$BASE/rest/services/World/GeocodeServer?f=json" | jq -r '.locatorProperties.Provider'
-time curl -s -o /dev/null -w 'geocode candidates: %{http_code} in %{time_total}s\n' \
-  "$BASE/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului"
+time honua geocode "Kahului" --locator World --limit 1 --json \
+  | jq -e 'type == "array" and length > 0'
 
 # SensorThings — expected 404 (intentional, #2434)
 curl -s -o /dev/null -w 'sta: %{http_code}\n' "$BASE/sta/v1.1/"
@@ -465,8 +465,11 @@ backward compatibility, even when
 would therefore still try it after any Amazon Location error (for example, a place-index
 typo) and hang for another ~15.8 seconds. Keep the provider-specific flag false to record
 the intended provider set, but do not rely on it until runtime registration honors that
-flag. This demo deployment deliberately runs Amazon Location as its only attempted
-provider; re-enable failover only after every registered fallback has a working network
+flag. For normal requests that omit the optional `provider` query parameter, this demo
+deployment deliberately attempts only Amazon Location. An explicit
+`provider=nominatim` request can still select the registered Nominatim provider and
+incur the unreachable-path timeout; demo smoke tests and clients must not send that
+override. Re-enable failover only after every registered fallback has a working network
 path.
 
 **Sequencing:**
@@ -485,9 +488,10 @@ path.
    ```bash
    curl -s 'https://demo.honua.io/rest/services/World/GeocodeServer?f=json' \
      | jq '.locatorProperties.Provider'                # expect "amazon-location"
-   time curl -s -o /dev/null -w '%{http_code} in %{time_total}s\n' \
-     'https://demo.honua.io/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=Kahului'
-     # expect 200 in well under 1s (no more ~15.8s egress timeout)
+   export HONUA_BASE_URL=https://demo.honua.io
+   time honua geocode "Kahului" --locator World --limit 1 --json \
+     | jq -e 'type == "array" and length > 0'
+     # expect a non-empty candidate array in well under 1s
    ```
 4. **Rollback:** the `Geocoding__*` env change rolls back the same way any other part
    of this deploy does — repoint the `live` alias back to the prior version (see item
