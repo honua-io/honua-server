@@ -297,6 +297,126 @@ public sealed class SceneAnalysisEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("pixel grids are not aligned");
     }
 
+    // ---- Step terrain (honua-server#2982 depth pack 2) ----
+    //
+    // PostSlice_OverSurface_ReturnsIntersectionMetadata above only seeds FLAT terrain
+    // (elevationMeters constant everywhere), so minElevation/maxElevation/reliefMeters and
+    // every per-station elevation are trivially identical — the same gap class depth pack 1
+    // (#2960) closed for viewshed/line-of-sight/sun-shadow. This fixture seeds a real 2-tile
+    // "step" DEM (west tile at 10m, east tile at 50m, split at a known Web Mercator X) so the
+    // slice profile has a genuine, hand-computable non-constant shape: the equator is an exact
+    // circle on the WGS84 ellipsoid, so both PostGIS's ST_Length(geography) line length and the
+    // Web Mercator X used to place the raster tiles reduce to the SAME linear
+    // meters-per-radian conversion (EarthEquatorialRadiusMeters). Every expected value below is
+    // derived from that one constant rather than a hardcoded/observed magic number.
+
+    private const double EarthEquatorialRadiusMeters = 6378137.0; // WGS84 semi-major axis.
+    private const double StepLowElevationMeters = 10.0;
+    private const double StepHighElevationMeters = 50.0;
+    private const double StepBoundaryXMeters = 2000.0;
+    private const double StepHalfExtentMeters = 20000.0;
+
+    private static double LonDegreesToWebMercatorX(double lonDegrees)
+        => EarthEquatorialRadiusMeters * lonDegrees * Math.PI / 180.0;
+
+    private static double EquatorialGeodesicMeters(double lonDeltaDegrees)
+        => EarthEquatorialRadiusMeters * Math.Abs(lonDeltaDegrees) * Math.PI / 180.0;
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /elevation/{datasetId}/slice")]
+    public async Task PostSlice_OverStepTerrain_ReturnsKnownStationElevationsAndRelief()
+    {
+        await SeedStepTerrainRasterAsync();
+
+        const double startLon = -0.1;
+        const double endLon = 0.1;
+        const int sampleCount = 11;
+
+        var response = await _fixture.Client.PostAsJsonAsync(
+            "/elevation/0/slice",
+            new
+            {
+                startLon,
+                startLat = 0.0,
+                endLon,
+                endLat = 0.0,
+                sampleCount
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+
+        // The equator is a great circle on the WGS84 ellipsoid (semi-major axis exactly), so
+        // ST_Length(geography) for a pure east-west line at lat=0 is exactly
+        // radius * deltaLonRadians — no haversine/ellipsoid approximation needed.
+        var expectedLengthMeters = EquatorialGeodesicMeters(endLon - startLon);
+        root.GetProperty("lengthMeters").GetDouble().Should().BeApproximately(expectedLengthMeters, 0.5);
+
+        // The raster is exactly two constant-value tiles (10m west / 50m east of x=2000m), so
+        // the profile's extremes are exactly the two seeded values regardless of where any
+        // individual sample falls relative to the tile boundary.
+        root.GetProperty("minElevation").GetDouble().Should().BeApproximately(StepLowElevationMeters, 0.0001);
+        root.GetProperty("maxElevation").GetDouble().Should().BeApproximately(StepHighElevationMeters, 0.0001);
+        root.GetProperty("reliefMeters").GetDouble().Should()
+            .BeApproximately(StepHighElevationMeters - StepLowElevationMeters, 0.0001);
+        root.GetProperty("hasNoDataSamples").GetBoolean().Should().BeFalse();
+
+        var samples = root.GetProperty("samples").EnumerateArray().ToArray();
+        samples.Should().HaveCount(sampleCount);
+
+        // Station 0 (startLon=-0.1, x ~ -11132m) sits ~9132m west of the tile boundary
+        // (x=2000m) — comfortably inside the west (10m) tile with a wide safety margin, no
+        // resampling ambiguity.
+        LonDegreesToWebMercatorX(startLon).Should().BeLessThan(StepBoundaryXMeters - 9000);
+        samples[0].GetProperty("elevation").GetDouble().Should().BeApproximately(StepLowElevationMeters, 0.0001);
+        samples[0].GetProperty("distanceMeters").GetDouble().Should().BeApproximately(0.0, 0.5);
+
+        // Station 10 (endLon=0.1, x ~ +11132m) sits ~9132m east of the boundary — comfortably
+        // inside the east (50m) tile.
+        LonDegreesToWebMercatorX(endLon).Should().BeGreaterThan(StepBoundaryXMeters + 9000);
+        samples[^1].GetProperty("elevation").GetDouble().Should().BeApproximately(StepHighElevationMeters, 0.0001);
+        samples[^1].GetProperty("distanceMeters").GetDouble().Should().BeApproximately(expectedLengthMeters, 0.5);
+    }
+
+    private Task SeedStepTerrainRasterAsync()
+    {
+        const double cell = 250;
+        var westWidth = (int)((StepBoundaryXMeters + StepHalfExtentMeters) / cell);
+        var eastWidth = (int)((StepHalfExtentMeters - StepBoundaryXMeters) / cell);
+        var height = (int)(StepHalfExtentMeters * 2 / cell);
+
+        return RasterIntegrationTestData.ReplaceLayerRastersAsync(
+            _fixture,
+            WebAppFixture.TestLayerId,
+            new RasterSeed(
+                Name: "step-west",
+                Width: westWidth,
+                Height: height,
+                UpperLeftX: -StepHalfExtentMeters,
+                UpperLeftY: StepHalfExtentMeters,
+                ScaleX: cell,
+                ScaleY: -cell,
+                Value: StepLowElevationMeters,
+                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
+                CreatedAt: RasterIntegrationTestData.WestAcquisition,
+                Srid: 3857),
+            new RasterSeed(
+                Name: "step-east",
+                Width: eastWidth,
+                Height: height,
+                UpperLeftX: StepBoundaryXMeters,
+                UpperLeftY: StepHalfExtentMeters,
+                ScaleX: cell,
+                ScaleY: -cell,
+                Value: StepHighElevationMeters,
+                AcquisitionDate: RasterIntegrationTestData.EastAcquisition,
+                CreatedAt: RasterIntegrationTestData.EastAcquisition,
+                Srid: 3857));
+    }
+
     private Task SeedFullWorldRasterAsync(double elevationMeters)
         => RasterIntegrationTestData.ReplaceLayerRastersAsync(
             _fixture,
