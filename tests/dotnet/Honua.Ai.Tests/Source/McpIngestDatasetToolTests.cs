@@ -171,6 +171,7 @@ public sealed class McpIngestDatasetToolTests
         coordinator.ForwardGeocodeAsync(
                 Arg.Is<ForwardGeocodeRequest>(r => r.Query == "1100 Congress Ave" && r.MaxResults == 1 && r.SpatialReferenceWkid == 4326),
                 null,
+                true,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
             [
@@ -414,6 +415,14 @@ public sealed class McpIngestDatasetToolTests
                 HonuaEdition.Enterprise,
                 LicenseValidationState.Valid,
                 HonuaEdition.Enterprise,
+                string.Empty));
+        license.CheckEntitlement(GeocodeTool.FailoverEntitlementKey)
+            .Returns(new LicenseEntitlementDecision(
+                GeocodeTool.FailoverEntitlementKey,
+                true,
+                HonuaEdition.Enterprise,
+                LicenseValidationState.Valid,
+                HonuaEdition.Pro,
                 string.Empty));
         return license;
     }

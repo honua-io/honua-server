@@ -63,7 +63,8 @@ public interface IGeocodeProviderRegistry
 public interface IGeocodeCoordinatorService
 {
     /// <summary>
-    /// Perform forward geocoding with automatic provider selection and failover
+    /// Perform forward geocoding against the selected/default provider without failover.
+    /// Call the explicit-policy overload after evaluating the failover entitlement.
     /// </summary>
     /// <param name="request">Forward geocoding request</param>
     /// <param name="providerName">Preferred provider name (optional)</param>
@@ -75,7 +76,17 @@ public interface IGeocodeCoordinatorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Perform reverse geocoding with automatic provider selection and failover
+    /// Perform forward geocoding with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> ForwardGeocodeAsync(
+        ForwardGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Perform reverse geocoding against the selected/default provider without failover.
+    /// Call the explicit-policy overload after evaluating the failover entitlement.
     /// </summary>
     /// <param name="request">Reverse geocoding request</param>
     /// <param name="providerName">Preferred provider name (optional)</param>
@@ -87,7 +98,17 @@ public interface IGeocodeCoordinatorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Get suggestions with automatic provider selection and failover
+    /// Perform reverse geocoding with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<ReverseGeocodeMatch?>> ReverseGeocodeAsync(
+        ReverseGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get suggestions from the selected/default provider without failover.
+    /// Call the explicit-policy overload after evaluating the failover entitlement.
     /// </summary>
     /// <param name="request">Suggest request</param>
     /// <param name="providerName">Preferred provider name (optional)</param>
@@ -99,7 +120,17 @@ public interface IGeocodeCoordinatorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Perform batch geocoding with automatic provider selection and failover
+    /// Get suggestions with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<IReadOnlyList<GeocodeSuggestion>>> SuggestAsync(
+        SuggestGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Perform batch geocoding against the selected/default provider without failover.
+    /// Call the explicit-policy overload after evaluating the failover entitlement.
     /// </summary>
     /// <param name="request">Batch geocoding request</param>
     /// <param name="providerName">Preferred provider name (optional)</param>
@@ -108,6 +139,15 @@ public interface IGeocodeCoordinatorService
     Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
         BatchGeocodeRequest request,
         string? providerName = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Perform batch geocoding with an explicit per-request failover policy.
+    /// </summary>
+    Task<GeocodeResult<IReadOnlyList<GeocodeCandidate>>> BatchGeocodeAsync(
+        BatchGeocodeRequest request,
+        string? providerName,
+        bool allowFailover,
         CancellationToken cancellationToken = default);
 }
 

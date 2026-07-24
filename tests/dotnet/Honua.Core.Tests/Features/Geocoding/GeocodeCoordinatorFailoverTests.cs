@@ -1,16 +1,36 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Geocoding.Features.Geocoding;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geocoding.Features.Geocoding.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 
 namespace Honua.Core.Tests.Features.Geocoding;
 
 public sealed class GeocodeCoordinatorFailoverTests
 {
+    [Fact]
+    public void AddGeocodingCore_WithoutLicenseService_ResolvesProviderCoordinator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddGeocodingCore(new ConfigurationBuilder().Build());
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IGeocodeProviderCoordinator>());
+    }
+
     [Fact]
     public async Task ForwardGeocodeAsync_CapabilityIncompatibleFirstProvider_DoesNotConsumeFailoverBudget()
     {
@@ -39,6 +59,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         var result = await coordinator.ForwardGeocodeAsync(
             new ForwardGeocodeRequest("1 Test St", 1, 4326, null),
             providerName: null,
+            allowFailover: true,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -70,8 +91,16 @@ public sealed class GeocodeCoordinatorFailoverTests
 
         var request = new ForwardGeocodeRequest("1 Test St", 1, 4326, null);
 
-        var first = await coordinator.ForwardGeocodeAsync(request, providerName: null, CancellationToken.None);
-        var second = await coordinator.ForwardGeocodeAsync(request, providerName: null, CancellationToken.None);
+        var first = await coordinator.ForwardGeocodeAsync(
+            request,
+            providerName: null,
+            allowFailover: true,
+            CancellationToken.None);
+        var second = await coordinator.ForwardGeocodeAsync(
+            request,
+            providerName: null,
+            allowFailover: true,
+            CancellationToken.None);
 
         Assert.True(first.IsSuccess);
         Assert.False(second.IsSuccess);
@@ -101,6 +130,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         var result = await coordinator.ForwardGeocodeAsync(
             new ForwardGeocodeRequest("1 Test St", 1, 4326, null),
             providerName: null,
+            allowFailover: true,
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
@@ -131,6 +161,7 @@ public sealed class GeocodeCoordinatorFailoverTests
         var result = await coordinator.ReverseGeocodeAsync(
             new ReverseGeocodeRequest(1.0, 2.0, 4326),
             providerName: null,
+            allowFailover: true,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -164,11 +195,69 @@ public sealed class GeocodeCoordinatorFailoverTests
         var result = await coordinator.ForwardGeocodeAsync(
             new ForwardGeocodeRequest("1 Test St", 1, 4326, null),
             providerName: null,
+            allowFailover: true,
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(1, first.ForwardCallCount);
         Assert.Equal(0, second.ForwardCallCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GeocodeProviderCoordinator_Operations_PassFailoverEntitlementToCanonicalCoordinator(
+        bool isActive)
+    {
+        var forwardRequest = new ForwardGeocodeRequest("1 Test St", 1, 4326, null);
+        var reverseRequest = new ReverseGeocodeRequest(1.0, 2.0, 4326);
+        var canonical = new Mock<IGeocodeCoordinatorService>(MockBehavior.Strict);
+        canonical
+            .Setup(service => service.ForwardGeocodeAsync(
+                forwardRequest,
+                null,
+                isActive,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GeocodeResult<IReadOnlyList<GeocodeCandidate>>
+            {
+                Data = [],
+                ProviderName = "mock"
+            });
+        canonical
+            .Setup(service => service.ReverseGeocodeAsync(
+                reverseRequest,
+                null,
+                isActive,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GeocodeResult<ReverseGeocodeMatch?>
+            {
+                Data = null,
+                ProviderName = "mock"
+            });
+
+        var entitlement = new Mock<ILicenseEntitlementService>(MockBehavior.Strict);
+        entitlement
+            .Setup(service => service.CheckEntitlement(FeatureCatalog.GeocodingFailoverKey))
+            .Returns(new LicenseEntitlementDecision(
+                FeatureCatalog.GeocodingFailoverKey,
+                isActive,
+                isActive ? HonuaEdition.Pro : HonuaEdition.Community,
+                isActive ? LicenseValidationState.Valid : LicenseValidationState.NoLicenseConfigured,
+                HonuaEdition.Pro,
+                isActive ? string.Empty : "Failover requires Pro."));
+
+        var coordinator = new GeocodeProviderCoordinator(
+            canonical.Object,
+            Mock.Of<IGeocodeProviderRegistry>(),
+            entitlement.Object);
+
+        await coordinator.ForwardGeocodeAsync(forwardRequest, cancellationToken: CancellationToken.None);
+        await coordinator.ReverseGeocodeAsync(reverseRequest, cancellationToken: CancellationToken.None);
+
+        canonical.VerifyAll();
+        entitlement.Verify(
+            service => service.CheckEntitlement(FeatureCatalog.GeocodingFailoverKey),
+            Times.Exactly(2));
     }
 
     private static GeocodeCoordinatorService CreateCoordinator(

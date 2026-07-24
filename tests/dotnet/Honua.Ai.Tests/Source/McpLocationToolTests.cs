@@ -50,6 +50,7 @@ public sealed class McpLocationToolTests
                     request.MaxResults == 1 &&
                     request.SpatialReferenceWkid == 4326),
                 "mock",
+                true,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
             [
@@ -67,7 +68,7 @@ public sealed class McpLocationToolTests
             ], "mock"));
 
         var services = BuildServices(
-            ActiveLicense(GeocodeTool.EntitlementKey),
+            ActiveLicense(GeocodeTool.FailoverEntitlementKey),
             geocodeCoordinator: coordinator);
         var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
@@ -102,6 +103,7 @@ public sealed class McpLocationToolTests
         await coordinator.Received(1).ForwardGeocodeAsync(
             Arg.Any<ForwardGeocodeRequest>(),
             "mock",
+            true,
             Arg.Any<CancellationToken>());
     }
 
@@ -172,7 +174,6 @@ public sealed class McpLocationToolTests
     }
 
     [Theory]
-    [InlineData(GeocodeTool.ToolName, GeocodeTool.EntitlementKey, """{"address":"1 Main St"}""")]
     [InlineData(RouteTool.ToolName, RouteTool.EntitlementKey, """{"stops":[{"lon":0,"lat":0},{"lon":1,"lat":1}]}""")]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call")]
@@ -203,11 +204,48 @@ public sealed class McpLocationToolTests
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("code").GetString().Should().Be("failed_precondition");
         structured.GetProperty("message").GetString().Should().Contain(entitlementKey);
-        if (toolName == GeocodeTool.ToolName)
-        {
-            structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("PreconditionFailed");
-            StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.GeocodeOutputSchema);
-        }
+    }
+
+    // #2981: forward geocoding moved to Community — the demo/adoption showcase path — so the
+    // tool must succeed even when no license/entitlement service reports it active. This is the
+    // MCP-side mirror of the HTTP GeocodingEntitlementGateTests forward/reverse assertions;
+    // together they prove the HTTP and MCP surfaces agree on the re-tiered keys.
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_geocode_address")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_GeocodeAddress_WithoutAnyActiveEntitlement_StillSucceeds()
+    {
+        var coordinator = Substitute.For<IGeocodeCoordinatorService>();
+        coordinator.ForwardGeocodeAsync(
+                Arg.Any<ForwardGeocodeRequest>(),
+                Arg.Any<string?>(),
+                false,
+                Arg.Any<CancellationToken>())
+            .Returns(GeocodeResults.Success<IReadOnlyList<GeocodeCandidate>>(
+            [
+                new GeocodeCandidate("1 Main St, Anytown", 0, 0, 90.0, new Dictionary<string, string?>())
+            ], "mock"));
+
+        var services = BuildServices(
+            InactiveLicense("geocoding.forward"),
+            geocodeCoordinator: coordinator);
+        var surface = new McpDataAccessSurface(
+            [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
+            [],
+            NullLogger<McpDataAccessSurface>.Instance);
+
+        var response = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("geo-community-1", GeocodeTool.ToolName, """
+                {"address":"1 Main St"}
+                """),
+            CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
     }
 
     [UnitTest]
@@ -221,7 +259,7 @@ public sealed class McpLocationToolTests
         // against the advertised outputSchema (the oneOf error branch), not a
         // bare protocol error.
         var services = BuildServices(
-            ActiveLicense(GeocodeTool.EntitlementKey),
+            ActiveLicense("geocoding.forward"),
             geocodeCoordinator: Substitute.For<IGeocodeCoordinatorService>());
         var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
@@ -258,13 +296,14 @@ public sealed class McpLocationToolTests
         coordinator.ForwardGeocodeAsync(
                 Arg.Any<ForwardGeocodeRequest>(),
                 Arg.Any<string?>(),
+                false,
                 Arg.Any<CancellationToken>())
             .Returns(GeocodeResults.Failure<IReadOnlyList<GeocodeCandidate>>(
                 "no provider produced a result.",
                 "mock"));
 
         var services = BuildServices(
-            ActiveLicense(GeocodeTool.EntitlementKey),
+            ActiveLicense("geocoding.forward"),
             geocodeCoordinator: coordinator);
         var surface = new McpDataAccessSurface(
             [new GeocodeTool(_jobService, NullLogger<GeocodeTool>.Instance)],
@@ -310,6 +349,8 @@ public sealed class McpLocationToolTests
     private static ILicenseEntitlementService ActiveLicense(string entitlementKey)
     {
         var license = Substitute.For<ILicenseEntitlementService>();
+        license.CheckEntitlement(Arg.Any<string>())
+            .Returns(call => InactiveDecision(call.Arg<string>()));
         license.CheckEntitlement(entitlementKey)
             .Returns(new LicenseEntitlementDecision(
                 entitlementKey,
@@ -324,6 +365,8 @@ public sealed class McpLocationToolTests
     private static ILicenseEntitlementService InactiveLicense(string entitlementKey)
     {
         var license = Substitute.For<ILicenseEntitlementService>();
+        license.CheckEntitlement(Arg.Any<string>())
+            .Returns(call => InactiveDecision(call.Arg<string>()));
         license.CheckEntitlement(entitlementKey)
             .Returns(new LicenseEntitlementDecision(
                 entitlementKey,
@@ -334,6 +377,14 @@ public sealed class McpLocationToolTests
                 $"{entitlementKey} requires an active Pro entitlement."));
         return license;
     }
+
+    private static LicenseEntitlementDecision InactiveDecision(string entitlementKey) => new(
+        entitlementKey,
+        false,
+        HonuaEdition.Community,
+        LicenseValidationState.NoLicenseConfigured,
+        HonuaEdition.Pro,
+        $"{entitlementKey} requires an active Pro entitlement.");
 
     private static DefaultHttpContext AuthenticatedContext(IServiceProvider services)
     {

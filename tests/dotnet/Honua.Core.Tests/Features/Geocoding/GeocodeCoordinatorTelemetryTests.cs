@@ -11,8 +11,9 @@ using Microsoft.Extensions.Options;
 namespace Honua.Core.Tests.Features.Geocoding;
 
 /// <summary>
-/// Verifies PA-200: <see cref="GeocodeCoordinatorService.SuggestAsync"/> and
-/// <see cref="GeocodeCoordinatorService.BatchGeocodeAsync"/> emit
+/// Verifies PA-200:
+/// <see cref="GeocodeCoordinatorService.SuggestAsync(SuggestGeocodeRequest, string, CancellationToken)"/> and
+/// <see cref="GeocodeCoordinatorService.BatchGeocodeAsync(BatchGeocodeRequest, string, CancellationToken)"/> emit
 /// "Honua.Geocoding" spans (mirroring the existing Forward/Reverse geocode
 /// telemetry) tagged with query length / batch size rather than raw
 /// address/query text.
@@ -44,6 +45,7 @@ public sealed class GeocodeCoordinatorTelemetryTests
         var result = await coordinator.SuggestAsync(
             new SuggestGeocodeRequest(queryText),
             providerName: null,
+            allowFailover: true,
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -75,7 +77,11 @@ public sealed class GeocodeCoordinatorTelemetryTests
         ActivitySource.AddActivityListener(listener);
 
         var request = new BatchGeocodeRequest(["1 Test St", "2 Test Ave"]);
-        var result = await coordinator.BatchGeocodeAsync(request, providerName: null, CancellationToken.None);
+        var result = await coordinator.BatchGeocodeAsync(
+            request,
+            providerName: null,
+            allowFailover: true,
+            CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         var span = Assert.Single(

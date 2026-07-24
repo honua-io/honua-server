@@ -91,7 +91,7 @@ public static class CapabilityKeyCatalog
         new("serve.geoservices-geometry-service", "Geometry Service", Categories.Serve,
             HonuaEdition.Community, "Server-side geometry operations (project, buffer, simplify, union, and related utilities) through the Esri GeometryServer surface."),
         new("serve.geoservices-geocodeserver", "GeocodeServer Discovery", Categories.Serve,
-            HonuaEdition.Community, "Discover GeocodeServer service and layer metadata. Forward/reverse/batch geocode execution is gated by the geocoding.* entitlement keys."),
+            HonuaEdition.Community, "Discover GeocodeServer service and layer metadata. Batch geocode execution is gated by the geocoding.batch entitlement key (Enterprise); forward and reverse geocode execution are Community (#2981)."),
         new("serve.geoservices-vectortileserver", "VectorTileServer", Categories.Serve,
             HonuaEdition.Community, "Serve Esri vector tile services through the GeoServices VectorTileServer surface."),
         new("serve.ogc-api-features", "OGC API Features", Categories.Serve,
@@ -164,6 +164,15 @@ public static class CapabilityKeyCatalog
         // Field ops
         new("fieldops.forms", "Field Collection Forms", FeatureCatalog.Categories.FieldOps,
             HonuaEdition.Community, "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."),
+
+        // Geocoding — Community (#2981). Forward and reverse single-address geocoding are the
+        // demo/adoption showcase path; batch geocoding (geocoding.batch) remains an Enterprise
+        // FeatureCatalog entitlement, gated over both HTTP and the MCP honua_geocode_addresses
+        // tool. See ADR-0024.
+        new("geocoding.forward", "Forward Geocoding", FeatureCatalog.Categories.Geocoding,
+            HonuaEdition.Community, "Convert a freeform address to coordinates using configured providers."),
+        new("geocoding.reverse", "Reverse Geocoding", FeatureCatalog.Categories.Geocoding,
+            HonuaEdition.Community, "Convert coordinates to a nearest-address match using configured providers."),
 
         // Identity: identity.saml and identity.scim moved to FeatureCatalog entitlements
         // (both Enterprise, per ADR-0024's Identity Governance tier) in #2978 — they

@@ -7,8 +7,10 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -38,6 +40,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
+    private readonly IFilterExpressionService? _filterExpressionService;
+    private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
+    private readonly IFieldMaskSource? _fieldMaskSource;
     private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
     private readonly string _primaryKeyColumn;
@@ -54,7 +59,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureStorageMapping mapping,
         DataConnection? connection,
         IConnectionEncryptionService? connectionEncryptionService,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IFilterExpressionService? filterExpressionService = null,
+        IRowLevelSecurityFilterSource? rlsFilterSource = null,
+        IFieldMaskSource? fieldMaskSource = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
@@ -62,6 +70,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _connection = connection;
         _connectionEncryptionService = connectionEncryptionService;
+        _filterExpressionService = filterExpressionService;
+        _rlsFilterSource = rlsFilterSource;
+        _fieldMaskSource = fieldMaskSource;
         _logger = logger ?? NullLogger.Instance;
         _qualifiedTableName = QuoteQualifiedTableName(_mapping);
         _primaryKeyColumn = ValidateAndQuoteIdentifier(_mapping.PrimaryKeyColumn);
@@ -97,6 +108,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         if (IsNearestNeighborQuery(query))
         {
             var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
@@ -152,6 +165,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT COUNT(*)::bigint FROM {_qualifiedTableName}");
         AppendFilter(sql, query);
@@ -484,9 +499,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private MetadataV2Field[] ResolveAttributeFields(FeatureQuery query)
     {
+        var maskedFields = query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields
+            ? fields.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
         var declaredFields = _resource.SchemaFields
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-                && IsSafeIdentifier(field.Name))
+                && IsSafeIdentifier(field.Name)
+                && !maskedFields.Contains(field.Name))
             .ToArray();
 
         if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
@@ -515,6 +534,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         if (_layerDiscriminatorColumn is not null && _layerDiscriminatorValue is int discriminator)
         {
             conditions.Add($"{_layerDiscriminatorColumn} = {sql.AddParameter(discriminator)}");
+        }
+
+        if (query.EnforcedSqlFilter != null)
+        {
+            conditions.Add(ConvertSqlFilter(query.EnforcedSqlFilter, sql));
         }
 
         if (query.SqlFilter != null)
@@ -550,6 +574,52 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         sql.Append(
             CultureInfo.InvariantCulture,
             string.Join(" AND ", conditions.Select(static condition => $"({condition})")));
+    }
+
+    private async Task<FeatureQuery> ApplyReadSecurityAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var needsFilter = query.EnforcedSqlFilter is null;
+        var needsFieldMask = query.EnforcedMaskedFields is null;
+        if (!needsFilter && !needsFieldMask)
+        {
+            return query;
+        }
+
+        if (needsFilter &&
+            _resource.PermanentFilter is { Expression: { Length: > 0 } } &&
+            _filterExpressionService is null)
+        {
+            throw new InvalidOperationException(
+                $"Permanent filter enforcement is unavailable for source-backed resource '{_resource.Metadata.Id}'.");
+        }
+
+        if (needsFilter)
+        {
+            var permanentFilter = PermanentFilterResolver.Resolve(_resource, _filterExpressionService);
+            var rlsFilter = _rlsFilterSource is null
+                ? null
+                : await _rlsFilterSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
+            var enforcedFilter = SqlFragmentHelpers.CombineSqlFilters(permanentFilter, rlsFilter);
+            if (enforcedFilter != null)
+            {
+                query = query with { EnforcedSqlFilter = enforcedFilter };
+            }
+        }
+
+        if (needsFieldMask)
+        {
+            var maskedFields = _fieldMaskSource is null
+                ? ImmutableArray<string>.Empty
+                : await _fieldMaskSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
+            if (!maskedFields.IsDefaultOrEmpty)
+            {
+                query = query with { EnforcedMaskedFields = maskedFields };
+            }
+        }
+
+        return query;
     }
 
     // OGC API Features `datetime` (and any temporal query) lands here as a

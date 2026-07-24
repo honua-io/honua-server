@@ -4,11 +4,13 @@
 using System.Data;
 using System.Data.Common;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit;
 using Microsoft.Extensions.ObjectPool;
@@ -104,6 +106,29 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
             CancellationToken.None);
 
         payload.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetMvtTileAsync_SourceBackedLayer_UsesMappedTable()
+    {
+        var tileProvider = CreateReader().Should().BeAssignableTo<ITileProvider>().Subject;
+
+        var payload = await tileProvider.GetMvtTileAsync(
+            layerId: 1,
+            x: 0,
+            y: 0,
+            z: 0,
+            query: new FeatureQuery
+            {
+                SpatialReferenceSrid = 4326,
+                OutputSrid = 4326
+            },
+            tileOptions: new TileOptions { TileBuffer = 0, TileExtent = 4096 },
+            tileLimits: new TileLimits { MaxFeaturesPerTile = 100 },
+            cancellationToken: CancellationToken.None);
+
+        payload.Should().NotBeNull();
+        payload!.Should().NotBeEmpty();
     }
 
     private PostgresStorageMappedFeatureReader CreateReader()
