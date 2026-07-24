@@ -43,27 +43,32 @@ public sealed class TileFeatureProviderResolverTests
     }
 
     [Fact]
-    public async Task ResolveFeatureReaderAsync_MissingRoutingMetadata_UsesFallbackReader()
+    public async Task ResolveFeatureReaderAsync_ResourcePrimaryBinding_RoutesToSecondaryReader()
     {
         var connectionId = Guid.NewGuid();
+        var secondaryReader = Substitute.For<IFeatureReader>();
         var provider = Substitute.For<IFeatureDataProvider>();
         provider.ProviderName.Returns(DataProviderNames.SqlServer);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
-        provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        provider.Reader.Returns(secondaryReader);
         var fallbackReader = Substitute.For<IFeatureReader>();
         var resolver = new TileFeatureProviderResolver(CreateRouter(connectionId, provider));
-        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+        var (snapshot, service, resource, publication) = CreateSnapshot(
+            connectionId.ToString(),
+            publicationUsesExplicitBinding: false,
+            resourceUsesPrimaryBinding: true);
 
         var resolved = await resolver.ResolveFeatureReaderAsync(
             snapshot,
             service,
             resource,
-            publication with { StorageBindingId = null },
+            publication,
             41,
             fallbackReader,
             CancellationToken.None);
 
-        resolved.Should().BeSameAs(fallbackReader);
+        resolved.Should().BeSameAs(secondaryReader);
+        await fallbackReader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
     }
 
     [Fact]
@@ -144,27 +149,37 @@ public sealed class TileFeatureProviderResolverTests
     }
 
     [Fact]
-    public async Task ResolveTileProviderAsync_MissingRoutingMetadata_UsesFallbackProvider()
+    public async Task ResolveTileProviderAsync_ResourceFirstBinding_BindsSecondaryProvider()
     {
         var connectionId = Guid.NewGuid();
         var provider = Substitute.For<IFeatureDataProvider, IBindableTileProvider>();
+        var boundTileProvider = Substitute.For<ITileProvider>();
         provider.ProviderName.Returns(DataProviderNames.Postgis);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
+        ((IBindableTileProvider)provider).CreateTileProviderForBinding(
+                Arg.Is<FeatureProviderBinding>(binding =>
+                    binding.Connection != null && binding.Connection.ConnectionId == connectionId))
+            .Returns(boundTileProvider);
         var fallbackProvider = Substitute.For<ITileProvider>();
         var resolver = new TileFeatureProviderResolver(CreateRouter(connectionId, provider));
-        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+        var (snapshot, service, resource, publication) = CreateSnapshot(
+            connectionId.ToString(),
+            publicationUsesExplicitBinding: false);
 
         var resolution = await resolver.ResolveTileProviderAsync(
             snapshot,
             service,
             resource,
-            publication with { StorageBindingId = null },
+            publication,
             41,
             fallbackProvider,
             CancellationToken.None);
 
-        resolution.Provider.Should().BeSameAs(fallbackProvider);
+        resolution.Provider.Should().BeSameAs(boundTileProvider);
         resolution.UnsupportedProviderName.Should().BeNull();
+        ((IBindableTileProvider)provider).Received(1).CreateTileProviderForBinding(
+            Arg.Is<FeatureProviderBinding>(binding =>
+                binding.StorageBinding.Metadata.Id == "binding-secondary"));
     }
 
     [Fact]
@@ -204,7 +219,10 @@ public sealed class TileFeatureProviderResolverTests
     }
 
     private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
-        CreateSnapshot(string? connectionId)
+        CreateSnapshot(
+            string? connectionId,
+            bool publicationUsesExplicitBinding = true,
+            bool resourceUsesPrimaryBinding = false)
     {
         var service = new MetadataV2Service
         {
@@ -217,6 +235,7 @@ public sealed class TileFeatureProviderResolverTests
             Metadata = new MetadataV2ObjectMetadata { Id = "res-secondary", Name = "secondary" },
             Type = MetadataV2ResourceType.FeatureDataset,
             StorageBindingIds = ["binding-secondary"],
+            PrimaryStorageBindingId = resourceUsesPrimaryBinding ? "binding-secondary" : null,
             SchemaFields =
             [
                 new MetadataV2Field
@@ -242,7 +261,7 @@ public sealed class TileFeatureProviderResolverTests
             Metadata = new MetadataV2ObjectMetadata { Id = "pub-secondary", Name = "secondary" },
             ServiceId = service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
-            StorageBindingId = binding.Metadata.Id,
+            StorageBindingId = publicationUsesExplicitBinding ? binding.Metadata.Id : null,
             LayerIndex = 4
         };
         var graph = new MetadataV2Graph

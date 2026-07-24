@@ -11,8 +11,8 @@ namespace Honua.Protocols.Ogc.Api.Tiles.Services;
 /// Resolves OGC API Tiles raster/vector tile operations through the provider selected by a
 /// layer's Metadata v2 storage binding (honua-server#2962), mirroring
 /// <c>Honua.Protocols.OData.Services.ODataFeatureProviderResolver</c>'s routing decision: a
-/// publication only routes away from the primary reader/tile provider when its storage
-/// binding carries an explicit connection id.
+/// publication only routes away from the primary reader/tile provider when its resolved
+/// storage binding carries a connection id.
 /// </summary>
 internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? providerQueryRouter)
 {
@@ -96,23 +96,21 @@ internal sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? pr
     }
 
     /// <summary>
-    /// A publication only routes away from the primary reader/tile provider when its storage
-    /// binding carries an explicit connection id. A publication with no storage binding, or a
-    /// binding with no connection, keeps using the primary pipeline byte-identically — the
-    /// common case for default single-provider deployments.
+    /// A publication only routes away from the primary reader/tile provider when its resolved
+    /// storage binding carries a connection id. Resolution follows Metadata v2 semantics:
+    /// publication binding, resource primary binding, then the resource's first binding. A
+    /// resolved binding with no connection keeps using the primary pipeline byte-identically —
+    /// the common case for default single-provider deployments.
     /// </summary>
     internal static bool RequiresRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
 
-        if (string.IsNullOrWhiteSpace(publication.StorageBindingId))
-        {
-            return false;
-        }
-
-        return !snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var binding)
-            || !string.IsNullOrWhiteSpace(binding.ConnectionId);
+        var binding = snapshot.ResolveStorageBinding(publication);
+        return binding is not null
+            ? !string.IsNullOrWhiteSpace(binding.ConnectionId)
+            : !string.IsNullOrWhiteSpace(publication.StorageBindingId);
     }
 
     private FeatureProviderQueryRouter RequireRouter()
