@@ -123,6 +123,12 @@ internal static class EntitlementProbeRegistry
             new(FeatureCatalog.FieldOpsOfflineSyncKey, HttpMethod.Get,
                 "/api/v1/forms/packages/does-not-matter/compatibility"),
 
+            // Geocoding — the Enterprise endpoint filter runs before request parsing or
+            // provider resolution. GeoServices errors are HTTP 200 with error.code=402,
+            // which the shared IsBlocked helper recognizes.
+            new(FeatureCatalog.BatchGeocodingKey, HttpMethod.Get,
+                "/rest/services/World/GeocodeServer/geocodeAddresses"),
+
             // Static map — dimensions/dpi/overlays chosen to land strictly between the
             // Community and Pro caps (StaticMapModels.cs) so each gate fires independently.
             new("staticmap.large-dimensions", HttpMethod.Get,
@@ -239,6 +245,12 @@ internal static class EntitlementProbeRegistry
                 "MCP-tool-only surface (RouteTool.cs EntitlementKey); denials surface as a " +
                 "JSON-RPC failed_precondition tool error, not an HTTP 402 problem response. " +
                 "Verified enforced in code; outside this sweep's REST 402/200 probe shape."),
+            new(FeatureCatalog.GeocodingFailoverKey,
+                "Failover is automatic behavior inside forward/reverse/suggest/batch requests, " +
+                "not a dedicated HTTP operation. GeocodingHandler and the MCP geocode tool check " +
+                "this entitlement and pass allowFailover into the canonical coordinator; an " +
+                "unentitled request still uses its primary provider instead of returning 402. " +
+                "Verified behaviorally enforced; there is no distinct HTTP 402 surface to probe."),
             new("ai.agent-operations",
                 "Enforced via IAgentGuardrailPolicy (EditionAgentGuardrailPolicy), whose " +
                 "guardrail level is derived directly from the active license edition — " +
@@ -275,32 +287,13 @@ internal static class EntitlementProbeRegistry
 
     /// <summary>
     /// Known enforcement gaps: the catalog declares a paid edition, an HTTP surface exists,
-    /// and no gate protects it today. Loud and minimal by design (#2980/#2981) — every entry
+    /// and no gate protects it today. Loud and minimal by design (#2980) — every entry
     /// must reference the tracking issue that owns its resolution, and deleting an entry (once
     /// fixed) is exactly the signal that resolution landed.
     /// </summary>
     public static IReadOnlyDictionary<string, EntitlementKnownGapEntry> KnownGaps { get; } =
         new EntitlementKnownGapEntry[]
         {
-            // --- Geocoding: documented, decision-pending gap (#2981) ---
-            new("geocoding.forward",
-                "GeoServices HTTP geocoding endpoints (findAddressCandidates/suggest) carry no " +
-                "LicenseGate check; only the MCP geocode tool enforces this entitlement today.",
-                "#2981"),
-            new("geocoding.reverse",
-                "GeoServices reverseGeocode carries no LicenseGate check; only the MCP geocode " +
-                "tool enforces this entitlement today.",
-                "#2981"),
-            new("geocoding.failover",
-                "No dedicated HTTP surface (failover is automatic behavior inside forward/reverse " +
-                "calls); those calls are unenforced per the geocoding.forward/reverse entries " +
-                "above, so there is no gated code path to probe for this key either.",
-                "#2981"),
-            new("geocoding.batch",
-                "GeoServices geocodeAddresses carries no LicenseGate check (declared Enterprise; " +
-                "not even Pro-gated in practice).",
-                "#2981"),
-
             // --- Identity: OIDC family unenforced everywhere (new finding, this sweep) ---
             new("identity.oidc",
                 "Zero LicenseGate/entitlement check anywhere in the OIDC surface: " +
