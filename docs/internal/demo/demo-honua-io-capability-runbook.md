@@ -397,8 +397,12 @@ curl -s -o /dev/null -w '%{http_code}\n' "$BASE/rest/services/test_service/Featu
 # ships, re-run these two and expect: Provider "amazon-location", and the CLI call
 # in well under 1s with at least one candidate (no more ~15.8s egress timeout).
 curl -s "$BASE/rest/services/World/GeocodeServer?f=json" | jq -r '.locatorProperties.Provider'
-time honua geocode "Kahului" --locator World --limit 1 --json \
-  | jq -e 'type == "array" and length > 0'
+if time honua geocode "Kahului" --locator World --limit 1 --json \
+  | jq -e 'type == "array" and length > 0'; then
+  echo "OK: geocoding returned a candidate"
+else
+  echo "KNOWN: geocoding remains unavailable until remediation item 1 is deployed"
+fi
 
 # SensorThings — expected 404 (intentional, #2434)
 curl -s -o /dev/null -w 'sta: %{http_code}\n' "$BASE/sta/v1.1/"
