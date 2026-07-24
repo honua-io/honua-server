@@ -675,16 +675,16 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
 {
     private readonly IGeocodeCoordinatorService _coordinatorService;
     private readonly IGeocodeProviderRegistry _providerRegistry;
-    private readonly ILicenseEntitlementService _entitlementService;
+    private readonly ILicenseEntitlementService? _entitlementService;
 
     public GeocodeProviderCoordinator(
         IGeocodeCoordinatorService coordinatorService,
         IGeocodeProviderRegistry providerRegistry,
-        ILicenseEntitlementService entitlementService)
+        ILicenseEntitlementService? entitlementService = null)
     {
         _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
         _providerRegistry = providerRegistry ?? throw new ArgumentNullException(nameof(providerRegistry));
-        _entitlementService = entitlementService ?? throw new ArgumentNullException(nameof(entitlementService));
+        _entitlementService = entitlementService;
     }
 
     public IGeocodeProvider? GetProvider(string? providerName = null)
@@ -764,9 +764,9 @@ internal sealed class GeocodeProviderCoordinator : IGeocodeProviderCoordinator
     }
 
     private bool IsFailoverEntitled()
-        => _entitlementService
+        => _entitlementService?
             .CheckEntitlement(FeatureCatalog.GeocodingFailoverKey)
-            .IsActive;
+            .IsActive == true;
 
     public async Task<IReadOnlyList<GeocodeProviderHealth>> CheckAllProvidersHealthAsync(CancellationToken cancellationToken = default)
     {
