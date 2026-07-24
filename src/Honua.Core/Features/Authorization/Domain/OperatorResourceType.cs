@@ -43,5 +43,4 @@ public enum OperatorResourceType
     /// operator-provisioned cross-user/platform-wide access.
     /// </remarks>
     StudioDraft,
->>>>>>> 3edc8f865 (feat(studio): widen package-lifecycle authorization beyond admin to end users)
 }
