@@ -56,6 +56,7 @@ A complete, production-capable feature server for a single-process deployment.
 | **MCP Server** | AI-assisted discovery, query, statistics (REST transport) |
 | **Admin UI** | Connections, layer publishing, JSON-based style editing with Maputnik visual editing tracked as backlog, map preview, import wizard, spatial SQL playground (query editor with autocomplete, inline map preview, EXPLAIN visualization) |
 | **Rendering** | MVT + TileJSON + auto MapLibre styles, MapServer export/identify, WMS GetMap |
+| **Geocoding** | Single-address forward (`geocoding.forward`) and reverse (`geocoding.reverse`) geocoding through the GeoServices GeocodeServer surface (`findAddressCandidates`/`reverseGeocode`/`suggest`) — the demo/adoption showcase path, free so a prospect can see geocoding work end to end before buying anything. Batch geocoding (`geocoding.batch`) is Enterprise; see that tier below (#2981) |
 | **Caching** | In-memory cache (single process) |
 | **Deployment** | Docker, Docker Compose, Helm, Terraform (all cloud modules), serverless (Lambda, Azure Functions), .NET Aspire |
 | **Migration** | `honua-migrate` scan, codemod, reconcile CLI |
@@ -115,6 +116,7 @@ Everything in Pro, plus:
 | **Multi-Tenancy** | Schema-per-tenant isolation; tenant-scoped API keys; per-tenant usage metering | Deployment Options |
 | **Usage Analytics** | Dashboard — queries/sec, popular layers, slow queries, storage growth, user activity | Reporting |
 | **Plugin SDK** | Custom endpoints, pre/post-edit hooks, validators, computed fields (.NET source-gen, AOT-safe) | Integrations |
+| **Batch Geocoding** | Multi-address geocoding execution in a single request (`geocoding.batch`) over both the GeoServices `geocodeAddresses` HTTP operation and the MCP `honua_geocode_addresses` tool — the volume/enterprise geocoding workload, distinct from the Community single-address forward/reverse path (#2981) | Product Assurance |
 | **Event Bus (Advanced)** | Kafka and NATS sink support; exactly-once delivery; dead letter queues | Integrations |
 | **Secure Connections** | Connection host allowlist; encrypted credential vault; connection audit trail | Product Assurance |
 | **App-Level Rate Limiting** | Per-tenant, per-user, per-API-key rate limits (beyond edge enforcement) | Product Assurance |

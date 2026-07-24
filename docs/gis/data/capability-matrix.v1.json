@@ -842,7 +842,7 @@
       "category": "Geocoding",
       "edition": "Enterprise",
       "entryCount": 3,
-      "provingTestCount": 14,
+      "provingTestCount": 19,
       "maturity": {
         "implemented": 3
       },
@@ -878,9 +878,9 @@
       "key": "geocoding.forward",
       "displayName": "Forward Geocoding",
       "category": "Geocoding",
-      "edition": "Pro",
+      "edition": "Community",
       "entryCount": 9,
-      "provingTestCount": 45,
+      "provingTestCount": 46,
       "maturity": {
         "implemented": 9
       },
@@ -897,9 +897,9 @@
       "key": "geocoding.reverse",
       "displayName": "Reverse Geocoding",
       "category": "Geocoding",
-      "edition": "Pro",
+      "edition": "Community",
       "entryCount": 3,
-      "provingTestCount": 12,
+      "provingTestCount": 13,
       "maturity": {
         "implemented": 3
       },
@@ -1504,7 +1504,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 4,
-      "provingTestCount": 10,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 4
       },

@@ -192,6 +192,18 @@ public static class FeatureCatalog
     public const string PluginSdkKey = "plugin.sdk";
 
     /// <summary>
+    /// Entitlement key for batch/multi-address geocoding execution — the GeoServices
+    /// <c>geocodeAddresses</c> HTTP operation and the MCP <c>honua_geocode_addresses</c> tool
+    /// (#2981). Enterprise-only: this is the volume/enterprise geocoding workload. Single-address
+    /// forward (<c>geocoding.forward</c>) and reverse (<c>geocoding.reverse</c>) geocoding moved to
+    /// Community in the same change — the demo/adoption showcase path — and are enumerated in
+    /// <see cref="CapabilityKeyCatalog.CommunityKeys"/> rather than here. Previously this key
+    /// existed in the catalog but was unenforced over HTTP (only the MCP
+    /// <c>honua_geocode_addresses</c> tool checked it); see ADR-0024.
+    /// </summary>
+    public const string BatchGeocodingKey = "geocoding.batch";
+
+    /// <summary>
     /// Entitlement key for basic single-provider OpenID Connect authentication. Pro-tier:
     /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider.
     /// </summary>
@@ -293,15 +305,15 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Aggregate and deliver batched alert summaries."),
 
         // Geocoding — Pro
-        new("geocoding.forward", "Forward Geocoding", Categories.Geocoding,
-            HonuaEdition.Pro, "Convert addresses to coordinates using configured providers."),
-        new("geocoding.reverse", "Reverse Geocoding", Categories.Geocoding,
-            HonuaEdition.Pro, "Convert coordinates to addresses using configured providers."),
         new("geocoding.failover", "Provider Failover", Categories.Geocoding,
             HonuaEdition.Pro, "Automatic failover between geocoding providers on error."),
 
-        // Geocoding — Enterprise
-        new("geocoding.batch", "Batch Geocoding", Categories.Geocoding,
+        // Geocoding — Enterprise. geocoding.forward and geocoding.reverse moved to
+        // CapabilityKeyCatalog.CommunityKeys (#2981) — the demo/adoption showcase path is
+        // Community; batch geocoding is the volume/enterprise workload that stays gated. Both
+        // shipped Pro in the catalog but unenforced over HTTP before this change (only the MCP
+        // honua_geocode_address tool checked geocoding.forward); see ADR-0024.
+        new(BatchGeocodingKey, "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
 
         // Routing - Pro
