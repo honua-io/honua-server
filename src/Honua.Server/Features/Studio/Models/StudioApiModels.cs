@@ -146,6 +146,129 @@ public sealed class StudioContentVersionListResponse
 }
 
 /// <summary>
+/// Publication-registry lifecycle badge joined onto a Studio content item list row. Populated
+/// when the Content Publication Registry has a version referencing the item (see
+/// <c>docs/internal/admin-api/content-publication-registry.md</c>); omitted otherwise.
+/// </summary>
+public sealed class StudioContentItemPublicationBadge
+{
+    /// <summary>Publication identifier.</summary>
+    [JsonPropertyName("publicationId")]
+    public required string PublicationId { get; init; }
+
+    /// <summary>Route slug the publication resolves under.</summary>
+    [JsonPropertyName("routeSlug")]
+    public required string RouteSlug { get; init; }
+
+    /// <summary>Canonical public route path.</summary>
+    [JsonPropertyName("routePath")]
+    public required string RoutePath { get; init; }
+
+    /// <summary>Route lifecycle: <c>active</c>, <c>suspended</c>, or <c>archived</c>.</summary>
+    [JsonPropertyName("lifecycle")]
+    public required string Lifecycle { get; init; }
+
+    /// <summary>Currently active revision.</summary>
+    [JsonPropertyName("activeRevision")]
+    public required long ActiveRevision { get; init; }
+
+    /// <summary>Timestamp the route pointer was last updated.</summary>
+    [JsonPropertyName("updatedAt")]
+    public required DateTimeOffset UpdatedAt { get; init; }
+}
+
+/// <summary>
+/// One row in a Studio content item listing, with an optional publication-registry lifecycle
+/// badge (REQ-004).
+/// </summary>
+public sealed class StudioContentItemListRow
+{
+    /// <summary>Content item identifier.</summary>
+    [JsonPropertyName("itemId")]
+    public required Guid ItemId { get; init; }
+
+    /// <summary>Machine-friendly package key.</summary>
+    [JsonPropertyName("packageKey")]
+    public required string PackageKey { get; init; }
+
+    /// <summary>Workspace identifier.</summary>
+    [JsonPropertyName("workspaceId")]
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>Package family.</summary>
+    [JsonPropertyName("family")]
+    public required StudioPackageFamily Family { get; init; }
+
+    /// <summary>Derived lifecycle state (draft, current, or published).</summary>
+    [JsonPropertyName("state")]
+    public required StudioContentItemState State { get; init; }
+
+    /// <summary>Current version identifier.</summary>
+    [JsonPropertyName("currentVersionId")]
+    public Guid? CurrentVersionId { get; init; }
+
+    /// <summary>Published version identifier.</summary>
+    [JsonPropertyName("publishedVersionId")]
+    public Guid? PublishedVersionId { get; init; }
+
+    /// <summary>Identifier of the actor that created the item.</summary>
+    [JsonPropertyName("createdBy")]
+    public string? CreatedBy { get; init; }
+
+    /// <summary>Identifier of the actor that last updated the item.</summary>
+    [JsonPropertyName("updatedBy")]
+    public string? UpdatedBy { get; init; }
+
+    /// <summary>Timestamp when the item was created.</summary>
+    [JsonPropertyName("createdAt")]
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Timestamp when the item was last updated.</summary>
+    [JsonPropertyName("updatedAt")]
+    public required DateTimeOffset UpdatedAt { get; init; }
+
+    /// <summary>Publication-registry lifecycle badge, when the item has a joinable publication.</summary>
+    [JsonPropertyName("publication")]
+    public StudioContentItemPublicationBadge? Publication { get; init; }
+}
+
+/// <summary>
+/// Response body for listing Studio content items.
+/// </summary>
+public sealed class StudioContentItemListResponse
+{
+    /// <summary>Items in this page.</summary>
+    [JsonPropertyName("items")]
+    public required IReadOnlyList<StudioContentItemListRow> Items { get; init; }
+
+    /// <summary>Total items matching the query across all pages.</summary>
+    [JsonPropertyName("total")]
+    public required int Total { get; init; }
+
+    /// <summary>Opaque cursor for the next page, or null when no more items remain.</summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; init; }
+}
+
+/// <summary>
+/// Response body for listing mutable Studio package drafts.
+/// </summary>
+public sealed class StudioPackageDraftListResponse
+{
+    /// <summary>Drafts in this page.</summary>
+    [JsonPropertyName("items")]
+    public required IReadOnlyList<StudioPackageDraft> Items { get; init; }
+
+    /// <summary>Total drafts matching the query across all pages.</summary>
+    [JsonPropertyName("total")]
+    public required int Total { get; init; }
+
+    /// <summary>Opaque cursor for the next page, or null when no more drafts remain.</summary>
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; init; }
+}
+
+/// <summary>
 /// Response body for a stored Studio deliverable export (returned when the artifact is persisted to share storage).
 /// </summary>
 public sealed class StudioDeliverableExportResponse

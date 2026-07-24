@@ -220,3 +220,26 @@ public enum StudioRollbackPointer
     [JsonStringEnumMemberName("both")]
     Both,
 }
+
+/// <summary>
+/// Derived lifecycle state for a Studio content item, computed from its
+/// <see cref="StudioContentItemPointers.CurrentVersionId"/> and
+/// <see cref="StudioContentItemPointers.PublishedVersionId"/> pointers. This is distinct from
+/// the Content Publication Registry's route <c>lifecycle</c> (active/suspended/archived),
+/// which tracks whether a route-resolvable publication built from a version is currently live.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<StudioContentItemState>))]
+public enum StudioContentItemState
+{
+    /// <summary>The item has only mutable drafts; no immutable content version has been saved yet.</summary>
+    [JsonStringEnumMemberName("draft")]
+    Draft,
+
+    /// <summary>The item has a saved current version that has not (yet) been published.</summary>
+    [JsonStringEnumMemberName("current")]
+    Current,
+
+    /// <summary>The item has a published version.</summary>
+    [JsonStringEnumMemberName("published")]
+    Published,
+}
