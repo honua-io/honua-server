@@ -287,10 +287,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         publishedRow.State.Should().Be(StudioContentItemState.Published);
         publishedRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
 
-        // `owner` filters the item's real owner_id column (honua-server#3001). No explicit
-        // ownerId was supplied when the draft was created above, so owner_id defaulted to the
-        // creating actor -- the same value recorded as createdBy -- and this filter matches it.
-        var byOwner = await _client.GetAsync($"/api/v1/studio/content-items?owner={Uri.EscapeDataString(publishedRow.CreatedBy!)}");
+        // `owner` filters the item's real owner_id column (honua-server#3001). The published
+        // draft above was created with an explicit OwnerId of "alice", so the item's owner_id
+        // is "alice" (not the creating admin actor recorded as createdBy).
+        var byOwner = await _client.GetAsync("/api/v1/studio/content-items?owner=alice");
         byOwner.StatusCode.Should().Be(HttpStatusCode.OK);
         var byOwnerItems = await ReadAsync<StudioContentItemListResponse>(byOwner, StudioApiJsonContext.Default.ApiResponseStudioContentItemListResponse);
         byOwnerItems.Items.Should().Contain(row => row.ItemId == publishedVersion.ItemId);
