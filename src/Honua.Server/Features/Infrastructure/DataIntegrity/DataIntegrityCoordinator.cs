@@ -508,14 +508,9 @@ internal sealed class DataIntegrityCoordinator : IDataIntegrityCoordinator
             // using the same ref-count guard.
             if (_globalLocks.Count > 1000 || _lockOwnership.Count > 1000)
             {
-                var orphanedRemoved = 0;
-                foreach (var lockKey in _globalLocks.Keys
-                             .Where(lockKey =>
-                                 !_lockOwnership.ContainsKey(lockKey) &&
-                                 TryRemoveIdleEntry(lockKey)))
-                {
-                    orphanedRemoved++;
-                }
+                var orphanedRemoved = _globalLocks.Keys.Count(lockKey =>
+                    !_lockOwnership.ContainsKey(lockKey) &&
+                    TryRemoveIdleEntry(lockKey));
 
                 if (orphanedRemoved > 0 && _cleanupLogger is { } orphanLogger)
                 {

@@ -2691,13 +2691,17 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         geoJsonResponse!.Features.Should().HaveCount(1);
 
         var feature = geoJsonResponse.Features[0];
-        var featureId = feature.Id
-            ?? throw new InvalidOperationException("GeoJSON features should include ID from the objectid field.");
+        var featureId = feature.Id;
+        if (featureId is null)
+        {
+            throw new InvalidOperationException("GeoJSON features should include ID from the objectid field.");
+        }
+
         feature.Properties.Should().ContainKey("objectid");
 
         // The ID should match the objectid in properties - verify both have the same numeric value
         // Handle potential type differences between feature.Id and objectid property
-        var idValue = featureId.ToString()
+        var idValue = Convert.ToString(featureId, CultureInfo.InvariantCulture)
             ?? throw new InvalidOperationException("Feature ID should have a value.");
         var objectidValue = feature.Properties["objectid"]?.ToString()
             ?? throw new InvalidOperationException("Objectid property should have a value.");
@@ -2709,7 +2713,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var numericId = featureId switch
         {
             JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.Number => jsonElement.GetInt64(),
-            var other => Convert.ToInt64(other, CultureInfo.InvariantCulture)
+            IConvertible convertible => convertible.ToInt64(CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException("Feature ID should be numeric.")
         };
         numericId.Should().BeGreaterThan(0);
     }
