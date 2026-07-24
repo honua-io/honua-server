@@ -1273,8 +1273,11 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            // Ownership is authorized against the left version; both requested versions belong
-            // to the same item id and therefore share the same recorded owner. Comparisons are
+            // PR #3018 review, round 5, item 2: both requested versions must be individually
+            // authorized. A version's OwnerId only snapshots who created *that* version (for
+            // example the draft owner at save-as-version time) and can diverge from another
+            // version under the same item id -- a caller who owns leftVersionId cannot be
+            // assumed to also be entitled to read an arbitrary rightVersionId. Comparisons are
             // never treated as publicly readable (honua-server#3001), even when one side is the
             // published version, since the diff itself can expose unpublished draft content.
             var left = await service.GetVersionAsync(itemId, request.LeftVersionId, context.RequestAborted).ConfigureAwait(false);
@@ -1283,13 +1286,28 @@ internal static class StudioPackageEndpoints
                 return NotFound(context, "Studio content version was not found.");
             }
 
-            var authResult = await EnsureAuthorizedAsync(
+            var right = await service.GetVersionAsync(itemId, request.RightVersionId, context.RequestAborted).ConfigureAwait(false);
+            if (right is null)
+            {
+                return NotFound(context, "Studio content version was not found.");
+            }
+
+            var leftAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
                 StudioAuthorizationOperation.ReadContentItem, left.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
-            if (authResult is not null)
+            if (leftAuthResult is not null)
             {
-                return authResult;
+                return leftAuthResult;
+            }
+
+            var rightAuthResult = await EnsureAuthorizedAsync(
+                authorization, context,
+                StudioAuthorizationOperation.ReadContentItem, right.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
+            if (rightAuthResult is not null)
+            {
+                return rightAuthResult;
             }
 
             var comparison = await service.CompareVersionsAsync(
@@ -1335,9 +1353,22 @@ internal static class StudioPackageEndpoints
                 return NotFound(context, "Studio content version was not found.");
             }
 
+            // PR #3018 review, round 5, item 1: publish-request moves the ITEM's
+            // PublishedVersionId pointer, so authorization must be against the item's immutable
+            // owner_id -- not targetVersion.OwnerId, which only snapshots who created that
+            // particular version and can diverge from the item's recorded owner (for example a
+            // version saved from a draft reopened by someone else). Authorizing on the version's
+            // owner would let a caller who merely owns the target version (plus an "own"-sentinel
+            // publish grant) move the published pointer of an item someone else actually owns.
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.PublishRequest, targetVersion.OwnerId,
+                StudioAuthorizationOperation.PublishRequest, pointers.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1458,9 +1489,20 @@ internal static class StudioPackageEndpoints
                 return NotFound(context, "Studio content version was not found.");
             }
 
+            // PR #3018 review, round 5, item 1: rollback moves the ITEM's current/published
+            // pointer (see request.Target), so authorization must be against the item's
+            // immutable owner_id -- not targetVersion.OwnerId, which only snapshots who created
+            // that particular version and can diverge from the item's recorded owner. See the
+            // identical rationale on HandleCreatePublishRequest.
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.Rollback, targetVersion.OwnerId,
+                StudioAuthorizationOperation.Rollback, pointers.OwnerId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {

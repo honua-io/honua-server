@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
@@ -711,11 +713,244 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         problem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    public async Task PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner()
+    {
+        // PR #3018 review, round 5, item 1 (P1): studio_content_items.owner_id is immutable, but
+        // a version's OwnerId only snapshots who created *that* version (for example an
+        // admin-assisted draft created under an existing item on a different principal's
+        // behalf) and can diverge from the item's recorded owner. Publish-request moves the
+        // ITEM's PublishedVersionId pointer, so it must authorize against the item's owner, not
+        // the target version's -- otherwise Bob, who owns only the version (plus his own
+        // "own"-sentinel StudioDraft Publish grant), could move the pointer of an item Alice
+        // actually owns.
+        var roleStore = new FakeGrantingRoleStore();
+        await using var fixture = await CreateEndUserFixtureAsync(services =>
+        {
+            services.RemoveAll<IRoleStore>();
+            services.AddSingleton<IRoleStore>(roleStore);
+        });
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = fixture.CreateAdminClient();
+        using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
+        var bobOwnerId = bobKey.Record.Id.ToString("D");
+
+        // OperatorAuthorizationEvaluator resolves its own grant-lookup "userId" from
+        // ClaimTypes.NameIdentifier/"sub" only -- claims an API-key principal never carries
+        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/permission instead), so it
+        // always resolves an empty user id for both Alice's and Bob's requests here. Grant
+        // under that same key rather than each principal's real (api_key_id-resolved)
+        // ownership id -- Bob's denial below rests entirely on the item-vs-version ownership
+        // boundary under test, not on this grant-lookup quirk (a real "own" grant existing for
+        // both callers, exactly as it would for two OIDC principals who each independently hold
+        // one, only matters once the item-ownership gate is already satisfied).
+        roleStore.Grant(string.Empty, StudioDraftOwnPublishAndRollbackGrants);
+
+        // Admin creates the item owned by Alice, then a second draft under the SAME item
+        // explicitly owned by Bob -- the item's owner_id stays Alice (immutable), but the
+        // version saved from Bob's draft is recorded as his.
+        var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
+
+        // Bob owns the target version and holds his own "own"-sentinel Publish grant, but he
+        // does not own the item -- denied.
+        var bobResponse = await bobClient.PostAsync(
+            $"/api/v1/studio/content-items/{itemId:D}/versions/{bobVersionId:D}/publish-requests",
+            JsonContent(new CreateStudioPublicationRequest(), StudioApiJsonContext.Default.CreateStudioPublicationRequest));
+        bobResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var bobProblem = JsonSerializer.Deserialize<JsonElement>(await bobResponse.Content.ReadAsStringAsync());
+        bobProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+
+        // Alice owns the item (even though this particular version was Bob's) and holds a
+        // matching grant -- allowed.
+        var aliceResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/content-items/{itemId:D}/versions/{bobVersionId:D}/publish-requests",
+            JsonContent(new CreateStudioPublicationRequest(), StudioApiJsonContext.Default.CreateStudioPublicationRequest));
+        aliceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
+    public async Task Rollback_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner()
+    {
+        // PR #3018 review, round 5, item 1 (P1): same rationale as
+        // PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner -- rollback moves the
+        // item's current/published pointer, so it must authorize against the item's owner, not
+        // the target version's OwnerId.
+        var roleStore = new FakeGrantingRoleStore();
+        await using var fixture = await CreateEndUserFixtureAsync(services =>
+        {
+            services.RemoveAll<IRoleStore>();
+            services.AddSingleton<IRoleStore>(roleStore);
+        });
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = fixture.CreateAdminClient();
+        using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
+        var bobOwnerId = bobKey.Record.Id.ToString("D");
+
+        // OperatorAuthorizationEvaluator resolves its own grant-lookup "userId" from
+        // ClaimTypes.NameIdentifier/"sub" only -- claims an API-key principal never carries
+        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/permission instead), so it
+        // always resolves an empty user id for both Alice's and Bob's requests here. Grant
+        // under that same key rather than each principal's real (api_key_id-resolved)
+        // ownership id -- Bob's denial below rests entirely on the item-vs-version ownership
+        // boundary under test, not on this grant-lookup quirk (a real "own" grant existing for
+        // both callers, exactly as it would for two OIDC principals who each independently hold
+        // one, only matters once the item-ownership gate is already satisfied).
+        roleStore.Grant(string.Empty, StudioDraftOwnPublishAndRollbackGrants);
+
+        var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
+
+        var bobResponse = await bobClient.PostAsync(
+            $"/api/v1/studio/content-items/{itemId:D}/rollback-requests",
+            JsonContent(
+                new CreateStudioRollbackRequest { TargetVersionId = bobVersionId, Target = StudioRollbackPointer.Current },
+                StudioApiJsonContext.Default.CreateStudioRollbackRequest));
+        bobResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var bobProblem = JsonSerializer.Deserialize<JsonElement>(await bobResponse.Content.ReadAsStringAsync());
+        bobProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+
+        var aliceResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/content-items/{itemId:D}/rollback-requests",
+            JsonContent(
+                new CreateStudioRollbackRequest { TargetVersionId = bobVersionId, Target = StudioRollbackPointer.Current },
+                StudioApiJsonContext.Default.CreateStudioRollbackRequest));
+        aliceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/version-comparisons")]
+    public async Task CompareVersions_FlagOn_BothSidesAuthorizedIndividually()
+    {
+        // PR #3018 review, round 5, item 2 (P2): only the left version was authorized, so a
+        // caller owning leftVersionId could pass another principal's unpublished version as
+        // rightVersionId and read it via the comparison output. Both requested versions must be
+        // individually authorized.
+        await using var fixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = fixture.CreateAdminClient();
+        using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+
+        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
+        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
+
+        // Alice's own first version (from the item's creation) is the left side; Bob's
+        // unpublished version under the same item is the right side. Alice owns the item, not
+        // Bob's version specifically -- but since compare authorizes each version against its
+        // own recorded owner, the cross-owner right side must still be denied for Alice.
+        var itemVersionsResponse = await adminClient.GetAsync($"/api/v1/studio/content-items/{itemId:D}/versions");
+        itemVersionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var itemVersions = await ReadAsync<StudioContentVersionListResponse>(
+            itemVersionsResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersionListResponse);
+        var aliceVersionId = itemVersions.Versions.Single(v => v.OwnerId == aliceOwnerId).VersionId;
+
+        var deniedResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/content-items/{itemId:D}/version-comparisons",
+            JsonContent(
+                new CompareStudioContentVersionsRequest { LeftVersionId = aliceVersionId, RightVersionId = bobVersionId },
+                StudioApiJsonContext.Default.CompareStudioContentVersionsRequest));
+        deniedResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var deniedProblem = JsonSerializer.Deserialize<JsonElement>(await deniedResponse.Content.ReadAsStringAsync());
+        deniedProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+
+        // Comparing two versions Alice actually owns (both sides pass) succeeds.
+        var allowedResponse = await aliceClient.PostAsync(
+            $"/api/v1/studio/content-items/{itemId:D}/version-comparisons",
+            JsonContent(
+                new CompareStudioContentVersionsRequest { LeftVersionId = aliceVersionId, RightVersionId = aliceVersionId },
+                StudioApiJsonContext.Default.CompareStudioContentVersionsRequest));
+        allowedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// Grants used by the round-5 mixed-owner publish-request/rollback tests: self-service
+    /// "own"-sentinel Publish and Rollback rights on StudioDraft resources.
+    /// </summary>
+    private static readonly IReadOnlyList<PermissionGrant> StudioDraftOwnPublishAndRollbackGrants =
+    [
+        new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Publish" },
+        new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Rollback" },
+    ];
+
+    /// <summary>
+    /// Creates a Studio content item via <paramref name="adminClient"/> owned by
+    /// <paramref name="itemOwnerId"/>, then a second draft under the SAME item explicitly owned
+    /// by <paramref name="versionOwnerId"/>, saved as a version -- reproducing the mixed-owner
+    /// scenario from PR #3018 review round 5 item 1 (a version whose OwnerId diverges from the
+    /// immutable item owner_id). Returns <c>(itemId, mixedOwnerVersionId)</c>.
+    /// </summary>
+    private async Task<(Guid ItemId, Guid MixedOwnerVersionId)> CreateItemWithMixedOwnerVersionAsync(
+        HttpClient adminClient,
+        string itemOwnerId,
+        string versionOwnerId)
+    {
+        var createResponse = await adminClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    PackageKey = $"mixed-owner-{Guid.NewGuid():N}",
+                    WorkspaceId = "studio",
+                    OwnerId = itemOwnerId,
+                    Envelope = BuildEnvelope("1=1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var itemOwnerDraft = await ReadAsync<StudioPackageDraft>(createResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        // Establish the item (and its immutable owner_id) with a first version from the
+        // item-owner's draft.
+        var itemOwnerSaveResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{itemOwnerDraft.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "item owner's version" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        itemOwnerSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var itemOwnerVersion = await ReadAsync<StudioContentVersion>(itemOwnerSaveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        var mixedOwnerDraftResponse = await adminClient.PostAsync(
+            "/api/v1/studio/package-drafts",
+            JsonContent(
+                new CreateStudioPackageDraftRequest
+                {
+                    ItemId = itemOwnerVersion.ItemId,
+                    PackageKey = itemOwnerDraft.PackageKey,
+                    WorkspaceId = "studio",
+                    OwnerId = versionOwnerId,
+                    Envelope = BuildEnvelope("1=1"),
+                },
+                StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
+        mixedOwnerDraftResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var mixedOwnerDraft = await ReadAsync<StudioPackageDraft>(mixedOwnerDraftResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        mixedOwnerDraft.OwnerId.Should().Be(versionOwnerId);
+
+        var mixedOwnerSaveResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{mixedOwnerDraft.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "mixed owner version" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        mixedOwnerSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var mixedOwnerVersion = await ReadAsync<StudioContentVersion>(mixedOwnerSaveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+        mixedOwnerVersion.OwnerId.Should().Be(versionOwnerId);
+        mixedOwnerVersion.ItemId.Should().Be(itemOwnerVersion.ItemId);
+
+        return (itemOwnerVersion.ItemId, mixedOwnerVersion.VersionId);
+    }
+
     /// <summary>
     /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
     /// on and the in-memory Studio store, for the honua-server#3001 end-user role-fixture tests.
     /// </summary>
-    private static async Task<WebAppFixture> CreateEndUserFixtureAsync()
+    private static async Task<WebAppFixture> CreateEndUserFixtureAsync(Action<IServiceCollection>? configureServices = null)
     {
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
@@ -734,6 +969,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 // HTTP + join path is exercised without a migrated Postgres schema.
                 services.RemoveAll<IContentPublicationStore>();
                 services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
+                configureServices?.Invoke(services);
             });
         await fixture.InitializeAsync();
         return fixture;
@@ -1296,4 +1532,61 @@ file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthoriz
         => Task.FromResult(StudioAuthorizationDecision.Deny(
             "studio_authorization/authentication_required",
             "Authentication is required for Studio package lifecycle operations."));
+}
+
+/// <summary>
+/// Fake <see cref="IRoleStore"/> that returns pre-seeded <see cref="PermissionGrant"/>s for a
+/// given user id, for the PR #3018 review round 5 item 1 mixed-owner publish-request/rollback
+/// tests -- these need a real, evaluatable operator grant (unlike the rest of this file's
+/// grant-denial tests, which only assert the "no grant present" path) so the fix can be proven
+/// against a caller who legitimately holds a StudioDraft grant but is not the item's owner.
+/// Only <see cref="GetEffectivePermissionsAsync"/> is implemented; every other member is unused
+/// by <see cref="Honua.Infrastructure.Authentication.OperatorAuthorizationEvaluator"/>'s
+/// grant-lookup path exercised here.
+/// </summary>
+file sealed class FakeGrantingRoleStore : IRoleStore
+{
+    private readonly Dictionary<string, List<PermissionGrant>> _grantsByUserId = new(StringComparer.Ordinal);
+
+    public void Grant(string userId, IEnumerable<PermissionGrant> grants)
+    {
+        if (!_grantsByUserId.TryGetValue(userId, out var list))
+        {
+            list = [];
+            _grantsByUserId[userId] = list;
+        }
+
+        list.AddRange(grants);
+    }
+
+    public Task<EffectivePermissions> GetEffectivePermissionsAsync(
+        string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
+        => Task.FromResult(new EffectivePermissions
+        {
+            UserId = userId,
+            Roles = roles,
+            Permissions = _grantsByUserId.TryGetValue(userId, out var grants) ? grants : Array.Empty<PermissionGrant>(),
+        });
+
+    public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
+
+    public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
+
+    public Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
+
+    public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
+
+    public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
+
+    public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(Guid roleId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
+
+    public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
+        Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Not used by the tests exercising this fake.");
 }
