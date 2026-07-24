@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -12,6 +13,7 @@ using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
@@ -49,7 +51,35 @@ internal sealed class ImageServerRasterMetadataHandler
     public Task<IResult> GetStatisticsAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "statistics", async resolved =>
         {
-            var statistics = await ResolveStatisticsAsync(layerId, resolved, cancellationToken);
+            var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
+            if (rasters.Length == 0)
+            {
+                return (Results.Json(
+                    new StatisticsResourceResponse { Statistics = [] },
+                    ImageServerJsonContext.Default.StatisticsResourceResponse), 0);
+            }
+
+            var rasterIds = rasters.Select(r => r.Id).ToArray();
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(
+                resolved.Resource, mosaicRule: null);
+            var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                    schemaName, layerId, rasterIds, mergeStrategy),
+                schemaName,
+                (services, ct) =>
+                {
+                    var rasterStore = services.GetRequiredService<IRasterStore>();
+                    return rasterIds.Length == 1
+                        ? rasterStore.GetStatisticsAsync(
+                            layerId, rasterIds[0], bands: null, cancellationToken: ct)
+                        : rasterStore.GetMosaicStatisticsAsync(
+                            layerId, rasterIds, mergeStrategy, bands: null, cancellationToken: ct);
+                },
+                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
+                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+                cancellationToken);
             var entries = new StatisticsEntry[statistics.Length];
             for (var i = 0; i < statistics.Length; i++)
             {
@@ -83,18 +113,23 @@ internal sealed class ImageServerRasterMetadataHandler
                 return (StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer."), 0);
             }
 
-            RasterHistogram[] histograms;
-            if (rasters.Length == 1)
-            {
-                histograms = await _rasterStore.GetHistogramsAsync(
-                    layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
-            }
-            else
-            {
-                var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
-                histograms = await _rasterStore.GetMosaicHistogramsAsync(
-                    layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, DefaultBinCount, cancellationToken: cancellationToken);
-            }
+            // Bounded: a cold-cache mosaic histogram pass carries the same unbounded-compute
+            // risk as statistics (#2991) — degrade to an empty histogram set rather than
+            // hang past the host's own request/function deadline.
+            var histograms = await ImageServerStatisticsBudget.ResolveCancellableAsync(
+                ct => rasters.Length == 1
+                    ? _rasterStore.GetHistogramsAsync(
+                        layerId, rasters[0].Id, bands: null, DefaultBinCount, cancellationToken: ct)
+                    : _rasterStore.GetMosaicHistogramsAsync(
+                        layerId,
+                        rasters.Select(r => r.Id).ToArray(),
+                        ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null),
+                        bands: null,
+                        DefaultBinCount,
+                        cancellationToken: ct),
+                onBudgetExceeded: () => ImageServerLog.StatisticsComputeBudgetExceeded(
+                    _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds),
+                cancellationToken);
 
             var entries = new BandHistogram[histograms.Length];
             for (var i = 0; i < histograms.Length; i++)
@@ -317,27 +352,6 @@ internal sealed class ImageServerRasterMetadataHandler
                 e.Blue,
             })
             .ToArray();
-
-    private async Task<RasterStatistics[]> ResolveStatisticsAsync(
-        int layerId,
-        ImageServerV2Lookups.ResolvedImageLayer resolved,
-        CancellationToken cancellationToken)
-    {
-        var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
-        if (rasters.Length == 0)
-        {
-            return [];
-        }
-
-        if (rasters.Length == 1)
-        {
-            return await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken: cancellationToken);
-        }
-
-        var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
-        return await _rasterStore.GetMosaicStatisticsAsync(
-            layerId, rasters.Select(r => r.Id).ToArray(), mergeStrategy, bands: null, cancellationToken: cancellationToken);
-    }
 
     private async Task<IResult> ExecuteAsync(
         HttpContext context,

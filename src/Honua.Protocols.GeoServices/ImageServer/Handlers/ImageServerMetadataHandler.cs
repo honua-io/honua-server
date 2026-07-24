@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -106,14 +107,43 @@ internal sealed class ImageServerMetadataHandler
                 .BuildAsync(layerId, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Get raster statistics for the layer mosaic.
-            var statistics = rasters.Length == 1
-                ? await _rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: cancellationToken)
-                : await _rasterStore.GetMosaicStatisticsAsync(
-                    layerId,
-                    rasters.Select(r => r.Id).ToArray(),
-                    mergeStrategy,
-                    cancellationToken: cancellationToken);
+            // Get raster statistics for the layer mosaic. Bounded: a cold-cache backfill
+            // over a large mosaic (many rasters, high resolution) can take far longer
+            // than this request's own host-level deadline, which would otherwise hang
+            // the whole metadata response instead of just omitting statistics (#2991).
+            var rasterIds = rasters.Select(r => r.Id).ToArray();
+            var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+            var statisticsBudgetExceeded = false;
+            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                    schemaName, layerId, rasterIds, mergeStrategy),
+                schemaName,
+                (services, ct) =>
+                {
+                    var rasterStore = services.GetRequiredService<IRasterStore>();
+                    return rasters.Length == 1
+                        ? rasterStore.GetStatisticsAsync(layerId, referenceRaster.Id, cancellationToken: ct)
+                        : rasterStore.GetMosaicStatisticsAsync(
+                            layerId,
+                            rasterIds,
+                            mergeStrategy,
+                            cancellationToken: ct);
+                },
+                onBudgetExceeded: () =>
+                {
+                    statisticsBudgetExceeded = true;
+                    ImageServerLog.StatisticsComputeBudgetExceeded(
+                        _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds);
+                },
+                cancellationToken);
+            if (statisticsBudgetExceeded)
+            {
+                // Do not let the output-cache middleware persist the deliberately
+                // incomplete fallback. The background backfill may finish immediately
+                // after this response, so a subsequent request must be allowed to see it.
+                context.Response.Headers.CacheControl = "no-store";
+            }
 
             // Get raster extent
             var extent = aggregateExtent;
