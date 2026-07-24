@@ -104,6 +104,14 @@ named "operator surface" ships in this repo.
 
    Before proposing a mutating control-plane operation, call the read-only `honua_supported_operation_kinds` tool and choose only a returned kind. Then use `honua_propose_operation`; approval still resolves through the Console inbox, and MCP does not approve its own proposals. The `supportedKinds` field on rejected proposal responses remains for compatibility but is deprecated for discovery.
 
+7. Compose a Studio draft — the same server-resident lifecycle draft the Studio UI observes (AD-8: composition state IS the draft; the browser is a projection). Every mutating call is optimistic-concurrency checked: pass the `generation` last returned by `honua_studio_get_draft` / `honua_studio_create_draft`, and a stale value returns `failed_precondition` — re-fetch and retry rather than resubmitting blindly.
+
+   - `honua_studio_create_draft` / `honua_studio_get_draft` / `honua_studio_update_draft` / `honua_studio_validate_draft` / `honua_studio_preview_draft` — draft lifecycle (create, read, generation-checked whole-envelope update, validate, read-only preview-plan), delegating to the same canonical Studio package lifecycle service the REST admin surface uses (`docs/internal/admin-api/studio-package-lifecycle.md`).
+   - `honua_studio_add_layer` / `honua_studio_remove_layer` / `honua_studio_set_layer_style` / `honua_studio_set_view` / `honua_studio_add_widget` / `honua_studio_remove_widget` — bounded composition mutations for `map`/`app`-family drafts, taxonomy-aligned with the honua-sdk-js agent-tools vocabulary (`addLayer`, `setViewport`). Each patches the draft's composition body and pushes it through the same generation-checked update path.
+   - `honua_studio_propose_publication` — records publish/share/embed **intent only** on the draft for human review. There is no publish/share/embed execution tool on the agent surface, in any profile, by design: exposure-widening actions are always a human-confirmed step taken through the Studio UI or REST admin surface, never the agent tool surface.
+
+   These tools authorize against a distinct operator-grant family (`OperatorResourceType.StudioDraft`, informally "studio-compose") from the package-review/authoring tools above, so an operator can scope Studio composition access independently once end-user (non-admin) authorization lands (honua-server#3001). The default posture mirrors the REST Studio lifecycle surface: `admin` bypasses as usual; non-admin principals need an explicit grant.
+
 ## Verify
 
 Run `POST /mcp` with `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`.
@@ -278,6 +286,7 @@ map, that tool is the runtime source of truth.
 | Catalog / query / render / style tools (`honua_list_layers`, `honua_query_features`, `honua_describe_layer`, `honua_render_map`, style tools) | Metadata v2 graph — and, for query/render, a feature reader / raster renderer — composed by the data provider | Advertised | Omitted in compositions without a data provider |
 | Dataset ingest (`honua_ingest_dataset`) | Import service (`IFileImportService`) composed | Advertised | Omitted without an import-capable provider |
 | Platform-ops observability + deploy tools (`honua_ops_health`, `honua_ops_findings`, `honua_deploy_operations`, …) | Ops-observability / platform-ops readers composed | Advertised | Omitted in minimal hosts |
+| Studio draft lifecycle + composition tools (`honua_studio_*`) | Studio package lifecycle service composed (`IStudioPackageLifecycleService`; server profile wires it via `AddStudioPackageLifecycle`) | Advertised | Omitted in compositions that never call `AddStudioPackageLifecycle` |
 
 The `honua_plan_analysis`, `honua_validate_plan`, `honua_dry_run_plan`,
 `honua_execute_plan`, `honua_cancel_job`, `honua_list_jobs`, grounding, and
