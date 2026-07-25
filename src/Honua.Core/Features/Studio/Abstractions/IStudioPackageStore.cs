@@ -34,7 +34,7 @@ public interface IStudioPackageStore
     /// <summary>Gets one immutable content version.</summary>
     Task<StudioContentVersion?> GetVersionAsync(Guid itemId, Guid versionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets current and published pointers for a content item.</summary>
+    /// <summary>Gets current and published pointers (and recorded owner) for a content item.</summary>
     Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -117,6 +117,12 @@ public interface IStudioPackageLifecycleService
 
     /// <summary>Lists immutable content versions for an item.</summary>
     Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(Guid itemId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets current/published pointers and the recorded owner for a content item
+    /// (honua-server#3001), or <see langword="null"/> when the item does not exist.
+    /// </summary>
+    Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists Studio content items matching the supplied query, ordered by <c>updatedAt</c>

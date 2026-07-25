@@ -34,7 +34,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         lock (_gate)
         {
             EnsurePackageKeyAvailable(draft);
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.CreatedBy, draft.CreatedAt);
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
             _items[draft.ItemId] = item with
             {
                 PackageKey = draft.PackageKey,
@@ -80,7 +80,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             EnsurePackageKeyAvailable(draft);
             var updated = draft with { Generation = existing.Generation + 1 };
             _drafts[draft.DraftId] = updated;
-            _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.CreatedBy, draft.CreatedAt) with
+            _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt) with
             {
                 PackageKey = draft.PackageKey,
                 WorkspaceId = draft.WorkspaceId,
@@ -138,7 +138,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio package draft was not found.");
             }
 
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.CreatedBy, draft.CreatedAt);
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
             var versions = GetVersions(draft.ItemId);
             var version = new StudioContentVersion
             {
@@ -205,6 +205,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     ItemId = item.ItemId,
                     CurrentVersionId = item.CurrentVersionId,
                     PublishedVersionId = item.PublishedVersionId,
+                    OwnerId = item.OwnerId,
                 }
                 : null);
         }
@@ -312,10 +313,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             return false;
         }
 
-        // See StudioContentItemQuery.OwnerId: filters on the item's creator until
-        // honua-server#3001 introduces dedicated per-item ownership.
         if (!string.IsNullOrWhiteSpace(query.OwnerId) &&
-            !string.Equals(item.CreatedBy ?? string.Empty, query.OwnerId, StringComparison.Ordinal))
+            !string.Equals(item.OwnerId ?? string.Empty, query.OwnerId, StringComparison.Ordinal))
         {
             return false;
         }
@@ -371,6 +370,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         State = ResolveState(item.CurrentVersionId, item.PublishedVersionId),
         CurrentVersionId = item.CurrentVersionId,
         PublishedVersionId = item.PublishedVersionId,
+        OwnerId = item.OwnerId,
         CreatedBy = item.CreatedBy,
         UpdatedBy = item.UpdatedBy,
         CreatedAt = item.CreatedAt,
@@ -416,6 +416,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 version.PackageKey,
                 version.WorkspaceId,
                 version.Envelope.Family,
+                version.OwnerId,
                 request.RequestedBy,
                 request.CreatedAt);
             _items[request.ItemId] = item with
@@ -472,6 +473,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     ItemId = itemId,
                     CurrentVersionId = updatedItem.CurrentVersionId,
                     PublishedVersionId = updatedItem.PublishedVersionId,
+                    OwnerId = updatedItem.OwnerId,
                 },
                 RequestedBy = actorId,
                 Reason = reason,
@@ -487,11 +489,14 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         string packageKey,
         string? workspaceId,
         StudioPackageFamily family,
+        string? ownerId,
         string? actorId,
         DateTimeOffset timestamp)
     {
         if (_items.TryGetValue(itemId, out var item))
         {
+            // Ownership is set once, at creation, and immutable thereafter (honua-server#3001):
+            // an existing item's owner_id is never overwritten by a later draft/version upsert.
             return item;
         }
 
@@ -502,6 +507,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             family,
             CurrentVersionId: null,
             PublishedVersionId: null,
+            OwnerId: ownerId,
             CreatedBy: actorId,
             UpdatedBy: actorId,
             CreatedAt: timestamp,
@@ -540,6 +546,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         StudioPackageFamily Family,
         Guid? CurrentVersionId,
         Guid? PublishedVersionId,
+        string? OwnerId,
         string? CreatedBy,
         string? UpdatedBy,
         DateTimeOffset CreatedAt,

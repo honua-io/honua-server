@@ -261,6 +261,16 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
+    public async Task<StudioContentItemPointers?> GetPointersAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = ActivitySource.StartActivity("studio.package.content-item.pointers");
+        activity?.SetTag("studio.item.id", itemId.ToString("D"));
+        return await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<StudioContentItemListResult> ListContentItemsAsync(
         StudioContentItemQuery query,
         CancellationToken cancellationToken = default)

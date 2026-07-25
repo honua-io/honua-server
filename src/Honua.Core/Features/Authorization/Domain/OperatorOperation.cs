@@ -39,5 +39,18 @@ public enum OperatorOperation
     Promote,
 
     /// <summary>Deploy a package to a routable surface.</summary>
-    Publish
+    Publish,
+
+    /// <summary>
+    /// Revert a resource's current/published pointer to a prior immutable version
+    /// (honua-server#3001). Distinct from <see cref="Publish"/> so an operator can grant
+    /// publish-request rights without also granting rollback, and vice versa.
+    /// </summary>
+    Rollback,
+
+    /// <summary>Modify an existing resource in place (as opposed to <see cref="Create"/>).</summary>
+    Update,
+
+    /// <summary>Remove a resource.</summary>
+    Delete
 }

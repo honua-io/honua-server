@@ -175,6 +175,21 @@ the scopes the agent needs:
 
 The full vocabulary is advertised in the RFC 9728 metadata's `scopes_supported`.
 
+### Studio package lifecycle grants (honua-server#3001)
+
+The operator-grant model includes a `StudioDraft` resource type — a distinct
+grant family from `Package` — reserved for the Studio draft-lifecycle and
+composition MCP tools tracked in honua-server#3002. Once those tools land and
+the [Studio package lifecycle API](../../internal/admin-api/studio-package-lifecycle.md#authorization)'s
+`Studio:EndUserAuthorization:Enabled` flag is on, non-admin end users hold
+`StudioDraft` grants scoped to their own drafts using the same ownership
+convention as the REST lifecycle API: a role grant with layer `own` authorizes
+every draft/content item the principal owns; a grant scoped to a concrete
+resource id authorizes an operator-provisioned delegate instead. Publish and
+rollback are additionally policy-gated operations that require their own
+`StudioDraft` grant even for the resource's own owner. Admin principals, and
+the OAuth bearer-scope narrowing above (`grants ∩ scopes`), apply unchanged.
+
 **Fail-closed default.** A bearer token that presents **no recognized `honua.mcp.*`
 scope** authorizes nothing — every tool call returns `insufficient_scope` — even
 when its principal's grants (or `admin` role) would allow the operation. This is

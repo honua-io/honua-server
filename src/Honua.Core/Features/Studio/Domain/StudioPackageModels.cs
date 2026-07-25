@@ -435,6 +435,10 @@ public sealed record StudioContentItemPointers
     /// <summary>Published version identifier.</summary>
     [JsonPropertyName("publishedVersionId")]
     public Guid? PublishedVersionId { get; init; }
+
+    /// <summary>Owner principal identifier (honua-server#3001). See <see cref="StudioContentItemQuery.OwnerId"/>.</summary>
+    [JsonPropertyName("ownerId")]
+    public string? OwnerId { get; init; }
 }
 
 /// <summary>
@@ -555,10 +559,12 @@ public sealed record StudioContentItemQuery
     public string? WorkspaceId { get; init; }
 
     /// <summary>
-    /// Restrict results to items created by this actor. <c>studio_content_items</c> does not
-    /// yet carry a dedicated ownership/scoping column — honua-server#3001 introduces per-item
-    /// ownership and policy-based visibility. Until then, this filters on the item's
-    /// recorded creator (<c>createdBy</c>) as an ownership stand-in.
+    /// Restrict results to items owned by this principal (<c>studio_content_items.owner_id</c>,
+    /// honua-server#3001). Populated on create from the draft's owner (which itself defaults to
+    /// the authenticated actor when not explicitly assigned) and immutable thereafter. With
+    /// <c>Studio:EndUserAuthorization:Enabled</c> on, the endpoint layer forces this filter to
+    /// the requesting principal's id for non-admin callers regardless of any client-supplied
+    /// value (server-side scoping, not client parameter trust).
     /// </summary>
     public string? OwnerId { get; init; }
 
@@ -608,7 +614,11 @@ public sealed record StudioContentItemSummary
     [JsonPropertyName("publishedVersionId")]
     public Guid? PublishedVersionId { get; init; }
 
-    /// <summary>Identifier of the actor that created the item (used as an ownership stand-in; see <see cref="StudioContentItemQuery.OwnerId"/>).</summary>
+    /// <summary>Owner principal identifier (see <see cref="StudioContentItemQuery.OwnerId"/>).</summary>
+    [JsonPropertyName("ownerId")]
+    public string? OwnerId { get; init; }
+
+    /// <summary>Identifier of the actor that created the item.</summary>
     [JsonPropertyName("createdBy")]
     public string? CreatedBy { get; init; }
 

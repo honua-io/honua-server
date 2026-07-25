@@ -345,6 +345,97 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ContentItemOwner_SetOnceAtCreate_ImmutableAcrossUpdatesAndVersions()
+    {
+        // honua-server#3001: studio_content_items.owner_id is populated once, from the owning
+        // draft, and never overwritten by a later draft update or version create for the same
+        // item -- even when a later UpdateDraftAsync call carries a different OwnerId.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "owner-immutable-query", owner: "alice"));
+
+            var itemsAfterCreate = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            itemsAfterCreate.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+
+            // A later update carrying a different OwnerId must not transfer ownership of the
+            // content item (the endpoint layer prevents this for non-admin callers; the store
+            // itself never overwrites owner_id on conflict regardless of caller).
+            var reassigned = draft with { OwnerId = "mallory", Generation = draft.Generation };
+            var updated = await store.UpdateDraftAsync(reassigned);
+            updated.Should().NotBeNull();
+
+            var itemsAfterUpdate = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            itemsAfterUpdate.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+
+            var version = await store.CreateVersionAsync(updated!, "first save", "mallory");
+            version.OwnerId.Should().Be("mallory", "the immutable version snapshots whatever OwnerId the draft carried at save time");
+
+            var itemsAfterVersion = await store.ListContentItemsAsync(new StudioContentItemQuery());
+            itemsAfterVersion.Items.Should().ContainSingle(i => i.ItemId == draft.ItemId && i.OwnerId == "alice");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Migration090_BackfillsDraftOwnerBeforeCreatorFallback()
+    {
+        // PR #3018 review, round 6, item 2: an admin could create an item while explicitly
+        // assigning its existing draft to an end user before content-item owner_id existed.
+        // The migration must preserve that designated draft owner; created_by is only the
+        // fallback for an item without an owned draft.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await ApplyStudioMigrationAsync(schema, "035_CreateStudioPackageLifecycle.sql");
+
+            var draftOwnedItemId = Guid.NewGuid();
+            var creatorFallbackItemId = Guid.NewGuid();
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $$"""
+                    INSERT INTO "{{schema}}".studio_content_items
+                        (item_id, package_key, family, created_by)
+                    VALUES
+                        (@draft_owned_item_id, 'draft-owned-item', 'query', 'admin-creator'),
+                        (@creator_fallback_item_id, 'creator-fallback-item', 'query', 'fallback-creator');
+
+                    INSERT INTO "{{schema}}".studio_package_drafts
+                        (draft_id, item_id, package_key, owner_id, family, envelope, validation, created_by)
+                    VALUES
+                        (@draft_id, @draft_owned_item_id, 'draft-owned-item', 'designated-owner',
+                         'query', '{}'::jsonb, '{}'::jsonb, 'admin-creator');
+                    """;
+                command.Parameters.AddWithValue("@draft_owned_item_id", draftOwnedItemId);
+                command.Parameters.AddWithValue("@creator_fallback_item_id", creatorFallbackItemId);
+                command.Parameters.AddWithValue("@draft_id", Guid.NewGuid());
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await ApplyStudioMigrationAsync(schema, "090_AddStudioContentItemOwner.sql");
+
+            (await ReadContentItemOwnerAsync(schema, draftOwnedItemId)).Should().Be(
+                "designated-owner",
+                "an existing draft owner is the content item's designated owner even when an admin created the row");
+            (await ReadContentItemOwnerAsync(schema, creatorFallbackItemId)).Should().Be(
+                "fallback-creator",
+                "created_by remains the fallback when no owned draft exists");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ListDrafts_FiltersByOwnerAndSearchTerm()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
@@ -443,11 +534,42 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     {
         var root = FindRepoRoot();
         // All segments after `root` are fixed literals and can never be rooted, so Path.Combine
-        // cannot drop earlier segments here (cs/path-combine false positive).
-        var migrationPath = Path.Join(root, "src", "Honua.Server", "Migrations", "035_CreateStudioPackageLifecycle.sql");
+        // cannot drop earlier segments here (cs/path-combine false positive). Migration 090 adds
+        // studio_content_items.owner_id (honua-server#3001); migration 089 adds the enumeration
+        // indexes it's applied alongside for parity with the real deployment sequence, including
+        // an index on content_publication_versions -- so migration 036 (which creates that
+        // table) must run first, or 089 fails with "relation ... does not exist".
+        foreach (var migrationFile in new[]
+                 {
+                     "035_CreateStudioPackageLifecycle.sql",
+                     "036_CreateContentPublications.sql",
+                     "089_AddStudioContentEnumerationIndexes.sql",
+                     "090_AddStudioContentItemOwner.sql",
+                 })
+        {
+            await ApplyStudioMigrationAsync(schema, migrationFile, root);
+        }
+    }
+
+    private async Task ApplyStudioMigrationAsync(string schema, string migrationFile, string? root = null)
+    {
+        var migrationPath = Path.Join(root ?? FindRepoRoot(), "src", "Honua.Server", "Migrations", migrationFile);
         var sql = await File.ReadAllTextAsync(migrationPath);
         sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
         await fixture.ExecuteAsync(sql, schema);
+    }
+
+    private async Task<string?> ReadContentItemOwnerAsync(string schema, Guid itemId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT owner_id
+            FROM "{schema}".studio_content_items
+            WHERE item_id = @item_id
+            """;
+        command.Parameters.AddWithValue("@item_id", itemId);
+        return await command.ExecuteScalarAsync() as string;
     }
 
     private async Task<int> CountDependencyRowsAsync(string schema, Guid versionId)

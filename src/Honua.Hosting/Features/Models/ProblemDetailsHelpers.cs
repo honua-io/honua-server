@@ -95,6 +95,25 @@ internal static class ProblemDetailsHelpers
             contentType: ContentType);
     }
 
+    /// <summary>
+    /// Creates an RFC 7807 problem response carrying a machine-readable <c>code</c> extension
+    /// member (for example the Studio authorization codes, honua-server#3001 REQ-004).
+    /// </summary>
+    public static IResult CreateProblem(HttpContext context, string type, int statusCode, string title, string detail, string code)
+    {
+        var instance = BuildInstance(context);
+        var problemDetails = CreateProblemDetails(type, statusCode, title, detail, instance, context) with
+        {
+            Code = code,
+        };
+
+        return Results.Json(
+            problemDetails,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            statusCode: statusCode,
+            contentType: ContentType);
+    }
+
     public static IResult CreateProblem(string type, int statusCode, string title, string detail, string? instance = null)
     {
         var problemDetails = CreateProblemDetails(type, statusCode, title, detail, instance, context: null);

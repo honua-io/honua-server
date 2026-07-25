@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -144,7 +145,14 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task PostChat_KnownButUnreachableProvider_StreamsErrorEventAndRecordsOneFailureAudit()
     {
-        var client = _fixture.CreateAdminClient();
+        var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var adminKey = await apiKeyStore.CreateAsync(
+            "studio-ai-audit-admin",
+            ["admin:write"],
+            null,
+            null,
+            CancellationToken.None);
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", adminKey.Key));
         _audit.Recorded.Clear();
 
         var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
@@ -169,6 +177,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         audit.ResourceType.Should().Be("studio_ai_provider");
         audit.ResourceId.Should().Be(ProviderName);
         audit.Outcome.Should().Be(AuditOutcome.Failure);
+        audit.Actor.Should().Be(adminKey.Record.Id.ToString("D"));
+        audit.ActorType.Should().Be(AuditActorType.ApiKey);
         audit.Details.Should().Contain("\"kind\":\"openai\"");
     }
 
