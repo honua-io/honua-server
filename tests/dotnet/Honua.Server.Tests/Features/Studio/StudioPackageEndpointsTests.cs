@@ -923,16 +923,15 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var aliceOwnerId = aliceKey.Record.Id.ToString("D");
         var bobOwnerId = bobKey.Record.Id.ToString("D");
 
-        // OperatorAuthorizationEvaluator resolves its own grant-lookup "userId" from
-        // ClaimTypes.NameIdentifier/"sub" only -- claims an API-key principal never carries
-        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/permission instead), so it
-        // always resolves an empty user id for both Alice's and Bob's requests here. Grant
-        // under that same key rather than each principal's real (api_key_id-resolved)
-        // ownership id -- Bob's denial below rests entirely on the item-vs-version ownership
-        // boundary under test, not on this grant-lookup quirk (a real "own" grant existing for
-        // both callers, exactly as it would for two OIDC principals who each independently hold
-        // one, only matters once the item-ownership gate is already satisfied).
-        roleStore.Grant(string.Empty, StudioDraftOwnPublishAndRollbackGrants);
+        // OperatorAuthorizationEvaluator resolves its grant-lookup subject through the same
+        // chain as StudioAuthorizationService.ResolveCallerId (NameIdentifier -> sub ->
+        // api_key_id -> api_key_name; PR #3024 review), so each API-key principal's grants are
+        // provisioned under its own api_key_id -- the same id it owns content under. Both
+        // callers hold a real "own" grant, exactly as two OIDC principals each independently
+        // would: Bob's denial below rests entirely on the item-vs-version ownership boundary
+        // under test.
+        roleStore.Grant(aliceOwnerId, StudioDraftOwnPublishAndRollbackGrants);
+        roleStore.Grant(bobOwnerId, StudioDraftOwnPublishAndRollbackGrants);
 
         // Admin creates the item owned by Alice, then a second draft under the SAME item
         // explicitly owned by Bob -- the item's owner_id stays Alice (immutable), but the
@@ -980,16 +979,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var aliceOwnerId = aliceKey.Record.Id.ToString("D");
         var bobOwnerId = bobKey.Record.Id.ToString("D");
 
-        // OperatorAuthorizationEvaluator resolves its own grant-lookup "userId" from
-        // ClaimTypes.NameIdentifier/"sub" only -- claims an API-key principal never carries
-        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/permission instead), so it
-        // always resolves an empty user id for both Alice's and Bob's requests here. Grant
-        // under that same key rather than each principal's real (api_key_id-resolved)
-        // ownership id -- Bob's denial below rests entirely on the item-vs-version ownership
-        // boundary under test, not on this grant-lookup quirk (a real "own" grant existing for
-        // both callers, exactly as it would for two OIDC principals who each independently hold
-        // one, only matters once the item-ownership gate is already satisfied).
-        roleStore.Grant(string.Empty, StudioDraftOwnPublishAndRollbackGrants);
+        // Grants provisioned under each principal's real api_key_id-resolved subject id -- see
+        // PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner.
+        roleStore.Grant(aliceOwnerId, StudioDraftOwnPublishAndRollbackGrants);
+        roleStore.Grant(bobOwnerId, StudioDraftOwnPublishAndRollbackGrants);
 
         var (itemId, bobVersionId) = await CreateItemWithMixedOwnerVersionAsync(adminClient, aliceOwnerId, bobOwnerId);
 
@@ -1506,24 +1499,37 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             services.AddSingleton<IRoleStore>(roleStore);
         });
         var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
-        var userKey = await apiKeyStore.CreateAsync("generate-user", ["studio:enduser"], null, null, CancellationToken.None);
-        using var userClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", userKey.Key));
+        var aliceKey = await apiKeyStore.CreateAsync("generate-alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("generate-bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var aliceClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
+        using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
 
         // Without an Execute grant: denied at the authorization gate, for both generate routes.
-        var deniedMap = await userClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        var deniedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
         deniedMap.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var deniedProblem = JsonSerializer.Deserialize<JsonElement>(await deniedMap.Content.ReadAsStringAsync());
         deniedProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
 
-        var deniedApp = await userClient.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+        var deniedApp = await aliceClient.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
         deniedApp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-        // With the self-service "own"-sentinel Execute grant (granted under the evaluator's
-        // resolved empty user id -- see the round-5 tests for why): past the gate, into prompt
-        // validation.
-        roleStore.Grant(string.Empty, [new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Execute" }]);
-        var allowedMap = await userClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        // With the self-service "own"-sentinel Execute grant, provisioned under Alice's real
+        // api_key_id-resolved subject id (the evaluator mirrors
+        // StudioAuthorizationService.ResolveCallerId; PR #3024 review): past the gate, into
+        // prompt validation.
+        roleStore.Grant(
+            aliceKey.Record.Id.ToString("D"),
+            [new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Execute" }]);
+        var allowedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
         allowedMap.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Per-key isolation (PR #3024 review, P1): Alice's Execute grant must not authorize
+        // Bob's key -- previously every API-key principal resolved to the same empty subject
+        // id, so any one key's grant opened generation to all of them.
+        var bobDenied = await bobClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        bobDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var bobProblem = JsonSerializer.Deserialize<JsonElement>(await bobDenied.Content.ReadAsStringAsync());
+        bobProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
 
         // Admin remains admitted with no grant.
         using var adminClient = fixture.CreateAdminClient();
