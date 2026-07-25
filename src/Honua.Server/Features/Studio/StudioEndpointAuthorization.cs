@@ -78,7 +78,7 @@ internal sealed class StudioEndpointAuthorization(
         return decision;
     }
 
-    private Task RecordAuditAsync(
+    private async Task RecordAuditAsync(
         HttpContext context,
         StudioAuthorizationOperation operation,
         string resourceType,
@@ -102,7 +102,12 @@ internal sealed class StudioEndpointAuthorization(
             Details = code is null ? string.Empty : $"{{\"code\":\"{code}\"}}",
         };
 
-        return _auditLog.RecordAsync(auditEvent, context.RequestAborted);
+        await _auditLog.RecordAsync(auditEvent, context.RequestAborted).ConfigureAwait(false);
+
+        if (outcome == AuditOutcome.Denied)
+        {
+            AuditContextResolver.MarkAuthorizationFailureAudited(context);
+        }
     }
 
     private static string ToSnakeCase(StudioAuthorizationOperation operation) => operation switch

@@ -195,6 +195,9 @@ Every denial is recorded exactly once through the Studio audit seam
 published-version targeting and unresolved scoped-list decisions; every
 *allowed* elevated-tier decision is also recorded (`AuditOutcome.Success`), so
 publish/rollback policy decisions are independently auditable per REQ-003.
+After a Studio endpoint denial is recorded successfully, the request is marked
+so the generic HTTP audit middleware does not emit a duplicate `auth.denied`
+event for the same decision.
 API-key events use the stable `api_key_id` actor with
 `AuditActorType.ApiKey`, matching the shared platform audit resolver.
 

@@ -509,8 +509,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         var denialAudit = auditLog.Events
             .Should()
-            .ContainSingle(evt => evt.Action == "studio.create_version")
+            .ContainSingle("the Studio denial replaces the generic auth.denied event")
             .Subject;
+        denialAudit.Action.Should().Be("studio.create_version");
         denialAudit.Actor.Should().Be(bobOwnerId);
         denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         denialAudit.ResourceType.Should().Be("studio-content-item");
@@ -589,8 +590,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var itemsProblem = JsonSerializer.Deserialize<JsonElement>(await itemsResponse.Content.ReadAsStringAsync());
         itemsProblem.GetProperty("code").GetString().Should().Be("studio_authorization/authentication_required");
 
-        var stableDenials = auditLog.Events.Where(evt => evt.Action == "studio.list_own").ToArray();
-        stableDenials.Should().HaveCount(2, "each scoped-list denial must cross the Studio audit seam exactly once");
+        auditLog.Events.Should().HaveCount(2, "each request emits its Studio denial instead of a second generic auth.denied event");
+        var stableDenials = auditLog.Events.ToArray();
+        stableDenials.Should().OnlyContain(evt => evt.Action == "studio.list_own");
         stableDenials.Should().OnlyContain(evt =>
             evt.Actor == scopedKey.Record.Id.ToString("D")
             && evt.ActorType == AuditActorType.ApiKey
@@ -813,8 +815,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         var denialAudit = auditLog.Events
             .Should()
-            .ContainSingle(evt => evt.Action == "studio.read_content_item")
+            .ContainSingle("the Studio denial replaces the generic auth.denied event")
             .Subject;
+        denialAudit.Action.Should().Be("studio.read_content_item");
         denialAudit.Actor.Should().Be(bobKey.Record.Id.ToString("D"));
         denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
         denialAudit.ResourceType.Should().Be("studio-content-item");
