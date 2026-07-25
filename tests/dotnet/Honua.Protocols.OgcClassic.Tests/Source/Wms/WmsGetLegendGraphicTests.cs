@@ -230,4 +230,44 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
         legendResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         legendResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms111)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms111_GetCapabilities_LegendDimensionsMatchAdvertisedImage()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var legendMatch = System.Text.RegularExpressions.Regex.Match(
+            content,
+            "<LegendURL width=\"(?<width>[1-9][0-9]*)\" height=\"(?<height>[1-9][0-9]*)\">"
+            + "[\\s\\S]*?<OnlineResource[^>]+xlink:href=\"(?<href>[^\"]+)\"",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        legendMatch.Success.Should().BeTrue(content);
+
+        var advertisedWidth = int.Parse(
+            legendMatch.Groups["width"].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        var advertisedHeight = int.Parse(
+            legendMatch.Groups["height"].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        var href = WebUtility.HtmlDecode(legendMatch.Groups["href"].Value);
+
+        var legendResponse = await _fixture.Client.GetAsync(href);
+        var legendBytes = await legendResponse.Content.ReadAsByteArrayAsync();
+        legendResponse.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            System.Text.Encoding.UTF8.GetString(legendBytes));
+
+        using var bitmap = SKBitmap.Decode(legendBytes);
+        bitmap.Should().NotBeNull();
+        bitmap!.Width.Should().Be(advertisedWidth);
+        bitmap.Height.Should().Be(advertisedHeight);
+    }
 }
