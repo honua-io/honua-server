@@ -211,6 +211,47 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /saml/acs")]
+    public async Task Acs_WrongAudience_IsRejected()
+    {
+        var samlResponse = SamlTestAssertions.CreateSignedResponse(
+            _certificate,
+            "wrong-audience@example.com",
+            "wrong-audience@example.com",
+            "Wrong Audience",
+            ["viewer"],
+            audience: "https://attacker.example.com/sp");
+
+        using var response = await PostAcsAsync(samlResponse);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.DoesNotContain(
+            response.Headers.TryGetValues("Set-Cookie", out var cookies) ? cookies : [],
+            c => c.Contains("honua_admin_session", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/acs")]
+    public async Task Acs_ReplayedAssertion_IsRejected()
+    {
+        var samlResponse = SamlTestAssertions.CreateSignedResponse(
+            _certificate,
+            "replay@example.com",
+            "replay@example.com",
+            "Replay User",
+            ["viewer"]);
+
+        using var first = await PostAcsAsync(samlResponse);
+        using var replay = await PostAcsAsync(samlResponse);
+
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+        Assert.DoesNotContain(
+            replay.Headers.TryGetValues("Set-Cookie", out var cookies) ? cookies : [],
+            c => c.Contains("honua_admin_session", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/acs")]
     public async Task Acs_MissingSamlResponse_ReturnsBadRequest()
     {
         using var acsContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" });

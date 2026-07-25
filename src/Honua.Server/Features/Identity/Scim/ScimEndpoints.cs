@@ -617,6 +617,13 @@ internal static partial class ScimEndpoints
         foreach (var op in patch.Operations!)
         {
             var verb = op.Op?.Trim().ToLowerInvariant();
+            if (verb == "remove" && TryParseFilteredMemberPath(op.Path, out var filteredMemberId))
+            {
+                remove.Add(filteredMemberId);
+                resolved = true;
+                continue;
+            }
+
             if (!string.Equals(op.Path, "members", StringComparison.OrdinalIgnoreCase) || op.Value is null)
             {
                 return Fail(out change);
@@ -646,6 +653,43 @@ internal static partial class ScimEndpoints
             c = new ScimGroupMemberChange();
             return false;
         }
+    }
+
+    private static bool TryParseFilteredMemberPath(string? path, out string memberId)
+    {
+        memberId = string.Empty;
+        const string prefix = "members[";
+        if (string.IsNullOrWhiteSpace(path) ||
+            !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+            !path.EndsWith(']'))
+        {
+            return false;
+        }
+
+        var filter = path[prefix.Length..^1].Trim();
+        const string attribute = "value";
+        if (!filter.StartsWith(attribute, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var comparison = filter[attribute.Length..].TrimStart();
+        const string equalsOperator = "eq";
+        if (!comparison.StartsWith(equalsOperator, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var literal = comparison[equalsOperator.Length..].Trim();
+        if (literal.Length < 3 ||
+            (literal[0] != '"' && literal[0] != '\'') ||
+            literal[^1] != literal[0])
+        {
+            return false;
+        }
+
+        memberId = literal[1..^1].Trim();
+        return memberId.Length > 0;
     }
 
     private static List<string> ReadMemberValues(JsonElement value)

@@ -28,6 +28,8 @@ namespace Honua.Server.Features.Identity.Saml;
 /// </summary>
 internal static partial class SamlEndpoints
 {
+    private const string AssertionReplayCacheKeyPrefix = "saml_assertion_replay:";
+
     /// <summary>Log category for SAML endpoints.</summary>
     internal sealed class SamlEndpointsLog;
 
@@ -137,6 +139,20 @@ internal static partial class SamlEndpoints
         }
 
         var subject = result.Subject;
+        var firstUse = await AtomicTokenReplayProtection.TryMarkKeyAsUsedAsync(
+            AssertionReplayCacheKeyPrefix,
+            subject.AssertionId,
+            subject.ReplayProtectionExpiresAt.UtcDateTime,
+            context.RequestServices,
+            context.RequestAborted).ConfigureAwait(false);
+        if (!firstUse)
+        {
+            SamlLog.AssertionRejected(logger, "SAML assertion replay detected.");
+            return Results.Problem(
+                title: "SAML assertion rejected",
+                detail: "The SAML assertion has already been consumed.",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
 
         // Project the validated SAML subject into the same claim shape OIDC sessions use so the
         // AdminAuthSession handler and downstream RBAC treat both identically.
