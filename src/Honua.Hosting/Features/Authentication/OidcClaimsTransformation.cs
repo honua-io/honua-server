@@ -29,11 +29,16 @@ internal sealed class OidcClaimsTransformation(
             return Task.FromResult(principal);
         }
 
-        // Skip transformation for API key authenticated users (including
-        // layer-scoped write keys, #1637, which must not be granted a default
-        // role that would widen their tightly scoped write authority).
+        // Only OIDC principals may consume OIDC claims-mapping configuration.
+        // Every in-tree non-OIDC handler stamps auth_type, so this also prevents
+        // custom mappings from widening SAML, API-key, client-certificate, portal,
+        // scoped-job, or operator-bearer principals.
         var authType = identity.FindFirst("auth_type")?.Value;
-        if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType)
+        if ((!string.IsNullOrWhiteSpace(authType) && !IsOidcAuthenticationType(authType)) ||
+            string.Equals(
+                identity.AuthenticationType,
+                OidcAuthenticationExtensions.OperatorBearerScheme,
+                StringComparison.OrdinalIgnoreCase))
         {
             return Task.FromResult(principal);
         }
@@ -125,6 +130,15 @@ internal sealed class OidcClaimsTransformation(
 
         return Task.FromResult(principal);
     }
+
+    private static bool IsOidcAuthenticationType(string authenticationType)
+        => string.Equals(authenticationType, "oidc", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(authenticationType, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(authenticationType, OidcAuthenticationExtensions.AzureAdScheme, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(authenticationType, OidcAuthenticationExtensions.GoogleScheme, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(authenticationType, OidcAuthenticationExtensions.OidcScheme, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(authenticationType, OidcAuthenticationExtensions.OktaScheme, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(authenticationType, OidcAuthenticationExtensions.Auth0Scheme, StringComparison.OrdinalIgnoreCase);
 
     private static string? FindClaimValue(ClaimsIdentity identity, params string[] claimTypes)
     {

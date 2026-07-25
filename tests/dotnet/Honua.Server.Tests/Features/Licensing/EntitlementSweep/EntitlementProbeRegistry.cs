@@ -106,6 +106,8 @@ internal static class EntitlementProbeRegistry
             // here as the catalog-driven cross-check.
             new(FeatureCatalog.MtlsClientCertificateKey, HttpMethod.Get,
                 "/api/v1/admin/security/client-certificates/profiles"),
+            new(FeatureCatalog.OidcAuthenticationKey, HttpMethod.Get,
+                "/api/v1/admin/oidc/providers"),
             new(FeatureCatalog.SamlAuthenticationKey, HttpMethod.Get, "/saml/metadata"),
             new(FeatureCatalog.ScimProvisioningKey, HttpMethod.Get, "/scim/v2/Users",
                 Configure: WithScimBearer),
@@ -241,6 +243,23 @@ internal static class EntitlementProbeRegistry
                 "decides whether the Redis-backed distributed cache is wired at all before the " +
                 "host starts accepting requests), not per-request — there is no single HTTP " +
                 "call whose response reflects this gate. Verified enforced in code; not a gap."),
+            new(FeatureCatalog.OidcMultiProviderKey,
+                "The second-provider gate is request-triggerable but stateful: " +
+                "IOidcProviderStore atomically enforces the runtime-provider limit after static " +
+                "providers are counted, and the endpoint requires this entitlement when the " +
+                "single-provider allowance is exhausted. Focused tests prove concurrent Pro " +
+                "rejection, static-plus-runtime counting, and Enterprise acceptance; a single " +
+                "stateless sweep request cannot represent the required configured state."),
+            new(FeatureCatalog.OidcClaimsMappingKey,
+                "Claims mapping is static Oidc configuration rather than a dedicated HTTP " +
+                "operation. OidcEntitlementPolicy rejects validated JWT/OIDC principals when " +
+                "custom mapping is configured without this entitlement; focused policy tests " +
+                "cover Pro denial and Enterprise acceptance."),
+            new("caching.output-cache",
+                "UseLicensedOutputCache branches only entitled requests through ASP.NET Core " +
+                "output caching, so endpoint and named policies cannot re-enable it. This is " +
+                "middleware-level soft gating rather than an endpoint that returns 402; a " +
+                "composed integration test proves Community bypass and Pro store access."),
             new("routing.solve",
                 "MCP-tool-only surface (RouteTool.cs EntitlementKey); denials surface as a " +
                 "JSON-RPC failed_precondition tool error, not an HTTP 402 problem response. " +
@@ -269,6 +288,41 @@ internal static class EntitlementProbeRegistry
                 "Degrades gracefully rather than blocking: AdminStyleSuggestionEndpoints always " +
                 "returns 200 (enhanced geometry-only defaults at Community, full analysis at " +
                 "Pro) — by design there is no 402 response to probe."),
+            new("alerts.enter-exit",
+                "AlertEditionPolicy checks the active alert-evaluation and enter/exit license " +
+                "entitlements when evaluating persisted rules; this worker policy soft-skips " +
+                "unlicensed rules rather than exposing a representative HTTP 402 surface."),
+            new("alerts.evaluation",
+                "AlertEditionPolicy requires this active license entitlement before evaluating " +
+                "any rule. The evaluator is a background worker, so there is no standalone HTTP " +
+                "request whose result is a 402."),
+            new("alerts.dwell",
+                "AlertEditionPolicy checks this Enterprise entitlement for dwell rules. Rule " +
+                "evaluation is a background-worker soft gate covered by focused policy tests."),
+            new("alerts.threshold",
+                "AlertEditionPolicy checks this Enterprise entitlement for threshold rules. Rule " +
+                "evaluation is a background-worker soft gate covered by focused policy tests."),
+            new("channels.webhook",
+                "AlertEditionPolicy checks this Pro entitlement before routing webhook delivery. " +
+                "Channel selection is a worker soft gate, not a standalone HTTP 402 surface."),
+            new("channels.email",
+                "AlertEditionPolicy checks this Enterprise entitlement before routing email " +
+                "delivery; focused policy tests cover the license-derived channel matrix."),
+            new("channels.slack",
+                "AlertEditionPolicy checks this Enterprise entitlement before routing Slack " +
+                "delivery; focused policy tests cover the license-derived channel matrix."),
+            new("channels.teams",
+                "AlertEditionPolicy checks this Enterprise entitlement before routing Teams " +
+                "delivery; focused policy tests cover the license-derived channel matrix."),
+            new("channels.aws-sns",
+                "AlertEditionPolicy checks this Enterprise entitlement before routing AWS SNS " +
+                "delivery; focused policy tests cover the license-derived channel matrix."),
+            new("channels.azure-eventgrid",
+                "AlertEditionPolicy checks this Enterprise entitlement before routing Event Grid " +
+                "delivery; focused policy tests cover the license-derived channel matrix."),
+            new("channels.digest",
+                "AlertEditionPolicy checks this Enterprise entitlement before routing digest " +
+                "delivery; focused policy tests cover the license-derived channel matrix."),
             new("plugin.sdk",
                 "PluginCustomEndpoints only maps routes when a plugin providing ICustomEndpoint " +
                 "is registered (none in the integration test host, so /plugins/* is 404 " +
@@ -292,65 +346,6 @@ internal static class EntitlementProbeRegistry
     /// fixed) is exactly the signal that resolution landed.
     /// </summary>
     public static IReadOnlyDictionary<string, EntitlementKnownGapEntry> KnownGaps { get; } =
-        new EntitlementKnownGapEntry[]
-        {
-            // --- Identity: OIDC family unenforced everywhere (new finding, this sweep) ---
-            new("identity.oidc",
-                "Zero LicenseGate/entitlement check anywhere in the OIDC surface: " +
-                "OidcProviderEndpoints (admin CRUD for provider configuration) and the JWT " +
-                "bearer/OIDC authentication pipeline (OidcAuthenticationExtensions) never call " +
-                "LicenseGate. A Community deployment can configure and use single-provider OIDC " +
-                "authentication for free. Needs its own decision ticket (see PR body).",
-                "#2997"),
-            new("identity.oidc-multi-provider",
-                "Same root cause as identity.oidc: OidcProviderEndpoints has no provider-count " +
-                "or edition check, so configuring N providers is unrestricted at any edition.",
-                "#2997"),
-            new("identity.claims-mapping",
-                "Same root cause as identity.oidc: no claims-mapping-specific gate exists; " +
-                "provider configuration (including any claims-mapping fields) is unrestricted.",
-                "#2997"),
-
-            // --- Alerts/Channels: parallel, license-disconnected edition system (new finding) ---
-            new("alerts.enter-exit",
-                "Alerts/channels edition enforcement flows entirely through a standalone " +
-                "`Alerts:Edition` config option (IAlertEditionPolicy), completely disconnected " +
-                "from ILicenseEntitlementService/Licensing:DevGrantEdition — no LicenseGate call " +
-                "exists anywhere in the Alerts feature. `Alerts:Edition` defaults to Pro, so a " +
-                "Community-licensed deployment gets Enter/Exit triggers and webhook delivery for " +
-                "free unless an operator manually sets Alerts:Edition=Community.",
-                "#2998"),
-            new("alerts.evaluation", "Same Alerts:Edition root cause as alerts.enter-exit above.",
-                "#2998"),
-            new("channels.webhook", "Same Alerts:Edition root cause as alerts.enter-exit above.",
-                "#2998"),
-            new("alerts.dwell",
-                "Same Alerts:Edition root cause; conversely, this Enterprise trigger requires a " +
-                "manual Alerts:Edition=Enterprise config flip even for a genuinely Enterprise- " +
-                "licensed deployment (the config default is Pro) — the two knobs can disagree " +
-                "in either direction.",
-                "#2998"),
-            new("alerts.threshold", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.email", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.slack", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.teams", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.aws-sns", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.azure-eventgrid", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-            new("channels.digest", "Same Alerts:Edition root cause as alerts.dwell above.",
-                "#2998"),
-
-            // --- Caching: output-cache unenforced everywhere (new finding) ---
-            new("caching.output-cache",
-                "Zero LicenseGate/entitlement check anywhere: ASP.NET Core output caching is " +
-                "registered unconditionally in Program.cs for every edition. Unlike caching.redis " +
-                "(gated at boot, see the no-http-surface allowlist), nothing turns output caching " +
-                "off for Community.",
-                "#2998"),
-        }.ToDictionary(e => e.Key, StringComparer.Ordinal);
+        Array.Empty<EntitlementKnownGapEntry>()
+            .ToDictionary(e => e.Key, StringComparer.Ordinal);
 }

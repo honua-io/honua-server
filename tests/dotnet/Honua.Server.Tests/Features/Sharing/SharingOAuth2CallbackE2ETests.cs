@@ -7,11 +7,13 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +49,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
     public SharingOAuth2CallbackE2ETests()
     {
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");

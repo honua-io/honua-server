@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Admin.Services;
 internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
 {
     private readonly ConcurrentDictionary<Guid, OidcProviderConfiguration> _providers = new();
+    private readonly object _mutationLock = new();
 
     public Task<IReadOnlyList<OidcProviderConfiguration>> ListProvidersAsync(CancellationToken cancellationToken = default)
     {
@@ -29,12 +30,33 @@ internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
 
     public Task<OidcProviderConfiguration> CreateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default)
     {
-        if (!_providers.TryAdd(provider.ProviderId, provider))
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_mutationLock)
         {
-            throw new InvalidOperationException($"Provider with ID '{provider.ProviderId}' already exists.");
+            AddProvider(provider);
         }
 
         return Task.FromResult(provider);
+    }
+
+    public Task<OidcProviderConfiguration?> CreateProviderIfBelowLimitAsync(
+        OidcProviderConfiguration provider,
+        int maximumProviderCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumProviderCount);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_mutationLock)
+        {
+            if (_providers.Count >= maximumProviderCount)
+            {
+                return Task.FromResult<OidcProviderConfiguration?>(null);
+            }
+
+            AddProvider(provider);
+            return Task.FromResult<OidcProviderConfiguration?>(provider);
+        }
     }
 
     public Task<OidcProviderConfiguration?> UpdateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default)
@@ -49,7 +71,13 @@ internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
     }
 
     public Task<bool> DeleteProviderAsync(Guid providerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(_providers.TryRemove(providerId, out _));
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_mutationLock)
+        {
+            return Task.FromResult(_providers.TryRemove(providerId, out _));
+        }
+    }
 
     public Task<OidcProviderTestResult> TestProviderAsync(Guid providerId, CancellationToken cancellationToken = default)
     {
@@ -64,5 +92,13 @@ internal sealed class InMemoryOidcProviderStore : IOidcProviderStore
         };
 
         return Task.FromResult(result);
+    }
+
+    private void AddProvider(OidcProviderConfiguration provider)
+    {
+        if (!_providers.TryAdd(provider.ProviderId, provider))
+        {
+            throw new InvalidOperationException($"Provider with ID '{provider.ProviderId}' already exists.");
+        }
     }
 }

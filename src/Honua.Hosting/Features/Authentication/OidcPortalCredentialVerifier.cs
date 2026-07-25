@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -70,6 +71,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     private const string AzureTenantClaimType = "tid";
 
     private readonly OidcAuthenticationOptions _oidcOptions;
+    private readonly ILicenseEntitlementService _licenseEntitlements;
     private readonly IClaimsTransformation _claimsTransformation;
     private readonly ILogger<OidcPortalCredentialVerifier> _logger;
     private readonly TokenValidationParameters _baseParameters;
@@ -80,6 +82,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     /// Initializes a new instance of the <see cref="OidcPortalCredentialVerifier"/> class.
     /// </summary>
     /// <param name="oidcOptions">The OIDC authentication options.</param>
+    /// <param name="licenseEntitlements">Active signed-license entitlement source.</param>
     /// <param name="claimsTransformation">The shared OIDC claims transformation
     /// used to normalize provider claims into application claims.</param>
     /// <param name="configurationManagerCache">Singleton cache of per-authority
@@ -88,6 +91,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     /// <param name="logger">Diagnostics logger.</param>
     public OidcPortalCredentialVerifier(
         IOptions<OidcAuthenticationOptions> oidcOptions,
+        ILicenseEntitlementService licenseEntitlements,
         IClaimsTransformation claimsTransformation,
         OidcConfigurationManagerCache configurationManagerCache,
         ILogger<OidcPortalCredentialVerifier> logger)
@@ -95,6 +99,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         ArgumentNullException.ThrowIfNull(oidcOptions);
         ArgumentNullException.ThrowIfNull(configurationManagerCache);
         _oidcOptions = oidcOptions.Value ?? throw new ArgumentNullException(nameof(oidcOptions));
+        _licenseEntitlements = licenseEntitlements ?? throw new ArgumentNullException(nameof(licenseEntitlements));
         _claimsTransformation = claimsTransformation ?? throw new ArgumentNullException(nameof(claimsTransformation));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -118,7 +123,11 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         string password,
         CancellationToken cancellationToken)
     {
-        if (!_oidcOptions.Enabled || string.IsNullOrWhiteSpace(password))
+        if (!_oidcOptions.Enabled ||
+            string.IsNullOrWhiteSpace(password) ||
+            OidcEntitlementPolicy.GetDeniedEntitlement(
+                _licenseEntitlements,
+                _oidcOptions) is not null)
         {
             return null;
         }

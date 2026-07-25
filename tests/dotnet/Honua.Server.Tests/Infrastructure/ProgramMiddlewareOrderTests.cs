@@ -16,7 +16,7 @@ public sealed class ProgramMiddlewareOrderTests
         var serilogIndex = source.IndexOf("app.UseSerilogRequestLogging(", StringComparison.Ordinal);
         var exceptionIndex = source.IndexOf("app.UseGlobalExceptionHandling();", StringComparison.Ordinal);
         var authIndex = source.IndexOf("app.UseApiKeyAuthentication();", StringComparison.Ordinal);
-        var outputCacheIndex = source.IndexOf("app.UseOutputCache();", StringComparison.Ordinal);
+        var outputCacheIndex = source.IndexOf("app.UseLicensedOutputCache();", StringComparison.Ordinal);
 
         serilogIndex.Should().BeGreaterThan(-1);
         exceptionIndex.Should().BeGreaterThan(-1);

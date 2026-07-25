@@ -144,6 +144,31 @@ License checks must be:
 - **Auditable**: license status is visible through the admin license status
   API and runtime health/monitoring payloads.
 
+#### Runtime enforcement decisions
+
+The signed license and `ILicenseEntitlementService` are the authoritative source
+for runtime access. Feature-local edition settings may only narrow that access;
+they must never grant a capability that the active license does not include.
+
+- OIDC provider administration and token acceptance require `identity.oidc`
+  (Pro). Creating a second provider and accepting tokens when multiple providers
+  are configured require `identity.oidc-multi-provider` (Enterprise). Non-default
+  claim names, role mappings, default/admin roles, Okta group mapping, and Auth0
+  role namespaces require `identity.claims-mapping` (Enterprise). OIDC-backed
+  authorization-code and refresh-token exchanges use the same gate, and discovery
+  metadata is suppressed when the corresponding tokens cannot be accepted.
+- Alert evaluation and delivery use the matching `alerts.*` and `channels.*`
+  entitlements. `Alerts:Edition` is retained only as an operator-controlled
+  downward ceiling; its default permits the active license to decide, and setting
+  it to Pro can restrict an Enterprise deployment without upgrading Community or
+  Pro. Dispatch workers re-check the channel entitlement before delivering
+  queued work so a license downgrade cannot drain previously accepted events.
+  Channel adapters without a catalogued signed entitlement fail closed.
+- ASP.NET Core output-cache lookup and storage require
+  `caching.output-cache` (Pro). The request pipeline bypasses the output-cache
+  middleware when that entitlement is inactive, so endpoint and named policies
+  cannot re-enable cache lookup or storage.
+
 > The canonical runtime envelope (JSON envelope / Ed25519), the BYOL and
 > marketplace issuance flows, and the multi-key rotation contract are
 > defined in [ADR-0033](0033-unified-license-format.md). The companion design

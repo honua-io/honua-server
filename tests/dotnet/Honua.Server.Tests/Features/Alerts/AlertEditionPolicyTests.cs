@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Alerts;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -11,11 +13,26 @@ namespace Honua.Server.Tests.Features.Alerts;
 public sealed class AlertEditionPolicyTests
 {
     [UnitTest]
-    public void IsChannelAllowed_ProEdition_AllowsWebhookOnly()
+    public void IsChannelAllowed_CommunityLicense_DeniesConfiguredEnterpriseChannels()
     {
-        var policy = new AlertEditionPolicy(
-            Options.Create(new AlertOptions { Edition = AlertEdition.Pro }),
-            Options.Create(new AlertDeliveryOptions()));
+        var policy = CreatePolicy(HonuaEdition.Community, AlertEdition.Enterprise);
+
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Webhook));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.WebSocket));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Email));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Digest));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.AwsSns));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.AzureEventGrid));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Slack));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.MicrosoftTeams));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.AwsSqs));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.AzureEventHub));
+    }
+
+    [UnitTest]
+    public void IsChannelAllowed_ProLicense_AllowsWebhookOnly()
+    {
+        var policy = CreatePolicy(HonuaEdition.Pro, AlertEdition.Enterprise);
 
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Webhook));
         Assert.False(policy.IsChannelAllowed(AlertChannelType.WebSocket));
@@ -30,22 +47,63 @@ public sealed class AlertEditionPolicyTests
     }
 
     [UnitTest]
-    public void IsChannelAllowed_EnterpriseEdition_AllowsAllChannels()
+    public void IsChannelAllowed_EnterpriseLicense_AllowsCataloguedChannelsOnly()
     {
-        var policy = new AlertEditionPolicy(
-            Options.Create(new AlertOptions { Edition = AlertEdition.Enterprise }),
-            Options.Create(new AlertDeliveryOptions()));
+        var policy = CreatePolicy(HonuaEdition.Enterprise, AlertEdition.Enterprise);
 
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Webhook));
-        Assert.True(policy.IsChannelAllowed(AlertChannelType.WebSocket));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Email));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Digest));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.AwsSns));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.AzureEventGrid));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.Slack));
         Assert.True(policy.IsChannelAllowed(AlertChannelType.MicrosoftTeams));
-        Assert.True(policy.IsChannelAllowed(AlertChannelType.AwsSqs));
-        Assert.True(policy.IsChannelAllowed(AlertChannelType.AzureEventHub));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.WebSocket));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.AwsSqs));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.AzureEventHub));
+    }
+
+    [UnitTest]
+    public void IsChannelAllowed_EnterpriseLicenseWithProCeiling_DeniesEnterpriseChannels()
+    {
+        var policy = CreatePolicy(HonuaEdition.Enterprise, AlertEdition.Pro);
+
+        Assert.True(policy.IsChannelAllowed(AlertChannelType.Webhook));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Email));
+        Assert.False(policy.IsChannelAllowed(AlertChannelType.Slack));
+    }
+
+    [UnitTest]
+    public void IsRuleAllowed_LicenseEntitlementsControlTriggerTiers()
+    {
+        var proPolicy = CreatePolicy(HonuaEdition.Pro, AlertEdition.Enterprise);
+        var enterprisePolicy = CreatePolicy(HonuaEdition.Enterprise, AlertEdition.Enterprise);
+
+        Assert.True(proPolicy.IsRuleAllowed(CreateRule(AlertTriggerType.Enter, AlertEdition.Pro)));
+        Assert.False(proPolicy.IsRuleAllowed(CreateRule(AlertTriggerType.Dwell, AlertEdition.Enterprise)));
+        Assert.False(proPolicy.IsRuleAllowed(CreateRule(AlertTriggerType.Threshold, AlertEdition.Enterprise)));
+        Assert.True(enterprisePolicy.IsRuleAllowed(CreateRule(AlertTriggerType.Dwell, AlertEdition.Enterprise)));
+        Assert.True(enterprisePolicy.IsRuleAllowed(CreateRule(AlertTriggerType.Threshold, AlertEdition.Enterprise)));
+    }
+
+    [UnitTest]
+    public void ExplicitEntitlements_LowerEditionLabel_AllowScopedAlertAddOn()
+    {
+        var entitlements = new TestLicenseEntitlementService(
+            HonuaEdition.Community,
+            entitlements:
+            [
+                "alerts.evaluation",
+                "alerts.enter-exit",
+                "channels.webhook"
+            ]);
+        var policy = new AlertEditionPolicy(
+            Options.Create(new AlertOptions { Edition = AlertEdition.Enterprise }),
+            Options.Create(new AlertDeliveryOptions()),
+            entitlements);
+
+        Assert.True(policy.IsRuleAllowed(CreateRule(AlertTriggerType.Enter, AlertEdition.Pro)));
+        Assert.True(policy.IsChannelAllowed(AlertChannelType.Webhook));
     }
 
     [UnitTest]
@@ -86,7 +144,8 @@ public sealed class AlertEditionPolicyTests
                         EventHubName = "alerts"
                     }
                 }
-            }));
+            }),
+            new TestLicenseEntitlementService(HonuaEdition.Enterprise));
 
         Assert.True(policy.IsChannelConfigured(AlertChannelType.Webhook));
         Assert.True(policy.IsChannelConfigured(AlertChannelType.WebSocket));
@@ -99,4 +158,25 @@ public sealed class AlertEditionPolicyTests
         Assert.True(policy.IsChannelConfigured(AlertChannelType.AwsSqs));
         Assert.True(policy.IsChannelConfigured(AlertChannelType.AzureEventHub));
     }
+
+    private static AlertEditionPolicy CreatePolicy(HonuaEdition edition, AlertEdition ceiling)
+        => new(
+            Options.Create(new AlertOptions { Edition = ceiling }),
+            Options.Create(new AlertDeliveryOptions()),
+            new TestLicenseEntitlementService(edition));
+
+    private static AlertRuleDefinition CreateRule(
+        AlertTriggerType triggerType,
+        AlertEdition editionRequired)
+        => new()
+        {
+            RuleId = 1,
+            ServiceId = "service",
+            LayerId = 0,
+            RuleName = "rule",
+            TriggerType = triggerType,
+            Severity = AlertSeverity.Warning,
+            EditionRequired = editionRequired,
+            IsActive = true,
+        };
 }
