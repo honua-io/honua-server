@@ -1,6 +1,6 @@
 # Compatibility and Automated Migration Evidence
 
-Last reviewed: 2026-05-21 (Round 3)
+Last reviewed: 2026-07-25 (Round 3)
 
 This page is the evidence index for Honua's first two website claims:
 
@@ -53,7 +53,7 @@ Those gaps are tracked below.
 
 | Evidence area | Current status | Evidence | Gap/backlog |
 |---|---|---|---|
-| OGC CITE standards compliance | Passing current trunk evidence | [OGC CITE Conformance Evidence](ogc-cite-conformance-evidence.md); latest passing run: [26005533282](https://github.com/honua-io/honua-server/actions/runs/26005533282), 952 passed, 0 failed, 0 skipped, 0 CantTell | None for the listed public CITE suite set. |
+| OGC CITE standards compliance | Passing current trunk evidence | [OGC CITE Conformance Evidence](ogc-cite-conformance-evidence.md); latest passing run: [30136438451](https://github.com/honua-io/honua-server/actions/runs/30136438451), 1117 passed, 0 failed, 0 skipped, 0 CantTell | None for the listed public CITE suite set. |
 | GeoServices REST parity | Passing current trunk evidence | [GeoServices REST Parity](../../reference/compatibility/geoservices-parity.md); baseline scorecard has 10 ArcGIS service cases and 110/110 applicable checks passing; latest passing run: [26155341221](https://github.com/honua-io/honua-server/actions/runs/26155341221) (2026-05-20), with two earlier consecutive green runs [26090743833](https://github.com/honua-io/honua-server/actions/runs/26090743833) (2026-05-19) and [26028722114](https://github.com/honua-io/honua-server/actions/runs/26028722114) (2026-05-18) | None for the listed parity scorecard cases. |
 | Cross-server OGC consume | Passing latest nightly against reference GeoServer/MapServer sources, with known MapServer WMTS reference-source gaps | [Cross-Server Consume Gap Report](../compatibility/cross-server-consume-gap-report.md); latest passing run: [25986591739](https://github.com/honua-io/honua-server/actions/runs/25986591739) | MapServer WMTS requires a MapCache-backed reference source; currently reported as open gaps in the report. |
 | Real-client interop | Lane jobs queued for recovery: the docker-compose `--no-build` flag rejection (root cause for every lane crashing) is removed, the diff step self-diagnoses missing envelopes per lane, and the pyqgis lane's `rpds-py` distro-package uninstall conflict that was preventing its Docker build is fixed via `--ignore-installed` overlay | [Cross-Client Certification Evidence](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md); [Cross-Client Certification Gap Report](../../gis/gap-report.md); fixes shipped in PRs #1142 and #1143 plus the Round 3 pyqgis Dockerfile fix | Verify the next scheduled nightly run produces full lane envelopes across all five lanes and link a passing run before closing [honua-server#1014](https://github.com/honua-io/honua-server/issues/1014). |
