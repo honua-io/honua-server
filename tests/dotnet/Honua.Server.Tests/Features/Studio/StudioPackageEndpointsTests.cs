@@ -583,6 +583,43 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 },
                 StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
         writeResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var writeAudit = _auditLog.Events
+            .Should()
+            .ContainSingle(evt =>
+                evt.Action == "studio.lifecycle" &&
+                evt.ResourceId == "/api/v1/studio/package-drafts")
+            .Subject;
+        writeAudit.EventType.Should().Be(AuditEventType.Authorization);
+        writeAudit.Actor.Should().Be(readOnlyKey.Record.Id.ToString("D"));
+        writeAudit.ActorType.Should().Be(AuditActorType.ApiKey);
+        writeAudit.ResourceType.Should().Be("studio");
+        writeAudit.Outcome.Should().Be(AuditOutcome.Denied);
+        writeAudit.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        writeAudit.Details.Should().Be("""{"code":"studio_authorization/admin_permission_denied"}""");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    public async Task AnonymousPolicyChallenge_IsAuditedExactlyOnceWithoutChangingTheResponse()
+    {
+        const string requestPath = "/api/v1/studio/package-families";
+        using var anonymousClient = _fixture.CreateClient();
+
+        var response = await anonymousClient.GetAsync(requestPath);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var auditEvent = _auditLog.Events
+            .Should()
+            .ContainSingle(evt => evt.Action == "studio.lifecycle" && evt.ResourceId == requestPath)
+            .Subject;
+        auditEvent.EventType.Should().Be(AuditEventType.Authorization);
+        auditEvent.Actor.Should().Be(AuditEvent.AnonymousActor);
+        auditEvent.ActorType.Should().Be(AuditActorType.Anonymous);
+        auditEvent.ResourceType.Should().Be("studio");
+        auditEvent.Outcome.Should().Be(AuditOutcome.Denied);
+        auditEvent.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        auditEvent.Details.Should().Be("""{"code":"studio_authorization/authentication_required"}""");
     }
 
     [IntegrationTest]

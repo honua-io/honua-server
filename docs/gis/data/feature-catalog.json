@@ -5310,6 +5310,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AnonymousPolicyChallenge_IsAuditedExactlyOnceWithoutChangingTheResponse",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_WithoutAdmin_ReturnsUnauthorized"
       ],

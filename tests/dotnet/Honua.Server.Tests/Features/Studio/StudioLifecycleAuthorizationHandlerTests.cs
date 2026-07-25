@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -87,6 +88,10 @@ public sealed class StudioLifecycleAuthorizationHandlerTests
 
         read.HasSucceeded.Should().BeTrue("admin:read authorizes safe methods");
         write.HasSucceeded.Should().BeFalse("admin:read must never authorize a mutating method");
+        write.HasFailed.Should().BeTrue("a scoped-key denial must carry an auditable failure reason");
+        write.FailureReasons.Should().ContainSingle()
+            .Which.Message.Should().Be(
+                StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode);
     }
 
     [Fact]
@@ -97,6 +102,9 @@ public sealed class StudioLifecycleAuthorizationHandlerTests
         var context = await EvaluateAsync(principal, HttpMethods.Get);
 
         context.HasSucceeded.Should().BeFalse("end-user mode is off, so only the admin family is admitted");
+        context.HasFailed.Should().BeTrue();
+        context.FailureReasons.Should().ContainSingle()
+            .Which.Message.Should().Be(StudioAuthorizationService.EndUserModeDisabledCode);
     }
 
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>

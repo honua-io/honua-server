@@ -171,16 +171,18 @@ Authorization denials return the shared `https://honua.io/problems/studio` RFC
 | `studio_authorization/cross_user_denied` | The caller does not own the resource (and, for reads, it is not publicly readable; for the elevated tier, the caller also holds no delegate grant for it). |
 | `studio_authorization/elevated_grant_required` | Publish-request or rollback on the caller's own resource without a matching `StudioDraft` operator grant. |
 
-`end_user_mode_disabled` is the one denial that happens in the ASP.NET policy
-layer (`StudioLifecycleAuthorizationHandler`), before any endpoint handler
-runs — a dedicated `IAuthorizationMiddlewareResultHandler`
-(`StudioLifecycleAuthorizationMiddlewareResultHandler`) writes this same
-problem body, and records the same `AuditEventType.Authorization`/
-`AuditOutcome.Denied` audit event every endpoint-layer denial gets, for that
-specific denial rather than letting the bare framework 403 through
-unaudited; every other policy denial (including this same policy's
-scoped-admin-key-cannot-mutate case, #1985) is unaffected and keeps the
-framework's default response.
+Policy denials happen before any endpoint handler runs, so a dedicated
+`IAuthorizationMiddlewareResultHandler`
+(`StudioLifecycleAuthorizationMiddlewareResultHandler`) records exactly one
+`AuditEventType.Authorization`/`AuditOutcome.Denied` event for every Studio
+policy short-circuit. Its audit detail carries a stable code:
+`studio_authorization/end_user_mode_disabled`,
+`studio_authorization/admin_permission_denied` for a scoped admin key that
+cannot mutate (#1985), `studio_authorization/authentication_required` for an
+anonymous challenge, or `studio_authorization/policy_denied` for a future
+otherwise-unclassified requirement. The `end_user_mode_disabled` case also
+writes the Studio RFC 7807 problem above; scoped-admin and anonymous denials
+retain the framework's existing 403 and 401 responses respectively.
 
 Every denial is recorded to the audit log (`AuditEventType.Authorization`,
 `AuditOutcome.Denied`); every *allowed* elevated-tier decision is also recorded

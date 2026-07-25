@@ -40,6 +40,11 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     ILogger<StudioLifecycleAuthorizationHandler> logger)
     : AuthorizationHandler<StudioLifecycleRequirement>
 {
+    internal const string ScopedAdminPermissionDeniedCode =
+        "studio_authorization/admin_permission_denied";
+
+    internal const string PolicyDeniedCode = "studio_authorization/policy_denied";
+
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options = options;
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions = adminRoleOptions;
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
@@ -76,6 +81,7 @@ internal sealed class StudioLifecycleAuthorizationHandler(
             else
             {
                 AuthenticationLog.ScopedAdminKeyDenied(_logger, method ?? "(unknown)");
+                context.Fail(new AuthorizationFailureReason(this, ScopedAdminPermissionDeniedCode));
             }
 
             return Task.CompletedTask;
@@ -123,8 +129,9 @@ internal sealed class StudioLifecycleAuthorizationHandler(
 }
 
 /// <summary>
-/// Preserves the Studio lifecycle RFC 7807 contract when the route-group policy rejects an
-/// authenticated non-admin before the endpoint handler can produce its normal denial result.
+/// Audits Studio lifecycle route-group policy denials that short-circuit before the endpoint
+/// middleware can observe them, and preserves the Studio RFC 7807 response for the flag-off
+/// denial while delegating every other response to ASP.NET's default result handler.
 /// </summary>
 internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
 {
@@ -139,16 +146,18 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
         AuthorizationPolicy policy,
         PolicyAuthorizationResult authorizeResult)
     {
-        var isEndUserModeDisabled = authorizeResult.Forbidden
-            && authorizeResult.AuthorizationFailure?.FailureReasons.Any(static reason =>
-                string.Equals(
-                    reason.Message,
-                    StudioAuthorizationService.EndUserModeDisabledCode,
-                    StringComparison.Ordinal)) == true;
-
-        if (isEndUserModeDisabled)
+        var denialCode = ResolvePolicyDenialCode(policy, authorizeResult);
+        if (denialCode is not null)
         {
-            await RecordEndUserModeDisabledAuditAsync(context).ConfigureAwait(false);
+            await RecordPolicyDenialAuditAsync(context, denialCode).ConfigureAwait(false);
+        }
+
+        if (authorizeResult.Forbidden &&
+            string.Equals(
+                denialCode,
+                StudioAuthorizationService.EndUserModeDisabledCode,
+                StringComparison.Ordinal))
+        {
             await ProblemDetailsHelpers.CreateProblem(
                 context,
                 StudioProblemType,
@@ -162,7 +171,51 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
         await _fallback.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
     }
 
-    private static Task RecordEndUserModeDisabledAuditAsync(HttpContext context)
+    private static string? ResolvePolicyDenialCode(
+        AuthorizationPolicy policy,
+        PolicyAuthorizationResult authorizeResult)
+    {
+        if (!policy.Requirements.Any(static requirement => requirement is StudioLifecycleRequirement))
+        {
+            return null;
+        }
+
+        // Authentication challenges are policy denials too, but retain the existing 401
+        // challenge response. Give them the same stable code the endpoint authorization
+        // service uses when no authenticated caller can be resolved.
+        if (authorizeResult.Challenged)
+        {
+            return StudioAuthorizationService.AuthenticationRequiredCode;
+        }
+
+        if (!authorizeResult.Forbidden)
+        {
+            return null;
+        }
+
+        if (HasFailureReason(authorizeResult, StudioAuthorizationService.EndUserModeDisabledCode))
+        {
+            return StudioAuthorizationService.EndUserModeDisabledCode;
+        }
+
+        if (HasFailureReason(authorizeResult, StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode))
+        {
+            return StudioLifecycleAuthorizationHandler.ScopedAdminPermissionDeniedCode;
+        }
+
+        // Future requirements added to the Studio policy must not silently create a new
+        // unaudited short-circuit. Preserve their normal response while recording one stable
+        // generic policy-denial code until a more specific reason is introduced.
+        return StudioLifecycleAuthorizationHandler.PolicyDeniedCode;
+    }
+
+    private static bool HasFailureReason(
+        PolicyAuthorizationResult authorizeResult,
+        string code)
+        => authorizeResult.AuthorizationFailure?.FailureReasons.Any(reason =>
+            string.Equals(reason.Message, code, StringComparison.Ordinal)) == true;
+
+    private static Task RecordPolicyDenialAuditAsync(HttpContext context, string code)
     {
         var auditLog = context.RequestServices.GetService<IAuditLog>();
         if (auditLog is null)
@@ -184,7 +237,7 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
             CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
             RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
             UserAgent = AuditContextResolver.ResolveUserAgent(context),
-            Details = """{"code":"studio_authorization/end_user_mode_disabled"}""",
+            Details = $"{{\"code\":\"{code}\"}}",
         };
 
         return auditLog.RecordAsync(auditEvent, context.RequestAborted);
