@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
+using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -73,6 +74,85 @@ internal static class StartupConfigurationHelpers
     {
         var value = configuration[key];
         var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
+        if (!string.Equals(value, resolved, StringComparison.Ordinal))
+        {
+            configuration[key] = resolved;
+        }
+    }
+
+    /// <summary>
+    /// Resolves AWS Secrets Manager-backed secret references (<c>aws:secretsmanager:&lt;arn-or-name&gt;</c>)
+    /// for the Redis connection-string settings Program.cs reads before <c>WebApplicationBuilder.Build()</c>
+    /// runs, so the raw reference is never handed to <c>StackExchange.Redis.ConfigurationOptions.Parse</c>
+    /// (honua-server#3011). The honua-iac AWS serverless module wires <c>ConnectionStrings__redis</c> as an
+    /// <c>aws:secretsmanager:&lt;arn&gt;</c> reference — the same style already resolved for the Postgres
+    /// <c>DefaultConnection</c> string post-Build, through the DI-registered <c>IConnectionSecretResolver</c>
+    /// composite (<see cref="Honua.Infrastructure.Helpers.ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync"/>)
+    /// — but the Redis <c>ConnectionMultiplexer</c> is built directly against <c>builder.Configuration</c>
+    /// ahead of service registration, before that composite exists. This resolves the identical reference
+    /// style through the exact same mechanism
+    /// (<see cref="Honua.Infrastructure.Helpers.ConnectionStringResolutionHelper.ResolveConnectionStringValueAsync"/>),
+    /// using a bootstrap-only instance of the SAME AOT-safe <c>AwsSecretsManagerResolver</c> (raw HTTP +
+    /// SigV4, no AWSSDK dependency) the Postgres path uses — mirroring the bootstrap-resolver pattern
+    /// <see cref="CreateBootstrapLicenseSecretResolvers"/> already establishes for the license snapshot.
+    /// <c>env:</c> references are handled first, unconditionally, by that same helper (mirroring
+    /// <see cref="ResolveEnvironmentSecretReferences"/> above). Resolved values are written back into
+    /// <paramref name="configuration"/> in place so every other in-process reader of these keys
+    /// (output-cache wiring, the admin SignalR backplane, deployment-mode config validation) observes the
+    /// resolved value without resolving it again itself.
+    /// </summary>
+    public static async Task ResolveRedisConnectionSecretReferencesAsync(
+        ConfigurationManager configuration,
+        CancellationToken cancellationToken = default)
+    {
+        const string primaryKey = "ConnectionStrings:redis";
+        const string fallbackKey = "Aspire:StackExchange:Redis:ConnectionString";
+
+        // Match every Redis consumer's null-coalescing precedence: a configured primary value
+        // shadows the Aspire fallback, even when the primary is empty. Resolving the shadowed
+        // fallback could otherwise fail startup for a value the application never reads.
+        var effectiveKey = configuration[primaryKey] is null ? fallbackKey : primaryKey;
+        await ResolveRedisConnectionSecretReferenceAsync(configuration, effectiveKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task ResolveRedisConnectionSecretReferenceAsync(
+        ConfigurationManager configuration,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        var value = configuration[key];
+        if (string.IsNullOrWhiteSpace(value) ||
+            !value.StartsWith("aws:secretsmanager:", StringComparison.OrdinalIgnoreCase))
+        {
+            // Not configured, or not a reference style this bootstrap resolver understands: env:
+            // references are already normalized above by ResolveEnvironmentSecretReferences, and a
+            // plain connection string needs no resolution.
+            return;
+        }
+
+        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        using var resolver = new AwsSecretsManagerResolver(
+            secretsClient,
+            metadataClient,
+            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+
+        string? resolved;
+        try
+        {
+            resolved = await ConnectionStringResolutionHelper
+                .ResolveConnectionStringValueAsync(value, key, resolver, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"Failed to resolve the secret-backed connection string for '{key}' from AWS Secrets Manager.",
+                ex);
+        }
+
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
             configuration[key] = resolved;
