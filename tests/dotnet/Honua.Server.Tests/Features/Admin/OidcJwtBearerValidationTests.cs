@@ -7,9 +7,11 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -75,11 +77,19 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 .WithHeader("Content-Type", "application/json")
                 .WithBody(BuildJwksJson()));
 
-        _fixture = new WebAppFixture()
+        _fixture = CreateFixture(HonuaEdition.Pro);
+    }
+
+    private WebAppFixture CreateFixture(HonuaEdition edition)
+        => new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                // The Test environment enables every experimental capability by default.
+                // Keep the unrelated experimental mTLS middleware out of this JWT-only
+                // fixture so it cannot require a client certificate ahead of bearer auth.
+                builder.UseSetting("Capabilities:Experimental:Enabled", "false");
                 // Point the real JwtBearer pipeline at the fake IdP: discovery + JWKS come from
                 // WireMock, so signature/issuer/audience/expiry validation runs against real
                 // RSA-signed tokens rather than a stub.
@@ -97,8 +107,8 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 // lightweight in-process fake IdP over plain HTTP, so the production validator
                 // is removed here — the JWT validation logic under test is untouched.
                 services.RemoveAll<IValidateOptions<OidcAuthenticationOptions>>();
-            });
-    }
+            })
+            .WithTestLicense(edition);
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
@@ -113,6 +123,9 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/oidc/providers")]
     public async Task AdminEndpoint_ValidJwt_IsAccepted()
     {
+        OidcEntitlementPolicy.GetDeniedEntitlement(_fixture.Services)
+            .Should().BeNull("stock single-provider configuration is the Pro baseline");
+
         // Assert on the authentication/authorization boundary these tests exist to prove
         // (401 = the JwtBearer trust chain rejected the token) rather than a literal 200:
         // AdminPolicy's role assertion is a separate RBAC concern from token *validity*, and
@@ -128,6 +141,22 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
         response.StatusCode.Should().BeOneOf(
             [HttpStatusCode.OK, HttpStatusCode.Forbidden],
             "the request must reach authorization (not fail at authentication) for a fully valid token. Body: {0}", body);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task AdminEndpoint_ValidJwtWithoutOidcEntitlement_IsRejected()
+    {
+        await using var communityFixture = CreateFixture(HonuaEdition.Community);
+        await communityFixture.InitializeAsync();
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, AdminRoute);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", CreateToken());
+        var response = await communityFixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.Unauthorized,
+            "a cryptographically valid OIDC token must not establish a runtime identity without the base OIDC entitlement");
     }
 
     [IntegrationTest]

@@ -99,6 +99,41 @@ public sealed class AlertDispatchBackgroundServiceTests
             dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task Dispatcher_LicenseRevokedAfterQueueing_DeadLettersWithoutDelivery()
+    {
+        const long eventId = 400;
+        const long dispatchId = 4000;
+
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var lifecycleStore = Substitute.For<IAlertLifecycleStore>();
+        var editionPolicy = Substitute.For<IAlertEditionPolicy>();
+        editionPolicy.IsChannelAllowed(AlertChannelType.Webhook).Returns(false);
+
+        ReturnBatchOnce(dispatchStore, new[] { DispatchItem(dispatchId, eventId) });
+        eventStore.GetAsync(eventId, Arg.Any<CancellationToken>()).Returns(Envelope("evt"));
+        var sink = new RecordingSink();
+
+        await RunDispatcherAsync(
+            dispatchStore,
+            eventStore,
+            lifecycleStore,
+            sink,
+            stopWhen: () => false,
+            editionPolicy: editionPolicy,
+            settleDelayMs: 400);
+
+        sink.Delivered.Should().BeEmpty();
+        await dispatchStore.Received().MarkFailedAsync(
+            dispatchId,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<DateTimeOffset>(),
+            true,
+            Arg.Is<string>(message => message.Contains("not licensed", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
     private static void ReturnBatchOnce(IAlertDispatchStore dispatchStore, IReadOnlyList<AlertDispatchItem> batch)
     {
         var served = 0;
@@ -118,6 +153,7 @@ public sealed class AlertDispatchBackgroundServiceTests
         Func<bool> stopWhen,
         IOptions<AlertOptions>? options = null,
         AlertChannelCircuitBreaker? breaker = null,
+        IAlertEditionPolicy? editionPolicy = null,
         int settleDelayMs = 2000)
     {
         options ??= BuildOptions();
@@ -127,6 +163,13 @@ public sealed class AlertDispatchBackgroundServiceTests
         services.AddScoped(_ => dispatchStore);
         services.AddScoped(_ => eventStore);
         services.AddScoped(_ => lifecycleStore);
+        if (editionPolicy is null)
+        {
+            editionPolicy = Substitute.For<IAlertEditionPolicy>();
+            editionPolicy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
+        }
+
+        services.AddScoped(_ => editionPolicy);
         await using var provider = services.BuildServiceProvider();
 
         var dispatcher = new AlertDispatchBackgroundService(

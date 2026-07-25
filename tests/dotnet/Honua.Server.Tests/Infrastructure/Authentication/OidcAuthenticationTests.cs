@@ -8,6 +8,8 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
@@ -16,6 +18,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -123,6 +126,12 @@ public class OidcAuthenticationTests
 
                 builder.ConfigureTestServices(services =>
                 {
+                    var license = new TestLicenseEntitlementService(HonuaEdition.Enterprise);
+                    services.RemoveAll<ILicenseEntitlementService>();
+                    services.RemoveAll<ILicenseStatusProvider>();
+                    services.AddSingleton<ILicenseEntitlementService>(license);
+                    services.AddSingleton<ILicenseStatusProvider>(license);
+
                     services.RemoveAll<IDatabaseCompatibilityChecker>();
                     services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
 
