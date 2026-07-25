@@ -124,6 +124,7 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Generate Studio Map Package")
             .WithSummary("Generate or refine a map package from a natural-language prompt.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminAuthorization()
             .Accepts<GenerateMapPackageRequest>("application/json")
             .Produces<MapGenerationResult>();
 
@@ -131,6 +132,7 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Generate Studio App Package")
             .WithSummary("Generate or refine a studio-app/v1 app package from a natural-language prompt.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminAuthorization()
             .Accepts<GenerateAppPackageRequest>("application/json")
             .Produces<AppGenerationResult>();
 

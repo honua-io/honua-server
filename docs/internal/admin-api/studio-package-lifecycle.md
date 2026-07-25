@@ -74,6 +74,10 @@ With the flag on:
   regardless of ownership. Cross-user access to a non-owned, non-published
   resource is denied by default. No operator grant is required for the baseline
   tier — the flag itself is the widening switch (REQ-002).
+- **AI generation remains admin-only.** `POST /map-packages/generate` and
+  `POST /app-packages/generate` can invoke configured model providers before a
+  resource with an enforceable owner exists. The end-user lifecycle flag does
+  not widen these potentially costly operations; both retain the admin policy.
 - **Save-as-version authorizes both mutation boundaries.** Saving a draft creates
   an immutable version *and* advances the parent item's `currentVersionId`.
   Consequently, a non-admin caller must own both the draft and the immutable

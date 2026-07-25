@@ -460,6 +460,33 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    [Endpoint("POST /api/v1/studio/app-packages/generate")]
+    public async Task GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler()
+    {
+        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var endUserKey = await apiKeyStore.CreateAsync(
+            "generation-end-user",
+            ["studio:enduser"],
+            null,
+            null,
+            CancellationToken.None);
+        using var endUserClient = endUserFixture.CreateClient(
+            client => client.DefaultRequestHeaders.Add("X-API-Key", endUserKey.Key));
+
+        using var mapResponse = await endUserClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        using var appResponse = await endUserClient.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+
+        mapResponse.StatusCode.Should().Be(
+            HttpStatusCode.Forbidden,
+            "end-user lifecycle access must not reach the potentially costly map-generation handler");
+        appResponse.StatusCode.Should().Be(
+            HttpStatusCode.Forbidden,
+            "end-user lifecycle access must not reach the potentially costly app-generation handler");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
     public async Task CreateVersion_FlagOn_MixedOwnerDraftCannotMoveAnotherOwnersCurrentPointer()
     {

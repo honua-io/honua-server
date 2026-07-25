@@ -16165,7 +16165,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -16240,7 +16241,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
