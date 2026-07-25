@@ -67,7 +67,7 @@ file (drift gate), printing the regeneration command above.
       "maturity": { "implemented": 1 },
       "noSurface": null,
       "cite": [
-        { "suite": "WMS 1.3", "profile": "default", "passed": 199, "total": 199, "passRate": 100.0 }
+        { "suite": "WMS 1.3", "profile": "default", "passed": 213, "total": 213, "passRate": 100.0 }
       ],
       "parity": [],
       "esriAssess": [],
