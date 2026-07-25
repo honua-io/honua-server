@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Core.Features.Licensing.Abstractions;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
@@ -26,6 +27,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal sealed class PortalOAuthBroker(
     IOptions<OidcAuthenticationOptions> oidcOptions,
+    ILicenseEntitlementService licenseEntitlements,
     IPortalCredentialVerifier credentialVerifier,
     PortalOAuthStore store,
     IHttpClientFactory httpClientFactory,
@@ -38,6 +40,7 @@ internal sealed class PortalOAuthBroker(
     private static readonly TimeSpan AuthorizationCodeLifetime = TimeSpan.FromMinutes(5);
 
     private readonly OidcAuthenticationOptions _oidcOptions = oidcOptions.Value;
+    private readonly ILicenseEntitlementService _licenseEntitlements = licenseEntitlements;
     private readonly IPortalCredentialVerifier _credentialVerifier = credentialVerifier;
     private readonly PortalOAuthStore _store = store;
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
@@ -46,6 +49,9 @@ internal sealed class PortalOAuthBroker(
     /// <summary>Whether the OIDC core is enabled and at least one valid provider exists.</summary>
     public bool IsConfigured =>
         _oidcOptions.Enabled &&
+        OidcEntitlementPolicy.GetDeniedEntitlement(
+            _licenseEntitlements,
+            _oidcOptions) is null &&
         OidcProviderCatalog.GetProviders(_oidcOptions).Any(static p => p.IsValid);
 
     /// <summary>
@@ -257,7 +263,10 @@ internal sealed class PortalOAuthBroker(
 
     private OidcProviderRegistration? ResolveProvider(string? providerKey)
     {
-        if (!_oidcOptions.Enabled)
+        if (!_oidcOptions.Enabled ||
+            OidcEntitlementPolicy.GetDeniedEntitlement(
+                _licenseEntitlements,
+                _oidcOptions) is not null)
         {
             return null;
         }

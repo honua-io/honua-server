@@ -4,11 +4,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -33,14 +36,7 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
 
     public OidcProviderEndpointsTests()
     {
-        _fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+        _fixture = CreateFixture(HonuaEdition.Enterprise);
     }
 
     public async Task InitializeAsync()
@@ -50,6 +46,20 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/oidc/providers")]
+    public async Task ListProviders_CommunityLicense_ReturnsPaymentRequired()
+    {
+        await using var fixture = CreateFixture(HonuaEdition.Community);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+        var response = await client.GetAsync("/api/v1/admin/oidc/providers");
+
+        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
+        Assert.Contains("identity.oidc", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/oidc/providers")]
@@ -89,6 +99,102 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
         Assert.NotNull(result.Data);
         Assert.Equal("Test Okta", result.Data.Name);
         Assert.Equal("Okta", result.Data.ProviderType);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    public async Task CreateProvider_ProLicenseRejectsSecondProvider()
+    {
+        await using var fixture = CreateFixture(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+        var first = await client.PostAsJsonAsync(
+            "/api/v1/admin/oidc/providers",
+            CreateRequest("First"),
+            _jsonOptions);
+        var second = await client.PostAsJsonAsync(
+            "/api/v1/admin/oidc/providers",
+            CreateRequest("Second"),
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.PaymentRequired, second.StatusCode);
+        Assert.Contains(
+            "identity.oidc-multi-provider",
+            await second.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    public async Task CreateProvider_ProLicenseConcurrentRequests_AtomicallyAllowsOne()
+    {
+        await using var fixture = CreateFixture(HonuaEdition.Pro);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+        var requests = new[]
+        {
+            client.PostAsJsonAsync(
+                "/api/v1/admin/oidc/providers",
+                CreateRequest("Concurrent One"),
+                _jsonOptions),
+            client.PostAsJsonAsync(
+                "/api/v1/admin/oidc/providers",
+                CreateRequest("Concurrent Two"),
+                _jsonOptions),
+        };
+        var responses = await Task.WhenAll(requests);
+
+        responses.Select(static response => response.StatusCode)
+            .Should().BeEquivalentTo(
+                [HttpStatusCode.Created, HttpStatusCode.PaymentRequired]);
+        foreach (var response in responses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    public async Task CreateProvider_ProLicenseWithStaticProvider_RejectsFirstRuntimeProvider()
+    {
+        await using var fixture = CreateFixture(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", "https://login.example.com");
+                builder.UseSetting("Oidc:Generic:ClientId", "static-client");
+                builder.UseSetting("Oidc:Generic:ClientSecret", "static-secret-value-minimum-length");
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/admin/oidc/providers",
+            CreateRequest("Runtime"),
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/oidc/providers")]
+    public async Task CreateProvider_EnterpriseLicenseAllowsMultipleProviders()
+    {
+        var first = await _client.PostAsJsonAsync(
+            "/api/v1/admin/oidc/providers",
+            CreateRequest("First Enterprise"),
+            _jsonOptions);
+        var second = await _client.PostAsJsonAsync(
+            "/api/v1/admin/oidc/providers",
+            CreateRequest("Second Enterprise"),
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
     }
 
     [IntegrationTest]
@@ -206,4 +312,24 @@ public class OidcProviderEndpointsTests : IAsyncLifetime
         Assert.NotNull(result.Data);
         Assert.Equal(created.Data.ProviderId, result.Data.ProviderId);
     }
+
+    private static WebAppFixture CreateFixture(HonuaEdition edition)
+        => new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .WithTestLicense(edition);
+
+    private static CreateOidcProviderRequest CreateRequest(string name)
+        => new()
+        {
+            Name = name,
+            ProviderType = "Generic",
+            Authority = "https://identity.example.com",
+            ClientId = $"{name.Replace(' ', '-').ToLowerInvariant()}-client",
+        };
 }

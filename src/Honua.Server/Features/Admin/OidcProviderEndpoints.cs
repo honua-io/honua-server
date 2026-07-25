@@ -4,11 +4,14 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
@@ -46,11 +49,26 @@ internal static partial class OidcProviderEndpoints
     /// </summary>
     public static void MapOidcProviderEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        static ValueTask<object?> RequireOidcEntitlement(
+            EndpointFilterInvocationContext invocationContext,
+            EndpointFilterDelegate next)
+        {
+            var gate = LicenseGate.RequireEntitlement(
+                invocationContext.HttpContext,
+                FeatureCatalog.OidcAuthenticationKey,
+                "OIDC authentication");
+
+            return gate is null
+                ? next(invocationContext)
+                : ValueTask.FromResult<object?>(gate);
+        }
+
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oidc/providers")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "OIDC")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter(RequireOidcEntitlement);
 
         group.MapGet("/", HandleListProviders)
             .WithDisplayName("List OIDC Providers")
@@ -118,10 +136,11 @@ internal static partial class OidcProviderEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<OidcProviderResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<IResult>
         HandleCreateProvider(
             CreateOidcProviderRequest request,
             [FromServices] IOidcProviderStore store,
+            [FromServices] IOptions<OidcAuthenticationOptions> oidcOptions,
             [FromServices] ILogger<OidcProviderEndpointsLog> logger,
             HttpContext context)
     {
@@ -144,7 +163,32 @@ internal static partial class OidcProviderEndpoints
                 Enabled = request.Enabled,
             };
 
-            var created = await store.CreateProviderAsync(provider, context.RequestAborted);
+            var multiProviderLicensed = LicenseGate.IsEntitlementActive(
+                context.RequestServices,
+                FeatureCatalog.OidcMultiProviderKey);
+            var staticProviderCount = OidcProviderCatalog
+                .GetProviders(oidcOptions.Value)
+                .Count(static configured => configured.IsValid);
+            var maximumRuntimeProviders = multiProviderLicensed
+                ? int.MaxValue
+                : Math.Max(0, 1 - staticProviderCount);
+
+            var created = await store.CreateProviderIfBelowLimitAsync(
+                provider,
+                maximumRuntimeProviders,
+                context.RequestAborted);
+            if (created is null)
+            {
+                return LicenseGate.RequireEntitlement(
+                        context,
+                        FeatureCatalog.OidcMultiProviderKey,
+                        "OIDC multi-provider configuration")
+                    ?? TypedResults.Problem(
+                        title: "OIDC provider creation conflicted",
+                        detail: "The provider limit changed while the request was being processed.",
+                        statusCode: StatusCodes.Status409Conflict);
+            }
+
             var response = ToResponse(created);
 
             OidcProviderLog.ProviderCreated(logger, created.Name, created.ProviderId);

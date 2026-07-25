@@ -26,6 +26,26 @@ public interface IOidcProviderStore
     Task<OidcProviderConfiguration> CreateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically creates a provider only when the store currently contains fewer
+    /// than <paramref name="maximumProviderCount"/> configurations.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation fails closed so existing third-party stores remain
+    /// binary compatible without silently bypassing the provider-count entitlement.
+    /// Stores that support provider creation must override this operation atomically.
+    /// </remarks>
+    Task<OidcProviderConfiguration?> CreateProviderIfBelowLimitAsync(
+        OidcProviderConfiguration provider,
+        int maximumProviderCount,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumProviderCount);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<OidcProviderConfiguration?>(null);
+    }
+
+    /// <summary>
     /// Updates an existing provider configuration.
     /// </summary>
     Task<OidcProviderConfiguration?> UpdateProviderAsync(OidcProviderConfiguration provider, CancellationToken cancellationToken = default);

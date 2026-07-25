@@ -23,9 +23,11 @@ public sealed class AlertOptions
     public bool Enabled { get; init; }
 
     /// <summary>
-    /// Active edition used for feature gating.
+    /// Optional maximum alert edition allowed by this deployment. The active license
+    /// remains authoritative; this setting can restrict a licensed deployment but cannot
+    /// grant alert capabilities above its license entitlements.
     /// </summary>
-    public AlertEdition Edition { get; init; } = AlertEdition.Pro;
+    public AlertEdition Edition { get; init; } = AlertEdition.Enterprise;
 
     /// <summary>
     /// Evaluator worker settings.

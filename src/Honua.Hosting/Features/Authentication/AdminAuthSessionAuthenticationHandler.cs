@@ -31,6 +31,20 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
+        if (!string.Equals(session.ProviderKey, "saml", StringComparison.OrdinalIgnoreCase))
+        {
+            var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(Context.RequestServices);
+            if (deniedEntitlement is not null)
+            {
+                await _sessionStore.RemoveAuthenticatedSessionAsync(
+                    sessionId,
+                    Context.RequestAborted).ConfigureAwait(false);
+                DeleteSessionCookie();
+                return AuthenticateResult.Fail(
+                    OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+            }
+        }
+
         try
         {
             var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name);

@@ -6,10 +6,13 @@ using System.Text.Json;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -162,6 +165,29 @@ public sealed class McpProtectedResourceMetadataTests
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /.well-known/oauth-protected-resource/mcp")]
+    public async Task ProtectedResourceMetadata_WithoutOidcEntitlement_IsAbsent()
+    {
+        var fixture = CreateOidcFixture(HonuaEdition.Community);
+
+        try
+        {
+            await fixture.InitializeAsync();
+            var client = fixture.CreateClient();
+
+            var response = await client.GetAsync("/.well-known/oauth-protected-resource/mcp");
+
+            response.StatusCode.Should().Be(
+                HttpStatusCode.NotFound,
+                because: "the resource must not advertise an authorization server whose tokens it cannot accept");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [Fact]
     [Trait("Category", "Unit")]
     public void BuildMetadataUrl_ForResourceWithPath_InsertsWellKnownBetweenHostAndPath()
@@ -211,6 +237,19 @@ public sealed class McpProtectedResourceMetadataTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public void TryBuildChallenge_WithoutOidcEntitlement_EmitsNoChallenge()
+    {
+        var context = CreateHttpContext(
+            oidcEnabled: true,
+            edition: HonuaEdition.Community);
+
+        McpProtectedResourceMetadataEndpointExtensions.TryBuildChallenge(context, out _)
+            .Should().BeFalse(
+                "the resource must not advertise an authorization server whose tokens it cannot accept");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void ResolveAuthorizationServers_WhenOidcDisabled_IsEmpty()
     {
         var options = new OidcAuthenticationOptions
@@ -246,7 +285,9 @@ public sealed class McpProtectedResourceMetadataTests
             "an authority without a client id is not a valid provider");
     }
 
-    private static DefaultHttpContext CreateHttpContext(bool oidcEnabled)
+    private static DefaultHttpContext CreateHttpContext(
+        bool oidcEnabled,
+        HonuaEdition edition = HonuaEdition.Pro)
     {
         var oidcOptions = new OidcAuthenticationOptions
         {
@@ -268,6 +309,8 @@ public sealed class McpProtectedResourceMetadataTests
             RequestServices = new ServiceCollection()
                 .AddSingleton<IConfiguration>(configuration)
                 .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidcOptions))
+                .AddSingleton<ILicenseEntitlementService>(
+                    new TestLicenseEntitlementService(edition))
                 .BuildServiceProvider()
         };
     }
@@ -285,9 +328,11 @@ public sealed class McpProtectedResourceMetadataTests
             });
     }
 
-    private static WebAppFixture CreateOidcFixture()
+    private static WebAppFixture CreateOidcFixture(
+        HonuaEdition edition = HonuaEdition.Enterprise)
     {
         return CreateBaseFixture()
+            .WithTestLicense(edition)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Oidc:Enabled", "true");
