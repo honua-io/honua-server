@@ -4,11 +4,13 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -19,7 +21,8 @@ namespace Honua.Server.Tests.Features.Admin;
 [Protocol(TestProtocols.Admin)]
 public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture =
+        new WebAppFixture().WithTestLicense(HonuaEdition.Community);
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -27,7 +30,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
-    public async Task SuggestStyle_ReturnsStyleSuggestion()
+    public async Task SuggestStyle_CommunityEdition_ReturnsGeometryDefaults()
     {
         var client = _fixture.CreateAdminClient();
 
@@ -52,7 +55,12 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
         apiResponse.Data!.Legend.Should().NotBeNull();
         apiResponse.Data!.Legend!.Entries.Should().NotBeNullOrEmpty();
         apiResponse.Data!.Observations.Should().NotBeNullOrEmpty();
-        apiResponse.Data!.Edition.Should().NotBeNullOrEmpty();
+        apiResponse.Data!.Edition.Should().Be("Community");
+        apiResponse.Data!.SuggestedField.Should().BeNull();
+        apiResponse.Data!.ClassificationMethod.Should().BeNull();
+        apiResponse.Data!.PaletteName.Should().Be("Default");
+        apiResponse.Data!.Observations.Should().Contain(
+            observation => observation.Contains("Community edition", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -67,5 +75,45 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
             new StyleSuggestionRequest());
 
         response.Be404NotFound();
+    }
+}
+
+/// <summary>
+/// Pro-edition integration coverage for the full profiling and classification path.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+public sealed class StyleSuggestionProEndpointsTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture =
+        new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{layerId}/suggest-style")]
+    public async Task SuggestStyle_ProEdition_ReturnsProfiledClassification()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/suggest-style",
+            new StyleSuggestionRequest());
+
+        response.Be200Ok();
+        var apiResponse = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            StyleSuggestionJsonContext.Default.ApiResponseStyleSuggestionResponse);
+
+        apiResponse.Should().NotBeNull();
+        apiResponse!.Data.Should().NotBeNull();
+        apiResponse.Data!.Edition.Should().Be("Pro");
+        apiResponse.Data!.SuggestedField.Should().NotBeNull();
+        apiResponse.Data!.ClassificationMethod.Should().NotBeNullOrWhiteSpace();
+        apiResponse.Data!.PaletteName.Should().NotBe("Default");
+        apiResponse.Data!.Observations.Should().NotContain(
+            observation => observation.Contains("Upgrade to Pro", StringComparison.Ordinal));
     }
 }

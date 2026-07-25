@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -321,6 +322,35 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         using var response = await client.SendAsync(request);
 
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    [Endpoint("POST /sharing/rest/oauth2/revoke")]
+    public async Task GenerateToken_IssueValidateRevokeLifecycle_RejectsRevokedToken()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(
+            client,
+            ("client", "referer"),
+            ("referer", SecureRefererA));
+        var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var binding = new PortalTokenBinding(SecureRefererA, ClientIp.ToString());
+
+        var before = await issuer.ValidateAsync(token, binding, CancellationToken.None);
+        before.Should().NotBeNull("a newly generated portal token must validate");
+
+        using var revokeContent = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("token", token),
+            new KeyValuePair<string, string>("token_type_hint", "access_token"),
+        });
+        using var revoke = await client.PostAsync("/sharing/rest/oauth2/revoke", revokeContent);
+
+        revoke.StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = await issuer.ValidateAsync(token, binding, CancellationToken.None);
+        after.Should().BeNull("revocation must reject the token on the next validation");
     }
 
     [IntegrationTest]

@@ -156,14 +156,23 @@ internal sealed class EdrHandler
                 context, "Requested position is outside the collection spatial extent.");
         }
 
-        var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
         var requestedParameters = ParseParameterNames(context.Request.Query["parameter-name"].ToString());
+        if (!TryBuildParameters(raster, requestedParameters, out var parameters))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Query parameter 'parameter-name' contains a parameter that is not exposed by this collection.");
+        }
+
+        if (!TryResolveInstant(context.Request.Query["datetime"].ToString(), raster, out var instant))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Query parameter 'datetime' must be an RFC 3339 instant or interval.");
+        }
 
         var pixel = await _rasterStore
             .IdentifyAsync(resolution.StorageLayerId, raster.Id, lon, lat, srid: 4326, rendering: null, cancellationToken)
             .ConfigureAwait(false);
 
-        var parameters = BuildParameters(raster, requestedParameters);
         var ranges = ImmutableDictionary.CreateBuilder<string, CoverageJsonRange>();
         foreach (var parameterName in parameters.Keys)
         {
@@ -212,11 +221,31 @@ internal sealed class EdrHandler
                 context, "Query parameter 'bbox' must be 'minLon,minLat,maxLon,maxLat'.");
         }
 
-        var resolutionCount = ResolveCubeSampleCount(context.Request.Query["resolution-x"].ToString());
         var raster = resolution.Raster;
-        var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
+        if (!IntersectsExtent(raster.Extent, minX, minY, maxX, maxY))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Requested cube is outside the collection spatial extent.");
+        }
+
+        if (!TryResolveCubeSampleCount(context.Request.Query["resolution-x"].ToString(), out var resolutionCount))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Query parameter 'resolution-x' must be a positive integer.");
+        }
+
+        if (!TryResolveInstant(context.Request.Query["datetime"].ToString(), raster, out var instant))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Query parameter 'datetime' must be an RFC 3339 instant or interval.");
+        }
+
         var requestedParameters = ParseParameterNames(context.Request.Query["parameter-name"].ToString());
-        var parameters = BuildParameters(raster, requestedParameters);
+        if (!TryBuildParameters(raster, requestedParameters, out var parameters))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context, "Query parameter 'parameter-name' contains a parameter that is not exposed by this collection.");
+        }
 
         // Sample a bounded regular grid of cell centres inside the bbox using the canonical
         // point-sample pipeline; this returns genuine cube values without decoding raster bytes.
@@ -411,16 +440,22 @@ internal sealed class EdrHandler
             };
         }
 
-        if (builder.Count == 0)
+        return builder.ToImmutable();
+    }
+
+    private static bool TryBuildParameters(
+        RasterInfo raster,
+        string[] requested,
+        out ImmutableDictionary<string, EdrParameter> parameters)
+    {
+        parameters = BuildParameters(raster, requested);
+        if (requested.Length == 0)
         {
-            builder["band_1"] = new EdrParameter
-            {
-                Description = "Coverage band 1",
-                ObservedProperty = new EdrObservedProperty { Label = "band_1" }
-            };
+            return true;
         }
 
-        return builder.ToImmutable();
+        var requestedCount = requested.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        return parameters.Count == requestedCount;
     }
 
     private static ImmutableArray<CoverageJsonReferencing> BuildReferencing() =>
@@ -496,29 +531,35 @@ internal sealed class EdrHandler
             ? Array.Empty<string>()
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string ResolveInstant(string datetime, RasterInfo raster)
+    private static bool TryResolveInstant(string datetime, RasterInfo raster, out string instant)
     {
-        if (!string.IsNullOrWhiteSpace(datetime) &&
-            DateTimeOffset.TryParse(
-                datetime.Split('/')[0],
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var parsed))
+        var fallback = raster.AcquisitionDate ?? raster.CreatedAt;
+        instant = Iso(fallback);
+        if (OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out _))
         {
-            return Iso(parsed);
+            instant = Iso(start ?? end ?? fallback);
+            return true;
         }
 
-        return Iso(raster.AcquisitionDate ?? raster.CreatedAt);
+        return false;
     }
 
-    private static int ResolveCubeSampleCount(string resolutionX)
+    private static bool TryResolveCubeSampleCount(string resolutionX, out int count)
     {
-        if (int.TryParse(resolutionX, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count > 0)
+        count = DefaultCubeAxisSamples;
+        if (string.IsNullOrWhiteSpace(resolutionX))
         {
-            return Math.Min(count, MaxCubeAxisSamples);
+            return true;
         }
 
-        return DefaultCubeAxisSamples;
+        if (!int.TryParse(resolutionX, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requested) ||
+            requested <= 0)
+        {
+            return false;
+        }
+
+        count = Math.Min(requested, MaxCubeAxisSamples);
+        return true;
     }
 
     private static double[] AxisValues(double min, double max, int count)
@@ -547,6 +588,21 @@ internal sealed class EdrHandler
         }
 
         return lon >= e.XMin && lon <= e.XMax && lat >= e.YMin && lat <= e.YMax;
+    }
+
+    private static bool IntersectsExtent(
+        RasterExtent? extent,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+    {
+        if (extent is not { } e)
+        {
+            return true;
+        }
+
+        return maxX >= e.XMin && minX <= e.XMax && maxY >= e.YMin && minY <= e.YMax;
     }
 
     private static int BandIndex(string parameterName)

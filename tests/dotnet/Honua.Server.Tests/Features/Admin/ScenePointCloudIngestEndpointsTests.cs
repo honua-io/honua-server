@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -271,8 +272,18 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
         Assert.True(body.HasColor);
         Assert.EndsWith("/scenes/pcloud-ingest-it/tileset.json", body.TilesetUrl);
 
+        // The ingest registration must flow through the public scene catalog before
+        // the standard scene serving path resolves the generated assets.
+        using var catalog = await _client.GetAsync("/api/scenes/pcloud-ingest-it");
+        Assert.Equal(HttpStatusCode.OK, catalog.StatusCode);
+        using var catalogDocument = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync());
+        Assert.Equal("pcloud-ingest-it", catalogDocument.RootElement.GetProperty("id").GetString());
+        var catalogTilesetUrl = catalogDocument.RootElement.GetProperty("tileset").GetProperty("url").GetString();
+        Assert.NotNull(catalogTilesetUrl);
+        Assert.EndsWith("/scenes/pcloud-ingest-it/tileset.json", catalogTilesetUrl);
+
         // The registered tileset must be servable through the standard scene path.
-        var tileset = await _client.GetAsync("/scenes/pcloud-ingest-it/tileset.json");
+        using var tileset = await _client.GetAsync("/scenes/pcloud-ingest-it/tileset.json");
         Assert.Equal(HttpStatusCode.OK, tileset.StatusCode);
         var tilesetBody = await tileset.Content.ReadAsStringAsync();
         Assert.Contains("geometricError", tilesetBody);

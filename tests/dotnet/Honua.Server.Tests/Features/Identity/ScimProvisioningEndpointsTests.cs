@@ -160,6 +160,31 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PATCH /scim/v2/Users/{id}")]
+    public async Task PatchUser_PathlessStringBoolean_TogglesActiveState()
+    {
+        const string userId = "pathless-patch@example.com";
+        await CreateUserAsync(userId);
+
+        using var deactivate = await _client.PatchAsync($"/scim/v2/Users/{userId}", JsonContent.Create(new
+        {
+            Operations = new[] { new { op = "replace", value = new { active = "false" } } },
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, deactivate.StatusCode);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        Assert.False((await store.GetUserAsync(userId))!.IsActive);
+
+        using var reactivate = await _client.PatchAsync($"/scim/v2/Users/{userId}", JsonContent.Create(new
+        {
+            Operations = new[] { new { op = "replace", value = new { active = "true" } } },
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, reactivate.StatusCode);
+        Assert.True((await store.GetUserAsync(userId))!.IsActive);
+    }
+
+    [IntegrationTest]
     [Endpoint("DELETE /scim/v2/Users/{id}")]
     public async Task DeleteUser_RevokesAccess()
     {
@@ -255,6 +280,65 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         var deleteResp = await _client.DeleteAsync($"/scim/v2/Groups/{groupId}");
         Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
         Assert.DoesNotContain("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /scim/v2/Groups/{id}")]
+    public async Task PatchGroup_FilteredMemberRemoval_RevokesMappedRole()
+    {
+        const string userId = "filtered-member@example.com";
+        await CreateUserAsync(userId);
+
+        using var create = await _client.PostAsJsonAsync("/scim/v2/Groups", new
+        {
+            displayName = "field-editors",
+            members = new[] { new { value = userId } },
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var groupId = (await ReadAsync(create)).GetProperty("id").GetString()!;
+
+        using var response = await _client.PatchAsync($"/scim/v2/Groups/{groupId}", JsonContent.Create(new
+        {
+            Operations = new[]
+            {
+                new { op = "remove", path = $"members[value eq \"{userId}\"]" },
+            },
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        Assert.DoesNotContain(
+            "field-editors",
+            (await store.GetUserAsync(userId))!.Roles,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Groups/{id}")]
+    public async Task ReplaceGroup_RenameRemapsMemberRole()
+    {
+        const string userId = "renamed-role@example.com";
+        await CreateUserAsync(userId);
+
+        using var create = await _client.PostAsJsonAsync("/scim/v2/Groups", new
+        {
+            displayName = "old-role",
+            members = new[] { new { value = userId } },
+        });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var groupId = (await ReadAsync(create)).GetProperty("id").GetString()!;
+
+        using var response = await _client.PutAsJsonAsync($"/scim/v2/Groups/{groupId}", new
+        {
+            displayName = "new-role",
+            members = new[] { new { value = userId } },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var store = _fixture.Services.GetRequiredService<IUserStore>();
+        var roles = (await store.GetUserAsync(userId))!.Roles;
+        Assert.DoesNotContain("old-role", roles, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("new-role", roles, StringComparer.OrdinalIgnoreCase);
     }
 
     [IntegrationTest]
