@@ -117,6 +117,32 @@ internal static partial class WmsRequestHandlers
         }
 
         var geometryType = layer.Resource.ReadGeometryType();
+        var (entries, unrepresentable) = BuildLegendEntries(
+            stylePlan,
+            GetWmsLayerDisplayName(layer),
+            zoom);
+
+        var imageBytes = LegendImageComposer.Compose(
+            entries,
+            geometryType,
+            swatchWidth,
+            swatchHeight,
+            SKEncodedImageFormat.Png);
+
+        HonuaTelemetry.SetSuccess(activity, entries.Count);
+
+        return unrepresentable.Count == 0
+            ? Results.Bytes(imageBytes, "image/png")
+            : new WmsImageResult(imageBytes, "image/png", string.Join(" ", unrepresentable));
+    }
+
+    private static (
+        List<LegendImageComposer.LegendImageEntry> Entries,
+        List<string> Unrepresentable) BuildLegendEntries(
+            RasterStylePlan stylePlan,
+            string layerDisplayName,
+            RenderZoom zoom)
+    {
         var entries = new List<LegendImageComposer.LegendImageEntry>();
         var unrepresentable = new List<string>();
 
@@ -126,7 +152,7 @@ internal static partial class WmsRequestHandlers
             // swatch renderer draws from those same defaults.
             entries.Add(new LegendImageComposer.LegendImageEntry(
                 new MapLibreStyleLayer { Type = "default" },
-                new LegendClass(GetWmsLayerDisplayName(layer), ImmutableDictionary<string, object?>.Empty)));
+                new LegendClass(layerDisplayName, ImmutableDictionary<string, object?>.Empty)));
         }
 
         foreach (var styleLayer in stylePlan.StyleLayers)
@@ -170,18 +196,7 @@ internal static partial class WmsRequestHandlers
                 : "No style layer is visible at the requested SCALE.");
         }
 
-        var imageBytes = LegendImageComposer.Compose(
-            entries,
-            geometryType,
-            swatchWidth,
-            swatchHeight,
-            SKEncodedImageFormat.Png);
-
-        HonuaTelemetry.SetSuccess(activity, entries.Count);
-
-        return unrepresentable.Count == 0
-            ? Results.Bytes(imageBytes, "image/png")
-            : new WmsImageResult(imageBytes, "image/png", string.Join(" ", unrepresentable));
+        return (entries, unrepresentable);
     }
 
     private static bool TryParseLegendDimension(
