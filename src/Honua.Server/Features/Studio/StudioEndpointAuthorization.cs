@@ -123,6 +123,7 @@ internal sealed class StudioEndpointAuthorization(
         StudioAuthorizationOperation.ReopenVersion => "reopen_version",
         StudioAuthorizationOperation.PublishRequest => "publish_request",
         StudioAuthorizationOperation.Rollback => "rollback",
+        StudioAuthorizationOperation.Generate => "generate",
         _ => operation.ToString(),
     };
 }

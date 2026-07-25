@@ -577,6 +577,116 @@ public sealed class OperatorAuthorizationEvaluatorTests
         decision.IsAllowed.Should().BeTrue();
     }
 
+    [UnitTest]
+    public async Task Evaluate_ApiKeyPrincipal_LooksUpGrantsUnderApiKeyId()
+    {
+        // PR #3024 review (P1): API-key principals carry neither NameIdentifier nor "sub"
+        // (ApiKeyAuthenticationHandler stamps Name/Role/api_key_id/api_key_name), so the
+        // evaluator used to collapse every API-key caller onto the same empty subject id --
+        // per-key grants could never match and a role-level grant authorized every scoped key.
+        // The grant-lookup subject must be the api_key_id, mirroring
+        // StudioAuthorizationService.ResolveCallerId so ownership ids and grant-subject ids
+        // agree.
+        _roleStore.AddGrant("scoped-api-key", "process", "*", "execute");
+        var principal = CreateApiKeyPrincipal("key-1111", "alice-key", "scoped-api-key");
+
+        var decision = await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute,
+            ResourceId = "proc-1"
+        });
+
+        decision.IsAllowed.Should().BeTrue();
+        _roleStore.LastRequestedUserId.Should().Be("key-1111");
+    }
+
+    [UnitTest]
+    public async Task Evaluate_ApiKeyPrincipal_WithoutKeyId_FallsBackToApiKeyName()
+    {
+        _roleStore.AddGrant("scoped-api-key", "process", "*", "execute");
+        var principal = CreateApiKeyPrincipal(apiKeyId: null, apiKeyName: "alice-key", "scoped-api-key");
+
+        var decision = await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute,
+            ResourceId = "proc-1"
+        });
+
+        decision.IsAllowed.Should().BeTrue();
+        _roleStore.LastRequestedUserId.Should().Be("alice-key");
+    }
+
+    [UnitTest]
+    public async Task Evaluate_NameIdentifierTakesPrecedenceOverApiKeyClaims()
+    {
+        _roleStore.AddGrant("operator", "process", "*", "execute");
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "user-1"),
+            new("api_key_id", "key-1111"),
+            new("roles", "operator")
+        };
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestScheme"));
+
+        var decision = await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Process,
+            Operation = OperatorOperation.Execute,
+            ResourceId = "proc-1"
+        });
+
+        decision.IsAllowed.Should().BeTrue();
+        _roleStore.LastRequestedUserId.Should().Be("user-1");
+    }
+
+    [UnitTest]
+    public async Task Evaluate_PersonalWorkspace_ApiKeyOwnerAllowed()
+    {
+        // The same resolved subject id is used for personal-workspace ownership, so an API-key
+        // principal can own a personal workspace under its api_key_id.
+        _roleStore.AddGrant("scoped-api-key", "workspace", "*", "read");
+        var principal = CreateApiKeyPrincipal("key-1111", "alice-key", "scoped-api-key");
+
+        var decision = await _evaluator.EvaluateAsync(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Workspace,
+            Operation = OperatorOperation.Read,
+            WorkspaceVisibility = WorkspaceVisibility.Personal,
+            WorkspaceOwnerId = "key-1111"
+        });
+
+        decision.IsAllowed.Should().BeTrue();
+    }
+
+    private static ClaimsPrincipal CreateApiKeyPrincipal(string? apiKeyId, string? apiKeyName, params string[] roles)
+    {
+        // Mirrors the claim shape ApiKeyAuthenticationHandler stamps for a scoped key:
+        // Name + role + api_key_id/api_key_name, and no NameIdentifier or "sub".
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, apiKeyName ?? "scoped-api-key")
+        };
+
+        if (apiKeyId is not null)
+        {
+            claims.Add(new Claim("api_key_id", apiKeyId));
+        }
+
+        if (apiKeyName is not null)
+        {
+            claims.Add(new Claim("api_key_name", apiKeyName));
+        }
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim("roles", role));
+        }
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestScheme"));
+    }
+
     private static ClaimsPrincipal CreatePrincipalWithScopeClaim(string userId, string scopeGroup, params string[] roles)
     {
         var claims = new List<Claim>
@@ -647,6 +757,9 @@ public sealed class OperatorAuthorizationEvaluatorTests
     {
         private readonly Dictionary<string, List<PermissionGrant>> _roleGrants = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>The userId the evaluator passed to the most recent effective-permissions lookup.</summary>
+        public string? LastRequestedUserId { get; private set; }
+
         public void AddGrant(string roleName, string service, string layer, string operation)
         {
             if (!_roleGrants.TryGetValue(roleName, out var grants))
@@ -661,6 +774,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
             string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
         {
+            LastRequestedUserId = userId;
             var permissions = roles
                 .Where(r => _roleGrants.ContainsKey(r))
                 .SelectMany(r => _roleGrants[r])

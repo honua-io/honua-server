@@ -56,6 +56,15 @@ public enum StudioAuthorizationOperation
     /// ownership.
     /// </summary>
     Rollback,
+
+    /// <summary>
+    /// Generate or refine a map/app package from a natural-language prompt. Elevated: AI
+    /// generation consumes model resources and is not implicitly widened by the end-user flag;
+    /// non-admin callers require a <c>StudioDraft</c> <c>Execute</c> operator grant (the
+    /// <c>own</c> sentinel form suffices — generation creates content the caller will own, so
+    /// no concrete resource id exists at authorization time).
+    /// </summary>
+    Generate,
 }
 
 /// <summary>

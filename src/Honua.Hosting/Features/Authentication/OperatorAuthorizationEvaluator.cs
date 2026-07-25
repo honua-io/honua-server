@@ -43,8 +43,7 @@ internal sealed class OperatorAuthorizationEvaluator(
             return AccessDecision.RequiresAuth("Authentication is required for operator resources.");
         }
 
-        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? principal.FindFirstValue("sub");
+        var userId = ResolveGrantSubjectId(principal);
         var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
         var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);
 
@@ -153,6 +152,43 @@ internal sealed class OperatorAuthorizationEvaluator(
             logger, userId, request.ResourceType, request.Operation, request.ResourceId);
         return AccessDecision.Forbidden(
             $"No matching operator permission for {request.ResourceType}.{request.Operation}.");
+    }
+
+    /// <summary>
+    /// Resolves the subject id used for role-store grant lookup and workspace ownership
+    /// comparison: <see cref="ClaimTypes.NameIdentifier"/>, then <c>sub</c>, then
+    /// <c>api_key_id</c>, then <c>api_key_name</c>.
+    /// </summary>
+    /// <remarks>
+    /// The API-key fallbacks mirror <c>StudioAuthorizationService.ResolveCallerId</c> so that
+    /// the id a caller owns content under is the same id an operator provisions grants
+    /// against. API-key principals carry neither <see cref="ClaimTypes.NameIdentifier"/> nor
+    /// <c>sub</c> (ApiKeyAuthenticationHandler stamps <c>api_key_id</c>/<c>api_key_name</c>
+    /// instead), so without these fallbacks every API-key caller collapsed onto the same
+    /// empty subject id and per-key grants could never match (#3023 review).
+    /// </remarks>
+    private static string? ResolveGrantSubjectId(ClaimsPrincipal principal)
+    {
+        var candidate = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            return candidate;
+        }
+
+        candidate = principal.FindFirstValue("sub");
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            return candidate;
+        }
+
+        candidate = principal.FindFirstValue("api_key_id");
+        if (!string.IsNullOrWhiteSpace(candidate))
+        {
+            return candidate;
+        }
+
+        candidate = principal.FindFirstValue("api_key_name");
+        return string.IsNullOrWhiteSpace(candidate) ? null : candidate;
     }
 
     private bool MatchesOperatorGrant(PermissionGrant grant, OperatorAuthorizationRequest request)
