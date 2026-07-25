@@ -257,6 +257,26 @@ public class ConfigurationExtensionsTests
     }
 
     [Fact]
+    public void GetValueOrDefault_WithNullableValue_ReturnsConvertedUnderlyingType()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OptionalPort"] = "8080"
+            })
+            .Build();
+        using var configLifetime = config as IDisposable;
+        int? defaultValue = null;
+
+        // Act
+        var result = config.GetValueOrDefault("OptionalPort", defaultValue);
+
+        // Assert
+        Assert.Equal(8080, result);
+    }
+
+    [Fact]
     public void GetWithEnvOverride_WithConfigValue_ReturnsValue()
     {
         // Arrange

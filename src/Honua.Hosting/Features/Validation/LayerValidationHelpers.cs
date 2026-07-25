@@ -570,52 +570,51 @@ internal static class LayerValidationHelpers
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
-        MetadataV2Service? chosen = null;
-        var chosenIsPreferredType = false;
-        // Not converted to `.Where(...)`: beyond the early-continue filters, the loop folds
-        // into a running "best candidate so far" accumulator (chosen/chosenIsPreferredType)
-        // across iterations, which a filter+project chain cannot express.
-        foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.LayerIndex == layerId))
+        // Prefer the publication whose type is the canonical surface for the protocol
+        // before falling back to the lexicographically earliest service name. LINQ ordering
+        // is stable, preserving the first graph entry when names compare equal.
+        return snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerId)
+            .Select(publication => (
+                Publication: publication,
+                Service: ResolveVisibleProtocolService(
+                    context,
+                    snapshot,
+                    publication,
+                    requiredProtocol)))
+            .Where(candidate => candidate.Service is not null)
+            .OrderByDescending(candidate =>
+                MetadataV2ServiceProtocols.IsPreferredPublicationType(
+                    requiredProtocol,
+                    candidate.Publication.PublicationType))
+            .ThenBy(
+                candidate => candidate.Service!.Metadata.Name,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(candidate => candidate.Service!.Metadata.Name)
+            .FirstOrDefault();
+    }
+
+    private static MetadataV2Service? ResolveVisibleProtocolService(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        string? requiredProtocol)
+    {
+        if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
         {
-            if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service)) continue;
-            var resource = snapshot.ResolveResource(pub);
-            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource, service)) continue;
-
-            if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
-                !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
-            {
-                continue;
-            }
-
-            // Prefer the publication whose type is the canonical surface for the protocol
-            // before falling back to the lexicographically earliest service name. Without
-            // this, a layer published through several protocol surfaces resolves to whichever
-            // service sorts first rather than the one actually serving the requested protocol.
-            var candidateIsPreferredType =
-                MetadataV2ServiceProtocols.IsPreferredPublicationType(requiredProtocol, pub.PublicationType);
-
-            if (chosen is null)
-            {
-                chosen = service;
-                chosenIsPreferredType = candidateIsPreferredType;
-                continue;
-            }
-
-            if (candidateIsPreferredType && !chosenIsPreferredType)
-            {
-                chosen = service;
-                chosenIsPreferredType = true;
-                continue;
-            }
-
-            if (candidateIsPreferredType == chosenIsPreferredType &&
-                string.Compare(service.Metadata.Name, chosen.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                chosen = service;
-                chosenIsPreferredType = candidateIsPreferredType;
-            }
+            return null;
         }
-        return chosen?.Metadata.Name;
+
+        var resource = snapshot.ResolveResource(publication);
+        if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(requiredProtocol) ||
+               MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol)
+            ? service
+            : null;
     }
 
     /// <summary>

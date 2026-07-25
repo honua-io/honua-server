@@ -168,20 +168,18 @@ public sealed class ResourceValidator : IResourceValidator
         }
         var service = serviceResult.Resource!;
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        // Not a simple LINQ filter: each candidate needs a resource-resolution lookup
-        // (ResolveResource) plus a second lifecycle check on the resolved resource before
-        // the match is accepted, so the explicit loop stays clearer than a chained
-        // Where/Select/FirstOrDefault here.
-        foreach (var pub in snapshot.Index.PublicationsByService[service.Metadata.Id].Where(pub => pub.LayerIndex == layerId))
+        foreach (var candidate in snapshot.Index.PublicationsByService[service.Metadata.Id]
+                     .Where(pub => pub.LayerIndex == layerId &&
+                                   pub.Status.Lifecycle != MetadataV2LifecycleStatus.Retired)
+                     .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
+                     .Where(candidate =>
+                         candidate.Resource is { Status.Lifecycle: not MetadataV2LifecycleStatus.Retired }))
         {
             // Disabled (admin-disabled) publications/resources are flipped to
             // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes
             // 404 the layer instead of serving stale metadata for a disabled layer.
-            if (pub.Status.Lifecycle == MetadataV2LifecycleStatus.Retired) continue;
-            var resource = snapshot.ResolveResource(pub);
-            if (resource is null) continue;
-            if (resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired) continue;
-            return ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, pub, resource));
+            return ResourceValidationResult.Success(
+                new MetadataV2ServiceLayerTriple(service, candidate.Publication, candidate.Resource!));
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
             ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
