@@ -204,18 +204,26 @@ internal static class StudioPackageEndpoints
             {
                 if (pointers.PublishedVersionId is not { } publishedVersionId)
                 {
-                    return Forbidden(
+                    return await DenyAsync(
+                        authorization,
                         context,
+                        StudioAuthorizationOperation.ReadContentItem,
+                        resourceType: "studio-content-item",
+                        resourceId: id.ToString("D"),
                         "The caller does not own this Studio content item and it has no published version.",
-                        "studio_authorization/cross_user_denied");
+                        StudioAuthorizationService.CrossUserDeniedCode).ConfigureAwait(false);
                 }
 
                 if (versionId is { } requestedVersionId && requestedVersionId != publishedVersionId)
                 {
-                    return Forbidden(
+                    return await DenyAsync(
+                        authorization,
                         context,
+                        StudioAuthorizationOperation.ReadContentItem,
+                        resourceType: "studio-content-item",
+                        resourceId: id.ToString("D"),
                         "The caller may only export this Studio content item's published version.",
-                        "studio_authorization/cross_user_denied");
+                        StudioAuthorizationService.CrossUserDeniedCode).ConfigureAwait(false);
                 }
 
                 versionId = publishedVersionId;
@@ -520,7 +528,10 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            var scopeDenied = DenyIfCallerUnresolvedForScopedListing(authorization, context);
+            var scopeDenied = await DenyIfCallerUnresolvedForScopedListingAsync(
+                authorization,
+                context,
+                resourceType: "studio-package-draft").ConfigureAwait(false);
             if (scopeDenied is not null)
             {
                 return scopeDenied;
@@ -827,6 +838,25 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
+            // Saving a draft also advances the parent content item's CurrentVersionId pointer.
+            // A mixed-owner draft is valid (an admin can create one on another user's behalf),
+            // but its draft owner must not be able to mutate a content item owned by somebody
+            // else. Authorize both boundaries before invoking the atomic version save.
+            var pointers = await service.GetPointersAsync(existing.ItemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
+            var itemAuthResult = await EnsureAuthorizedAsync(
+                authorization, context,
+                StudioAuthorizationOperation.CreateVersion, pointers.OwnerId,
+                resourceType: "studio-content-item", resourceId: existing.ItemId.ToString("D")).ConfigureAwait(false);
+            if (itemAuthResult is not null)
+            {
+                return itemAuthResult;
+            }
+
             var version = await service.SaveDraftAsVersionAsync(
                 draftId,
                 request.ChangeNote,
@@ -879,7 +909,10 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            var scopeDenied = DenyIfCallerUnresolvedForScopedListing(authorization, context);
+            var scopeDenied = await DenyIfCallerUnresolvedForScopedListingAsync(
+                authorization,
+                context,
+                resourceType: "studio-content-item").ConfigureAwait(false);
             if (scopeDenied is not null)
             {
                 return scopeDenied;
@@ -1020,9 +1053,10 @@ internal static class StudioPackageEndpoints
     /// Returns the RFC 7807 problem response to return directly, or <see langword="null"/> when
     /// the caller should proceed.
     /// </summary>
-    private static IResult? DenyIfCallerUnresolvedForScopedListing(
+    private static async Task<IResult?> DenyIfCallerUnresolvedForScopedListingAsync(
         StudioEndpointAuthorization authorization,
-        HttpContext context)
+        HttpContext context,
+        string resourceType)
     {
         if (authorization.IsAdmin(context.User) || !authorization.IsEndUserAuthorizationEnabled)
         {
@@ -1035,10 +1069,14 @@ internal static class StudioPackageEndpoints
             return null;
         }
 
-        return Forbidden(
+        return await DenyAsync(
+            authorization,
             context,
+            StudioAuthorizationOperation.ListOwn,
+            resourceType,
+            resourceId: null,
             "The caller's identity could not be resolved for this scoped Studio listing request.",
-            "studio_authorization/authentication_required");
+            StudioAuthorizationService.AuthenticationRequiredCode).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1573,6 +1611,33 @@ internal static class StudioPackageEndpoints
         }
 
         return Forbidden(context, decision.Reason ?? "The caller is not authorized to perform this operation.", decision.Code ?? "studio_authorization/denied");
+    }
+
+    /// <summary>
+    /// Records a stable, explicit Studio authorization denial through the shared endpoint audit
+    /// seam before returning its RFC 7807 response. Use this for secondary target/scope checks
+    /// that are intentionally stricter than the baseline authorization service decision.
+    /// </summary>
+    private static async Task<IResult> DenyAsync(
+        StudioEndpointAuthorization authorization,
+        HttpContext context,
+        StudioAuthorizationOperation operation,
+        string resourceType,
+        string? resourceId,
+        string reason,
+        string code)
+    {
+        var decision = await authorization.DenyAsync(
+            context,
+            operation,
+            resourceType,
+            resourceId,
+            code,
+            reason).ConfigureAwait(false);
+        return Forbidden(
+            context,
+            decision.Reason ?? reason,
+            decision.Code ?? code);
     }
 
     private static bool TryValidateRequest<TRequest>(TRequest request, out string error) where TRequest : notnull

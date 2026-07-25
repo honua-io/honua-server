@@ -74,6 +74,12 @@ With the flag on:
   regardless of ownership. Cross-user access to a non-owned, non-published
   resource is denied by default. No operator grant is required for the baseline
   tier — the flag itself is the widening switch (REQ-002).
+- **Save-as-version authorizes both mutation boundaries.** Saving a draft creates
+  an immutable version *and* advances the parent item's `currentVersionId`.
+  Consequently, a non-admin caller must own both the draft and the immutable
+  content item. An admin may intentionally create and save a mixed-owner draft,
+  but a caller who owns only that draft cannot move another principal's item
+  pointer.
 - **Ownerless resources fail closed.** `owner_id` is a nullable column: a
   content item or draft created before the honua-server#3001 ownership
   migration (or left unbackfilled) can have no recorded owner. A null owner is
@@ -184,10 +190,13 @@ otherwise-unclassified requirement. The `end_user_mode_disabled` case also
 writes the Studio RFC 7807 problem above; scoped-admin and anonymous denials
 retain the framework's existing 403 and 401 responses respectively.
 
-Every denial is recorded to the audit log (`AuditEventType.Authorization`,
-`AuditOutcome.Denied`); every *allowed* elevated-tier decision is also recorded
-(`AuditOutcome.Success`), so publish/rollback policy decisions are independently
-auditable per REQ-003.
+Every denial is recorded exactly once through the Studio audit seam
+(`AuditEventType.Authorization`, `AuditOutcome.Denied`), including secondary
+published-version targeting and unresolved scoped-list decisions; every
+*allowed* elevated-tier decision is also recorded (`AuditOutcome.Success`), so
+publish/rollback policy decisions are independently auditable per REQ-003.
+API-key events use the stable `api_key_id` actor with
+`AuditActorType.ApiKey`, matching the shared platform audit resolver.
 
 ## Package Envelope
 

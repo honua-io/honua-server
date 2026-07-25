@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Infrastructure.Middleware;
 
 namespace Honua.Server.Features.Studio;
 
@@ -58,6 +59,25 @@ internal sealed class StudioEndpointAuthorization(
         return decision;
     }
 
+    public async Task<StudioAuthorizationDecision> DenyAsync(
+        HttpContext context,
+        StudioAuthorizationOperation operation,
+        string resourceType,
+        string? resourceId,
+        string code,
+        string reason)
+    {
+        var decision = StudioAuthorizationDecision.Deny(code, reason);
+        await RecordAuditAsync(
+            context,
+            operation,
+            resourceType,
+            resourceId,
+            AuditOutcome.Denied,
+            code).ConfigureAwait(false);
+        return decision;
+    }
+
     private Task RecordAuditAsync(
         HttpContext context,
         StudioAuthorizationOperation operation,
@@ -66,20 +86,19 @@ internal sealed class StudioEndpointAuthorization(
         AuditOutcome outcome,
         string? code)
     {
-        var actor = ResolveCallerId(context.User) ?? AuditEvent.AnonymousActor;
         var auditEvent = new AuditEvent
         {
             Timestamp = _timeProvider.GetUtcNow(),
             EventType = AuditEventType.Authorization,
-            Actor = actor,
-            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
-                ? AuditActorType.Anonymous
-                : AuditActorType.UserId,
+            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            ActorType = actorType,
             ResourceType = resourceType,
             ResourceId = resourceId,
             Action = $"studio.{ToSnakeCase(operation)}",
             Outcome = outcome,
-            CorrelationId = context.TraceIdentifier,
+            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+            UserAgent = AuditContextResolver.ResolveUserAgent(context),
             Details = code is null ? string.Empty : $"{{\"code\":\"{code}\"}}",
         };
 

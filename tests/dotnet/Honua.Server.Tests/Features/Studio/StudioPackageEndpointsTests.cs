@@ -460,6 +460,66 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
+    public async Task CreateVersion_FlagOn_MixedOwnerDraftCannotMoveAnotherOwnersCurrentPointer()
+    {
+        // A Studio admin may create a draft under Alice's existing item on Bob's behalf. Bob
+        // owns that draft, but saving it also advances the item's current-version pointer, so
+        // draft ownership alone must not authorize the save. The pointer mutation is authorized
+        // against the item's immutable owner as a second boundary.
+        var auditLog = new CapturingAuditLog();
+        await using var fixture = await CreateEndUserFixtureAsync(services =>
+        {
+            services.RemoveAll<IAuditLog>();
+            services.AddSingleton<IAuditLog>(auditLog);
+        });
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
+        var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
+        using var adminClient = fixture.CreateAdminClient();
+        using var bobClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+
+        var aliceOwnerId = aliceKey.Record.Id.ToString("D");
+        var bobOwnerId = bobKey.Record.Id.ToString("D");
+        var (itemId, originalCurrentVersionId, mixedOwnerDraft) =
+            await CreateItemWithMixedOwnerDraftAsync(adminClient, aliceOwnerId, bobOwnerId);
+        var store = fixture.Services.GetRequiredService<IStudioPackageStore>();
+        var pointersBefore = await store.GetPointersAsync(itemId);
+        pointersBefore.Should().NotBeNull();
+        pointersBefore!.CurrentVersionId.Should().Be(originalCurrentVersionId);
+        auditLog.Events.Clear();
+
+        var response = await bobClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{mixedOwnerDraft.DraftId:D}/content-versions",
+            JsonContent(
+                new SaveStudioContentVersionRequest { ChangeNote = "must not move Alice's pointer" },
+                StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        problem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+
+        var pointersAfter = await store.GetPointersAsync(itemId);
+        pointersAfter.Should().NotBeNull();
+        pointersAfter!.CurrentVersionId.Should().Be(
+            originalCurrentVersionId,
+            "a draft-only owner cannot advance another principal's content-item pointer");
+        var versions = await store.ListVersionsAsync(itemId);
+        versions.Should().ContainSingle(version => version.VersionId == originalCurrentVersionId);
+
+        var denialAudit = auditLog.Events
+            .Should()
+            .ContainSingle(evt => evt.Action == "studio.create_version")
+            .Subject;
+        denialAudit.Actor.Should().Be(bobOwnerId);
+        denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
+        denialAudit.ResourceType.Should().Be("studio-content-item");
+        denialAudit.ResourceId.Should().Be(itemId.ToString("D"));
+        denialAudit.Outcome.Should().Be(AuditOutcome.Denied);
+        denialAudit.Details.Should().Be("""{"code":"studio_authorization/cross_user_denied"}""");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
     public async Task EndUserAuthorization_FlagOff_NonAdminScopedKeyDenied()
     {
@@ -509,11 +569,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // mTLS certificates or an OIDC JWT missing its subject claim), the filter used to
         // collapse to null, which NormalizeOptionalQueryValue treats as "no owner filter" --
         // silently listing every draft/content item instead of denying. This test isolates the
-        // endpoint-level fix (DenyIfCallerUnresolvedForScopedListing) from exactly how such a
+        // endpoint-level fix (DenyIfCallerUnresolvedForScopedListingAsync) from exactly how such a
         // principal authenticates by substituting a fake IStudioAuthorizationService whose
         // ResolveCallerId always returns null while IsAdmin returns false, simulating the shape
         // of that principal regardless of transport.
-        await using var fixture = await CreateUnresolvableCallerFixtureAsync();
+        var auditLog = new CapturingAuditLog();
+        await using var fixture = await CreateUnresolvableCallerFixtureAsync(auditLog);
         var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var scopedKey = await apiKeyStore.CreateAsync("dave", ["studio:enduser"], null, null, CancellationToken.None);
         using var scopedClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
@@ -527,6 +588,16 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         itemsResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var itemsProblem = JsonSerializer.Deserialize<JsonElement>(await itemsResponse.Content.ReadAsStringAsync());
         itemsProblem.GetProperty("code").GetString().Should().Be("studio_authorization/authentication_required");
+
+        var stableDenials = auditLog.Events.Where(evt => evt.Action == "studio.list_own").ToArray();
+        stableDenials.Should().HaveCount(2, "each scoped-list denial must cross the Studio audit seam exactly once");
+        stableDenials.Should().OnlyContain(evt =>
+            evt.Actor == scopedKey.Record.Id.ToString("D")
+            && evt.ActorType == AuditActorType.ApiKey
+            && evt.Outcome == AuditOutcome.Denied
+            && evt.Details == """{"code":"studio_authorization/authentication_required"}""");
+        stableDenials.Should().ContainSingle(evt => evt.ResourceType == "studio-package-draft");
+        stableDenials.Should().ContainSingle(evt => evt.ResourceType == "studio-content-item");
     }
 
     [IntegrationTest]
@@ -703,7 +774,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // read-visibility boundary above -- but never "latest" (which resolves by highest
         // version number and could be newer, unpublished content) and never an explicit
         // non-published version id.
-        await using var endUserFixture = await CreateEndUserFixtureAsync();
+        var auditLog = new CapturingAuditLog();
+        await using var endUserFixture = await CreateEndUserFixtureAsync(services =>
+        {
+            services.RemoveAll<IAuditLog>();
+            services.AddSingleton<IAuditLog>(auditLog);
+        });
         var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
         var bobKey = await apiKeyStore.CreateAsync("bob", ["studio:enduser"], null, null, CancellationToken.None);
@@ -727,12 +803,24 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         explicitPublishedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Explicitly requesting the current (unpublished-beyond) version is denied.
+        auditLog.Events.Clear();
         var explicitCurrentResponse = await bobClient.PostAsync(
             $"/api/v1/studio/map/{itemId:D}/export?format=png&versionId={currentVersionId:D}",
             EmptyJson());
         explicitCurrentResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var explicitCurrentProblem = JsonSerializer.Deserialize<JsonElement>(await explicitCurrentResponse.Content.ReadAsStringAsync());
         explicitCurrentProblem.GetProperty("code").GetString().Should().Be("studio_authorization/cross_user_denied");
+
+        var denialAudit = auditLog.Events
+            .Should()
+            .ContainSingle(evt => evt.Action == "studio.read_content_item")
+            .Subject;
+        denialAudit.Actor.Should().Be(bobKey.Record.Id.ToString("D"));
+        denialAudit.ActorType.Should().Be(AuditActorType.ApiKey);
+        denialAudit.ResourceType.Should().Be("studio-content-item");
+        denialAudit.ResourceId.Should().Be(itemId.ToString("D"));
+        denialAudit.Outcome.Should().Be(AuditOutcome.Denied);
+        denialAudit.Details.Should().Be("""{"code":"studio_authorization/cross_user_denied"}""");
     }
 
     [IntegrationTest]
@@ -992,6 +1080,29 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         string itemOwnerId,
         string versionOwnerId)
     {
+        var (itemId, _, mixedOwnerDraft) =
+            await CreateItemWithMixedOwnerDraftAsync(adminClient, itemOwnerId, versionOwnerId);
+        var mixedOwnerSaveResponse = await adminClient.PostAsync(
+            $"/api/v1/studio/package-drafts/{mixedOwnerDraft.DraftId:D}/content-versions",
+            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "mixed owner version" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
+        mixedOwnerSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var mixedOwnerVersion = await ReadAsync<StudioContentVersion>(mixedOwnerSaveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+        mixedOwnerVersion.OwnerId.Should().Be(versionOwnerId);
+        mixedOwnerVersion.ItemId.Should().Be(itemId);
+
+        return (itemId, mixedOwnerVersion.VersionId);
+    }
+
+    /// <summary>
+    /// Creates an item owned by <paramref name="itemOwnerId"/>, establishes its first current
+    /// version, then creates (without saving) another draft under that item owned by
+    /// <paramref name="draftOwnerId"/>.
+    /// </summary>
+    private async Task<(Guid ItemId, Guid CurrentVersionId, StudioPackageDraft MixedOwnerDraft)> CreateItemWithMixedOwnerDraftAsync(
+        HttpClient adminClient,
+        string itemOwnerId,
+        string draftOwnerId)
+    {
         var createResponse = await adminClient.PostAsync(
             "/api/v1/studio/package-drafts",
             JsonContent(
@@ -1022,23 +1133,15 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                     ItemId = itemOwnerVersion.ItemId,
                     PackageKey = itemOwnerDraft.PackageKey,
                     WorkspaceId = "studio",
-                    OwnerId = versionOwnerId,
+                    OwnerId = draftOwnerId,
                     Envelope = BuildEnvelope("1=1"),
                 },
                 StudioApiJsonContext.Default.CreateStudioPackageDraftRequest));
         mixedOwnerDraftResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var mixedOwnerDraft = await ReadAsync<StudioPackageDraft>(mixedOwnerDraftResponse, StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
-        mixedOwnerDraft.OwnerId.Should().Be(versionOwnerId);
+        mixedOwnerDraft.OwnerId.Should().Be(draftOwnerId);
 
-        var mixedOwnerSaveResponse = await adminClient.PostAsync(
-            $"/api/v1/studio/package-drafts/{mixedOwnerDraft.DraftId:D}/content-versions",
-            JsonContent(new SaveStudioContentVersionRequest { ChangeNote = "mixed owner version" }, StudioApiJsonContext.Default.SaveStudioContentVersionRequest));
-        mixedOwnerSaveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var mixedOwnerVersion = await ReadAsync<StudioContentVersion>(mixedOwnerSaveResponse, StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
-        mixedOwnerVersion.OwnerId.Should().Be(versionOwnerId);
-        mixedOwnerVersion.ItemId.Should().Be(itemOwnerVersion.ItemId);
-
-        return (itemOwnerVersion.ItemId, mixedOwnerVersion.VersionId);
+        return (itemOwnerVersion.ItemId, itemOwnerVersion.VersionId, mixedOwnerDraft);
     }
 
     /// <summary>
@@ -1077,7 +1180,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     /// <see langword="null"/> and <see cref="IStudioAuthorizationService.IsAdmin"/> always
     /// returns <see langword="false"/>, for the PR #3018 review item 3 regression test.
     /// </summary>
-    private static async Task<WebAppFixture> CreateUnresolvableCallerFixtureAsync()
+    private static async Task<WebAppFixture> CreateUnresolvableCallerFixtureAsync(CapturingAuditLog auditLog)
     {
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
@@ -1093,6 +1196,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
                 services.RemoveAll<IStudioAuthorizationService>();
                 services.AddScoped<IStudioAuthorizationService, UnresolvableCallerStudioAuthorizationService>();
+                services.RemoveAll<IAuditLog>();
+                services.AddSingleton<IAuditLog>(auditLog);
             });
         await fixture.InitializeAsync();
         return fixture;
