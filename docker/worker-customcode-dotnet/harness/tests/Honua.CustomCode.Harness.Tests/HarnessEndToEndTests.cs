@@ -25,11 +25,7 @@ public sealed class ProbeTool : IGeoprocessingTool
 
     public Task<GpResult> ExecuteAsync(GpContext context, CancellationToken cancellationToken)
     {
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-        ObservedClient = context.Client;
-        // At execute time the credential env must already be scrubbed.
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-        TokenPresentAtExecute = ObservedEnv is not null && ObservedEnv.ContainsKey("HONUA_JOB_TOKEN");
+        RecordExecution(context);
 
         if (ArtifactToWrite is not null)
         {
@@ -42,6 +38,13 @@ public sealed class ProbeTool : IGeoprocessingTool
 
         context.Progress.Report(100.0, "done");
         return Task.FromResult(GpResult.Succeeded("probe ok"));
+    }
+
+    private static void RecordExecution(GpContext context)
+    {
+        ObservedClient = context.Client;
+        // At execute time the credential env must already be scrubbed.
+        TokenPresentAtExecute = ObservedEnv is not null && ObservedEnv.ContainsKey("HONUA_JOB_TOKEN");
     }
 }
 

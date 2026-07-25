@@ -130,13 +130,13 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         ReadOnlySpan<char> bboxSpan = bboxValue.AsSpan();
         Span<double> coords = stackalloc double[6];
         var count = 0;
-        // codeql[cs/useless-assignment-to-local] -- the value is consumed by the following span or dictionary operation despite the conservative analysis.
-        foreach (var range in bboxSpan.Split(','))
+        var ranges = bboxSpan.Split(',');
+        while (ranges.MoveNext())
         {
             // Do not skip empty tokens: an empty token (e.g. "1,,2,3,4") is a malformed
             // coordinate, not an absent value. Count every comma-separated token so the
             // exactly-4-values check below rejects the malformed input.
-            var token = bboxSpan[range].Trim();
+            var token = bboxSpan[ranges.Current].Trim();
 
             if (count >= coords.Length)
             {

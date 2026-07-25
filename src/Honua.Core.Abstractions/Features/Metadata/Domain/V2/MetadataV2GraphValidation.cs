@@ -666,24 +666,21 @@ public static class MetadataV2GraphValidator
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.
         _ = publicationsById;
 
-        // judgment call: `is { } settings` both filters and binds the extracted value used by
-        // every ValidatePositiveInt/Long call below; a .Where() would have to re-extract it.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var service in services)
+        foreach (var configured in services
+                     .Select(service => (Service: service, Settings: service.Settings))
+                     .Where(configured => configured.Settings is not null))
         {
-            if (service.Settings is { } settings)
-            {
-                ValidatePositiveInt(errors, service, settings.MaxRecordCount, "settings.maxRecordCount");
-                ValidatePositiveInt(errors, service, settings.DefaultRecordCount, "settings.defaultRecordCount");
-                ValidatePositiveInt(errors, service, settings.MaxImageWidth, "settings.maxImageWidth");
-                ValidatePositiveInt(errors, service, settings.MaxImageHeight, "settings.maxImageHeight");
-                ValidatePositiveInt(errors, service, settings.DefaultDpi, "settings.defaultDpi");
-                ValidatePositiveInt(errors, service, settings.MaxFeaturesPerLayer, "settings.maxFeaturesPerLayer");
-                ValidatePositiveInt(errors, service, settings.QueryTimeoutMs, "settings.queryTimeoutMs");
-                ValidatePositiveInt(errors, service, settings.MaxEditsPerTransaction, "settings.maxEditsPerTransaction");
-                ValidatePositiveLong(errors, service, settings.MaxAttachmentSizeBytes, "settings.maxAttachmentSizeBytes");
-                ValidatePositiveLong(errors, service, settings.MaxPayloadBytes, "settings.maxPayloadBytes");
-            }
+            var settings = configured.Settings!;
+            ValidatePositiveInt(errors, configured.Service, settings.MaxRecordCount, "settings.maxRecordCount");
+            ValidatePositiveInt(errors, configured.Service, settings.DefaultRecordCount, "settings.defaultRecordCount");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxImageWidth, "settings.maxImageWidth");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxImageHeight, "settings.maxImageHeight");
+            ValidatePositiveInt(errors, configured.Service, settings.DefaultDpi, "settings.defaultDpi");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxFeaturesPerLayer, "settings.maxFeaturesPerLayer");
+            ValidatePositiveInt(errors, configured.Service, settings.QueryTimeoutMs, "settings.queryTimeoutMs");
+            ValidatePositiveInt(errors, configured.Service, settings.MaxEditsPerTransaction, "settings.maxEditsPerTransaction");
+            ValidatePositiveLong(errors, configured.Service, settings.MaxAttachmentSizeBytes, "settings.maxAttachmentSizeBytes");
+            ValidatePositiveLong(errors, configured.Service, settings.MaxPayloadBytes, "settings.maxPayloadBytes");
         }
     }
 

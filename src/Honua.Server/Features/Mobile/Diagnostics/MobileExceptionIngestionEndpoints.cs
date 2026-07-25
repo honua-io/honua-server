@@ -71,16 +71,17 @@ internal static class MobileExceptionIngestionEndpoints
 
     private static string? ReadString(JsonElement report, params string[] names)
     {
-        // Not a simple .Where(): the filter condition depends on TryGetProperty's `out`
-        // value, which the returned GetString() also needs, so a LINQ predicate can't
-        // cleanly carry that state without re-running the lookup per candidate.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in names)
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
         {
-            if (report.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+            if (report.TryGetProperty(names[nameIndex], out var value) &&
+                value.ValueKind == JsonValueKind.String &&
+                value.GetString() is { } resolved)
             {
-                return value.GetString();
+                return resolved;
             }
+
+            nameIndex++;
         }
 
         return null;

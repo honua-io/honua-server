@@ -81,22 +81,16 @@ internal static class GeoJsonPageReader
 
         if (root.TryGetProperty("links", out var links) && links.ValueKind == JsonValueKind.Array)
         {
-            // Not rewritten as .FirstOrDefault(...): JsonElement is a struct whose default() is
-            // JsonValueKind.Undefined, which would need its own explicit handling to distinguish
-            // "no match" from a genuine (impossible here) undefined array entry.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var link in links.EnumerateArray())
-            {
-                if (link.TryGetProperty("rel", out var rel)
-                    && rel.ValueKind == JsonValueKind.String
-                    && string.Equals(rel.GetString(), "next", StringComparison.OrdinalIgnoreCase)
-                    && link.TryGetProperty("href", out var href)
-                    && href.ValueKind == JsonValueKind.String)
-                {
-                    nextLink = href.GetString();
-                    break;
-                }
-            }
+            nextLink = links.EnumerateArray()
+                .Select(link =>
+                    link.TryGetProperty("rel", out var rel) &&
+                    rel.ValueKind == JsonValueKind.String &&
+                    string.Equals(rel.GetString(), "next", StringComparison.OrdinalIgnoreCase) &&
+                    link.TryGetProperty("href", out var href) &&
+                    href.ValueKind == JsonValueKind.String
+                        ? href.GetString()
+                        : null)
+                .FirstOrDefault(href => href is not null);
         }
 
         return new GeoJsonPage(features, firstFeatureRaw, nextLink, numberMatched);

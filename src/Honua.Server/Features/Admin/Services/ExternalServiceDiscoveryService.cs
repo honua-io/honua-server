@@ -9,6 +9,8 @@ using System.Text;
 using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Server.Features.Admin.Models;
 using Honua.Import;
 using Honua.Migration;
@@ -77,14 +79,14 @@ internal sealed partial class ExternalServiceDiscoveryService(
         Exception? lastException = null;
         foreach (var address in addresses)
         {
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-            var connected = false;
+            using var socketOwner = new SocketConnectionOwner(
+                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true });
             try
             {
-                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
-                connected = true;
-                return new NetworkStream(socket, ownsSocket: true);
+                await socketOwner.Socket
+                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
+                    .ConfigureAwait(false);
+                return socketOwner.TransferToNetworkStream();
             }
             catch (OperationCanceledException)
             {
@@ -93,16 +95,6 @@ internal sealed partial class ExternalServiceDiscoveryService(
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
             {
                 lastException = ex;
-            }
-            finally
-            {
-                // Not a plain `using`: on success, ownership of the socket transfers to the
-                // returned NetworkStream (ownsSocket: true), so disposal here must be
-                // conditional on the connect attempt failing, not unconditional.
-                if (!connected)
-                {
-                    socket.Dispose();
-                }
             }
         }
 
@@ -955,13 +947,11 @@ internal sealed partial class ExternalServiceDiscoveryService(
         // preserve that fallback-through-null behavior across two nested sequences.
         foreach (var localName in new[] { "DefaultCRS", "DefaultSRS", "SRS", "OtherCRS", "OtherSRS" })
         {
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var value in ChildValues(featureType, localName))
+            foreach (var srid in ChildValues(featureType, localName)
+                .Select(ParseOgcCrsSrid)
+                .OfType<int>())
             {
-                if (ParseOgcCrsSrid(value) is { } srid)
-                {
-                    return srid;
-                }
+                return srid;
             }
         }
 
@@ -1091,14 +1081,10 @@ internal sealed partial class ExternalServiceDiscoveryService(
             // Not a simple filter: ParseOgcCrsSrid can return null for an unparseable CRS
             // entry, so the loop must keep scanning past it; a LINQ Select/FirstOrDefault
             // would stop at the first non-matching Where result instead of skipping it.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var crs in collection.Crs)
-            {
-                if (ParseOgcCrsSrid(crs) is { } srid)
-                {
-                    return srid;
-                }
-            }
+            var collectionSrid = collection.Crs
+                .Select(ParseOgcCrsSrid)
+                .FirstOrDefault(static srid => srid.HasValue);
+            if (collectionSrid.HasValue) return collectionSrid.Value;
         }
 
         return ParseOgcCrsSrid(collection.Extent?.Spatial?.Crs) ?? 4326;
@@ -1659,20 +1645,13 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     private static string? FirstChildValue(XElement element, params string[] localNames)
     {
-        // Not a simple map: each candidate name's matching child value must be looked up,
-        // blank-checked, and trimmed, with the search continuing past blank values, so a
-        // LINQ Select/FirstOrDefault would not preserve this fallback-through-blank search.
-        foreach (var value in (localNames).Select(localName => element.Elements()
-                .FirstOrDefault(child => child.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
-                ?.Value))
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value.Trim();
-            }
-        }
-
-        return null;
+        return localNames
+            .Select(localName => element.Elements()
+                .FirstOrDefault(child =>
+                    child.Name.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase))
+                ?.Value)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+            ?.Trim();
     }
 
     private static string? GetAttributeValue(XElement? element, string localName)

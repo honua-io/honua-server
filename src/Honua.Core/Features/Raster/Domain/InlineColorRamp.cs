@@ -329,13 +329,11 @@ public static class InlineColorRamp
             // returns one of its arguments verbatim (no rounding/arithmetic), so
             // comparing it back against r/g/b for hue-sector selection is exact
             // bit-identity, not lossy floating-point math.
-            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-            if (max == r)
+            if (max.Equals(r))
             {
                 h = 60 * (((g - b) / delta) % 6);
             }
-            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-            else if (max == g)
+            else if (max.Equals(g))
             {
                 h = 60 * (((b - r) / delta) + 2);
             }
@@ -458,40 +456,39 @@ public static class InlineColorRamp
 
     private static bool TryGetString(JsonElement element, string property, out string value)
     {
-        value = string.Empty;
-        // Not a simple filter: the matched property's JsonElement (`child`) is consumed
-        // by the body to extract the returned `value`, so a `.Where(...)` filter can't
-        // carry that extraction across without recomputing TryGetProperty.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var candidate in new[] { property, ToLowerFirst(property), property.ToLowerInvariant() })
+        if (TryGetStringProperty(element, property, out value) ||
+            TryGetStringProperty(element, ToLowerFirst(property), out value) ||
+            TryGetStringProperty(element, property.ToLowerInvariant(), out value))
         {
-            if (element.TryGetProperty(candidate, out var child) && child.ValueKind == JsonValueKind.String)
-            {
-                value = child.GetString() ?? string.Empty;
-                return !string.IsNullOrWhiteSpace(value);
-            }
+            return !string.IsNullOrWhiteSpace(value);
         }
 
+        value = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetStringProperty(JsonElement element, string property, out string value)
+    {
+        if (element.TryGetProperty(property, out var child) &&
+            child.ValueKind == JsonValueKind.String &&
+            child.GetString() is { } resolved)
+        {
+            value = resolved;
+            return true;
+        }
+
+        value = string.Empty;
         return false;
     }
 
     private static bool TryParseColor(JsonElement element, string property, out ColorRgba color)
     {
         color = default;
-        JsonElement array = default;
-        var found = false;
-        // Not a simple filter: `array` (the TryGetProperty out-param) is captured for use
-        // after the loop, so a `.Where(...)` filter can't thread it through cleanly.
-        foreach (var candidate in new[] { property, ToLowerFirst(property), property.ToLowerInvariant() })
-        {
-            if (element.TryGetProperty(candidate, out array))
-            {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found || array.ValueKind != JsonValueKind.Array || array.GetArrayLength() < 3)
+        if (!(element.TryGetProperty(property, out var array) ||
+              element.TryGetProperty(ToLowerFirst(property), out array) ||
+              element.TryGetProperty(property.ToLowerInvariant(), out array)) ||
+            array.ValueKind != JsonValueKind.Array ||
+            array.GetArrayLength() < 3)
         {
             return false;
         }

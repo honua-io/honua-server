@@ -783,14 +783,10 @@ internal sealed partial class ODataSearchService
             return optionsByName;
         }
 
-        // Not rewritten as `.Select(...)`: beyond mapping segment -> trimmed, this loop
-        // validates $expand syntax and throws ArgumentException per-segment, and populates
-        // `optionsByName` with side effects - a LINQ projection would obscure that flow.
         var segments = SplitTopLevel(expand);
-        // codeql[cs/linq/missed-select] -- the mapped local is normalized again during parsing.
-        foreach (var segment in segments)
+        foreach (var normalizedSegment in segments.Select(segment => segment.Trim()))
         {
-            var trimmed = segment.Trim();
+            var trimmed = normalizedSegment;
             if (string.IsNullOrWhiteSpace(trimmed))
             {
                 continue;

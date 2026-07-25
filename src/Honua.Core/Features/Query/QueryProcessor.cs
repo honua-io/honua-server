@@ -551,8 +551,7 @@ public sealed class QueryProcessor : IQueryProcessor
                 // CQL2/OGC/where-clause path) have no fragment; swallowing the failure
                 // there would silently execute the query with NO filter at all,
                 // over-exposing data instead of surfacing an error.
-                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-                if (filter?.GetSqlFragment() is not { } fallbackFragment)
+                if (filter.GetValueOrDefault().GetSqlFragment() is not { } fallbackFragment)
                 {
                     throw;
                 }

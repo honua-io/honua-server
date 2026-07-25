@@ -242,10 +242,8 @@ public sealed class ODataDeltaTests : IAsyncLifetime
             break;
         }
 
-        // FluentAssertions' NotBeNullOrWhiteSpace() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        deltaLink.Should().NotBeNullOrWhiteSpace();
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
+        resolvedDeltaLink.Should().NotBeNullOrWhiteSpace();
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
         var deltaToken = deltaQuery["$deltatoken"].ToString();
         deltaToken.Should().NotBeNullOrWhiteSpace();
@@ -298,10 +296,8 @@ public sealed class ODataDeltaTests : IAsyncLifetime
             break;
         }
 
-        // FluentAssertions' NotBeNullOrWhiteSpace() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        deltaLink.Should().NotBeNullOrWhiteSpace();
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
+        resolvedDeltaLink.Should().NotBeNullOrWhiteSpace();
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
         ODataDeltaService.TryDecode(deltaQuery["$deltatoken"].ToString(), out var finalState, out var finalError)
             .Should().BeTrue(finalError);

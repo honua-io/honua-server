@@ -349,7 +349,7 @@ internal static class ServiceSettingsEndpoints
             // match, in which case the search must keep scanning subsequent publications
             // rather than stopping at the first Where match, so a LINQ Select/FirstOrDefault
             // would not preserve this fallback behavior.
-            foreach (var pub in (snapshot.Graph.Publications).Where(pub => !(!serviceIds.Contains(pub.ServiceId))))
+            foreach (var pub in snapshot.Graph.Publications.Where(pub => serviceIds.Contains(pub.ServiceId)))
             {
                 if (!pub.Identifier.IsNumeric || pub.LayerIndex != layerId)
                     continue;

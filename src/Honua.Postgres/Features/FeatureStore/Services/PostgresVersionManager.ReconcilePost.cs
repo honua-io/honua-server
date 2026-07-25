@@ -193,13 +193,9 @@ internal sealed partial class PostgresVersionManager
         // Not rewritten as .Where(...).Count(): each resolution requires a sequential
         // awaited DB call, which plain synchronous LINQ cannot express.
         var resolved = 0;
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var resolution in resolutions)
         {
-            if (await ApplyManualResolutionAsync(versionId, resolution, cancellationToken).ConfigureAwait(false))
-            {
-                resolved++;
-            }
+            resolved += await ApplyManualResolutionAsync(versionId, resolution, cancellationToken).ConfigureAwait(false) ? 1 : 0;
         }
 
         var remaining = await CountPendingConflictsAsync(versionId, cancellationToken).ConfigureAwait(false);
@@ -301,7 +297,7 @@ internal sealed partial class PostgresVersionManager
         // DEFAULT writer cannot slip a committed edit between the drift check below and the replay. This is
         // a separate INNER-JOIN lock because Postgres rejects FOR UPDATE on the nullable side of an outer
         // join: the drift detection needs a LEFT JOIN (to spot an update target whose DEFAULT row vanished),
-        // but only rows that actually exist in DEFAULT can be â€” and need to be â€” locked. Locking these rows
+        // but only rows that actually exist in DEFAULT can be — and need to be — locked. Locking these rows
         // first holds them for the remainder of the transaction, so the subsequent LEFT-JOIN drift query
         // observes a stable snapshot of every target that still exists.
         await using (var lockCommand = new NpgsqlCommand(
@@ -335,7 +331,7 @@ internal sealed partial class PostgresVersionManager
             WHERE ve.version_id = @version
               AND ve.operation IN (2, 3)
               -- A branch delete whose DEFAULT row is already gone is a convergent no-op (DEFAULT
-              -- reached the desired end state), not drift â€” exclude it so it does not spuriously
+              -- reached the desired end state), not drift — exclude it so it does not spuriously
               -- block the post. Every other update/delete target must still match its captured base.
               AND NOT (ve.operation = 3 AND f.objectid IS NULL)
               AND NOT (
@@ -547,7 +543,7 @@ internal sealed partial class PostgresVersionManager
 
             // By-attribute detection auto-merges disjoint edits and only flags genuinely-overlapping
             // edits (overlapping fields or geometry-vs-geometry). By-object detection flags ANY feature
-            // edited on both sides since the merge base as a conflict, with no field-level auto-merge â€”
+            // edited on both sides since the merge base as a conflict, with no field-level auto-merge —
             // this is the documented Esri esriReconcileByObject behavior (#2135).
             var autoMergeable = detection == VersionConflictDetection.ByAttribute
                 && overlappingFields.Length == 0
@@ -595,13 +591,13 @@ internal sealed partial class PostgresVersionManager
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         // Build the JSON patch of DEFAULT's changed fields and merge it onto the overlay attributes with
-        // the JSONB concat operator (||) â€” overlay keys win for any non-changed field, DEFAULT's changed
+        // the JSONB concat operator (||) — overlay keys win for any non-changed field, DEFAULT's changed
         // fields are layered in. A field DEFAULT removed is rendered as a JSON null. A DEFAULT-only
         // geometry change is copied from the live row.
         //
         // Rebase the overlay's captured base image onto the live DEFAULT row in the SAME statement. An
         // auto-merge accepts DEFAULT's current state (its disjoint field/geometry edits are layered in),
-        // so the merged overlay row's new base MUST be the live DEFAULT â€” otherwise the post-time drift
+        // so the merged overlay row's new base MUST be the live DEFAULT — otherwise the post-time drift
         // guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) still sees the stale common-ancestor base,
         // treats DEFAULT's now-merged divergence as drift, and blocks the post even though reconcile
         // reported CanPost. This mirrors the "take version" rebase in ApplyResolutionToOverlayAsync and
@@ -741,7 +737,7 @@ internal sealed partial class PostgresVersionManager
             // replay and DEFAULT would keep its own value. Resolving "take version" means the operator
             // accepts the current DEFAULT as the new base to overwrite: rebase the overlay's base image onto
             // the live DEFAULT row so the drift check passes and the version's value lands on DEFAULT. If
-            // DEFAULT deleted the row, leave the base untouched â€” the drift guard already treats a vanished
+            // DEFAULT deleted the row, leave the base untouched — the drift guard already treats a vanished
             // update target as a conflict, which is the correct outcome for "take version" over a deletion.
             await using var rebaseCommand = new NpgsqlCommand($"""
                 UPDATE honua.version_edits ve
@@ -765,7 +761,7 @@ internal sealed partial class PostgresVersionManager
             // branch no longer shadows/posts the feature. Rebase the overlay's base image onto DEFAULT too
             // (base_geometry/base_attributes = DEFAULT's): the resolution accepts the live DEFAULT as the
             // new base, so the post-time drift guard (f.* IS NOT DISTINCT FROM ve.base_*, #2063) sees no
-            // drift and the post proceeds â€” without this the stale common-ancestor base still differs from
+            // drift and the post proceeds — without this the stale common-ancestor base still differs from
             // the diverged DEFAULT and the post is wrongly blocked even though reconcile reported CanPost.
             await using var command = new NpgsqlCommand($"""
                 WITH d AS (
@@ -806,7 +802,7 @@ internal sealed partial class PostgresVersionManager
 
     /// <summary>
     /// Replaces the version's persisted pending conflict set with the supplied unresolved conflicts and,
-    /// when the reconcile is clean, advances the common-ancestor cursor â€” all in one transaction (#1553).
+    /// when the reconcile is clean, advances the common-ancestor cursor — all in one transaction (#1553).
     /// Clearing stale pending rows (auto-merged / auto-resolved this run), inserting the current set, and
     /// advancing the merge base commit atomically, so a crash cannot leave the durable conflict set and
     /// the cursor disagreeing. The operation is naturally idempotent: a re-run recomputes the same set
@@ -957,8 +953,7 @@ internal sealed partial class PostgresVersionManager
             // since key is drawn from the union of both key sets); not a tautology despite the analyzer note.
             var hasBase = baseFields.TryGetValue(key, out var baseValue);
             var hasTarget = targetFields.TryGetValue(key, out var targetValue);
-            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-            if (hasBase != hasTarget || (hasBase && hasTarget && !ElementsEqual(baseValue, targetValue)))
+            if (hasBase != hasTarget || !ElementsEqual(baseValue, targetValue))
             {
                 changed.Add(key);
             }

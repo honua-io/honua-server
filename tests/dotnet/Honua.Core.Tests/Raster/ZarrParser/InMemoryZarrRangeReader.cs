@@ -52,8 +52,7 @@ internal sealed class InMemoryZarrRangeReader : ICloudRangeReader
         }
         // Stream ownership transfers to the caller via the return value; the
         // reader consuming this stream is responsible for disposing it.
-        // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-        return Task.FromResult<Stream>(new MemoryStream(data, (int)offset, System.Math.Min(length, data.Length - (int)offset)));
+        return Task.FromResult<Stream>(new Honua.TestKit.CallerOwnedMemoryStream(data, (int)offset, System.Math.Min(length, data.Length - (int)offset)));
     }
     public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {

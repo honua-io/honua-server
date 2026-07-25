@@ -31,6 +31,14 @@ public sealed class CoreAbstractionsIsolationTests
         "FlatGeobuf",
     };
 
+    private static readonly string[] ApprovedConcreteInfrastructureContracts =
+    {
+        "Honua.Core.Features.Infrastructure.Crs.DatumTransformationSelection",
+        "Honua.Core.Features.Infrastructure.Events.Outbox.FeatureChangeOutboxEntry",
+        "Honua.Core.Features.Infrastructure.Events.Outbox.OutboxBacklogMetrics",
+        "Honua.Core.Features.Infrastructure.Events.Outbox.OutboxStatuses",
+    };
+
     [ArchitectureTest]
     public void Abstractions_ShouldNotDependOn_HeavyPackages()
     {
@@ -70,6 +78,48 @@ public sealed class CoreAbstractionsIsolationTests
                     "Honua.Core.Abstractions.csproj must not directly reference {0}",
                     banned);
         }
+    }
+
+    [ArchitectureTest]
+    public void InfrastructureHelpers_ShouldNotBePublicContracts()
+    {
+        var expectedInternalHelpers = new[]
+        {
+            "Honua.Core.Features.Infrastructure.Internal.DeferredDisposal",
+            "Honua.Core.Features.Infrastructure.Internal.SocketConnectionOwner",
+        };
+        var abstractionsAssembly =
+            typeof(Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository).Assembly;
+
+        foreach (var qualifiedTypeName in expectedInternalHelpers)
+        {
+            var helperType = abstractionsAssembly.GetType(qualifiedTypeName);
+            helperType.Should().NotBeNull("callers share one resource-ownership implementation");
+            helperType!.IsNotPublic.Should().BeTrue("concrete infrastructure helpers must remain internal");
+            abstractionsAssembly.GetExportedTypes()
+                .Should()
+                .NotContain(helperType, "resource lifetime management is not part of the abstractions contract");
+        }
+    }
+
+    [ArchitectureTest]
+    public void Abstractions_ShouldNotExpose_UnapprovedConcreteInfrastructureTypes()
+    {
+        var abstractionsAssembly =
+            typeof(Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository).Assembly;
+
+        var unapprovedTypes = abstractionsAssembly.GetExportedTypes()
+            .Where(type => type.Namespace?.StartsWith(
+                "Honua.Core.Features.Infrastructure",
+                StringComparison.Ordinal) is true)
+            .Where(type => !type.IsInterface && !typeof(Delegate).IsAssignableFrom(type))
+            .Select(type => type.FullName!)
+            .Except(ApprovedConcreteInfrastructureContracts, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        unapprovedTypes.Should().BeEmpty(
+            "the abstractions package may expose only explicitly reviewed infrastructure contracts");
     }
 
     /// <summary>

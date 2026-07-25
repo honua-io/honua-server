@@ -391,9 +391,6 @@ public sealed class RedisCacheServiceTests : IDisposable
         writeMetadataField.Should().NotBeNull();
 
         var writeMetadata = writeMetadataField!.GetValue(cache) as System.Collections.IDictionary;
-        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        writeMetadata.Should().NotBeNull();
         if (writeMetadata is null)
         {
             throw new InvalidOperationException("_writeMetadata field was not the expected IDictionary type.");
@@ -481,9 +478,6 @@ public sealed class RedisCacheServiceTests : IDisposable
         keyLocksField.Should().NotBeNull();
 
         var keyLocks = keyLocksField!.GetValue(_cacheService) as ConcurrentDictionary<string, SemaphoreSlim>;
-        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        keyLocks.Should().NotBeNull();
         if (keyLocks is null)
         {
             throw new InvalidOperationException("_keyLocks field was not the expected ConcurrentDictionary type.");
@@ -520,9 +514,6 @@ public sealed class RedisCacheServiceTests : IDisposable
         fallbackCacheField.Should().NotBeNull();
 
         var fallbackCache = fallbackCacheField!.GetValue(cacheService) as System.Collections.IEnumerable;
-        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        fallbackCache.Should().NotBeNull();
         if (fallbackCache is null)
         {
             throw new InvalidOperationException("_fallbackCache field was not the expected IEnumerable type.");
@@ -540,9 +531,6 @@ public sealed class RedisCacheServiceTests : IDisposable
         writeMetadataField.Should().NotBeNull();
 
         var writeMetadata = writeMetadataField!.GetValue(cacheService) as System.Collections.IDictionary;
-        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        writeMetadata.Should().NotBeNull();
         if (writeMetadata is null)
         {
             throw new InvalidOperationException("_writeMetadata field was not the expected IDictionary type.");

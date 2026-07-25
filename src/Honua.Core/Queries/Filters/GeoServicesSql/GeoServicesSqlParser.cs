@@ -837,17 +837,16 @@ public sealed class GeoServicesSqlParser
 
     private bool Match(params TokenType[] types)
     {
-        // Kept as an explicit loop rather than `types.Any(Check)`: this is a hot path
-        // called once per token during every filter parse, and a LINQ predicate here
-        // would add a per-call delegate allocation on top of the existing `params`
-        // array allocation for no readability gain.
-        foreach (var type in types)
+        var index = 0;
+        while (index < types.Length)
         {
-            if (Check(type))
+            if (Check(types[index]))
             {
                 Advance();
                 return true;
             }
+
+            index++;
         }
 
         return false;

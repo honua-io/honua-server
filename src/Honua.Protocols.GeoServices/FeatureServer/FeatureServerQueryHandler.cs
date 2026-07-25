@@ -14,6 +14,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -166,7 +167,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         // Per-operation RBAC grants are consulted first (#1375); the coarse
         // AccessPolicy seam is the fallback when no grant matches. This is the
-        // enforced read path wired to the resolver for this PR â€” the remaining
+        // enforced read path wired to the resolver for this PR — the remaining
         // protocol adapters are re-wired in #1376.
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
             context,
@@ -211,7 +212,6 @@ internal sealed partial class FeatureServerQueryHandler(
         // Not converted to a `using` declaration: featureActivity starts as null and is
         // reassigned once telemetry context is available further down, but using-declared
         // variables are read-only (CS1656) — the manual finally-dispose is required here.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -390,7 +390,7 @@ internal sealed partial class FeatureServerQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -406,7 +406,6 @@ internal sealed partial class FeatureServerQueryHandler(
         // Not converted to a `using` declaration: featureActivity starts as null and is
         // reassigned once telemetry context is available further down, but using-declared
         // variables are read-only (CS1656) — the manual finally-dispose is required here.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -507,7 +506,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
             // returnCountOnly/returnIdsOnly/returnExtentOnly produce scalar/structural results,
             // not a GeoJSON FeatureCollection. The format validator allow-lists geojson for the
-            // query operation, but these secondary modes cannot honor it â€” return a clean 400
+            // query operation, but these secondary modes cannot honor it — return a clean 400
             // rather than silently downgrading to an Esri-JSON 200 (#1824).
             if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase) &&
                 (validatedParams.ReturnCountOnly || validatedParams.ReturnIdsOnly || validatedParams.ReturnExtentOnly))
@@ -1009,7 +1008,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 // PARQUET/ARROW are encoded entirely in managed code from the
                 // materialized QueryResult<Feature> (GeoParquetFeatureWriter /
-                // GeoArrow formatter), NOT by a store-native encoder â€” so unlike
+                // GeoArrow formatter), NOT by a store-native encoder — so unlike
                 // FGB/GEOBUF they do not depend on the resolved store implementing
                 // IFlatGeobufFeatureStore. Every IFeatureReader can materialize
                 // features (QueryWithValidationAsync below), so gating parquet/arrow
@@ -1290,7 +1289,7 @@ internal sealed partial class FeatureServerQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -2310,13 +2309,15 @@ internal sealed partial class FeatureServerQueryHandler(
             return true;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var path in paths)
+        var pathIndex = 0;
+        while (pathIndex < paths.Length)
         {
-            if (!TryValidateCoordinateCollection(path, isGeographic, out errorMessage))
+            if (!TryValidateCoordinateCollection(paths[pathIndex], isGeographic, out errorMessage))
             {
                 return false;
             }
+
+            pathIndex++;
         }
 
         return true;
@@ -2489,7 +2490,7 @@ internal sealed partial class FeatureServerQueryHandler(
         return double.IsFinite(metersPerUnit) && metersPerUnit > 0;
     }
 
-    // Parameters that change *result semantics* â€” rejecting them is correct because
+    // Parameters that change *result semantics* — rejecting them is correct because
     // silently ignoring would return output that differs from what the client asked for.
     //
     // Compatibility parameters that ArcGIS clients routinely send by default
@@ -2651,8 +2652,8 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     // Parses a GeoServices `having` expression into structured aggregate
-    // conditions. The grammar is deliberately narrow â€” `AGG(field) OP number`
-    // terms joined by AND â€” so the provider can rebuild a fully parameterized
+    // conditions. The grammar is deliberately narrow — `AGG(field) OP number`
+    // terms joined by AND — so the provider can rebuild a fully parameterized
     // HAVING clause without ever concatenating client text into SQL. Each
     // aggregate must already be declared in outStatistics, mirroring the Esri
     // contract and reusing the same field-type hints as the SELECT aggregates.
@@ -2887,7 +2888,7 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     // A SQL "data exception" (SQLSTATE class 22) is raised by the database when a
-    // value in the executed statement is malformed or out of range â€” division/mod by
+    // value in the executed statement is malformed or out of range — division/mod by
     // zero (22012/22020), numeric overflow (22003), invalid argument to LOG/POWER/SQRT
     // (2201E/2201F/2201G), bad text-to-number CAST (22P02), etc. For a read query these
     // are always driven by client `where`/arithmetic input, so they are client errors
@@ -2956,7 +2957,7 @@ internal sealed partial class FeatureServerQueryHandler(
     // BH2-001: Cap at MaxRecordCount * 2 + 1 so a caller with a very large
     // resultOffset cannot force a multi-million-row materialization. A request
     // whose offset+limit window exceeds this cap will still see a valid (possibly
-    // empty) page plus exceededTransferLimit=true â€” it cannot force an OOM.
+    // empty) page plus exceededTransferLimit=true — it cannot force an OOM.
     private static int ComputeDistinctScanLimit(FeatureQuery query, QueryLimits queryLimits)
     {
         var requestedWindow = Math.Max(0, query.Offset ?? 0) + Math.Max(0, query.Limit ?? 0);

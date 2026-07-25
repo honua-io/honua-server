@@ -248,13 +248,12 @@ public sealed class ImportBackgroundServiceTests
                 await Task.Delay(TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
             }
 
-            // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-            // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-            lastObservedProgress.Should().NotBeNull();
-            lastObservedProgress!.Status.Should().Be(
+            var observedProgress = lastObservedProgress
+                ?? throw new InvalidOperationException("Expected observed import progress.");
+            observedProgress.Status.Should().Be(
                 GeoservicesImportStatus.Queued,
-                $"expected the strict-mode import to requeue after leadership loss, but observed phase '{lastObservedProgress!.CurrentPhase}'");
-            lastObservedProgress!.CurrentPhase.Should().Be("Queued for recovery after leadership loss");
+                $"expected the strict-mode import to requeue after leadership loss, but observed phase '{observedProgress.CurrentPhase}'");
+            observedProgress.CurrentPhase.Should().Be("Queued for recovery after leadership loss");
 
             (await jobManager.RequestStore.GetProgressAsync(jobId).ConfigureAwait(false)).Should().NotBeNull();
             _ = database.DidNotReceive().ListRemoveAsync(

@@ -598,20 +598,13 @@ internal static class ArgoRolloutsPatchSerializer
             return null;
         }
 
-        // Not rewritten as .Where(...)/.Select(...): this is a find-first lookup that
-        // returns a derived value (the image string) directly from the loop, falling
-        // through to null when no container matches.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var container in containers.EnumerateArray())
-        {
-            if (container.ValueKind == JsonValueKind.Object &&
+        return containers.EnumerateArray()
+            .Select(container =>
+                container.ValueKind == JsonValueKind.Object &&
                 container.TryGetProperty("image", out var imageElement) &&
-                imageElement.ValueKind == JsonValueKind.String)
-            {
-                return imageElement.GetString();
-            }
-        }
-
-        return null;
+                imageElement.ValueKind == JsonValueKind.String
+                    ? imageElement.GetString()
+                    : null)
+            .FirstOrDefault(image => image is not null);
     }
 }

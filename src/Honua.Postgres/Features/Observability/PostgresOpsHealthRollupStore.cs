@@ -407,13 +407,13 @@ internal sealed class PostgresOpsHealthRollupStore : IOpsHealthRollupStore
         using var document = JsonDocument.Parse(json);
         // Not rewritten as .Where(...): TryGetInt32 does the "is it a valid int" check and the value
         // fetch in a single call; a LINQ filter would need a second conversion attempt to get the value.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var property in document.RootElement.EnumerateObject())
+        foreach (var entry in document.RootElement.EnumerateObject()
+                     .Select(property => (
+                         property.Name,
+                         Count: property.Value.TryGetInt32(out var count) ? (int?)count : null))
+                     .Where(entry => entry.Count.HasValue))
         {
-            if (property.Value.TryGetInt32(out var count))
-            {
-                result[property.Name] = count;
-            }
+            result[entry.Name] = entry.Count.GetValueOrDefault();
         }
 
         return result;

@@ -137,9 +137,7 @@ internal static class WebAppFixtureSharedBootstrapMixin
         // _sharedFactory field by the caller (EnsureInitializedAsync) and disposed once,
         // in ReleaseAsync, when the last referencing WebAppFixture tears down. Disposing
         // it here or wrapping the call in `using` would break every fixture sharing it.
-        // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
+        return Honua.TestKit.ConfiguredWebApplicationFactory.Create(builder =>
             {
                 WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", sharedAdminPassword);

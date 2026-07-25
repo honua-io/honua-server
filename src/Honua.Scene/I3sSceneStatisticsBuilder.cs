@@ -108,19 +108,19 @@ public static class I3sSceneStatisticsBuilder
         }
 
         // Non-numeric (string) field: emit value presence + distinct count only.
-        // Not a candidate for .Where(...): TryGetValue's out parameter both filters
-        // (missing attributes are skipped) and feeds the running present/distinct
-        // accumulation below, so a LINQ split would need a redundant second lookup.
         var present = 0;
         var distinct = new HashSet<string>(StringComparer.Ordinal);
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var feature in features)
+        var featureIndex = 0;
+        while (featureIndex < features.Count)
         {
-            if (feature.Attributes.TryGetValue(attributeKey, out var value) && value is not null)
+            if (features[featureIndex].Attributes.TryGetValue(attributeKey, out var value) &&
+                value is not null)
             {
                 present++;
                 distinct.Add(value as string ?? value.ToString() ?? string.Empty);
             }
+
+            featureIndex++;
         }
 
         return new I3sAttributeStatisticsDocument

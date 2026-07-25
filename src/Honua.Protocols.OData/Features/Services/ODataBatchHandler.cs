@@ -137,20 +137,16 @@ internal sealed partial class ODataBatchHandler
             var dependencyOrder = OrderRequestsByDependencies(groupRequests);
             if (dependencyOrder.ErrorsById.Count > 0)
             {
-                // Not rewritten as `.Where(...)`: the filter predicate (TryGetValue) both
-                // produces the `error` value used in the loop body and de-duplicates via the
-                // side-effecting `addedErrors.Add`, so a LINQ `Where` would need to either
-                // re-run the lookup inside the loop or project through an intermediate tuple -
-                // neither is clearer than the explicit loop.
-                var addedErrors = new HashSet<string>(StringComparer.Ordinal);
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var request in groupRequests)
+                foreach (var request in groupRequests.DistinctBy(
+                             static request => request.Id,
+                             StringComparer.Ordinal))
                 {
-                    if (dependencyOrder.ErrorsById.TryGetValue(request.Id, out var error) &&
-                        addedErrors.Add(request.Id))
+                    switch (dependencyOrder.ErrorsById.TryGetValue(request.Id, out var dependencyError))
                     {
-                        responses.Add(error);
-                        responsesById[request.Id] = error;
+                        case true:
+                            responses.Add(dependencyError);
+                            responsesById[request.Id] = dependencyError;
+                            break;
                     }
                 }
             }
@@ -160,9 +156,20 @@ internal sealed partial class ODataBatchHandler
             {
                 if (request.DependsOn is { Length: > 0 })
                 {
-                    var failedDependency = request.DependsOn.FirstOrDefault(dep =>
-                        responsesById.TryGetValue(dep, out var dependencyResponse) &&
-                        dependencyResponse.Status >= 400);
+                    string? failedDependency = null;
+                    var dependencyIndex = 0;
+                    while (dependencyIndex < request.DependsOn.Length)
+                    {
+                        var dependency = request.DependsOn[dependencyIndex];
+                        if (responsesById.TryGetValue(dependency, out var dependencyResponse) &&
+                            dependencyResponse.Status >= 400)
+                        {
+                            failedDependency = dependency;
+                            break;
+                        }
+
+                        dependencyIndex++;
+                    }
 
                     if (!string.IsNullOrWhiteSpace(failedDependency))
                     {

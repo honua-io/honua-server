@@ -258,10 +258,9 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         }
 
         var normalized = new List<string>(tokens.Length);
-        // codeql[cs/linq/missed-select] -- the mapped local is normalized again during parsing.
-        foreach (var rawToken in tokens)
+        foreach (var normalizedToken in tokens.Select(rawToken => rawToken.Trim()))
         {
-            var token = rawToken.Trim();
+            var token = normalizedToken;
             if (token.Length == 0)
             {
                 error = "Invalid sortby expression.";

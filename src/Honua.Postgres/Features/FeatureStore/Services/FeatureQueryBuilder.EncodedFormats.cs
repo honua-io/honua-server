@@ -123,16 +123,16 @@ internal sealed partial class FeatureQueryBuilder
             .Where(field => !maskedFields.Contains(field.Name))
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
-        // Not rewritten as .Where(...): TryGetValue does the existence check and value fetch (and
-        // preserves the requested-order iteration over requestedOutFields) in a single dictionary lookup.
         var orderedFields = new List<MetadataV2Field>(requestedOutFields.Length);
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var fieldName in requestedOutFields)
+        var fieldIndex = 0;
+        while (fieldIndex < requestedOutFields.Length)
         {
-            if (availableFields.TryGetValue(fieldName, out var field))
+            if (availableFields.TryGetValue(requestedOutFields[fieldIndex], out var field))
             {
                 orderedFields.Add(field);
             }
+
+            fieldIndex++;
         }
 
         return orderedFields;

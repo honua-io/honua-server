@@ -217,10 +217,10 @@ public sealed class ObservabilitySpineTests
 
     private static string FindMonitoringDashboardsDirectory()
     {
-        foreach (var directoryInfo in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.Select(start => new DirectoryInfo(start)))
+        var starts = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory };
+        for (var i = 0; i < starts.Length; i++)
         {
-            // codeql[cs/linq/missed-select] -- the directory cursor is reassigned while walking parents.
-            var directory = directoryInfo;
+            var directory = new DirectoryInfo(starts[i]);
             while (directory is not null)
             {
                 var candidate = Path.Join(

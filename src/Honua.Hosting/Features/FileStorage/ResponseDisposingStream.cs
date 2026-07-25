@@ -7,14 +7,18 @@ namespace Honua.FileStorage;
 
 internal sealed class ResponseDisposingStream : DelegatingStream
 {
-    // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-    private readonly IDisposable _response;
+    private readonly Action _disposeResponse;
+    private readonly Func<ValueTask>? _disposeResponseAsync;
     private bool _disposed;
 
     public ResponseDisposingStream(Stream inner, IDisposable response)
         : base(inner)
     {
-        _response = response ?? throw new ArgumentNullException(nameof(response));
+        ArgumentNullException.ThrowIfNull(response);
+        _disposeResponse = response.Dispose;
+        _disposeResponseAsync = response is IAsyncDisposable asyncDisposable
+            ? asyncDisposable.DisposeAsync
+            : null;
     }
 
     protected override void Dispose(bool disposing)
@@ -26,9 +30,13 @@ internal sealed class ResponseDisposingStream : DelegatingStream
 
         _disposed = true;
 
-        using (_response)
+        try
         {
             base.Dispose(disposing);
+        }
+        finally
+        {
+            _disposeResponse();
         }
     }
 
@@ -41,22 +49,19 @@ internal sealed class ResponseDisposingStream : DelegatingStream
 
         _disposed = true;
 
-        // Not a `using`/`await using` declaration: `_response` is a plain IDisposable field
-        // that may also implement IAsyncDisposable at runtime, so the correct disposal path
-        // (sync vs. async) can only be chosen here with a runtime type check.
         try
         {
             await base.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {
-            if (_response is IAsyncDisposable asyncDisposable)
+            if (_disposeResponseAsync is not null)
             {
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                await _disposeResponseAsync().ConfigureAwait(false);
             }
             else
             {
-                _response.Dispose();
+                _disposeResponse();
             }
         }
     }

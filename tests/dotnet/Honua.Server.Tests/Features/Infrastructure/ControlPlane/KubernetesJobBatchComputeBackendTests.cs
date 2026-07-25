@@ -78,12 +78,7 @@ public sealed class KubernetesJobBatchComputeBackendTests
                 m.Name == "honua-job-create" &&
                 m.Namespace == "default" &&
                 // Serving↔worker job-contract version (ADR-0060 #3b) injected for the worker to re-check.
-                // ContainsKey + indexer (not TryGetValue) because this lambda compiles as an
-                // Expression<Func<T, bool>> for NSubstitute's Arg.Is<T>(...); expression trees
-                // cannot contain an inline `out var` declaration.
-                // codeql[cs/inefficient-containskey] -- the predicate is an expression tree and cannot declare an out variable for TryGetValue.
-                m.EnvironmentVariables.ContainsKey("HONUA_CONTRACT_VERSION") &&
-                m.EnvironmentVariables["HONUA_CONTRACT_VERSION"] == "1"),
+                m.EnvironmentVariables.GetValueOrDefault("HONUA_CONTRACT_VERSION") == "1"),
             Arg.Any<CancellationToken>());
     }
 

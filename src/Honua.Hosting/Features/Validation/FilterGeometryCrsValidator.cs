@@ -84,16 +84,18 @@ internal static class FilterGeometryCrsValidator
         Func<int, bool> isSupportedSrid,
         out int unsupportedSrid)
     {
-        // Not converted to `.Where(...)`: the recursive call has an `out` parameter that
-        // must flow back to the caller on the first match, which a LINQ predicate cannot
-        // express.
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var expression in expressions)
+        var expressionIndex = 0;
+        while (expressionIndex < expressions.Count)
         {
-            if (TryFindUnsupportedExplicitGeometryCrs(expression, isSupportedSrid, out unsupportedSrid))
+            if (TryFindUnsupportedExplicitGeometryCrs(
+                    expressions[expressionIndex],
+                    isSupportedSrid,
+                    out unsupportedSrid))
             {
                 return true;
             }
+
+            expressionIndex++;
         }
 
         unsupportedSrid = 0;

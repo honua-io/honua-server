@@ -243,7 +243,7 @@ internal static class GeoServicesRequestValueHelpers
         // Not a `using`: .Token must outlive this method and stay valid for the rest of the
         // request pipeline (it is cached in context.Items and returned to the caller), so
         // disposal is deferred to the response's own lifetime via RegisterForDispose.
-        var timeoutCts = new CancellationTokenSource(queryTimeout);
+        var timeoutCts = CreateTimeoutSource(queryTimeout);
         var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(baseToken, timeoutCts.Token);
         context.Response.RegisterForDispose(timeoutCts);
         context.Response.RegisterForDispose(combinedCts);
@@ -251,6 +251,8 @@ internal static class GeoServicesRequestValueHelpers
         context.Items[QueryTimeoutTokenKey] = combinedCts.Token;
         return combinedCts.Token;
     }
+
+    private static CancellationTokenSource CreateTimeoutSource(TimeSpan timeout) => new(timeout);
 
     internal static bool TryValidateAllowedParameters(
         IQueryCollection query,

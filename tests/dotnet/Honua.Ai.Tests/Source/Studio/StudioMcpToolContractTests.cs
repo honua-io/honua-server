@@ -79,8 +79,10 @@ public sealed class StudioMcpToolContractTests
         var result = await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("recorded").GetBoolean().Should().BeTrue();
-        result.StructuredContent.Value.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        var structuredContent = result.StructuredContent
+            ?? throw new InvalidOperationException("Expected structured MCP content.");
+        structuredContent.GetProperty("recorded").GetBoolean().Should().BeTrue();
+        structuredContent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
 
         // Structural proof: this tool never touches the version/publish-request/
         // rollback surface — only the ordinary generation-checked draft update.

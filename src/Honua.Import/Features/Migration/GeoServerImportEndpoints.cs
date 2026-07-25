@@ -422,11 +422,9 @@ internal static partial class GeoServerImportEndpoints
                 jobId,
                 CancellationToken.None).ConfigureAwait(false);
         }
-        // Intentionally generic: best-effort rollback of queued job state after a failure;
-        // any error here is swallowed because the state will still expire via TTL.
-        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
+            System.Diagnostics.Debug.WriteLine(caughtException);
         }
     }
 

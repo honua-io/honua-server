@@ -181,8 +181,7 @@ public sealed class GeoServerRestClientTests
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             });
@@ -299,8 +298,7 @@ public sealed class GeoServerRestClientTests
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             });
@@ -357,8 +355,7 @@ public sealed class GeoServerRestClientTests
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             });
@@ -405,8 +402,7 @@ public sealed class GeoServerRestClientTests
                 _ => throw new InvalidOperationException($"Unexpected GeoServer request path: {path}")
             };
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, contentType)
             });

@@ -170,8 +170,7 @@ internal ref struct ProtobufWriter
         // Intentional exact comparison: proto3 wire format omits scalar fields equal to the
         // type's zero default rather than approximately zero, so this must be exact equality.
         // ReSharper disable once CompareOfFloatsByEqualityOperator
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (value == 0.0)
+        if (value.Equals(0d))
             return;
         WriteTag(fieldNumber, 1);
         EnsureCapacity(8);
@@ -185,8 +184,7 @@ internal ref struct ProtobufWriter
         // Intentional exact comparison: proto3 wire format omits scalar fields equal to the
         // type's zero default rather than approximately zero, so this must be exact equality.
         // ReSharper disable once CompareOfFloatsByEqualityOperator
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (value == 0.0f)
+        if (value.Equals(0f))
             return;
         WriteTag(fieldNumber, 5);
         EnsureCapacity(4);

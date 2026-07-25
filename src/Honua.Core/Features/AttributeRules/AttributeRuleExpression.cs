@@ -230,20 +230,27 @@ public static class AttributeRuleExpression
         {
             var left = ParseAdditive();
             SkipWhitespace();
-            // Kept as a foreach rather than .Where()/.FirstOrDefault(): Match(op) mutates the
-            // parser cursor (_pos) as a side effect of testing each operator, so this is a
-            // stateful, order-dependent scan rather than a pure filter/projection.
-            // codeql[cs/linq/missed-where] -- predicate mutates parser state; retain imperative control flow.
-            foreach (var op in ComparisonOperators)
+            if (TryMatchComparisonOperator(out var op))
             {
-                if (Match(op))
-                {
-                    var right = ParseAdditive();
-                    return Compare(left, right, op);
-                }
+                var right = ParseAdditive();
+                return Compare(left, right, op);
             }
 
             return left;
+        }
+
+        private bool TryMatchComparisonOperator(out string op)
+        {
+            // Match two-character operators before their one-character prefixes.
+            if (Match("==")) { op = "=="; return true; }
+            if (Match("!=")) { op = "!="; return true; }
+            if (Match("<=")) { op = "<="; return true; }
+            if (Match(">=")) { op = ">="; return true; }
+            if (Match("<")) { op = "<"; return true; }
+            if (Match(">")) { op = ">"; return true; }
+
+            op = string.Empty;
+            return false;
         }
 
         private object? ParseAdditive()
@@ -765,8 +772,5 @@ public static class AttributeRuleExpression
             }
         }
 
-        // Two-character comparison operators are matched before single-character ones so
-        // ">=" is not mis-read as ">".
-        private static readonly string[] ComparisonOperators = ["==", "!=", "<=", ">=", "<", ">"];
     }
 }

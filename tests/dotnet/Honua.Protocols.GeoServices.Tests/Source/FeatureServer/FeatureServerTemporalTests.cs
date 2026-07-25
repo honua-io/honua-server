@@ -634,22 +634,17 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
             return [];
         }
 
-        // Filtering and extraction are combined in one pass because each step depends on the
-        // previous TryGetProperty/TryGetInt64 out-variable; a Where/Select split would need to
-        // repeat the same property lookups, so an explicit loop with a single combined
-        // condition stays clearer than the LINQ equivalent.
         var ids = new List<long>();
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var feature in featuresElement.EnumerateArray())
-        {
-            if (feature.TryGetProperty("attributes", out var attributes) &&
+        ids.AddRange(featuresElement.EnumerateArray()
+            .Select(feature =>
+                feature.TryGetProperty("attributes", out var attributes) &&
                 attributes.TryGetProperty("objectid", out var objectId) &&
                 objectId.ValueKind == JsonValueKind.Number &&
-                objectId.TryGetInt64(out var idValue))
-            {
-                ids.Add(idValue);
-            }
-        }
+                objectId.TryGetInt64(out var idValue)
+                    ? (long?)idValue
+                    : null)
+            .Where(id => id.HasValue)
+            .Select(id => id.GetValueOrDefault()));
 
         return ids;
     }

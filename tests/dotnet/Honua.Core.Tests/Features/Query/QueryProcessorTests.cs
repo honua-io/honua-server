@@ -228,9 +228,10 @@ public sealed class QueryProcessorTests
         var optimized = _processor.OptimizeQuery(query, _resource);
         var providerQuery = _processor.ToFeatureQuery(optimized, _resource);
 
-        providerQuery.OrderBy.Should().NotBeNull();
-        providerQuery.OrderBy!.Value.Should().ContainSingle()
+        var orderBy = providerQuery.OrderBy
+            ?? throw new InvalidOperationException("Expected a stable provider order.");
+        orderBy.Should().ContainSingle()
             .Which.Field.Should().Be(FieldNames.ObjectId);
-        providerQuery.OrderBy.Value[0].Ascending.Should().BeTrue();
+        orderBy[0].Ascending.Should().BeTrue();
     }
 }

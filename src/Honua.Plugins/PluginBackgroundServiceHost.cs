@@ -3,6 +3,8 @@
 
 using System.Reflection;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Plugins.Abstractions;
@@ -34,7 +36,6 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
     // Not a `using` field: this token source's lifetime spans the host's StartAsync/StopAsync
     // pair (IHostedService lifecycle), not a single method scope, so it is disposed explicitly
     // in StopAsync's finally block rather than via a using declaration.
-    // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
     private CancellationTokenSource? _stoppingCts;
 
     public PluginBackgroundServiceHost(
@@ -94,7 +95,7 @@ internal sealed partial class PluginBackgroundServiceHost : IHostedService
         }
         finally
         {
-            _stoppingCts.Dispose();
+            DeferredDisposal.Dispose(_stoppingCts);
             _stoppingCts = null;
         }
     }

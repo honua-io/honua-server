@@ -16,18 +16,19 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class GeoServerFixture : IAsyncLifetime
 {
-    // These static fields back an intentional process-wide, ref-counted shared container:
-    // every GeoServerFixture instance (one per xUnit collection) mutates the same statics
-    // under _sharedLock so only the first InitializeAsync starts the container and only the
-    // last DisposeAsync tears it down. Writing static state from instance lifecycle
-    // methods is the design, not a bug.
+    // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static IContainer? _sharedContainer;
-    private static string? _sharedBaseUrl;
-    private static string? _sharedRestUrl;
-    private static int _sharedRefCount;
-    private static bool _sharedCuratedResourcesSeeded;
-    private static bool _sharedInitialized;
+    private static readonly GeoServerSharedState SharedState = new();
+
+    private sealed class GeoServerSharedState
+    {
+        public IContainer? SharedContainer { get; set; }
+        public string? SharedBaseUrl { get; set; }
+        public string? SharedRestUrl { get; set; }
+        public int SharedRefCount { get; set; }
+        public bool SharedCuratedResourcesSeeded { get; set; }
+        public bool SharedInitialized { get; set; }
+    }
 
     private const string GeoServerImage = "docker.osgeo.org/geoserver:2.28.0";
     private const int GeoServerPort = 8080;
@@ -50,9 +51,9 @@ public sealed class GeoServerFixture : IAsyncLifetime
         _seedCuratedData = seedCuratedData;
     }
 
-    public string BaseUrl => _sharedBaseUrl ?? throw new InvalidOperationException("GeoServer fixture not initialized.");
+    public string BaseUrl => SharedState.SharedBaseUrl ?? throw new InvalidOperationException("GeoServer fixture not initialized.");
 
-    public string RestUrl => _sharedRestUrl ?? throw new InvalidOperationException("GeoServer fixture not initialized.");
+    public string RestUrl => SharedState.SharedRestUrl ?? throw new InvalidOperationException("GeoServer fixture not initialized.");
 
     public string Username => DefaultUsernameValue;
 
@@ -63,23 +64,20 @@ public sealed class GeoServerFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (!_sharedInitialized)
+            if (!SharedState.SharedInitialized)
             {
                 await StartContainerAsync().ConfigureAwait(false);
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = true;
+                SharedState.SharedInitialized = true;
             }
 
-            if (_seedCuratedData && !_sharedCuratedResourcesSeeded)
+            if (_seedCuratedData && !SharedState.SharedCuratedResourcesSeeded)
             {
                 await SeedCuratedResourcesAsync(
-                    _sharedRestUrl ?? throw new InvalidOperationException("GeoServer REST URL not initialized.")).ConfigureAwait(false);
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedCuratedResourcesSeeded = true;
+                    SharedState.SharedRestUrl ?? throw new InvalidOperationException("GeoServer REST URL not initialized.")).ConfigureAwait(false);
+                SharedState.SharedCuratedResourcesSeeded = true;
             }
 
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            _sharedRefCount++;
+            SharedState.SharedRefCount++;
         }
         finally
         {
@@ -92,29 +90,23 @@ public sealed class GeoServerFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (_sharedRefCount > 0)
+            if (SharedState.SharedRefCount > 0)
             {
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedRefCount--;
+                SharedState.SharedRefCount--;
             }
 
-            if (_sharedRefCount == 0 && _sharedInitialized)
+            if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
-                if (_sharedContainer is not null)
+                if (SharedState.SharedContainer is not null)
                 {
-                    await _sharedContainer.DisposeAsync().ConfigureAwait(false);
+                    await SharedState.SharedContainer.DisposeAsync().ConfigureAwait(false);
                 }
 
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedContainer = null;
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedBaseUrl = null;
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedRestUrl = null;
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedCuratedResourcesSeeded = false;
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = false;
+                SharedState.SharedContainer = null;
+                SharedState.SharedBaseUrl = null;
+                SharedState.SharedRestUrl = null;
+                SharedState.SharedCuratedResourcesSeeded = false;
+                SharedState.SharedInitialized = false;
             }
         }
         finally
@@ -125,18 +117,18 @@ public sealed class GeoServerFixture : IAsyncLifetime
 
     private static async Task StartContainerAsync()
     {
-        _sharedContainer = new ContainerBuilder()
+        SharedState.SharedContainer = new ContainerBuilder()
             .WithImage(GeoServerImage)
             .WithPortBinding(GeoServerPort, true)
             .Build();
 
-        await _sharedContainer.StartAsync().ConfigureAwait(false);
+        await SharedState.SharedContainer.StartAsync().ConfigureAwait(false);
 
-        var port = _sharedContainer.GetMappedPublicPort(GeoServerPort);
-        _sharedBaseUrl = $"http://127.0.0.1:{port}";
-        _sharedRestUrl = $"{_sharedBaseUrl}/geoserver/rest";
+        var port = SharedState.SharedContainer.GetMappedPublicPort(GeoServerPort);
+        SharedState.SharedBaseUrl = $"http://127.0.0.1:{port}";
+        SharedState.SharedRestUrl = $"{SharedState.SharedBaseUrl}/geoserver/rest";
 
-        await WaitForGeoServerReadyAsync(_sharedBaseUrl, _sharedRestUrl).ConfigureAwait(false);
+        await WaitForGeoServerReadyAsync(SharedState.SharedBaseUrl, SharedState.SharedRestUrl).ConfigureAwait(false);
     }
 
     private static async Task WaitForGeoServerReadyAsync(string baseUrl, string restUrl)

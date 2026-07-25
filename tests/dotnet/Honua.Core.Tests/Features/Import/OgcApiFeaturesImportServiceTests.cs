@@ -525,11 +525,9 @@ public sealed class OgcApiFeaturesImportServiceTests
                 _ => null
             };
 
-            return Task.FromResult(body == null
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                ? new HttpResponseMessage(HttpStatusCode.NotFound)
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                : new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<HttpResponseMessage>(body == null
+                ? new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.NotFound)
+                : new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
                 });
@@ -551,8 +549,7 @@ public sealed class OgcApiFeaturesImportServiceTests
 
             if (path == "/ogcapi/collections/roads")
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
                         """
@@ -575,8 +572,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                     ItemsRequests.Add(request.RequestUri!);
                 }
 
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
                         """
@@ -601,8 +597,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 });
             }
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 
@@ -621,8 +616,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         {
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
                         """
@@ -655,8 +649,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 "  ]\n" +
                 "}";
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
             });
@@ -671,8 +664,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         {
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
                         """
@@ -709,8 +701,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 }
                 """;
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
             });
@@ -736,8 +727,7 @@ public sealed class OgcApiFeaturesImportServiceTests
 
             if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
                         """
@@ -753,8 +743,7 @@ public sealed class OgcApiFeaturesImportServiceTests
                 });
             }
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
             });

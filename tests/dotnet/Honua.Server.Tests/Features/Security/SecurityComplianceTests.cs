@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -390,11 +392,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         }
         finally
         {
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            foreach (var request in requests)
-            {
-                request.Dispose();
-            }
+            DeferredDisposal.DisposeAll(requests);
         }
     }
 

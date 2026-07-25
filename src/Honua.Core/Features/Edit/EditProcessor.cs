@@ -656,8 +656,11 @@ public sealed class EditProcessor : IEditProcessor
         {
             foreach (var feature in (operations.Where(o =>
                 o.Type == EditOperationType.Update &&
-                o.Feature?.ObjectId is not null &&
-                o.Feature?.Constraints?.ExpectedStateToken is { Length: > 0 })).Select(operation => operation.Feature!.Value))
+                o.Feature is
+                {
+                    ObjectId: not null,
+                    Constraints: { ExpectedStateToken.Length: > 0 }
+                })).Select(operation => operation.Feature!.Value))
             {
                 Register(ref byObjectId, feature.ObjectId!.Value, feature.Constraints!.Value.ExpectedStateToken!);
             }

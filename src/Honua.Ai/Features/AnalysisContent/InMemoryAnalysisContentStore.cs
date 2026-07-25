@@ -177,21 +177,16 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         // Opportunistic sweep: remove entries whose ExpiresAt has passed so the
         // dictionary does not grow without bound across preview calls.
         var now = _timeProvider.GetUtcNow();
-        // Not rewritten as .Where(...): the match test itself needs to re-fetch the
-        // current value (TryGetValue) so the later value-conditional TryRemove races
-        // safely against concurrent writers; a LINQ filter would need the same
-        // out-var capture and would not read more clearly than the loop.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in _artifacts.Keys)
+        foreach (var entry in _artifacts)
         {
-            if (_artifacts.TryGetValue(key, out var candidate)
-                && candidate.ExpiresAt.HasValue
-                && candidate.ExpiresAt.Value <= now)
+            switch (entry.Value.ExpiresAt)
             {
-                // Value-conditional remove: only drop the exact stale entry we just
-                // inspected, so a concurrent refresh between the check and the remove
-                // is not lost.
-                _artifacts.TryRemove(new KeyValuePair<string, ResultArtifactRecord>(key, candidate));
+                case { } expiresAt when expiresAt <= now:
+                    // Value-conditional remove: only drop the exact stale entry we just
+                    // inspected, so a concurrent refresh between the check and the remove
+                    // is not lost.
+                    _artifacts.TryRemove(entry);
+                    break;
             }
         }
 

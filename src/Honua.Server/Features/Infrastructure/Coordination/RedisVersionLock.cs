@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Coordination;
@@ -86,7 +88,6 @@ internal sealed partial class RedisVersionLock : IVersionLock
         private readonly string _key;
         private readonly string _token;
         private readonly TimeSpan _leaseDuration;
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         private readonly CancellationTokenSource _cts = new();
         private readonly Task _renewalLoop;
         private readonly ILogger _logger;
@@ -169,7 +170,7 @@ internal sealed partial class RedisVersionLock : IVersionLock
                 // _cts is disposed here (rather than via a 'using' at its declaration) because it
                 // must stay alive across the preceding awaits (CancelAsync, the renewal-loop join,
                 // and the release attempt above) before it is safe to dispose.
-                _cts.Dispose();
+                DeferredDisposal.Dispose(_cts);
             }
         }
     }

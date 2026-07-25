@@ -316,11 +316,9 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
             _ = command.Parameters.AddWithValue("lock_key", MigrationLockKey);
             _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
         }
-        // Intentionally generic: best-effort unlock; the advisory lock is connection-scoped and
-        // will be released when the connection is disposed regardless of this call's outcome.
-        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
+            Debug.WriteLine(caughtException);
         }
     }
 
@@ -507,11 +505,9 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
                 process.Kill(entireProcessTree: true);
             }
         }
-        // Intentionally generic: best-effort cleanup of a timed-out backup-hook process; the process
-        // may have already exited between the HasExited check and Kill.
-        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
+            Debug.WriteLine(caughtException);
         }
     }
 
@@ -563,11 +559,9 @@ internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
         {
             await _backupHookRecorder.RecordAsync(result, cancellationToken).ConfigureAwait(false);
         }
-        // Intentionally generic: backup-hook observability recording must not change migration
-        // apply/fail-closed semantics, so any recorder failure here is swallowed.
-        // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
+            Debug.WriteLine(caughtException);
         }
     }
 }

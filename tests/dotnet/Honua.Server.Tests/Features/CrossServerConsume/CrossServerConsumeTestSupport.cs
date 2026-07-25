@@ -58,13 +58,11 @@ internal static class CrossServerConsumeTestSupport
     {
         using var response = await httpClient.GetAsync(url).ConfigureAwait(false);
         var body = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-        var contentType = response.Content.Headers.ContentType?.MediaType;
+        var contentType = response.Content.Headers.ContentType?.MediaType
+            ?? throw new InvalidOperationException("Consume image response did not include a content type.");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, "consume image request should succeed: {0}", url);
-        // FluentAssertions' NotBeNull() is a null-safe extension method, not a dereference.
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        contentType.Should().NotBeNull();
-        contentType!.Should().StartWith("image/");
+        contentType.Should().StartWith("image/");
         body.Length.Should().BeGreaterThan(100, "source server should return a non-empty image payload");
 
         return body;

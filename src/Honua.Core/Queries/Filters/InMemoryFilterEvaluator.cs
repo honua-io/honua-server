@@ -457,18 +457,14 @@ public static class InMemoryFilterEvaluator
         // Not a simple LINQ filter: TryValidateScalarExpression reports the specific reason
         // for whichever item fails via `out error`, so the caller-visible message depends on
         // which element the loop stopped at, not just whether all elements pass.
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var value in valueList.Values)
-        {
-            if (!TryValidateScalarExpression(value, out error))
-            {
-                return false;
-            }
-        }
-
-        error = null;
-        return true;
+        error = valueList.Values
+            .Select(GetScalarValidationError)
+            .FirstOrDefault(candidate => candidate is not null);
+        return error is null;
     }
+
+    private static string? GetScalarValidationError(FilterExpression expression)
+        => TryValidateScalarExpression(expression, out var error) ? null : error;
 
     private static bool FailUnsupportedBooleanExpression(FilterExpression expression, out string? error)
     {

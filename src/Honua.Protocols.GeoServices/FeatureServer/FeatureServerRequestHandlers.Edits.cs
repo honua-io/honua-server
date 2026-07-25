@@ -803,10 +803,12 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
-        // codeql[cs/linq/missed-where] -- the predicate binds the parsed object ID through an out variable.
-        foreach (var entry in attributes.Where(e => string.Equals(e.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)))
+        using var entries = attributes.GetEnumerator();
+        while (entries.MoveNext())
         {
-            if (FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
+            var entry = entries.Current;
+            if (string.Equals(entry.Key, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+                FeatureServerValueParser.TryConvertToLong(entry.Value, out var objectId))
             {
                 return objectId;
             }
@@ -1302,14 +1304,18 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyDictionary<string, StringValues> values)
     {
         Dictionary<string, StringValues>? filter = null;
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in DeleteFilterParameterKeys)
+        var keyIndex = 0;
+        while (keyIndex < DeleteFilterParameterKeys.Length)
         {
-            if (TryGetValue(values, key, out var raw) && !StringValues.IsNullOrEmpty(raw))
+            var key = DeleteFilterParameterKeys[keyIndex];
+            if (TryGetValue(values, key, out var raw) &&
+                !StringValues.IsNullOrEmpty(raw))
             {
                 filter ??= new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
                 filter[key] = raw;
             }
+
+            keyIndex++;
         }
 
         return filter;

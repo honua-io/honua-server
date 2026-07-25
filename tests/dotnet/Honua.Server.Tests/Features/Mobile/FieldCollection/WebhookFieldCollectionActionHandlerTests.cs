@@ -190,7 +190,6 @@ public sealed class WebhookFieldCollectionActionHandlerTests
         // Ownership of the HttpResponseMessage transfers to the caller (HttpClient/handler chain);
         // it cannot be disposed here since it must be returned intact.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            => Task.FromResult(new HttpResponseMessage(_status));
+            => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(_status));
     }
 }

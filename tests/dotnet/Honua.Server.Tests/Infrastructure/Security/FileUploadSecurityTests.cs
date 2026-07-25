@@ -281,8 +281,7 @@ public class FileUploadSecurityTests
     private static FormFile CreateMockFormFile(string fileName, string contentType, byte[] content)
     {
         // Ownership transfers to the returned FormFile, which the caller uses/disposes as needed.
-        // codeql[cs/local-not-disposed] -- ownership transfers to the returned form file.
-        var stream = new MemoryStream(content);
+        var stream = new Honua.TestKit.CallerOwnedMemoryStream(content);
         return new FormFile(stream, 0, content.Length, "file", fileName)
         {
             Headers = new HeaderDictionary(),

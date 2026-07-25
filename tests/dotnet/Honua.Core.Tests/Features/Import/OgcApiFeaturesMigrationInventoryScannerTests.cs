@@ -522,8 +522,7 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
             if (pathAndQuery == "/redirect")
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.Found)
                 {
                     Headers = { Location = new Uri("/ogcapi/", UriKind.Relative) }
                 });
@@ -531,18 +530,15 @@ public sealed class OgcApiFeaturesMigrationInventoryScannerTests
 
             if (pathAndQuery == "/external-redirect")
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.Found)
                 {
                     Headers = { Location = new Uri("https://other.example/ogcapi/") }
                 });
             }
 
-            return Task.FromResult(json == null
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                ? new HttpResponseMessage(HttpStatusCode.NotFound)
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                : new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<HttpResponseMessage>(json == null
+                ? new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.NotFound)
+                : new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
                 });

@@ -324,8 +324,7 @@ public class TileDecompressorFixtureTests
         {
             var available = Math.Max(0, _data.Length - (int)offset);
             var bytesToRead = Math.Min(length, available);
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult<Stream>(new MemoryStream(_data, (int)offset, bytesToRead));
+            return Task.FromResult<Stream>(new Honua.TestKit.CallerOwnedMemoryStream(_data, (int)offset, bytesToRead));
         }
         public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
             => Task.FromResult((long)_data.Length);

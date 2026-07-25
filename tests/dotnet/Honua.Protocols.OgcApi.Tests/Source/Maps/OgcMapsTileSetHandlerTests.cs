@@ -149,11 +149,10 @@ public class OgcMapsTileSetHandlerTests
         var context = CreateOgcMapsContext();
         var result = await handler.GetMapTileSetsAsync(1, context: context);
 
-        var okResult = result as Ok<TileSetsList>;
-        Assert.NotNull(okResult);
-        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        foreach (var tileSet in okResult.Value.Tilesets)
+        var payload = (result as Ok<TileSetsList>)?.Value
+            ?? throw new InvalidOperationException("Expected a tile-set list result.");
+        payload.Links.Should().OnlyContain(link => link.Href.StartsWith("http"));
+        foreach (var tileSet in payload.Tilesets)
         {
             foreach (var link in tileSet.Links)
             {
@@ -171,11 +170,10 @@ public class OgcMapsTileSetHandlerTests
         var context = CreateAnonymousOgcMapsContext();
         var result = await handler.GetMapTileSetsAsync(1, context: context);
 
-        var okResult = result as Ok<TileSetsList>;
-        Assert.NotNull(okResult);
-        okResult!.Value!.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        foreach (var tileSet in okResult.Value.Tilesets)
+        var payload = (result as Ok<TileSetsList>)?.Value
+            ?? throw new InvalidOperationException("Expected a tile-set list result.");
+        payload.Links.Should().OnlyContain(link => link.Href.StartsWith("http://localhost", StringComparison.Ordinal));
+        foreach (var tileSet in payload.Tilesets)
         {
             foreach (var link in tileSet.Links)
             {
@@ -211,12 +209,11 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad");
 
-        var okResult = result as Ok<TileSet>;
-        Assert.NotNull(okResult);
-        okResult!.Value!.TileMatrixSetId.Should().Be("WebMercatorQuad");
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        okResult.Value.Links.Should().Contain(link => link.Rel == "self");
-        okResult.Value.Links.Should().Contain(link => link.Rel == "item");
+        var payload = (result as Ok<TileSet>)?.Value
+            ?? throw new InvalidOperationException("Expected a tile-set result.");
+        payload.TileMatrixSetId.Should().Be("WebMercatorQuad");
+        payload.Links.Should().Contain(link => link.Rel == "self");
+        payload.Links.Should().Contain(link => link.Rel == "item");
     }
 
     [UnitTest]
@@ -249,11 +246,10 @@ public class OgcMapsTileSetHandlerTests
 
         var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad", context: CreateOgcMapsContext());
 
-        var okResult = result as Ok<TileSet>;
-        Assert.NotNull(okResult);
-        okResult!.Value!.Links.Should().NotContain(link => link.Rel == "item");
-        // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-        okResult.Value.Links.Should().NotContain(link =>
+        var payload = (result as Ok<TileSet>)?.Value
+            ?? throw new InvalidOperationException("Expected a tile-set result.");
+        payload.Links.Should().NotContain(link => link.Rel == "item");
+        payload.Links.Should().NotContain(link =>
             link.Href.Contains("/ogc/tiles/", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -308,16 +304,9 @@ public class OgcMapsTileSetHandlerTests
         var protocols = mapsEnabled
             ? new[] { OgcApiMapsProtocol, OgcApiTilesProtocol }
             : new[] { OgcApiTilesProtocol };
-        // Each arm is independently matched against the tri-state `bool?` input
-        // (true / false / null); none is a tautology despite the earlier `true`
-        // arm having already been checked and failed by the time `false` is tested.
-        var policy = allowAnonymous switch
-        {
-            true => PublicPolicy(),
-            // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-            false => new AccessPolicy { AllowAnonymous = false },
-            _ => null,
-        };
+        var policy = allowAnonymous.HasValue
+            ? new AccessPolicy { AllowAnonymous = allowAnonymous.Value }
+            : null;
         return new TestMetadataV2GraphBuilder()
             .AddResource($"resource-{layerId}", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: policy)
             .AddStorageBinding($"binding-{layerId}", $"resource-{layerId}", "test", storageLayerId: layerId)

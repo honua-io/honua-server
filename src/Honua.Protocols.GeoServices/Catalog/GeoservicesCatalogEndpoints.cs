@@ -241,21 +241,11 @@ internal static class GeoservicesCatalogEndpoints
     /// </summary>
     private static List<string> MapEsriDirectoryTypes(MetadataV2Service service)
     {
-        // Not rewritten as .Where/.Select: TryMapServiceType uses the Try-pattern (bool + out),
-        // and the loop both filters (unmapped protocols) and de-duplicates while preserving the
-        // service's declared protocol order — a single LINQ expression would be less clear here.
-        var types = new List<string>();
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var protocol in service.Protocols)
-        {
-            if (TryMapServiceType(protocol, out var directoryType) &&
-                !types.Contains(directoryType, StringComparer.Ordinal))
-            {
-                types.Add(directoryType);
-            }
-        }
-
-        return types;
+        return service.Protocols
+            .Select(protocol => TryMapServiceType(protocol, out var directoryType) ? directoryType : null)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>

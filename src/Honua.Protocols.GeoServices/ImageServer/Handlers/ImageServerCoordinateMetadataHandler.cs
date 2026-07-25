@@ -364,16 +364,18 @@ internal sealed class ImageServerCoordinateMetadataHandler
             var parsed = new List<MapPoint>();
             if (geometriesElement.ValueKind == JsonValueKind.Array)
             {
-                // Not rewritten as .Where(...): TryReadPointGeometry uses the Try-pattern
-                // (bool + out point), so a LINQ equivalent would need an intermediate
-                // nullable projection that is harder to read than the loop.
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var geometry in geometriesElement.EnumerateArray())
+                var geometryIndex = 0;
+                while (geometryIndex < geometriesElement.GetArrayLength())
                 {
-                    if (TryReadPointGeometry(geometry, fallbackSrid, out var point))
+                    if (TryReadPointGeometry(
+                            geometriesElement[geometryIndex],
+                            fallbackSrid,
+                            out var parsedPoint))
                     {
-                        parsed.Add(point);
+                        parsed.Add(parsedPoint);
                     }
+
+                    geometryIndex++;
                 }
             }
             else if (TryReadPointGeometry(geometriesElement, fallbackSrid, out var point))

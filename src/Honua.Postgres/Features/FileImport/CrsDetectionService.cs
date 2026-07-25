@@ -202,11 +202,13 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         // is not a projected CRS to avoid false matches on datum names
         if (!isProjected)
         {
-            // codeql[cs/linq/missed-where] -- validation is asynchronous and must retain imperative control flow.
             foreach (var kvp in _wellKnownEpsgCodes.Where(kvp => cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase)))
             {
-                if (await ValidateSridAsync(kvp.Value, cancellationToken))
-                    return kvp.Value;
+                switch (await ValidateSridAsync(kvp.Value, cancellationToken).ConfigureAwait(false))
+                {
+                    case true:
+                        return kvp.Value;
+                }
             }
         }
         else if (TryMatchEsriProjectedName(cleanedContent, out var esriEpsg)

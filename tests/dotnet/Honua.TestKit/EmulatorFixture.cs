@@ -13,16 +13,17 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class EmulatorFixture : IAsyncLifetime
 {
-    // These static fields back an intentional process-wide, ref-counted shared container:
-    // every EmulatorFixture instance (one per xUnit collection) mutates the same statics
-    // under _sharedLock so only the first InitializeAsync starts containers and only the
-    // last DisposeAsync tears them down. Writing static state from instance lifecycle
-    // methods is the design, not a bug.
+    // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static IContainer? _localStackContainer;
-    private static IContainer? _azuriteContainer;
-    private static bool _sharedInitialized;
-    private static int _sharedRefCount;
+    private static readonly EmulatorSharedState SharedState = new();
+
+    private sealed class EmulatorSharedState
+    {
+        public IContainer? LocalStackContainer { get; set; }
+        public IContainer? AzuriteContainer { get; set; }
+        public bool SharedInitialized { get; set; }
+        public int SharedRefCount { get; set; }
+    }
 
     // Environment variable names expected by tests
     private const string LocalStackServiceUrlEnv = "HONUA_TEST_S3_SERVICE_URL";
@@ -40,16 +41,14 @@ public sealed class EmulatorFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (!_sharedInitialized)
+            if (!SharedState.SharedInitialized)
             {
                 await StartContainersAsync();
                 SetEnvironmentVariables();
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = true;
+                SharedState.SharedInitialized = true;
             }
 
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            _sharedRefCount++;
+            SharedState.SharedRefCount++;
         }
         finally
         {
@@ -62,18 +61,16 @@ public sealed class EmulatorFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (_sharedRefCount > 0)
+            if (SharedState.SharedRefCount > 0)
             {
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedRefCount--;
+                SharedState.SharedRefCount--;
             }
 
-            if (_sharedRefCount == 0 && _sharedInitialized)
+            if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
                 await StopContainersAsync();
                 ClearEnvironmentVariables();
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = false;
+                SharedState.SharedInitialized = false;
             }
         }
         finally
@@ -85,7 +82,7 @@ public sealed class EmulatorFixture : IAsyncLifetime
     private static async Task StartContainersAsync()
     {
         // Start LocalStack for S3 emulation
-        _localStackContainer = new ContainerBuilder()
+        SharedState.LocalStackContainer = new ContainerBuilder()
             .WithImage("localstack/localstack:3.6.0")
             .WithPortBinding(4566, true)
             .WithEnvironment("SERVICES", "s3")
@@ -96,7 +93,7 @@ public sealed class EmulatorFixture : IAsyncLifetime
             .Build();
 
         // Start Azurite for Azure Blob emulation
-        _azuriteContainer = new ContainerBuilder()
+        SharedState.AzuriteContainer = new ContainerBuilder()
             .WithImage("mcr.microsoft.com/azure-storage/azurite:3.31.0")
             .WithPortBinding(10000, true)
             .WithCommand("azurite-blob", "--blobHost", "0.0.0.0", "--blobPort", "10000", "--location", "/data", "--loose", "--skipApiVersionCheck")
@@ -104,12 +101,12 @@ public sealed class EmulatorFixture : IAsyncLifetime
 
         // Start containers in parallel
         await Task.WhenAll(
-            _localStackContainer.StartAsync(),
-            _azuriteContainer.StartAsync()
+            SharedState.LocalStackContainer.StartAsync(),
+            SharedState.AzuriteContainer.StartAsync()
         );
 
-        var localStackPort = _localStackContainer.GetMappedPublicPort(4566);
-        var azuritePort = _azuriteContainer.GetMappedPublicPort(10000);
+        var localStackPort = SharedState.LocalStackContainer.GetMappedPublicPort(4566);
+        var azuritePort = SharedState.AzuriteContainer.GetMappedPublicPort(10000);
         await WaitForEmulatorsReadyAsync(localStackPort, azuritePort);
     }
 
@@ -117,14 +114,14 @@ public sealed class EmulatorFixture : IAsyncLifetime
     {
         var tasks = new List<Task>();
 
-        if (_localStackContainer is not null)
+        if (SharedState.LocalStackContainer is not null)
         {
-            tasks.Add(_localStackContainer.DisposeAsync().AsTask());
+            tasks.Add(SharedState.LocalStackContainer.DisposeAsync().AsTask());
         }
 
-        if (_azuriteContainer is not null)
+        if (SharedState.AzuriteContainer is not null)
         {
-            tasks.Add(_azuriteContainer.DisposeAsync().AsTask());
+            tasks.Add(SharedState.AzuriteContainer.DisposeAsync().AsTask());
         }
 
         if (tasks.Count > 0)
@@ -132,19 +129,19 @@ public sealed class EmulatorFixture : IAsyncLifetime
             await Task.WhenAll(tasks);
         }
 
-        _localStackContainer = null;
-        _azuriteContainer = null;
+        SharedState.LocalStackContainer = null;
+        SharedState.AzuriteContainer = null;
     }
 
     private static void SetEnvironmentVariables()
     {
-        if (_localStackContainer is null || _azuriteContainer is null)
+        if (SharedState.LocalStackContainer is null || SharedState.AzuriteContainer is null)
         {
             throw new InvalidOperationException("Containers not started");
         }
 
         // LocalStack/S3 environment variables
-        var localStackPort = _localStackContainer.GetMappedPublicPort(4566);
+        var localStackPort = SharedState.LocalStackContainer.GetMappedPublicPort(4566);
         Environment.SetEnvironmentVariable(LocalStackServiceUrlEnv, $"http://localhost:{localStackPort}");
         Environment.SetEnvironmentVariable(S3BucketEnv, "test-bucket");
         Environment.SetEnvironmentVariable(S3RegionEnv, "us-east-1");
@@ -153,7 +150,7 @@ public sealed class EmulatorFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable(S3ForcePathStyleEnv, "true");
 
         // Azurite/Azure Blob environment variables
-        var azuritePort = _azuriteContainer.GetMappedPublicPort(10000);
+        var azuritePort = SharedState.AzuriteContainer.GetMappedPublicPort(10000);
         Environment.SetEnvironmentVariable(AzureBlobConnectionStringEnv,
             $"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:{azuritePort}/devstoreaccount1;");
         Environment.SetEnvironmentVariable(AzureBlobContainerEnv, "test-container");

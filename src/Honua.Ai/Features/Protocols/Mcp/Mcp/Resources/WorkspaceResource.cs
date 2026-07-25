@@ -152,22 +152,19 @@ internal sealed class WorkspaceResource : IMcpResource
 
     private static string? ResolveResultsUri(Workspace workspace)
     {
-        // Not rewritten as .Where(...)/.Select(...): the match test itself is
-        // the out-param lookup (TryGetMetadataValue) whose result is what gets
-        // returned, so a LINQ filter would need the same out-var capture.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var artifact in workspace.Artifacts)
-        {
-            if (TryGetMetadataValue(artifact.Metadata, "resultPackageId", out var resultPackageId)
-                || TryGetMetadataValue(artifact.Metadata, "result.package.id", out resultPackageId)
-                || TryGetMetadataValue(artifact.Metadata, "honua.resultPackageId", out resultPackageId)
-                || TryGetMetadataValue(artifact.Metadata, "sourceResultPackageId", out resultPackageId))
-            {
-                return McpResourceUris.ResultPackageUri(resultPackageId);
-            }
-        }
+        var resultPackageId = workspace.Artifacts
+            .Select(artifact =>
+                TryGetMetadataValue(artifact.Metadata, "resultPackageId", out var value) ||
+                TryGetMetadataValue(artifact.Metadata, "result.package.id", out value) ||
+                TryGetMetadataValue(artifact.Metadata, "honua.resultPackageId", out value) ||
+                TryGetMetadataValue(artifact.Metadata, "sourceResultPackageId", out value)
+                    ? value
+                    : null)
+            .FirstOrDefault(value => value is not null);
 
-        return null;
+        return resultPackageId is null
+            ? null
+            : McpResourceUris.ResultPackageUri(resultPackageId);
     }
 
     private static bool TryGetMetadataValue(

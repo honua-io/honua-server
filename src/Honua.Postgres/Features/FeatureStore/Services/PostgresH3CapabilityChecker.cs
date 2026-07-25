@@ -49,15 +49,13 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
     {
         // Volatile reads ensure visibility of writes from other threads on
         // weakly-ordered architectures (ARM). On x86 these compile to plain loads.
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-        var cached = Volatile.Read(ref s_cachedResult);
+        var cached = ReadCachedResult();
         if (cached == 1) return true;
         if (cached == 2) return false;
 
         // Fast-path: if a transient failure was cached recently, return null
         // without re-acquiring the semaphore.
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-        var expiryMs = Volatile.Read(ref s_failureCacheExpiryMs);
+        var expiryMs = ReadFailureCacheExpiry();
         if (expiryMs > 0 && Environment.TickCount64 < expiryMs)
         {
             return null;
@@ -67,13 +65,12 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
         try
         {
             // Double-check after acquiring lock
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            var cachedInLock = Volatile.Read(ref s_cachedResult);
+            var cachedInLock = ReadCachedResult();
             if (cachedInLock == 1) return true;
             if (cachedInLock == 2) return false;
 
             // Double-check transient failure cache inside lock
-            if (s_failureCacheExpiryMs > 0 && Environment.TickCount64 < s_failureCacheExpiryMs)
+            if (IsFailureCacheActive())
             {
                 return null;
             }
@@ -85,8 +82,7 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
 
             var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             var available = result is true;
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            Volatile.Write(ref s_cachedResult, available ? 1 : 2);
+            StoreCapabilityResult(available);
 
             if (available)
             {
@@ -109,8 +105,7 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
             // subsequent requests fast-fail instead of serializing behind the semaphore while the
             // database is unreachable. Returning null (vs. throwing) lets callers treat "unknown" as
             // "capability unavailable for now" rather than failing the whole request.
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            Volatile.Write(ref s_failureCacheExpiryMs, Environment.TickCount64 + FailureCacheDurationMs);
+            StoreTransientFailure();
             LogH3ExtensionCheckFailed(_logger, ex);
             return null;
         }
@@ -118,6 +113,26 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
         {
             s_lock.Release();
         }
+    }
+
+    private static int ReadCachedResult() => Volatile.Read(ref s_cachedResult);
+
+    private static long ReadFailureCacheExpiry() => Volatile.Read(ref s_failureCacheExpiryMs);
+
+    private static bool IsFailureCacheActive()
+    {
+        var expiryMs = ReadFailureCacheExpiry();
+        return expiryMs > 0 && Environment.TickCount64 < expiryMs;
+    }
+
+    private static void StoreCapabilityResult(bool available)
+    {
+        Volatile.Write(ref s_cachedResult, available ? 1 : 2);
+    }
+
+    private static void StoreTransientFailure()
+    {
+        Volatile.Write(ref s_failureCacheExpiryMs, Environment.TickCount64 + FailureCacheDurationMs);
     }
 
     [LoggerMessage(

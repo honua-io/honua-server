@@ -8,6 +8,7 @@ using System.Threading.Channels;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Events;
@@ -216,7 +217,6 @@ internal sealed partial class TileOperationJobService(
 
     public async Task ProcessQueuedJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         var leaseCoordinator = await TryAcquireJobLeaseAsync(jobId).ConfigureAwait(false);
         if (_redis != null && leaseCoordinator == null)
         {
@@ -382,7 +382,7 @@ internal sealed partial class TileOperationJobService(
                 renewalCts.Cancel();
                 await renewalTask.ConfigureAwait(false);
                 await leaseCoordinator!.ReleaseAsync().ConfigureAwait(false);
-                leaseCoordinator.Dispose();
+                DeferredDisposal.Dispose(leaseCoordinator);
             }
         }
     }

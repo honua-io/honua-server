@@ -147,19 +147,22 @@ internal sealed partial class AuditChainVerificationBackgroundService : Backgrou
         // method is safe; Interlocked keeps the write/read atomic for the gauge callback.
         if (report.Verified)
         {
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            Interlocked.Exchange(ref _chainBrokenGauge, 0);
+            SetChainBrokenGauge(isBroken: false);
             LogVerified(_logger, report.RowsChecked, report.UnhashedRows);
             return;
         }
 
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-        Interlocked.Exchange(ref _chainBrokenGauge, 1);
+        SetChainBrokenGauge(isBroken: true);
         LogChainBroken(
             _logger,
             report.FirstBrokenAuditId ?? -1,
             report.RowsChecked,
             report.FailureReason ?? "unknown");
+    }
+
+    private static void SetChainBrokenGauge(bool isBroken)
+    {
+        Interlocked.Exchange(ref _chainBrokenGauge, isBroken ? 1 : 0);
     }
 
     [LoggerMessage(EventId = 7330, Level = LogLevel.Information, Message = "Scheduled audit hash-chain verification is disabled.")]

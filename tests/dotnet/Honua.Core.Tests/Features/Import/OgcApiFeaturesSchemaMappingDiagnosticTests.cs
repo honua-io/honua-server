@@ -275,8 +275,7 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
             {
                 if (!_includeSchema)
                 {
-                    // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                    return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.NotFound));
                 }
                 return Json("""
                     {
@@ -310,15 +309,13 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
                     """, "application/geo+json");
             }
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.NotFound));
         }
 
         // Response ownership transfers to the caller via the return value
         // (HttpClient's pipeline disposes it); nothing leaks here.
         private static Task<HttpResponseMessage> Json(string body, string mediaType)
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, mediaType)
             });

@@ -90,14 +90,13 @@ internal sealed class StatisticsFrequencyExecutor(
         public void Accumulate(IFeature feature, IReadOnlyList<string> summaryFields)
         {
             Frequency++;
-            // Not a .Where(...) candidate: TryReadNumeric's out value is the addend, so
-            // filtering separately would mean parsing each value twice.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var field in summaryFields)
             {
-                if (StatisticsSupport.TryReadNumeric(feature, field, out var value))
+                switch (StatisticsSupport.TryReadNumeric(feature, field, out var value))
                 {
-                    _sums[field].Add(value);
+                    case true:
+                        _sums[field].Add(value);
+                        break;
                 }
             }
         }

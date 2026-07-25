@@ -644,17 +644,13 @@ internal sealed class WorkflowPackageService(
                 continue;
             }
 
-            // Not a simple .Where(): the filter condition depends on Enum.TryParse's `out`
-            // value, which the body also needs, so a LINQ predicate can't cleanly carry
-            // that state without re-parsing per candidate.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var output in definition.OutputSchemas)
-            {
-                if (Enum.TryParse<ArtifactKind>(output.Name, ignoreCase: false, out var kind))
-                {
-                    outputs.Add(kind);
-                }
-            }
+            outputs.UnionWith(definition.OutputSchemas
+                .Select(output =>
+                    Enum.TryParse<ArtifactKind>(output.Name, ignoreCase: false, out var kind)
+                        ? (ArtifactKind?)kind
+                        : null)
+                .Where(kind => kind.HasValue)
+                .Select(kind => kind.GetValueOrDefault()));
 
             steps.Add(new AnalysisPlanStep
             {
@@ -787,17 +783,13 @@ internal sealed class WorkflowPackageService(
         IReadOnlyList<WorkflowNodePortSchema> outputSchemas)
     {
         var kinds = new HashSet<ArtifactKind>();
-        // Not a simple .Where(): the filter condition depends on Enum.TryParse's `out`
-        // value, which the body also needs, so a LINQ predicate can't cleanly carry
-        // that state without re-parsing per candidate.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var schema in outputSchemas)
-        {
-            if (Enum.TryParse<ArtifactKind>(schema.Name, ignoreCase: false, out var kind))
-            {
-                kinds.Add(kind);
-            }
-        }
+        kinds.UnionWith(outputSchemas
+            .Select(schema =>
+                Enum.TryParse<ArtifactKind>(schema.Name, ignoreCase: false, out var kind)
+                    ? (ArtifactKind?)kind
+                    : null)
+            .Where(kind => kind.HasValue)
+            .Select(kind => kind.GetValueOrDefault()));
 
         return kinds.Count == 0 ? [ArtifactKind.File] : kinds.ToArray();
     }

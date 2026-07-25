@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Caching;
@@ -411,7 +412,6 @@ internal sealed partial class ODataQueryHandler(
         // activity was started. A using declaration would either force activity creation
         // before validation (polluting telemetry for invalid-layer requests) or be out of
         // scope for the catch blocks.
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         try
         {
@@ -593,12 +593,6 @@ internal sealed partial class ODataQueryHandler(
                 if (cached != null)
                 {
                     ODataUtilityService.SetODataHeaders(context);
-                    // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-                    if (trackChangesRequested)
-                    {
-                        ODataUtilityService.ApplyTrackChangesPreference(context);
-                    }
-
                     HonuaTelemetry.SetSuccess(featureActivity);
                     return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
                 }
@@ -790,7 +784,7 @@ internal sealed partial class ODataQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 

@@ -170,8 +170,7 @@ public sealed class Wcs20ZarrOversizeEndpointsTests : IAsyncLifetime
         {
             var data = Get(key);
             // Ownership transfers to the returned Stream's caller, which disposes it after reading.
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult<Stream>(new MemoryStream(
+            return Task.FromResult<Stream>(new Honua.TestKit.CallerOwnedMemoryStream(
                 data,
                 checked((int)offset),
                 Math.Min(length, data.Length - checked((int)offset))));

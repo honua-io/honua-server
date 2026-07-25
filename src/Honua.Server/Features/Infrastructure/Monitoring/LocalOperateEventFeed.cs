@@ -212,18 +212,16 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            // Not a pure map: mutates the outer `results` accumulator and breaks out of the inner
-            // loop once pageSize is reached, so this doesn't reduce cleanly to a '.Select(...)'.
-            foreach (var value in (page.Items).Select(item => MapAlertEvent(item)))
+            var itemIndex = 0;
+            while (itemIndex < page.Items.Count && results.Count < pageSize)
             {
+                var value = MapAlertEvent(page.Items[itemIndex]);
                 if (MatchesFilter(filter, value))
                 {
                     results.Add(value);
-                    if (results.Count == pageSize)
-                    {
-                        break;
-                    }
                 }
+
+                itemIndex++;
             }
 
             if (string.IsNullOrEmpty(page.NextCursor) ||
@@ -279,19 +277,17 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
             var page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            // Not a pure map: mutates the outer `results` accumulator and breaks out of the inner
-            // loop once pageSize is reached, so this doesn't reduce cleanly to a '.Select(...)'.
-            foreach (var value in (page.Items).Select(item => MapAuditRecord(item)))
+            var itemIndex = 0;
+            while (itemIndex < page.Items.Count && results.Count < pageSize)
             {
+                var value = MapAuditRecord(page.Items[itemIndex]);
                 if (MatchesFilter(filter, value, matchResourceRef: false) &&
                     MatchesAuditResourceFilter(resourceFilter, value.ResourceRef))
                 {
                     results.Add(value);
-                    if (results.Count == pageSize)
-                    {
-                        break;
-                    }
                 }
+
+                itemIndex++;
             }
 
             if (string.IsNullOrEmpty(page.NextCursor) ||
