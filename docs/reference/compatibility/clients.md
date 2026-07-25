@@ -41,8 +41,9 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   reports the full add set and later syncs do not provide DB-level incremental
   change tracking. Suitable for short-lived sync and client validation, not a full
   ArcGIS offline-geodatabase replacement.
-- **WMS 1.1.1 has no CITE evidence yet.** It is served (with `SRS`, `X`/`Y`, and
-  lon/lat EPSG:4326 BBOX order) but only WMS 1.3 is CITE-certified.
+- **WMS 1.1.1 passes its CITE profile.** It is served (with `SRS`, `X`/`Y`, and
+  lon/lat EPSG:4326 BBOX order); both WMS 1.1.1 and WMS 1.3 have current
+  all-pass CITE evidence.
 - **WMTS scope is WebMercatorQuad only** on the GeoServices `MapServer/WMTS` alias
   and the `/ogc` classic surface.
 - **OGC API Processes is async-only.** Synchronous execution returns `501`; results

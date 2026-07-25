@@ -32,7 +32,8 @@ using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 namespace Honua.Protocols.Ogc.Classic.Wms;
 
 /// <summary>
-/// CITE conformance: 199/199 (WMS 1.3 `default` profile, 100% pass on trunk).
+/// CITE conformance: 126/126 (WMS 1.1.1) and 213/213 (WMS 1.3)
+/// using the official `default` profiles, 100% pass on trunk.
 /// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </summary>
 internal static partial class WmsRequestHandlers

@@ -21,13 +21,13 @@ the canonical passed/total counts and pass rate per suite, including the WFS
 - **OGC API Tiles** — vector and raster tile delivery against the seeded tile matrix
   sets; 7 conformance classes.
 - **WFS 1.0 / 1.1 / 2.0** — the `basic` profile: capabilities, DescribeFeatureType,
-  GetFeature, spatial/temporal filters, paging, transactions, and managed stored
-  queries. Locking, feature versioning, and spatial joins are not advertised and not
-  in scope. WFS 1.0/1.1 are read-only compatibility surfaces.
-- **WMS 1.3 / WMTS 1.0 / WCS 2.0** — the official ETS default/core profiles:
+  GetFeature, spatial/temporal filters, paging, and managed stored queries. The
+  separate WFS 2.0 Transactional leg covers Transaction and LockFeature. Feature
+  versioning and spatial joins are not advertised and not in scope. WFS 1.0/1.1
+  are read-only compatibility surfaces.
+- **WMS 1.1.1 / WMS 1.3 / WMTS 1.0 / WCS 2.0** — the official ETS default/core profiles:
   GetCapabilities, GetMap/GetTile/GetCoverage, and GetFeatureInfo behave as legacy
-  OGC clients expect. WMS 1.1.1 is also served but has no CITE evidence yet (see
-  [known limitations](clients.md#known-limitations)).
+  OGC clients expect.
 - **GeoPackage 1.2 / GML 3.2 / KML 2.2** — format-level conformance: exported
   documents validate against the official suites for the classes Honua's exports
   exercise (`applicable` profile; out-of-scope optional class families are explained
@@ -36,7 +36,7 @@ the canonical passed/total counts and pass rate per suite, including the WFS
 Some OGC API surfaces have no official CITE executable test suite yet — Styles,
 Maps, Processes, Coverages, and Records. They are shipped as conformant adapters
 proven by targeted integration tests plus accurate `/conformance` declarations,
-and are not part of the 952/952 count. See the
+and are not part of the 1117/1117 count. See the
 [OGC API surfaces without an official CITE ETS](../../cite-status.md#ogc-api-surfaces-without-an-official-cite-ets)
 section of the CITE status page.
 
