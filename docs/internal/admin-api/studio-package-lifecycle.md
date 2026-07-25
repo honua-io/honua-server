@@ -246,13 +246,15 @@ families currently receive envelope-level validation and advertise
 
 Supported family strings are `query`, `analysis`, `map`, `dashboard`,
 `report`, `form`, `app`, `workflow`, `gp`, and `etl`. Every registered family
-advertises schema version `1.0`, `maxPackageBytes: 1048576`, preview support,
-publish support, and this package-family operation list in
-`GET /package-families`: `draft.create`, `draft.read`, `draft.update`,
-`validate`, `preview-plan`, `content-version.create`, `content-version.read`,
-`content-version.compare`, `publish-request.create`, `reopen`, and `rollback`.
-`DELETE /package-drafts/{draftId}` is available for cleanup, but draft delete is
-not advertised as a per-family capability operation.
+advertises schema version `1.0` and `maxPackageBytes: 1048576`. Non-bridged
+families advertise preview support, publish support, and this package-family
+operation list in `GET /package-families`: `draft.create`, `draft.read`,
+`draft.update`, `validate`, `preview-plan`, `content-version.create`,
+`content-version.read`, `content-version.compare`, `publish-request.create`,
+`reopen`, and `rollback`. The bridged `form` and `analysis` families (see
+[Bridged Families](#bridged-families-form-analysis)) advertise a reduced
+operation list. `DELETE /package-drafts/{draftId}` is available for cleanup,
+but draft delete is not advertised as a per-family capability operation.
 
 In Postgres-backed deployments, `durable` is `true`; `map` and `app` advertise
 `supportLevel: "supported"` because family-specific validators are active, while
@@ -260,6 +262,62 @@ the other families advertise `supportLevel: "limited"` with envelope validation.
 In-memory fallback deployments advertise `durable: false`,
 `persistenceMode: "in-memory"`, and a limitation noting that lifecycle data is
 not durable across server restarts.
+
+## Bridged Families (form, analysis)
+
+Tracked by issue **#3004**; decision record
+[ADR-0069](../contributor/adr/0069-studio-persistence-bridge-forms-analysis.md).
+The `form` and `analysis` families are **bridged, not migrated**: the lifecycle
+endpoints above are the single client-visible contract, but persistence
+delegates to each family's native store, which remains the source of truth.
+Content authored through the native console APIs
+(`/api/v1/admin/forms/packages`, `/api/v1/analysis/content`) is immediately
+enumerable/openable through the lifecycle, and lifecycle-authored
+drafts/versions are immediately visible through the native APIs — no flag-day,
+no data migration, no sync window.
+
+When the deployment registers the native stores, `GET /package-families`
+advertises the bridged native formats:
+
+| Family | `format` | Publish | Rollback | Native store |
+| --- | --- | --- | --- | --- |
+| `form` | `honua.form-package.v1` | yes (native validation gate) | no | forms package store |
+| `analysis` | `honua.analysis-content.v1` | no (use the Content Publication Registry) | no | analysis content store |
+
+Bridged semantics:
+
+- **Envelope `body` is the native document.** `form` bodies are
+  `honua.form-package.v1` documents serialized with the family's own contract
+  (JSON value kinds, `ruleId`s, and domain codes round-trip exactly as through
+  the native API); `analysis` bodies are the native analysis-package payload.
+- **Ids.** Native string ids project deterministically onto lifecycle GUIDs.
+  Lifecycle-created form packages use the item id as the native `formId`;
+  lifecycle-created analysis items use `analysis-content-{itemId:N}`.
+  `versionNumber` and `contentHash` are the native values.
+- **Drafts stay lifecycle-native** (mutable, `generation` concurrency). A
+  save-as-version writes through to the native store: forms append a **new
+  native draft version** (never an in-place overwrite, so console ETag/If-Match
+  editors are never clobbered — concurrent cross-surface edits produce distinct
+  native versions); analysis appends an immutable native version with the
+  native monotonic numbering and conflict retry. A form version saved through
+  the lifecycle therefore remains natively editable until published.
+- **Analysis job/artifact links** (`createdFromJobId`,
+  `createdFromArtifactIds`, `basedOnVersionId`) surface as the version's
+  `dependencies` sidecar (`kind: "job"` / `kind: "artifact"`) and are written
+  back to the native record on save.
+- **Publish.** A `form` publish-request runs the native publish validation
+  gate; invalid content persists a `rejected` request and the native version
+  stays draft. `analysis` publish-requests and all bridged rollbacks return
+  `409` with an explanatory problem.
+- **Authorization.** Bridged form items have no recorded owner and therefore
+  fail closed under `Studio:EndUserAuthorization:Enabled` (admin-only),
+  matching the native surface's admin-only posture; bridged analysis items
+  carry the native `ownerId` and follow the standard ownership rules above.
+- **Enumeration.** Bridged items appear in `GET /content-items` once first
+  saved (unsaved bridged drafts are listed by `GET /package-drafts`); at most
+  1,000 native rows per bridged family merge into the keyset-paginated listing.
+  Bridged rows carry no publication-registry badge join beyond the standard
+  `sourceContentId` convention.
 
 ## Request Semantics
 

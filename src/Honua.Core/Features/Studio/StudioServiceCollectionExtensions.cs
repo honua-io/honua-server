@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Services;
+using Honua.Core.Features.Studio.Services.Bridging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -33,6 +34,12 @@ public static class StudioServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+        // ADR-0069 (honua-server#3004): the catalog decides at resolve time which family
+        // persistence bridges are available (native forms/analysis stores may be registered
+        // before or after this call depending on the host), and the lifecycle service and
+        // family registry consume it to route the form/analysis families through their native
+        // stores.
+        services.TryAddScoped<StudioFamilyPersistenceBridgeCatalog>();
         services.TryAddScoped<IStudioPackageFamilyRegistry, StudioPackageFamilyRegistry>();
         services.TryAddScoped<IStudioPackageValidator, StudioPackageValidator>();
         services.TryAddScoped<IStudioPackageLifecycleService, StudioPackageLifecycleService>();
