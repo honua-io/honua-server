@@ -16241,6 +16241,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],

@@ -464,6 +464,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
     public async Task GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler()
     {
+        // honua-server#3023: the end-user flag no longer hard-blocks non-admins at the route
+        // policy; instead each generate handler denies a grant-less non-admin at the elevated
+        // authorization gate, before the request body is parsed or any generation service is
+        // touched. Without a StudioDraft Execute operator grant the outcome stays 403.
         await using var endUserFixture = await CreateEndUserFixtureAsync();
         var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var endUserKey = await apiKeyStore.CreateAsync(
@@ -480,10 +484,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         mapResponse.StatusCode.Should().Be(
             HttpStatusCode.Forbidden,
-            "end-user lifecycle access must not reach the potentially costly map-generation handler");
+            "end-user lifecycle access without a StudioDraft Execute grant must not reach the potentially costly map-generation path");
         appResponse.StatusCode.Should().Be(
             HttpStatusCode.Forbidden,
-            "end-user lifecycle access must not reach the potentially costly app-generation handler");
+            "end-user lifecycle access without a StudioDraft Execute grant must not reach the potentially costly app-generation path");
     }
 
     [IntegrationTest]
@@ -1483,6 +1487,48 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/map-packages/generate")]
+    public async Task GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant()
+    {
+        // PR #3018 review, round 7 (P1): the group-level end-user widening must not implicitly
+        // open the AI generation endpoints to every authenticated principal -- generation is an
+        // elevated operation requiring a StudioDraft Execute operator grant for non-admins.
+        // An empty JSON body is sufficient on both sides of the boundary: the authorization
+        // guard runs before body parsing, so "403 elevated_grant_required" proves the gate and
+        // "400 missing prompt" proves the caller got through it without invoking a real LLM.
+        var roleStore = new FakeGrantingRoleStore();
+        await using var fixture = await CreateEndUserFixtureAsync(services =>
+        {
+            services.RemoveAll<IRoleStore>();
+            services.AddSingleton<IRoleStore>(roleStore);
+        });
+        var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var userKey = await apiKeyStore.CreateAsync("generate-user", ["studio:enduser"], null, null, CancellationToken.None);
+        using var userClient = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", userKey.Key));
+
+        // Without an Execute grant: denied at the authorization gate, for both generate routes.
+        var deniedMap = await userClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        deniedMap.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var deniedProblem = JsonSerializer.Deserialize<JsonElement>(await deniedMap.Content.ReadAsStringAsync());
+        deniedProblem.GetProperty("code").GetString().Should().Be("studio_authorization/elevated_grant_required");
+
+        var deniedApp = await userClient.PostAsync("/api/v1/studio/app-packages/generate", EmptyJson());
+        deniedApp.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // With the self-service "own"-sentinel Execute grant (granted under the evaluator's
+        // resolved empty user id -- see the round-5 tests for why): past the gate, into prompt
+        // validation.
+        roleStore.Grant(string.Empty, [new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Execute" }]);
+        var allowedMap = await userClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        allowedMap.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Admin remains admitted with no grant.
+        using var adminClient = fixture.CreateAdminClient();
+        var adminResponse = await adminClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
