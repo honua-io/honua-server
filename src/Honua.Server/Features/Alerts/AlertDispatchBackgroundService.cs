@@ -92,6 +92,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     var dispatchStore = scope.ServiceProvider.GetRequiredService<IAlertDispatchStore>();
                     var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
                     var lifecycleStore = scope.ServiceProvider.GetRequiredService<IAlertLifecycleStore>();
+                    var editionPolicy = scope.ServiceProvider.GetRequiredService<IAlertEditionPolicy>();
 
                     var batch = await dispatchStore
                         .ClaimPendingAsync(_options.Dispatch.ClaimBatchSize, now, stoppingToken)
@@ -99,7 +100,13 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
                     foreach (var item in batch)
                     {
-                        await ProcessItemAsync(dispatchStore, eventStore, lifecycleStore, item, stoppingToken).ConfigureAwait(false);
+                        await ProcessItemAsync(
+                            dispatchStore,
+                            eventStore,
+                            lifecycleStore,
+                            editionPolicy,
+                            item,
+                            stoppingToken).ConfigureAwait(false);
                     }
 
                     // The backlog count is a full outbox aggregate; recompute it after a
@@ -187,10 +194,28 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         IAlertDispatchStore dispatchStore,
         IAlertEventStore eventStore,
         IAlertLifecycleStore lifecycleStore,
+        IAlertEditionPolicy editionPolicy,
         AlertDispatchItem item,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
+
+        if (!editionPolicy.IsChannelAllowed(item.ChannelType))
+        {
+            const string error = "Alert channel is not licensed.";
+            await dispatchStore
+                .MarkFailedAsync(
+                    item.DispatchId,
+                    now,
+                    now,
+                    deadLetter: true,
+                    error,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
+            LogUnlicensed(_logger, item.DispatchId, item.ChannelType);
+            return;
+        }
 
         if (!_sinks.TryGetValue(item.ChannelType, out var sink))
         {
@@ -305,4 +330,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     [LoggerMessage(EventId = 9428, Level = LogLevel.Warning, Message = "Alert delivery circuit breaker opened for channel {ChannelType} after repeated dead-letters; deliveries on this channel are deferred for {Cooldown}.")]
     private static partial void LogChannelCircuitOpened(ILogger logger, AlertChannelType channelType, TimeSpan cooldown);
+
+    [LoggerMessage(EventId = 9429, Level = LogLevel.Information, Message = "Alert dispatch {DispatchId} for {ChannelType} was dead-lettered because the channel entitlement is inactive.")]
+    private static partial void LogUnlicensed(ILogger logger, long dispatchId, AlertChannelType channelType);
 }

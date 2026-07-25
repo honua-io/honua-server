@@ -59,12 +59,16 @@ internal static class AdminAuthEndpoints
         _ = group.MapPost("/providers/{providerKey}/authorize-url", HandleCreateAuthorizeUrl)
             .WithDisplayName("Create Admin Auth Authorize Url")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for auth initiation
+            .WithMetadata(new RateLimitAttribute(5))
+            .AddEndpointFilter(OidcEntitlementPolicy.RequireEndpointEntitlementAsync)
+            .Produces(StatusCodes.Status402PaymentRequired); // 5 requests per minute for auth initiation
 
         _ = group.MapPost("/providers/{providerKey}/token", HandleRequestToken)
             .WithDisplayName("Request Admin Auth Token")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .WithMetadata(new RateLimitAttribute(5)); // 5 requests per minute for token exchange
+            .WithMetadata(new RateLimitAttribute(5))
+            .AddEndpointFilter(OidcEntitlementPolicy.RequireEndpointEntitlementAsync)
+            .Produces(StatusCodes.Status402PaymentRequired); // 5 requests per minute for token exchange
 
         _ = group.MapPost("/bearer", HandleIssueOperatorBearer)
             .WithDisplayName("Issue Console Operator Bearer")
@@ -77,17 +81,22 @@ internal static class AdminAuthEndpoints
 
         _ = group.MapGet("/providers/{providerKey}/logout-url", HandleGetLogoutUrl)
             .WithDisplayName("Get Admin Auth Logout Url")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .AddEndpointFilter(OidcEntitlementPolicy.RequireEndpointEntitlementAsync)
+            .Produces(StatusCodes.Status402PaymentRequired);
     }
 
     private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse>> HandleGetAuthConfig(
+        HttpContext context,
         [FromServices] IOptions<OidcAuthenticationOptions> oidcOptions,
         [FromServices] IOptions<ClientCertificateAuthenticationOptions> clientCertificateOptions,
         [FromServices] IClientCertificateTrustStore clientCertificateTrustStore,
         [FromServices] ILogger<AdminAuthEndpointsLog> logger,
         CancellationToken cancellationToken)
     {
-        var providers = oidcOptions.Value.Enabled
+        var oidcLicensed = OidcEntitlementPolicy.GetDeniedEntitlement(
+            context.RequestServices) is null;
+        var providers = oidcOptions.Value.Enabled && oidcLicensed
             ? OidcProviderCatalog.GetProviders(oidcOptions.Value)
                 .Where(static provider => provider.IsValid)
                 .Select(static provider => new AdminAuthProviderInfo
@@ -101,7 +110,7 @@ internal static class AdminAuthEndpoints
 
         var response = new AdminAuthConfigResponse
         {
-            OidcEnabled = oidcOptions.Value.Enabled && providers.Count > 0,
+            OidcEnabled = oidcOptions.Value.Enabled && oidcLicensed && providers.Count > 0,
             Providers = providers,
             ClientCertificates = await BuildClientCertificateInfoAsync(
                 clientCertificateOptions.Value,
@@ -485,7 +494,9 @@ internal static class AdminAuthEndpoints
         DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
         DeleteCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName);
 
-        if (session is null || !OidcProviderCatalog.TryResolveProvider(oidcOptions.Value, session.ProviderKey, out var provider))
+        if (OidcEntitlementPolicy.GetDeniedEntitlement(context.RequestServices) is not null ||
+            session is null ||
+            !OidcProviderCatalog.TryResolveProvider(oidcOptions.Value, session.ProviderKey, out var provider))
         {
             return TypedResults.Ok(new AdminAuthLogoutUrlResponse());
         }

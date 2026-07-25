@@ -29,7 +29,8 @@ internal static class IdentityAdminEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Identity")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter(OidcEntitlementPolicy.RequireEndpointEntitlementAsync);
 
         group.MapGet("/providers", HandleGetProviders)
             .WithDisplayName("Get Identity Providers")

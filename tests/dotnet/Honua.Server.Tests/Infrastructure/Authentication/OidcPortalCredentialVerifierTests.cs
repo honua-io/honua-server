@@ -5,9 +5,11 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -88,7 +90,24 @@ public sealed class OidcPortalCredentialVerifierTests
         result.Should().BeNull();
     }
 
-    private static OidcPortalCredentialVerifier CreateVerifier(bool enabled)
+    [UnitTest]
+    public async Task VerifyAsync_CommunityLicense_ReturnsNullBeforeTokenAcceptance()
+    {
+        var verifier = CreateVerifier(enabled: true, HonuaEdition.Community);
+        var token = CreateToken(
+            subject: "user-123",
+            name: "Ada",
+            roles: ["editor"],
+            tenantId: null);
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().BeNull();
+    }
+
+    private static OidcPortalCredentialVerifier CreateVerifier(
+        bool enabled,
+        HonuaEdition edition = HonuaEdition.Pro)
     {
         var options = new OidcAuthenticationOptions
         {
@@ -114,6 +133,7 @@ public sealed class OidcPortalCredentialVerifierTests
         var transformation = new OidcClaimsTransformation(wrapped, NullLogger<OidcClaimsTransformation>.Instance);
         return new OidcPortalCredentialVerifier(
             wrapped,
+            new TestLicenseEntitlementService(edition),
             transformation,
             new OidcConfigurationManagerCache(),
             NullLogger<OidcPortalCredentialVerifier>.Instance);

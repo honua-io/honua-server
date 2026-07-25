@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -23,6 +24,8 @@ namespace Honua.Protocols.GeoServices.Sharing;
 internal static class SharingOAuth2Endpoints
 {
     private const string JsonContentType = "application/json";
+    private const string AuthorizationCodeGrant = "authorization_code";
+    private const string RefreshTokenGrant = "refresh_token";
 
     /// <summary>Maps the OAuth2 authorize/callback/token endpoints.</summary>
     /// <param name="endpoints">Endpoint route builder to extend.</param>
@@ -38,9 +41,11 @@ internal static class SharingOAuth2Endpoints
             .WithDescription("Delegates identity to the configured OIDC provider (auth-code + PKCE) and returns an ArcGIS authorization code to the client redirect URI.")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .AddEndpointFilter(OidcEntitlementPolicy.RequireEndpointEntitlementAsync)
             .Produces(StatusCodes.Status302Found)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status402PaymentRequired);
 
         endpoints.MapGet(PortalOAuthRoutes.CallbackPath, HandleCallbackAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Callback")
@@ -48,9 +53,11 @@ internal static class SharingOAuth2Endpoints
             .WithSummary("OIDC provider return endpoint for the ArcGIS named-user flow")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .AddEndpointFilter(OidcEntitlementPolicy.RequireEndpointEntitlementAsync)
             .Produces(StatusCodes.Status302Found)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status402PaymentRequired);
 
         // RFC 6749 §4.1.3: the token endpoint MUST be reached via POST only.
         // A GET registration would expose auth codes, client_secret, and
@@ -66,7 +73,8 @@ internal static class SharingOAuth2Endpoints
             .AllowAnonymous()
             .Produces<OAuth2TokenResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces<OAuth2ErrorResponse>(StatusCodes.Status400BadRequest, JsonContentType)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status402PaymentRequired);
 
         endpoints.MapPost(PortalOAuthRoutes.RevokePath, HandleRevokeAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
@@ -325,6 +333,19 @@ internal static class SharingOAuth2Endpoints
         if (string.IsNullOrWhiteSpace(request.GrantType))
         {
             return OAuth2Error("invalid_request", "grant_type is required.");
+        }
+
+        if (request.GrantType is AuthorizationCodeGrant or RefreshTokenGrant &&
+            OidcEntitlementPolicy.GetDeniedEntitlement(context.RequestServices) is { } deniedEntitlement)
+        {
+            var entitlementFailure = LicenseGate.RequireEntitlement(
+                context,
+                deniedEntitlement,
+                "OIDC authentication");
+            if (entitlementFailure is not null)
+            {
+                return entitlementFailure;
+            }
         }
 
         // The client_credentials grant (ADR-0053) binds the issued token to the

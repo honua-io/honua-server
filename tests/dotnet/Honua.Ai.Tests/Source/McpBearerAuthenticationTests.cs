@@ -8,9 +8,11 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.IdentityModel.Tokens;
 
@@ -66,7 +68,8 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
             builder.UseSetting("Oidc:Generic:Authority", Issuer);
             builder.UseSetting("Oidc:Generic:ClientId", Audience);
             builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
-        });
+        })
+        .WithTestLicense(HonuaEdition.Pro);
 
     private HttpClient _client = null!;
 

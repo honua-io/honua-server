@@ -3,55 +3,89 @@
 
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
 internal sealed class AlertEditionPolicy : IAlertEditionPolicy
 {
+    private const string EvaluationEntitlement = "alerts.evaluation";
+    private const string EnterExitEntitlement = "alerts.enter-exit";
+    private const string DwellEntitlement = "alerts.dwell";
+    private const string ThresholdEntitlement = "alerts.threshold";
+    private const string WebhookEntitlement = "channels.webhook";
+    private const string EmailEntitlement = "channels.email";
+    private const string SlackEntitlement = "channels.slack";
+    private const string TeamsEntitlement = "channels.teams";
+    private const string AwsSnsEntitlement = "channels.aws-sns";
+    private const string AzureEventGridEntitlement = "channels.azure-eventgrid";
+    private const string DigestEntitlement = "channels.digest";
+
     private readonly AlertOptions _options;
     private readonly AlertDeliveryOptions _deliveryOptions;
+    private readonly ILicenseEntitlementService _licenseEntitlements;
 
     public AlertEditionPolicy(
         IOptions<AlertOptions> options,
-        IOptions<AlertDeliveryOptions> deliveryOptions)
+        IOptions<AlertDeliveryOptions> deliveryOptions,
+        ILicenseEntitlementService licenseEntitlements)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _deliveryOptions = deliveryOptions?.Value ?? throw new ArgumentNullException(nameof(deliveryOptions));
+        _licenseEntitlements = licenseEntitlements ?? throw new ArgumentNullException(nameof(licenseEntitlements));
     }
 
     public bool IsRuleAllowed(AlertRuleDefinition rule)
     {
-        if ((int)rule.EditionRequired > (int)_options.Edition)
+        if (!IsEditionAllowed(rule.EditionRequired) ||
+            !HasEntitlement(EvaluationEntitlement))
         {
             return false;
         }
 
-        return _options.Edition switch
+        var triggerEntitlement = rule.TriggerType switch
         {
-            AlertEdition.Pro => rule.TriggerType is AlertTriggerType.Enter or AlertTriggerType.Exit,
-            AlertEdition.Enterprise => true,
-            _ => false
+            AlertTriggerType.Enter or AlertTriggerType.Exit => EnterExitEntitlement,
+            AlertTriggerType.Dwell => DwellEntitlement,
+            AlertTriggerType.Threshold => ThresholdEntitlement,
+            _ => null,
         };
+
+        return triggerEntitlement is not null && HasEntitlement(triggerEntitlement);
     }
 
     public bool IsChannelAllowed(AlertChannelType channelType)
     {
-        return _options.Edition switch
+        var requiredEdition = channelType == AlertChannelType.Webhook
+            ? AlertEdition.Pro
+            : AlertEdition.Enterprise;
+        if (!IsEditionAllowed(requiredEdition))
         {
-            AlertEdition.Pro => channelType == AlertChannelType.Webhook,
-            AlertEdition.Enterprise => channelType is AlertChannelType.Webhook
-                or AlertChannelType.WebSocket
-                or AlertChannelType.Email
-                or AlertChannelType.Digest
-                or AlertChannelType.AwsSns
-                or AlertChannelType.AzureEventGrid
-                or AlertChannelType.Slack
-                or AlertChannelType.MicrosoftTeams
-                or AlertChannelType.AwsSqs
-                or AlertChannelType.AzureEventHub,
-            _ => false
+            return false;
+        }
+
+        var channelEntitlement = channelType switch
+        {
+            AlertChannelType.Webhook => WebhookEntitlement,
+            AlertChannelType.Email => EmailEntitlement,
+            AlertChannelType.Digest => DigestEntitlement,
+            AlertChannelType.AwsSns => AwsSnsEntitlement,
+            AlertChannelType.AzureEventGrid => AzureEventGridEntitlement,
+            AlertChannelType.Slack => SlackEntitlement,
+            AlertChannelType.MicrosoftTeams => TeamsEntitlement,
+            _ => null,
         };
+
+        if (channelEntitlement is not null)
+        {
+            return HasEntitlement(channelEntitlement);
+        }
+
+        // WebSocket, SQS, and Event Hubs have no signed entitlement keys in the
+        // catalog. Fail closed until product governance assigns explicit keys.
+        return false;
     }
 
     public bool IsChannelConfigured(AlertChannelType channelType)
@@ -90,5 +124,18 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
 #endif
             _ => false
         };
+    }
+
+    private bool HasEntitlement(string entitlementKey)
+        => _licenseEntitlements.CheckEntitlement(entitlementKey).IsActive;
+
+    private bool IsEditionAllowed(AlertEdition requiredEdition)
+    {
+        if ((int)requiredEdition > (int)_options.Edition)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

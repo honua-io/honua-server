@@ -7,11 +7,13 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,6 +45,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
     public SharingOAuth2Tests()
     {
         _fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -243,6 +246,61 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var error = await ReadErrorAsync(response);
         error.Error.Should().Be("unsupported_grant_type");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/token")]
+    public async Task Token_CommunityOidcGrants_DeniesOidcWithoutBlockingClientCredentials()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Community)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.UseSetting("Authentication:PortalToken:OAuth2:EnableClientCredentials", "true");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var oidcResponse = await PostFormAsync(
+                client,
+                ("grant_type", "authorization_code"),
+                ("code", "unlicensed-code"));
+
+            await oidcResponse.AssertGeoServicesErrorAsync(
+                (int)HttpStatusCode.PaymentRequired);
+            (await oidcResponse.Content.ReadAsStringAsync())
+                .Should().Contain(FeatureCatalog.OidcAuthenticationKey);
+
+            using var refreshResponse = await PostFormAsync(
+                client,
+                ("grant_type", "refresh_token"),
+                ("refresh_token", "unlicensed-refresh-token"));
+
+            await refreshResponse.AssertGeoServicesErrorAsync(
+                (int)HttpStatusCode.PaymentRequired);
+            (await refreshResponse.Content.ReadAsStringAsync())
+                .Should().Contain(FeatureCatalog.OidcAuthenticationKey);
+
+            using var clientCredentialsResponse = await PostFormAsync(
+                client,
+                ("grant_type", "client_credentials"),
+                ("client_id", "service-client"),
+                ("client_secret", "not-a-real-secret"));
+
+            clientCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var error = await ReadErrorAsync(clientCredentialsResponse);
+            error.Error.Should().Be("invalid_client");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

@@ -89,6 +89,11 @@ internal static class McpProtectedResourceMetadataEndpointExtensions
         ArgumentNullException.ThrowIfNull(context);
         challenge = string.Empty;
 
+        if (OidcEntitlementPolicy.GetDeniedEntitlement(context.RequestServices) is not null)
+        {
+            return false;
+        }
+
         var options = context.RequestServices.GetRequiredService<IOptions<OidcAuthenticationOptions>>().Value;
         if (McpProtectedResourceMetadata.ResolveAuthorizationServers(options).Count == 0)
         {
@@ -107,6 +112,11 @@ internal static class McpProtectedResourceMetadataEndpointExtensions
 
     private static IResult HandleGet(HttpContext context, IReadOnlyList<string> authorizationServers)
     {
+        if (OidcEntitlementPolicy.GetDeniedEntitlement(context.RequestServices) is not null)
+        {
+            return Results.NotFound();
+        }
+
         if (!McpProtectedResourceMetadata.TryResolveResourceIdentifier(context, out var resource))
         {
             return Results.NotFound();

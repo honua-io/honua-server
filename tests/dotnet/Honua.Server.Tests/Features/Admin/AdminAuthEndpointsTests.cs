@@ -174,6 +174,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     public async Task GetAuthConfig_WithMultipleProviders_ReturnsProviderKeysAndNames()
     {
         var oidcFixture = CreateBaseFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Oidc:Enabled", "true");
@@ -230,6 +231,121 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             new { });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
+    public async Task OidcFlow_CommunityLicense_HidesProviderAndRejectsAuthorize()
+    {
+        using var stubFactory = CreateStubFactory();
+        await using var oidcFixture = CreateGenericOidcFixture(
+            stubFactory,
+            HonuaEdition.Community);
+        await oidcFixture.InitializeAsync();
+        var oidcClient = oidcFixture.CreateClient();
+
+        using var configResponse = await oidcClient.GetAsync("/api/v1/admin/auth/config");
+        var config = await configResponse.Content.ReadFromJsonAsync(
+            AdminAuthJsonContext.Default.AdminAuthConfigResponse);
+        using var authorizeResponse = await oidcClient.PostAsJsonAsync(
+            "/api/v1/admin/auth/providers/oidc/authorize-url",
+            new { });
+
+        configResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        config.Should().NotBeNull();
+        config!.OidcEnabled.Should().BeFalse();
+        config.Providers.Should().BeEmpty();
+        authorizeResponse.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/session")]
+    public async Task GetSession_AfterLicenseDowngrade_RejectsAndRemovesExistingSession()
+    {
+        using var stubFactory = CreateStubFactory();
+        await using var oidcFixture = CreateGenericOidcFixture(
+            stubFactory,
+            HonuaEdition.Community);
+        await oidcFixture.InitializeAsync();
+        var sessionId = await CreateAuthenticatedSessionAsync(oidcFixture);
+        var oidcClient = oidcFixture.CreateClient(client =>
+            client.DefaultRequestHeaders.Add(
+                "Cookie",
+                $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+        using var response = await oidcClient.GetAsync("/api/v1/admin/auth/session");
+        var session = await response.Content.ReadFromJsonAsync(
+            AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        session.Should().NotBeNull();
+        session!.IsAuthenticated.Should().BeFalse();
+        await using var scope = oidcFixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        (await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None))
+            .Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/session")]
+    public async Task GetSession_SamlSessionWithoutOidcEntitlement_RemainsAuthenticated()
+    {
+        using var stubFactory = CreateStubFactory();
+        await using var fixture = CreateGenericOidcFixture(
+                stubFactory,
+                HonuaEdition.Community)
+            .WithTestLicense(
+                HonuaEdition.Community,
+                entitlements: [FeatureCatalog.SamlAuthenticationKey]);
+        await fixture.InitializeAsync();
+        var sessionId = await CreateAuthenticatedSessionAsync(
+            fixture,
+            providerKey: "saml");
+        var client = fixture.CreateClient(options =>
+            options.DefaultRequestHeaders.Add(
+                "Cookie",
+                $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+        using var response = await client.GetAsync("/api/v1/admin/auth/session");
+        var session = await response.Content.ReadFromJsonAsync(
+            AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        session.Should().NotBeNull();
+        session!.IsAuthenticated.Should().BeTrue();
+        session.ProviderKey.Should().Be("saml");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/auth/bearer")]
+    public async Task IssueOperatorBearer_SamlSessionWithoutOidcEntitlement_RemainsAvailable()
+    {
+        using var stubFactory = CreateStubFactory();
+        await using var fixture = CreateGenericOidcFixture(
+                stubFactory,
+                HonuaEdition.Community)
+            .WithTestLicense(
+                HonuaEdition.Community,
+                entitlements: [FeatureCatalog.SamlAuthenticationKey])
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+                builder.UseSetting("Authentication:OperatorBearer:SigningKey", TestOperatorBearerSigningKey);
+            });
+        await fixture.InitializeAsync();
+        var sessionId = await CreateAuthenticatedSessionAsync(
+            fixture,
+            providerKey: "saml");
+        var client = fixture.CreateClient(options =>
+            options.DefaultRequestHeaders.Add(
+                "Cookie",
+                $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+
+        using var response = await client.PostAsync(
+            "/api/v1/admin/auth/bearer",
+            content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]
@@ -1048,12 +1164,13 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static async Task<string> CreateAuthenticatedSessionAsync(
         WebAppFixture fixture,
-        DateTimeOffset? expiresAt = null)
+        DateTimeOffset? expiresAt = null,
+        string providerKey = "oidc")
     {
         await using var scope = fixture.Services.CreateAsyncScope();
         var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
         return await sessionStore.CreateAuthenticatedSessionAsync(
-            "oidc",
+            providerKey,
             "access-token",
             "id-token",
             [
@@ -1079,6 +1196,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     {
         return new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -1105,9 +1223,12 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             });
     }
 
-    private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory)
+    private static WebAppFixture CreateGenericOidcFixture(
+        IHttpClientFactory httpClientFactory,
+        HonuaEdition edition = HonuaEdition.Pro)
     {
         return CreateBaseFixture()
+            .WithTestLicense(edition)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Oidc:Enabled", "true");

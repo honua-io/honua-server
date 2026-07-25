@@ -618,6 +618,14 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = async context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
+                    var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(
+                        context.HttpContext.RequestServices);
+                    if (deniedEntitlement is not null)
+                    {
+                        context.Fail(OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+                        return;
+                    }
+
                     OidcAuthenticationLog.JwtTokenValidated(logger);
 
                     // Mark this principal as governed by OAuth access-token scopes (#2851). The
@@ -1021,6 +1029,14 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
+                    var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(
+                        context.HttpContext.RequestServices);
+                    if (deniedEntitlement is not null)
+                    {
+                        context.Fail(OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+                        return Task.CompletedTask;
+                    }
+
                     OidcAuthenticationLog.OidcTokenValidated(logger, AzureAdScheme);
                     return Task.CompletedTask;
                 }
@@ -1067,6 +1083,14 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
+                    var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(
+                        context.HttpContext.RequestServices);
+                    if (deniedEntitlement is not null)
+                    {
+                        context.Fail(OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+                        return Task.CompletedTask;
+                    }
+
                     OidcAuthenticationLog.OidcTokenValidated(logger, GoogleScheme);
                     return Task.CompletedTask;
                 }
@@ -1115,6 +1139,14 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
+                    var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(
+                        context.HttpContext.RequestServices);
+                    if (deniedEntitlement is not null)
+                    {
+                        context.Fail(OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+                        return Task.CompletedTask;
+                    }
+
                     OidcAuthenticationLog.OidcTokenValidated(logger, OidcScheme);
                     return Task.CompletedTask;
                 }
@@ -1167,6 +1199,14 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
+                    var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(
+                        context.HttpContext.RequestServices);
+                    if (deniedEntitlement is not null)
+                    {
+                        context.Fail(OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+                        return Task.CompletedTask;
+                    }
+
                     OidcAuthenticationLog.OidcTokenValidated(logger, OktaScheme);
                     return Task.CompletedTask;
                 }
@@ -1226,6 +1266,14 @@ public static class OidcAuthenticationExtensions
                 OnTokenValidated = context =>
                 {
                     var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<OidcAuthenticationOptions>>();
+                    var deniedEntitlement = OidcEntitlementPolicy.GetDeniedEntitlement(
+                        context.HttpContext.RequestServices);
+                    if (deniedEntitlement is not null)
+                    {
+                        context.Fail(OidcEntitlementPolicy.CreateFailureMessage(deniedEntitlement));
+                        return Task.CompletedTask;
+                    }
+
                     OidcAuthenticationLog.OidcTokenValidated(logger, Auth0Scheme);
                     return Task.CompletedTask;
                 }

@@ -1321,8 +1321,9 @@ app.UseLimitsEnforcement();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 
-// Enable output caching middleware
-app.UseOutputCache();
+// Route only licensed requests through output caching. The middleware-level branch
+// prevents endpoint/named policies from re-enabling caching for Community.
+app.UseLicensedOutputCache();
 
 // Log application startup
 var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
