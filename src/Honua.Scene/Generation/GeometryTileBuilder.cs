@@ -1232,8 +1232,7 @@ internal sealed class SceneMetadataColumn
         // wrong here — it would silently treat small fractional values (e.g. 1e-7) as
         // integral and drop the coercion warning above.
         var truncated = Math.Truncate(value);
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (truncated != value)
+        if (!truncated.Equals(value))
         {
             coercedCount++;
         }

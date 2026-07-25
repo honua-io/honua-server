@@ -199,17 +199,18 @@ public static class WorkflowPackageGraphValidator
             _ => new List<string>(),
             StringComparer.Ordinal);
 
-        // Not a flat filter/map: each qualifying edge appends to a different node's adjacency
-        // list (keyed by source), so this builds a graph structure rather than a single
-        // projected sequence — the explicit loop is clearer than a LINQ chain here.
-        // codeql[cs/linq/missed-where] -- the predicate binds the target adjacency list through an out variable.
-        foreach (var edge in graph.Edges.Where(edge => edge.Kind != WorkflowEdgeKind.Failure))
+        var edgeIndex = 0;
+        while (edgeIndex < graph.Edges.Count)
         {
-            if (adjacency.TryGetValue(edge.SourceNodeId, out var targets)
-                && adjacency.ContainsKey(edge.TargetNodeId))
+            var edge = graph.Edges[edgeIndex];
+            if (edge.Kind != WorkflowEdgeKind.Failure &&
+                adjacency.TryGetValue(edge.SourceNodeId, out var targets) &&
+                adjacency.ContainsKey(edge.TargetNodeId))
             {
                 targets.Add(edge.TargetNodeId);
             }
+
+            edgeIndex++;
         }
 
         // Three-colour DFS with an explicit stack over user-submitted graphs: `unvisited`

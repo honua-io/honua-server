@@ -180,9 +180,8 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
     private static Dictionary<string, long> ExtractCountsByYearMonth(JsonElement features, bool yearOnly = false)
     {
         var result = new Dictionary<string, long>();
-        foreach (var feature in features.EnumerateArray())
+        foreach (var attributes in features.EnumerateArray().Select(feature => feature.GetProperty("attributes")))
         {
-            var attributes = feature.GetProperty("attributes");
             var boundary = attributes.GetProperty("boundary");
             var count = attributes.GetProperty("count").GetInt64();
 

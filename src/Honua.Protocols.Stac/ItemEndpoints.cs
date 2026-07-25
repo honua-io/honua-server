@@ -478,12 +478,7 @@ internal static class ItemEndpoints
             return null;
         }
 
-        // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-        var attributes = feature?.Attributes;
-        if (attributes is null)
-        {
-            return null;
-        }
+        var attributes = resolvedFeature.Attributes;
 
         var keys = ImmutableArray.Create("stac_id", "item_id", "id");
         for (var index = 0; index < keys.Length; index++)

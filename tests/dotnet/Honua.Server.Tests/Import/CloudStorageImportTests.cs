@@ -264,8 +264,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
             var url = request.RequestUri!.ToString();
             if (responses.TryGetValue(url, out var resp))
             {
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(resp.body)
                     {
@@ -278,8 +277,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
                 });
             }
 
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 }

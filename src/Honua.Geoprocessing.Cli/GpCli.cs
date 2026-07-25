@@ -239,18 +239,15 @@ public static class GpCli
         Console.WriteLine($"status  : {result.Status}");
         Console.WriteLine($"elapsed : {result.Elapsed.TotalMilliseconds:F1} ms");
 
-        // Not rewritten as .Where(...): the filter also extracts "gdal.command" via
-        // TryGetValue, so a LINQ form would need an awkward Select/Where split for no
-        // real readability gain.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var log in result.Logs)
+        foreach (var command in result.Logs
+            .Select(static log => log.Metadata is not null &&
+                log.Metadata.TryGetValue("gdal.command", out var command)
+                    ? command
+                    : null)
+            .OfType<string>())
         {
-            if (log.Metadata is not null
-                && log.Metadata.TryGetValue("gdal.command", out var command))
-            {
-                // Default path prints the SANITIZED command (scratch redacted to <scratch>).
-                Console.WriteLine($"command : {command}");
-            }
+            // Default path prints the SANITIZED command (scratch redacted to <scratch>).
+            Console.WriteLine($"command : {command}");
         }
 
         foreach (var warning in result.Warnings)

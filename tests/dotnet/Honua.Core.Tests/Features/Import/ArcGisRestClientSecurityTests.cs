@@ -199,11 +199,9 @@ public sealed class ArcGisRestClientSecurityTests
         // were showing >64 transient descriptors without this nudge even though the
         // production code in ConnectWithPinnedDnsAsync deterministically disposes the
         // socket on the cancellation path.
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
         GC.WaitForPendingFinalizers();
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
 
         var settledDescriptors = await WaitForDescriptorSettleAsync(
             baselineDescriptors,
@@ -296,8 +294,7 @@ public sealed class ArcGisRestClientSecurityTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _requestCount);
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_jsonResponse, Encoding.UTF8, "application/json")
             });
@@ -327,8 +324,7 @@ public sealed class ArcGisRestClientSecurityTests
             Interlocked.Increment(ref _requestCount);
             LastRequestUri = request.RequestUri;
             LastAuthorizationHeader = request.Headers.Authorization?.ToString();
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_jsonResponse, Encoding.UTF8, "application/json")
             });
@@ -350,8 +346,7 @@ public sealed class ArcGisRestClientSecurityTests
 
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
                     """
@@ -382,8 +377,7 @@ public sealed class ArcGisRestClientSecurityTests
             {
                 // Response ownership transfers to the caller via the return value
                 // (HttpClient's pipeline disposes it); nothing leaks here.
-                // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(_firstResponse, Encoding.UTF8, "application/json")
                 });

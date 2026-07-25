@@ -407,13 +407,10 @@ internal sealed partial class Wfs20Handler
 
         var geometryField = resource.FindPrimaryGeometryField();
         var primaryKeyField = resource.FindPrimaryIdField();
-        // Not simplifiable to bare 'A': the null-conditional chain makes these `bool?`,
-        // and `== true` is the idiom that collapses a null (no field) to false while
-        // keeping `isGeometry`/`isFeatureId` non-nullable `bool`.
-        // codeql[cs/simplifiable-boolean-expression] -- the written form preserves NaN or nullable-boolean semantics.
-        var isGeometry = geometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
-        // codeql[cs/simplifiable-boolean-expression] -- the written form preserves NaN or nullable-boolean semantics.
-        var isFeatureId = primaryKeyField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true ||
+        var isGeometry = geometryField is not null &&
+                         geometryField.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase);
+        var isFeatureId = primaryKeyField is not null &&
+                          primaryKeyField.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) ||
                           resolvedName.Equals("objectid", StringComparison.OrdinalIgnoreCase);
         var field = resource.SchemaFields.FirstOrDefault(candidate =>
             candidate.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography) &&

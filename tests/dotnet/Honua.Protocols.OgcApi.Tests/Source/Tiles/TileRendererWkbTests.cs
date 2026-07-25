@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Protocols.Ogc.Api.Tiles;
 using Honua.TestKit.Attributes;
@@ -62,6 +63,35 @@ public sealed class TileRendererWkbTests
 
         // Both should produce identical rendered output
         lePng.Should().Equal(bePng);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public void RenderTilePng_Wgs84SourceIntoWebMercatorGrid_ReprojectsBeforeRendering()
+    {
+        const double longitude = -157.8583;
+        const double latitude = 21.3069;
+        var (webMercatorX, webMercatorY) = WebMercatorMath.LonLatToWebMercator(longitude, latitude);
+        var bounds = new TileBounds(
+            webMercatorX - 1_000,
+            webMercatorY - 1_000,
+            webMercatorX + 1_000,
+            webMercatorY + 1_000);
+
+        var reprojectedByRenderer = TileRenderer.RenderTilePng(
+            ImmutableArray.Create(Feature.Create(1, BuildPointWkb(longitude, latitude, littleEndian: true))),
+            bounds,
+            TileRenderer.GeometryKind.Point,
+            sourceSrid: 4326,
+            targetSrid: 3857);
+
+        var alreadyProjected = TileRenderer.RenderTilePng(
+            ImmutableArray.Create(Feature.Create(1, BuildPointWkb(webMercatorX, webMercatorY, littleEndian: true))),
+            bounds,
+            TileRenderer.GeometryKind.Point);
+
+        reprojectedByRenderer.Should().Equal(alreadyProjected);
     }
 
     [IntegrationTest]

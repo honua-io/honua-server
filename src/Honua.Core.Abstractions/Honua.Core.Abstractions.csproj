@@ -29,6 +29,17 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core" />
     <InternalsVisibleTo Include="Honua.Core.Tests" />
+    <InternalsVisibleTo Include="Honua.Hosting" />
+    <InternalsVisibleTo Include="Honua.Aws" />
+    <InternalsVisibleTo Include="Honua.Azure" />
+    <InternalsVisibleTo Include="Honua.Io" />
+    <InternalsVisibleTo Include="Honua.Plugins" />
+    <InternalsVisibleTo Include="Honua.ArcGisRest" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Postgres" />

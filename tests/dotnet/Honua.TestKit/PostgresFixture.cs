@@ -17,18 +17,19 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    // These static fields back an intentional process-wide, ref-counted shared container:
-    // every PostgresFixture instance (one per xUnit collection) mutates the same statics
-    // under _sharedLock so only the first InitializeAsync starts the container and only the
-    // last DisposeAsync tears it down. Writing static state from instance lifecycle
-    // methods is the design, not a bug.
+    // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly ConcurrentDictionary<string, int> _schemaCounters = new();
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static PostgreSqlContainer? _sharedContainer;
-    private static NpgsqlDataSource? _sharedDataSource;
-    private static string? _sharedConnectionString;
-    private static int _sharedRefCount;
-    private static bool _sharedInitialized;
+    private static readonly PostgresSharedState SharedState = new();
+
+    private sealed class PostgresSharedState
+    {
+        public PostgreSqlContainer? SharedContainer { get; set; }
+        public NpgsqlDataSource? SharedDataSource { get; set; }
+        public string? SharedConnectionString { get; set; }
+        public int SharedRefCount { get; set; }
+        public bool SharedInitialized { get; set; }
+    }
     private const string ExternalConnectionStringEnv = "HONUA_TEST_DB_URL";
     private const string SeedPathEnv = "HONUA_TEST_DB_SEED_PATH";
     private const string SeedProfileEnv = "HONUA_TEST_DB_SEED_PROFILE";
@@ -50,15 +51,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (!_sharedInitialized)
+            if (!SharedState.SharedInitialized)
             {
                 try
                 {
                     var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
                     if (string.IsNullOrWhiteSpace(externalConnectionString))
                     {
-                        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                        _sharedContainer = new PostgreSqlBuilder()
+                        SharedState.SharedContainer = new PostgreSqlBuilder()
                             .WithImage("postgis/postgis:18-3.6")
                             .WithDatabase("honua_test")
                             .WithUsername("test")
@@ -66,29 +66,25 @@ public sealed class PostgresFixture : IAsyncLifetime
                             .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
                             .WithCommand("-c", "max_connections=200")
                             .Build();
-                        await _sharedContainer.StartAsync();
-                        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                        _sharedConnectionString = _sharedContainer.GetConnectionString();
+                        await SharedState.SharedContainer.StartAsync();
+                        SharedState.SharedConnectionString = SharedState.SharedContainer.GetConnectionString();
                     }
                     else
                     {
-                        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                        _sharedConnectionString = externalConnectionString;
+                        SharedState.SharedConnectionString = externalConnectionString;
                     }
 
-                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                    _sharedDataSource = NpgsqlDataSource.Create(_sharedConnectionString);
+                    SharedState.SharedDataSource = NpgsqlDataSource.Create(SharedState.SharedConnectionString);
 
                     await ExecuteWithInitializationRetryAsync(async () =>
                     {
-                        await using var conn = await _sharedDataSource.OpenConnectionAsync().ConfigureAwait(false);
+                        await using var conn = await SharedState.SharedDataSource.OpenConnectionAsync().ConfigureAwait(false);
                         await using var cmd = conn.CreateCommand();
                         cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }).ConfigureAwait(false);
 
-                    // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                    _sharedInitialized = true;
+                    SharedState.SharedInitialized = true;
                 }
                 catch
                 {
@@ -97,10 +93,9 @@ public sealed class PostgresFixture : IAsyncLifetime
                 }
             }
 
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            _sharedRefCount++;
-            _connectionString = _sharedConnectionString;
-            DataSource = _sharedDataSource ?? throw new InvalidOperationException("Shared data source not initialized.");
+            SharedState.SharedRefCount++;
+            _connectionString = SharedState.SharedConnectionString;
+            DataSource = SharedState.SharedDataSource ?? throw new InvalidOperationException("Shared data source not initialized.");
         }
         finally
         {
@@ -113,13 +108,12 @@ public sealed class PostgresFixture : IAsyncLifetime
         await _sharedLock.WaitAsync();
         try
         {
-            if (_sharedRefCount > 0)
+            if (SharedState.SharedRefCount > 0)
             {
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedRefCount--;
+                SharedState.SharedRefCount--;
             }
 
-            if (_sharedRefCount == 0 && _sharedInitialized)
+            if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
                 await ResetSharedStateAsync().ConfigureAwait(false);
             }
@@ -641,20 +635,20 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     private static async Task ResetSharedStateAsync()
     {
-        if (_sharedDataSource is not null)
+        if (SharedState.SharedDataSource is not null)
         {
-            await _sharedDataSource.DisposeAsync().ConfigureAwait(false);
+            await SharedState.SharedDataSource.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (_sharedContainer is not null)
+        if (SharedState.SharedContainer is not null)
         {
-            await _sharedContainer.DisposeAsync().ConfigureAwait(false);
+            await SharedState.SharedContainer.DisposeAsync().ConfigureAwait(false);
         }
 
-        _sharedDataSource = null;
-        _sharedContainer = null;
-        _sharedConnectionString = null;
-        _sharedInitialized = false;
+        SharedState.SharedDataSource = null;
+        SharedState.SharedContainer = null;
+        SharedState.SharedConnectionString = null;
+        SharedState.SharedInitialized = false;
     }
 
     private static bool IsTransientInitializationFailure(Exception ex)

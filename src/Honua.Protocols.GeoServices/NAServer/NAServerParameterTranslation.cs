@@ -730,14 +730,16 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("features", out var features) &&
                 features.ValueKind == JsonValueKind.Array)
             {
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var feature in features.EnumerateArray())
+                foreach (var geometry in features.EnumerateArray()
+                             .Select(feature =>
+                                 feature.ValueKind == JsonValueKind.Object &&
+                                 feature.TryGetProperty("geometry", out var geometry)
+                                     ? (JsonElement?)geometry
+                                     : null)
+                             .Where(geometry => geometry.HasValue)
+                             .Select(geometry => geometry.GetValueOrDefault()))
                 {
-                    if (feature.ValueKind == JsonValueKind.Object &&
-                        feature.TryGetProperty("geometry", out var geometry))
-                    {
-                        sink.Add(new RouteBarrier(kind, EsriGeometryToGeoJson(geometry, kind, parameterName)));
-                    }
+                    sink.Add(new RouteBarrier(kind, EsriGeometryToGeoJson(geometry, kind, parameterName)));
                 }
 
                 return;
@@ -1060,16 +1062,15 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("features", out var features) &&
                 features.ValueKind == JsonValueKind.Array)
             {
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var feature in features.EnumerateArray())
-                {
-                    if (feature.ValueKind == JsonValueKind.Object &&
+                points.AddRange(features.EnumerateArray()
+                    .Select(feature =>
+                        feature.ValueKind == JsonValueKind.Object &&
                         feature.TryGetProperty("geometry", out var geometry) &&
-                        TryReadXy(geometry, out var point))
-                    {
-                        points.Add(point);
-                    }
-                }
+                        TryReadXy(geometry, out var point)
+                            ? (RoutePoint?)point
+                            : null)
+                    .Where(point => point.HasValue)
+                    .Select(point => point.GetValueOrDefault()));
 
                 return points;
             }
@@ -1079,14 +1080,10 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("geometries", out var geometries) &&
                 geometries.ValueKind == JsonValueKind.Array)
             {
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var geometry in geometries.EnumerateArray())
-                {
-                    if (TryReadXy(geometry, out var point))
-                    {
-                        points.Add(point);
-                    }
-                }
+                points.AddRange(geometries.EnumerateArray()
+                    .Select(geometry => TryReadXy(geometry, out var point) ? (RoutePoint?)point : null)
+                    .Where(point => point.HasValue)
+                    .Select(point => point.GetValueOrDefault()));
 
                 return points;
             }
@@ -1096,14 +1093,13 @@ internal static class NAServerParameterTranslation
                 root.TryGetProperty("points", out var multipoint) &&
                 multipoint.ValueKind == JsonValueKind.Array)
             {
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var coordinate in multipoint.EnumerateArray())
-                {
-                    if (TryReadCoordinatePair(coordinate, out var point))
-                    {
-                        points.Add(point);
-                    }
-                }
+                points.AddRange(multipoint.EnumerateArray()
+                    .Select(coordinate =>
+                        TryReadCoordinatePair(coordinate, out var point)
+                            ? (RoutePoint?)point
+                            : null)
+                    .Where(point => point.HasValue)
+                    .Select(point => point.GetValueOrDefault()));
 
                 return points;
             }
@@ -1124,14 +1120,13 @@ internal static class NAServerParameterTranslation
                     return points;
                 }
 
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-                foreach (var coordinate in root.EnumerateArray())
-                {
-                    if (TryReadCoordinatePair(coordinate, out var point))
-                    {
-                        points.Add(point);
-                    }
-                }
+                points.AddRange(root.EnumerateArray()
+                    .Select(coordinate =>
+                        TryReadCoordinatePair(coordinate, out var point)
+                            ? (RoutePoint?)point
+                            : null)
+                    .Where(point => point.HasValue)
+                    .Select(point => point.GetValueOrDefault()));
 
                 return points;
             }

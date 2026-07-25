@@ -224,47 +224,6 @@ internal sealed class ManagedSpatialJoinExecutor(
         _ => field,
     };
 
-    private static bool TryReadNumeric(IFeature feature, string field, out double value)
-    {
-        value = 0;
-        var attributes = feature.Attributes;
-        if (attributes is null || !attributes.Exists(field))
-        {
-            return false;
-        }
-
-        var raw = attributes.GetOptionalValue(field);
-        switch (raw)
-        {
-            case null:
-                return false;
-            case double d:
-                value = d;
-                return true;
-            case float f:
-                value = f;
-                return true;
-            case int i:
-                value = i;
-                return true;
-            case long l:
-                value = l;
-                return true;
-            case short s:
-                value = s;
-                return true;
-            case decimal m:
-                value = (double)m;
-                return true;
-            default:
-                return double.TryParse(
-                    Convert.ToString(raw, CultureInfo.InvariantCulture),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out value);
-        }
-    }
-
     private enum SpatialPredicate
     {
         Intersects,
@@ -305,18 +264,16 @@ internal sealed class ManagedSpatialJoinExecutor(
         public void Add(IFeature joinFeature)
         {
             Count++;
-            // Not a .Where(...) candidate: TryReadNumeric's out value feeds four
-            // running-aggregate updates in the body, so filtering separately would mean
-            // parsing each value twice.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
             foreach (var field in _fields)
             {
-                if (TryReadNumeric(joinFeature, field, out var numeric))
+                switch (StatisticsSupport.TryReadNumeric(joinFeature, field, out var numeric))
                 {
-                    _sums[field] = _sums.GetValueOrDefault(field) + numeric;
-                    _counts[field] = _counts.GetValueOrDefault(field) + 1;
-                    _mins[field] = _mins.TryGetValue(field, out var min) ? Math.Min(min, numeric) : numeric;
-                    _maxs[field] = _maxs.TryGetValue(field, out var max) ? Math.Max(max, numeric) : numeric;
+                    case true:
+                        _sums[field] = _sums.GetValueOrDefault(field) + numeric;
+                        _counts[field] = _counts.GetValueOrDefault(field) + 1;
+                        _mins[field] = _mins.TryGetValue(field, out var min) ? Math.Min(min, numeric) : numeric;
+                        _maxs[field] = _maxs.TryGetValue(field, out var max) ? Math.Max(max, numeric) : numeric;
+                        break;
                 }
             }
         }

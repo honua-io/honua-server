@@ -132,12 +132,12 @@ internal sealed class Cql2FilterProcessor(
         // Not converted to `.Where(...)`: the predicate is an awaited async lookup, and the
         // first unsupported SRID must short-circuit the enclosing method with a specific
         // error message, which a synchronous LINQ filter cannot express.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(parsedExpression))
         {
-            if (!await _crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))
+            switch (await _crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))
             {
-                return ProcessingResult.Failure($"Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}'.");
+                case false:
+                    return ProcessingResult.Failure($"Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}'.");
             }
         }
 

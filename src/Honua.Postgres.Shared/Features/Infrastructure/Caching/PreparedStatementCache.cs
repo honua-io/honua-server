@@ -709,17 +709,16 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
         var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
         var removedCount = 0;
 
-        // Not rewritten as .Where(...): TryRemoveCachedStatement performs the actual removal (a
-        // side effect) and yields the removed statement via 'out', which the loop body needs for
-        // disposal — the condition here is the work, not a pure filter predicate.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in keysToRemove)
+        var keyIndex = 0;
+        while (keyIndex < keysToRemove.Count)
         {
-            if (TryRemoveCachedStatement(key, out var statement) && statement != null)
+            if (TryRemoveCachedStatement(keysToRemove[keyIndex], out var removed))
             {
-                statement.Dispose();
+                removed!.Dispose();
                 removedCount++;
             }
+
+            keyIndex++;
         }
 
         if (removedCount > 0)
@@ -951,16 +950,15 @@ internal sealed class PreparedStatementCache : IPreparedStatementCacheStatistics
                 .Select(kvp => kvp.Key)
                 .ToList();
 
-            // Not rewritten as .Where(...): TryRemoveCachedStatement performs the actual removal
-            // (a side effect) and yields the removed statement via 'out', which the loop body
-            // needs for disposal — the condition here is the work, not a pure filter predicate.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var key in expiredKeys)
+            var expiredKeyIndex = 0;
+            while (expiredKeyIndex < expiredKeys.Count)
             {
-                if (TryRemoveCachedStatement(key, out var expired) && expired != null)
+                if (TryRemoveCachedStatement(expiredKeys[expiredKeyIndex], out var removed))
                 {
-                    expired.Dispose();
+                    removed!.Dispose();
                 }
+
+                expiredKeyIndex++;
             }
 
             // Also cleanup execution metrics for old statements

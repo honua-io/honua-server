@@ -1277,17 +1277,17 @@ internal sealed class FeatureServerEditsHandler(
             },
             cancellationToken).ConfigureAwait(false);
 
-        // Not rewritten as .Where(...): the Try-pattern (TryGetValue + TryConvertToLong) needs to
-        // produce two correlated outputs (key and feature) from a single pass, which a filter
-        // predicate can't express as clearly as the loop.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var feature in result.Items)
+        var featureIndex = 0;
+        while (featureIndex < result.Items.Length)
         {
-            if (feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue)
-                && FeatureServerValueParser.TryConvertToLong(rawValue, out var key))
+            var feature = result.Items[featureIndex];
+            if (feature.Attributes.TryGetValue(objectIdField.Name, out var rawValue) &&
+                FeatureServerValueParser.TryConvertToLong(rawValue, out var objectId))
             {
-                resolved[key] = feature;
+                resolved[objectId] = feature;
             }
+
+            featureIndex++;
         }
 
         return resolved;

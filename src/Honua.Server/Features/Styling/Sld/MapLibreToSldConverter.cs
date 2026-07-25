@@ -32,16 +32,11 @@ internal static class MapLibreToSldConverter
         var diagnostics = new List<SldConversionDiagnostic>();
         var rules = new List<XElement>();
 
-        // Not converted to .Select(...): ConvertLayerToRule mutates the shared
-        // `diagnostics` list as a side effect for every layer (including skipped
-        // ones), so the loop's ordering/exhaustiveness guarantee is easier to
-        // reason about explicitly than through a lazily-evaluated projection.
-        foreach (var rule in (layers).Select(layer => ConvertLayerToRule(layer, diagnostics)))
+        foreach (var rule in layers
+                     .Select(layer => ConvertLayerToRule(layer, diagnostics))
+                     .OfType<XElement>())
         {
-            if (rule != null)
-            {
-                rules.Add(rule);
-            }
+            rules.Add(rule);
         }
 
         if (rules.Count == 0)

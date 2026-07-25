@@ -960,9 +960,9 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
                 {
                     await cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
                 }
-                // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
                 catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
                 {
+                    Log.RedisFailed(_logger, "rollback progress", caughtException);
                 }
             }
 

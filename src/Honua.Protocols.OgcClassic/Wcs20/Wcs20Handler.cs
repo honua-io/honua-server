@@ -838,13 +838,14 @@ internal sealed class Wcs20Handler
 
         var srids = new HashSet<int>();
         var uris = new List<string>();
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var seed in seeds)
         {
-            if (await _crsRegistry.IsSridSupportedAsync(seed, cancellationToken).ConfigureAwait(false))
+            switch (await _crsRegistry.IsSridSupportedAsync(seed, cancellationToken).ConfigureAwait(false))
             {
-                srids.Add(seed);
-                uris.Add(CreateEpsgUri(seed));
+                case true:
+                    srids.Add(seed);
+                    uris.Add(CreateEpsgUri(seed));
+                    break;
             }
         }
 

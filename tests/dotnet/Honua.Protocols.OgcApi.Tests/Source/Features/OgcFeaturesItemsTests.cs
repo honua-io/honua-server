@@ -175,18 +175,17 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         // Features should be filtered (may be empty if no matches)
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
 
-        // If features exist, they should match the filter criteria
-        // Not rewritten as .Where(...): the nested TryGetProperty pattern extracts
-        // two optional values (properties, then name) and a Where/Select chain would
-        // have to repeat the same lookups, reading less clearly than the nested if.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var feature in features)
+        // If features exist, they should match the filter criteria.
+        foreach (var nameProperty in features
+                     .Select(feature =>
+                         feature.TryGetProperty("properties", out var properties) &&
+                         properties.TryGetProperty("name", out var name)
+                             ? (JsonElement?)name
+                             : null)
+                     .Where(name => name.HasValue)
+                     .Select(name => name.GetValueOrDefault()))
         {
-            if (feature.TryGetProperty("properties", out var properties) &&
-                properties.TryGetProperty("name", out var nameProperty))
-            {
-                nameProperty.GetString().Should().Be("Test Feature");
-            }
+            nameProperty.GetString().Should().Be("Test Feature");
         }
     }
 

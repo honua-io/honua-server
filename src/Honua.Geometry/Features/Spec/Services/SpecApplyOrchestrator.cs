@@ -726,17 +726,17 @@ internal sealed partial class SpecApplyOrchestrator : ISpecApplyEngine
             return new Dictionary<string, CachedArtifactRef>(StringComparer.Ordinal);
         }
 
-        // Kept as an imperative loop (not Where/Select): TryGetValue does a single dictionary
-        // lookup per dependency, whereas a LINQ Where(cachedInputs.ContainsKey) + indexer would
-        // require two lookups per hit on this per-node hot path.
         var result = new Dictionary<string, CachedArtifactRef>(plannedNode.DependsOn.Count, StringComparer.Ordinal);
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var dep in plannedNode.DependsOn)
+        var dependencyIndex = 0;
+        while (dependencyIndex < plannedNode.DependsOn.Count)
         {
-            if (cachedInputs.TryGetValue(dep, out var reference))
+            var dependency = plannedNode.DependsOn[dependencyIndex];
+            if (cachedInputs.TryGetValue(dependency, out var reference))
             {
-                result[dep] = reference;
+                result[dependency] = reference;
             }
+
+            dependencyIndex++;
         }
 
         return result;

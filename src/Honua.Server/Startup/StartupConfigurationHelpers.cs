@@ -47,13 +47,11 @@ internal static class StartupConfigurationHelpers
             // Not a simple .Where(): the filter condition depends on IPAddress.TryParse's
             // `out` value, which the body also needs, so a LINQ predicate can't cleanly
             // carry that state without re-parsing per candidate.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var proxy in knownProxies)
+            foreach (var ip in knownProxies
+                .Select(static proxy => IPAddress.TryParse(proxy, out var ip) ? ip : null)
+                .OfType<IPAddress>())
             {
-                if (IPAddress.TryParse(proxy, out var ip))
-                {
-                    options.KnownProxies.Add(ip);
-                }
+                options.KnownProxies.Add(ip);
             }
         });
 
@@ -272,12 +270,12 @@ internal static class StartupConfigurationHelpers
                         continue;
                     }
 
-                    foreach (var path in (contentRoots.EnumerateArray()).Select(contentRoot => contentRoot.GetString()))
+                    foreach (var path in contentRoots.EnumerateArray()
+                                 .Select(contentRoot => contentRoot.GetString())
+                                 .OfType<string>()
+                                 .Where(path => !string.IsNullOrWhiteSpace(path) && !Directory.Exists(path)))
                     {
-                        if (!string.IsNullOrWhiteSpace(path) && !Directory.Exists(path))
-                        {
-                            Directory.CreateDirectory(path);
-                        }
+                        Directory.CreateDirectory(path);
                     }
                 }
             }

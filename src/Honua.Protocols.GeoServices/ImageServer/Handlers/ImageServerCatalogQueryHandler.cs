@@ -855,14 +855,16 @@ internal sealed class ImageServerCatalogQueryHandler
         }
 
         var parsed = new List<long>(parts.Length);
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var part in parts)
-        {
-            if (long.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-            {
-                parsed.Add(id);
-            }
-        }
+        parsed.AddRange(parts
+            .Select(part => long.TryParse(
+                part,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var id)
+                    ? (long?)id
+                    : null)
+            .Where(id => id.HasValue)
+            .Select(id => id.GetValueOrDefault()));
         return parsed.Count == 0 ? null : parsed;
     }
 

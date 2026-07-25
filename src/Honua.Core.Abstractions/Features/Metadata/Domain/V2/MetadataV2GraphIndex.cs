@@ -153,13 +153,9 @@ public sealed class MetadataV2GraphIndex
 
         var storageBindingsByStorageLayerId = new Dictionary<int, MetadataV2StorageBinding>();
         var resourcesByStorageLayerId = new Dictionary<int, MetadataV2Resource>();
-        // judgment call: the `is not int storageLayerId` pattern-match both filters and binds the
-        // extracted value used below; a .Where() would have to re-extract it, which is messier
-        // than the guard-clause form here.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var binding in graph.StorageBindings)
+        foreach (var binding in graph.StorageBindings.Where(binding => binding.StorageLayerId.HasValue))
         {
-            if (binding.StorageLayerId is not int storageLayerId) continue;
+            var storageLayerId = binding.StorageLayerId.GetValueOrDefault();
             // First-wins on collisions — graph validation surfaces duplicates
             // separately so the index stays deterministic even on a bad graph.
             storageBindingsByStorageLayerId.TryAdd(storageLayerId, binding);

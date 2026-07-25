@@ -546,12 +546,12 @@ internal sealed partial class OgcFeaturesGeometryServices
                 // Not rewritten with .Where()/.Any(): the predicate is an awaited recursive async
                 // call, which synchronous LINQ over IEnumerable cannot express, so the explicit
                 // foreach + early return is the clearest form here.
-                // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
                 foreach (Geometry child in geometryCollection.Geometries)
                 {
-                    if (!await TryTransformGeometryAsync(child, fromSrid, toSrid, cancellationToken).ConfigureAwait(false))
+                    switch (await TryTransformGeometryAsync(child, fromSrid, toSrid, cancellationToken).ConfigureAwait(false))
                     {
-                        return false;
+                        case false:
+                            return false;
                     }
                 }
 

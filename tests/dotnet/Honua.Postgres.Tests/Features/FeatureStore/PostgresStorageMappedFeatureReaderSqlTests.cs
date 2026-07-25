@@ -3,15 +3,64 @@
 
 using System.Reflection;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Microsoft.Extensions.ObjectPool;
+using NSubstitute;
 
 namespace Honua.Postgres.Tests.Features.FeatureStore;
 
 public sealed class PostgresStorageMappedFeatureReaderSqlTests
 {
+    [Fact]
+    public async Task ApplyReadSecurityAsync_WithRlsAndFieldMask_EnforcesBothOnTileQuery()
+    {
+        var resource = CreateResource();
+        var rlsSource = Substitute.For<IRowLevelSecurityFilterSource>();
+        rlsSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(new SqlFragment("\"tenant_id\" = @p0", ["tenant-a"]));
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(["secret"]);
+        var reader = CreateReader(resource, rlsSource, fieldMaskSource);
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "ApplyReadSecurityAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+        var task = (Task<FeatureQuery>)method!.Invoke(
+            reader,
+            [new FeatureQuery(), CancellationToken.None])!;
+        var securedQuery = await task;
+
+        securedQuery.EnforcedSqlFilter.Should().NotBeNull();
+        securedQuery.EnforcedSqlFilter!.Sql.Should().Be("\"tenant_id\" = @p0");
+        securedQuery.EnforcedSqlFilter.Parameters.Should().Equal("tenant-a");
+        securedQuery.EnforcedMaskedFields.Should().ContainSingle().Which.Should().Be("secret");
+    }
+
+    [Fact]
+    public void ResolveAttributeFields_WithEnforcedMask_DropsMaskedTileAttribute()
+    {
+        var resource = CreateResource();
+        var reader = CreateReader(resource);
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "ResolveAttributeFields",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+        var fields = (MetadataV2Field[])method!.Invoke(
+            reader,
+            [new FeatureQuery { EnforcedMaskedFields = ["secret"] }])!;
+
+        fields.Select(static field => field.Name).Should().Equal("tenant_id", "name");
+    }
+
     [Fact]
     public void RewriteAttributeTextAccessExpressions_WithCanonicalAttributeFilter_UsesMappedSourceColumn()
     {
@@ -180,4 +229,35 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         expression.Should().Contain("'site_name', \"attributes\" ->> 'site_name'");
         expression.Should().Contain("'inspected', \"attributes\" ->> 'inspected'");
     }
+
+    private static MetadataV2Resource CreateResource()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-secure", Name = "Secure" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "tenant_id", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "secret", Type = MetadataV2FieldType.String },
+            ],
+        };
+
+    private static PostgresStorageMappedFeatureReader CreateReader(
+        MetadataV2Resource resource,
+        IRowLevelSecurityFilterSource? rlsSource = null,
+        IFieldMaskSource? fieldMaskSource = null)
+        => new(
+            Substitute.For<IAdoNetDatabaseConnectionProvider>(),
+            new DefaultObjectPoolProvider().Create(
+                new DefaultPooledObjectPolicy<Dictionary<string, object?>>()),
+            resource,
+            new FeatureStorageMapping(
+                TableName: "secure_features",
+                PrimaryKeyColumn: "objectid",
+                GeometryColumn: "geom"),
+            connection: null,
+            connectionEncryptionService: null,
+            rlsFilterSource: rlsSource,
+            fieldMaskSource: fieldMaskSource);
 }

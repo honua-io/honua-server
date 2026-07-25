@@ -117,27 +117,27 @@ public abstract record GeocodeProviderConfiguration
     /// <summary>
     /// Whether the provider is enabled
     /// </summary>
-    public bool Enabled { get; init; }
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Provider priority (higher numbers = higher priority)
     /// </summary>
-    public int Priority { get; init; }
+    public int Priority { get; set; }
 
     /// <summary>
     /// Timeout in seconds for requests
     /// </summary>
-    public int TimeoutSeconds { get; init; } = 30;
+    public int TimeoutSeconds { get; set; } = 30;
 
     /// <summary>
     /// Maximum results per request
     /// </summary>
-    public int MaxResults { get; init; } = 10;
+    public int MaxResults { get; set; } = 10;
 
     /// <summary>
     /// Default country codes for biasing results
     /// </summary>
-    public string? DefaultCountryCodes { get; init; }
+    public string? DefaultCountryCodes { get; set; }
 }
 
 /// <summary>

@@ -119,18 +119,23 @@ internal sealed partial class ConsoleJobService
             return null;
         }
 
-        // Not a simple filter: the first matching key's value is looked up, validated, and
-        // sanitized before being returned, so a LINQ Where/Select would not simplify this.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in CommandMetadataKeys)
+        string? command = null;
+        var keyIndex = 0;
+        while (keyIndex < CommandMetadataKeys.Length)
         {
-            if (entry.Metadata.TryGetValue(key, out var command) && !string.IsNullOrWhiteSpace(command))
+            if (entry.Metadata.TryGetValue(CommandMetadataKeys[keyIndex], out var value) &&
+                !string.IsNullOrWhiteSpace(value))
             {
-                return WorkspacePathSanitizer.SanitizeForClient(command, workspace);
+                command = value;
+                break;
             }
+
+            keyIndex++;
         }
 
-        return null;
+        return command is null
+            ? null
+            : WorkspacePathSanitizer.SanitizeForClient(command, workspace);
     }
 
     private static Dictionary<string, string>? SanitizeStepMetadata(

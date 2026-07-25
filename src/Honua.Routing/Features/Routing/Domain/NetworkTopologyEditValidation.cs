@@ -84,40 +84,73 @@ public static class NetworkTopologyEditValidation
             return false;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var edge in batch.AddEdges.Concat(batch.UpdateEdges))
+        var edgeIndex = 0;
+        while (edgeIndex < batch.AddEdges.Count)
         {
-            if (!TryValidateEdge(edge, generationSrid, allowedAttributeKeys, out error))
+            if (!TryValidateEdge(batch.AddEdges[edgeIndex], generationSrid, allowedAttributeKeys, out error))
             {
                 return false;
             }
+
+            edgeIndex++;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var edgeId in batch.DeleteEdgeIds)
+        edgeIndex = 0;
+        while (edgeIndex < batch.UpdateEdges.Count)
         {
-            if (!TryValidateStableId(edgeId, "edge id", out error))
+            if (!TryValidateEdge(batch.UpdateEdges[edgeIndex], generationSrid, allowedAttributeKeys, out error))
             {
                 return false;
             }
+
+            edgeIndex++;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var restriction in batch.AddRestrictions.Concat(batch.UpdateRestrictions))
+        var edgeIdIndex = 0;
+        while (edgeIdIndex < batch.DeleteEdgeIds.Count)
         {
-            if (!TryValidateRestriction(restriction, out error))
+            if (!TryValidateStableId(batch.DeleteEdgeIds[edgeIdIndex], "edge id", out error))
             {
                 return false;
             }
+
+            edgeIdIndex++;
         }
 
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var restrictionId in batch.DeleteRestrictionIds)
+        var restrictionIndex = 0;
+        while (restrictionIndex < batch.AddRestrictions.Count)
         {
-            if (!TryValidateStableId(restrictionId, "turn restriction id", out error))
+            if (!TryValidateRestriction(batch.AddRestrictions[restrictionIndex], out error))
             {
                 return false;
             }
+
+            restrictionIndex++;
+        }
+
+        restrictionIndex = 0;
+        while (restrictionIndex < batch.UpdateRestrictions.Count)
+        {
+            if (!TryValidateRestriction(batch.UpdateRestrictions[restrictionIndex], out error))
+            {
+                return false;
+            }
+
+            restrictionIndex++;
+        }
+
+        var restrictionIdIndex = 0;
+        while (restrictionIdIndex < batch.DeleteRestrictionIds.Count)
+        {
+            if (!TryValidateStableId(
+                    batch.DeleteRestrictionIds[restrictionIdIndex],
+                    "turn restriction id",
+                    out error))
+            {
+                return false;
+            }
+
+            restrictionIdIndex++;
         }
 
         error = string.Empty;
@@ -386,14 +419,13 @@ public static class NetworkTopologyEditValidation
                 return false;
             }
 
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var ordinate in position.EnumerateArray())
+            if (position.EnumerateArray().Any(ordinate =>
+                    ordinate.ValueKind != JsonValueKind.Number ||
+                    !ordinate.TryGetDouble(out var value) ||
+                    !double.IsFinite(value)))
             {
-                if (ordinate.ValueKind != JsonValueKind.Number || !ordinate.TryGetDouble(out var value) || !double.IsFinite(value))
-                {
-                    error = "each coordinate ordinate must be a finite number.";
-                    return false;
-                }
+                error = "each coordinate ordinate must be a finite number.";
+                return false;
             }
         }
 

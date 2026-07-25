@@ -172,7 +172,7 @@ public sealed class ResourceValidator : IResourceValidator
         // (ResolveResource) plus a second lifecycle check on the resolved resource before
         // the match is accepted, so the explicit loop stays clearer than a chained
         // Where/Select/FirstOrDefault here.
-        foreach (var pub in (snapshot.Index.PublicationsByService[service.Metadata.Id]).Where(pub => !(pub.LayerIndex != layerId)))
+        foreach (var pub in snapshot.Index.PublicationsByService[service.Metadata.Id].Where(pub => pub.LayerIndex == layerId))
         {
             // Disabled (admin-disabled) publications/resources are flipped to
             // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes

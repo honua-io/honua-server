@@ -1026,12 +1026,7 @@ internal sealed class OgcMapsRenderingHandler
                 Width = width,
                 Height = height,
                 Format = format.Value,
-                // request.Transparent is guaranteed non-null (and true) here: the guard above
-                // already rejects any request where the "transparent" query parameter was
-                // explicitly supplied, so the only way to reach this point is with the
-                // property still holding its record-default value of true.
-                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-                Transparent = request.Transparent ?? true,
+                Transparent = true,
                 BackgroundColor = request.BackgroundColor,
                 DateTime = datetimeTo,
                 DateTimeFrom = datetimeFrom,

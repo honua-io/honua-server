@@ -19,6 +19,8 @@ namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
+    private static readonly string[] NestedCoordinatePropertyNames = ["rings", "paths"];
+
     internal static string? ConvertEsriGeometryToGeoJson(JsonElement geometry)
     {
         // Esri JSON geometry format is similar to GeoJSON but not identical
@@ -124,14 +126,18 @@ internal sealed partial class GeoservicesImportService
                 return true;
 
             // Rings (polygon), paths (polyline), points (multipoint): check coordinate array lengths
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var propName in new[] { "rings", "paths" })
+            var propertyIndex = 0;
+            while (propertyIndex < NestedCoordinatePropertyNames.Length)
             {
-                if (geometry.TryGetProperty(propName, out var arrays) &&
-                    arrays.EnumerateArray().Any(array => array.EnumerateArray().Any(coord => coord.GetArrayLength() > 2)))
+                var propertyName = NestedCoordinatePropertyNames[propertyIndex];
+                if (geometry.TryGetProperty(propertyName, out var arrays) &&
+                    arrays.EnumerateArray().Any(static array =>
+                        array.EnumerateArray().Any(static coordinate => coordinate.GetArrayLength() > 2)))
                 {
                     return true;
                 }
+
+                propertyIndex++;
             }
 
             if (geometry.TryGetProperty("points", out var pts) &&

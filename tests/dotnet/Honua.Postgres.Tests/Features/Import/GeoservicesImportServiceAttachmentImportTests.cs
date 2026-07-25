@@ -366,8 +366,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                 AttachmentRequestPaths.Add(pathAndQuery);
                 if (failAttachmentId.HasValue && pathAndQuery.EndsWith($"/{failAttachmentId.Value}", StringComparison.Ordinal))
                 {
-                    // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+                    return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError));
                 }
 
                 var resp = new HttpResponseMessage(HttpStatusCode.OK)

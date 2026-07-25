@@ -628,8 +628,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
         {
             SendCount++;
             // Ownership transfers to the HttpClient pipeline/caller, which disposes it; not this handler's responsibility.
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK));
         }
     }
     private sealed class CancellationAwareHandler : HttpMessageHandler

@@ -264,13 +264,17 @@ internal static class ImageServerSensorModel
 
     private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] names)
     {
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var name in names)
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
         {
-            if (root.TryGetProperty(name, out array) && array.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty(names[nameIndex], out var candidate) &&
+                candidate.ValueKind == JsonValueKind.Array)
             {
+                array = candidate;
                 return true;
             }
+
+            nameIndex++;
         }
 
         array = default;
@@ -279,13 +283,17 @@ internal static class ImageServerSensorModel
 
     private static bool TryGetObject(JsonElement root, out JsonElement value, params string[] names)
     {
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var name in names)
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
         {
-            if (root.TryGetProperty(name, out value) && value.ValueKind == JsonValueKind.Object)
+            if (root.TryGetProperty(names[nameIndex], out var candidate) &&
+                candidate.ValueKind == JsonValueKind.Object)
             {
+                value = candidate;
                 return true;
             }
+
+            nameIndex++;
         }
 
         value = default;
@@ -318,16 +326,15 @@ internal static class ImageServerSensorModel
 
     private static bool TryReadAny(JsonElement root, out double value, params string[] names)
     {
-        // Not rewritten as .Where(...): this is a first-match short-circuit over the
-        // Try-pattern (bool + out), not a pure filter — a LINQ equivalent would need an
-        // intermediate nullable projection and would be harder to read than the loop.
-        // codeql[cs/linq/missed-where] -- predicate assigns the caller-visible out parameter.
-        foreach (var name in names)
+        var nameIndex = 0;
+        while (nameIndex < names.Length)
         {
-            if (TryGetDouble(root, name, out value))
+            if (TryGetDouble(root, names[nameIndex], out value))
             {
                 return true;
             }
+
+            nameIndex++;
         }
 
         value = 0;

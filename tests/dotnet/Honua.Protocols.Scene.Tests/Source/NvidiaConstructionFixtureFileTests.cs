@@ -205,11 +205,9 @@ public sealed class NvidiaConstructionFixtureFileTests
     [UnitTest]
     public void TileBinaries_ArePresentAndStartWithB3dmMagic()
     {
-        foreach (var relative in BothTileBinaries)
+        foreach (var bytes in BothTileBinaries.Select(relative =>
+                     File.ReadAllBytes(Path.Join(_fixtureRoot, relative))))
         {
-            // _fixtureRoot is absolute; `relative` is always one of the relative
-            // path constants above, so Path.Combine cannot silently drop it.
-            var bytes = File.ReadAllBytes(Path.Join(_fixtureRoot, relative));
             bytes.Length.Should().BeGreaterThan(4);
             System.Text.Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("b3dm");
         }

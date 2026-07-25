@@ -5,6 +5,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Formats.Asn1;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication.ClientCertificates;
@@ -317,11 +319,7 @@ internal sealed class ClientCertificateValidator(
             // Not a `using` declaration: `anchors` is a list accumulated across loop
             // iterations, and each entry must stay valid (undisposed) until chain.Build
             // has run, so disposal only happens once here after the chain is built.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            foreach (var anchor in anchors)
-            {
-                anchor.Dispose();
-            }
+            DeferredDisposal.DisposeAll(anchors);
         }
     }
 
@@ -419,11 +417,7 @@ internal sealed class ClientCertificateValidator(
             // Not a `using` declaration: `anchors` is a list accumulated across loop
             // iterations, and each entry must stay valid (undisposed) until chain.Build
             // has run, so disposal only happens once here after the chain is built.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            foreach (var anchor in anchors)
-            {
-                anchor.Dispose();
-            }
+            DeferredDisposal.DisposeAll(anchors);
         }
     }
 

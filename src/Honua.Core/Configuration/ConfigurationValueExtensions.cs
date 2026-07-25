@@ -71,9 +71,7 @@ public static class ConfigurationValueExtensions
 
     private static T ConvertValue<T>(string value, string key)
     {
-        // Nullable.GetUnderlyingType returns null only when T is not a Nullable<T>; the
-        // `?? typeof(T)` fallback guarantees targetType is always non-null below.
-        var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        var targetType = GetTargetType<T>();
         if (targetType == typeof(string))
         {
             return (T)(object)value;
@@ -96,8 +94,7 @@ public static class ConfigurationValueExtensions
                 Type type when type == typeof(DateTime) => DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
                 Type type when type == typeof(DateTimeOffset) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
                 Type type when type == typeof(Uri) => new Uri(value, UriKind.RelativeOrAbsolute),
-                // codeql[cs/dereferenced-value-may-be-null] -- the preceding assertion or validation establishes non-nullness for this access.
-                _ when targetType.IsEnum => Enum.Parse(targetType, value, ignoreCase: true),
+                Type type when type.IsEnum => Enum.Parse(type, value, ignoreCase: true),
                 _ => throw new InvalidOperationException(
                     $"Configuration value '{key}' cannot be converted to {targetType.Name}.")
             };
@@ -111,6 +108,8 @@ public static class ConfigurationValueExtensions
                 ex);
         }
     }
+
+    private static Type GetTargetType<T>() => Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
 
     private static string ToEnvironmentVariableKey(string key) => key.Replace(":", "__", StringComparison.Ordinal);
 }

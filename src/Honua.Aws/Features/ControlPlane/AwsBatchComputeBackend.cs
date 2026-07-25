@@ -697,11 +697,7 @@ internal sealed partial class AwsBatchComputeBackend(
             if (AwsBatchStateMapper.CanCancelWithoutTerminate(state.Status))
             {
                 await batchClient.CancelJobAsync(providerId, AwsBatchStateMapper.CancelReason, region, serviceUrl, cancellationToken).ConfigureAwait(false);
-                // CanCancelWithoutTerminate(state.Status) only returns true for a non-null,
-                // non-whitespace status, so the "UNKNOWN" fallback can never trigger here;
-                // kept identical to the else branch below for a consistent log shape.
-                // codeql[cs/constant-condition] -- the defensive branch preserves compatibility and documents the accepted wire or domain shape.
-                Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status ?? "UNKNOWN");
+                Log.BatchJobCancelled(logger, job.OperationId, providerId, state.Status!);
             }
             else
             {

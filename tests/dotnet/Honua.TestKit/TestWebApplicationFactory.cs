@@ -35,7 +35,11 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
+        => ConfigureForTests(builder);
+
+    internal static void ConfigureForTests(IWebHostBuilder builder)
     {
+        ArgumentNullException.ThrowIfNull(builder);
         builder.UseEnvironment("Test");
         builder.ConfigureServices(services =>
         {

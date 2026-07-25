@@ -27,7 +27,7 @@ internal static class FeatureServerServiceCollectionExtensions
         services.AddScoped<IQueryFormatter, QueryFormatter>();
         services.AddScoped<IFeatureQueryValidator, FeatureQueryValidator>();
         services.AddScoped<IGeometryValidator, GeometryValidator>();
-        services.TryAddScoped<SpatialReferenceResolver>();
+        services.TryAddScoped<FeatureServerSpatialReferenceResolver>();
         services.AddScoped<IFeatureServerQueryServices, FeatureServerQueryServices>();
         services.AddScoped<IFeatureServerGeometryServices, FeatureServerGeometryServices>();
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();

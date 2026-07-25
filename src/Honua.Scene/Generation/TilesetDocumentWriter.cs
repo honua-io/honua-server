@@ -228,18 +228,21 @@ public static class TilesetDocumentWriter
             max = nodeContent.MaxHeightMeters;
         }
 
-        // Not a candidate for .Where(...): the guard call also yields childMin/childMax via
-        // out parameters that the loop body needs, so filtering and value extraction can't
-        // be separated without a tuple-returning refactor of TryGetDescendantHeightExtent.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var child in node.Children)
+        var childIndex = 0;
+        while (childIndex < node.Children.Count)
         {
-            if (TryGetDescendantHeightExtent(child, content, out var childMin, out var childMax))
+            if (TryGetDescendantHeightExtent(
+                    node.Children[childIndex],
+                    content,
+                    out var childMin,
+                    out var childMax))
             {
                 found = true;
                 if (childMin < min) min = childMin;
                 if (childMax > max) max = childMax;
             }
+
+            childIndex++;
         }
 
         minHeight = found ? min : 0.0;

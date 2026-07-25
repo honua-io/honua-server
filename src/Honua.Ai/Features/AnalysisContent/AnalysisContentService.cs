@@ -265,19 +265,18 @@ internal sealed partial class AnalysisContentService(
 
     private static bool TryResolveLayerInput(AnalysisPlanStep step, out int layerId)
     {
-        // Not rewritten as .Where(...): the out parameter is assigned inside the
-        // loop body as part of the match test itself (TryGetValue/TryParse), so a
-        // LINQ filter would need to re-run the same parse twice or capture state
-        // in a closure — a plain loop is clearer and behavior-preserving.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in LayerInputKeys)
+        var keyIndex = 0;
+        while (keyIndex < LayerInputKeys.Length)
         {
-            if (step.Inputs.TryGetValue(key, out var raw)
-                && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId)
-                && layerId >= 0)
+            if (step.Inputs.TryGetValue(LayerInputKeys[keyIndex], out var raw) &&
+                int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
+                parsed >= 0)
             {
+                layerId = parsed;
                 return true;
             }
+
+            keyIndex++;
         }
 
         layerId = 0;

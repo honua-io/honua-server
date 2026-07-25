@@ -107,11 +107,11 @@ public sealed class AzureMapsGeocodeProviderTests
                     """
             };
 
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
-            return Task.FromResult(response);
+            return Task.FromResult<HttpResponseMessage>(response);
         }
     }
 }

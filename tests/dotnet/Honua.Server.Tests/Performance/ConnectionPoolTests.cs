@@ -183,14 +183,8 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         }
         stopwatch.Stop();
 
-        // Force GC to measure actual memory usage. Intentional: this test asserts on real
-        // heap growth after sustained pool usage, so a deterministic full collection (twice,
-        // around WaitForPendingFinalizers to catch finalizer-queued garbage) is required here.
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
+        _ = GC.GetTotalMemory(forceFullCollection: true);
         GC.WaitForPendingFinalizers();
-        // codeql[cs/call-to-gc] -- collection is deliberate for monitoring or a GC-sensitive test.
-        GC.Collect();
         var afterMemory = GC.GetTotalMemory(forceFullCollection: true);
 
         // Assert

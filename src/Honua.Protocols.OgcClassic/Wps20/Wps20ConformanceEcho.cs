@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
@@ -189,26 +191,17 @@ internal sealed class Wps20ConformanceEcho : IDisposable
         Exception? lastFailure = null;
         foreach (var pinnedAddress in pinnedAddresses)
         {
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            var socket = createSocket(pinnedAddress.AddressFamily);
-            var ownershipTransferred = false;
+            using var socketOwner = new SocketConnectionOwner(createSocket(pinnedAddress.AddressFamily));
             try
             {
-                await socket.ConnectAsync(new IPEndPoint(pinnedAddress, port), cancellationToken).ConfigureAwait(false);
-                var stream = new NetworkStream(socket, ownsSocket: true);
-                ownershipTransferred = true;
-                return stream;
+                await socketOwner.Socket
+                    .ConnectAsync(new IPEndPoint(pinnedAddress, port), cancellationToken)
+                    .ConfigureAwait(false);
+                return socketOwner.TransferToNetworkStream();
             }
             catch (Exception ex) when (ex is SocketException or IOException)
             {
                 lastFailure = ex;
-            }
-            finally
-            {
-                if (!ownershipTransferred)
-                {
-                    socket.Dispose();
-                }
             }
         }
         throw new HttpRequestException("No validated reference address accepted the connection.", lastFailure);

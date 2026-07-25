@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -72,7 +73,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         var request = context.Request;
 
@@ -546,7 +546,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -561,7 +561,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string? crs,
         CancellationToken cancellationToken)
     {
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         Activity? featureActivity = null;
         var request = context.Request;
 
@@ -801,7 +800,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
         finally
         {
-            featureActivity?.Dispose();
+            DeferredDisposal.Dispose(featureActivity);
         }
     }
 
@@ -1327,14 +1326,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
             lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var fieldName in propertyFields)
+        var fieldIndex = 0;
+        while (fieldIndex < propertyFields.Length)
         {
+            var fieldName = propertyFields[fieldIndex];
             if (lookup.TryGetValue(fieldName, out var value))
             {
                 writer.WritePropertyName(fieldName);
                 value.WriteTo(writer);
             }
+
+            fieldIndex++;
         }
 
         writer.WriteEndObject();

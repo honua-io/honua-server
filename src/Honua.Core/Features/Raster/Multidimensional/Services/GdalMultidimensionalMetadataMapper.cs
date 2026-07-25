@@ -245,16 +245,10 @@ public static class GdalMultidimensionalMetadataMapper
         }
 
         var chunkShape = new List<long>();
-        // Not a simple filter: TryGetInt64's out-param is the value being collected, so
-        // `.Where(...)` can't express this without duplicating the TryGetInt64 call.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var entry in blockEl.EnumerateArray())
-        {
-            if (entry.TryGetInt64(out var v))
-            {
-                chunkShape.Add(v);
-            }
-        }
+        chunkShape.AddRange(blockEl.EnumerateArray()
+            .Select(entry => entry.TryGetInt64(out var value) ? (long?)value : null)
+            .Where(value => value.HasValue)
+            .Select(value => value.GetValueOrDefault()));
 
         if (chunkShape.Count == 0)
         {
@@ -282,18 +276,17 @@ public static class GdalMultidimensionalMetadataMapper
         // Prefer an explicit GDAL spatial reference when present.
         if (root.TryGetProperty("arrays", out var arrays) && arrays.ValueKind == JsonValueKind.Object)
         {
-            // Not a simple filter: the match condition itself resolves `srs`/`epsg` via
-            // TryGetProperty/TryReadEpsgFromSrs out-params that the body then returns, so
-            // `.Where(...)` would need to recompute both calls rather than reuse them.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var array in arrays.EnumerateObject())
-            {
-                if (array.Value.ValueKind == JsonValueKind.Object &&
+            var resolvedEpsg = arrays.EnumerateObject()
+                .Select(array =>
+                    array.Value.ValueKind == JsonValueKind.Object &&
                     array.Value.TryGetProperty("srs", out var srs) &&
-                    TryReadEpsgFromSrs(srs, out var epsg))
-                {
-                    return epsg;
-                }
+                    TryReadEpsgFromSrs(srs, out var epsg)
+                        ? (int?)epsg
+                        : null)
+                .FirstOrDefault(epsg => epsg.HasValue);
+            if (resolvedEpsg.HasValue)
+            {
+                return resolvedEpsg.Value;
             }
         }
 
@@ -369,16 +362,10 @@ public static class GdalMultidimensionalMetadataMapper
         var values = new List<long>();
         if (element.TryGetProperty(property, out var arrayEl) && arrayEl.ValueKind == JsonValueKind.Array)
         {
-            // Not a simple filter: TryGetInt64's out-param is the value being collected, so
-            // `.Where(...)` can't express this without duplicating the TryGetInt64 call.
-            // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-            foreach (var entry in arrayEl.EnumerateArray())
-            {
-                if (entry.TryGetInt64(out var v))
-                {
-                    values.Add(v);
-                }
-            }
+            values.AddRange(arrayEl.EnumerateArray()
+                .Select(entry => entry.TryGetInt64(out var value) ? (long?)value : null)
+                .Where(value => value.HasValue)
+                .Select(value => value.GetValueOrDefault()));
         }
 
         return values;

@@ -142,9 +142,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
         // for the whole fixture. Wrapping this in `using` would dispose it before the
         // fixture's tests run.
-        // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-        _factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
+        _factory = ConfiguredWebApplicationFactory.Create(builder =>
             {
                 // Audit-A2: host settings, app configuration, and PostgreSQL test
                 // services wiring all live on WebAppFixturePostgresWiringMixin so the

@@ -45,12 +45,12 @@ public sealed class DuckDbProviderWebAppFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"honua_provider_smoke_{Guid.NewGuid():N}.duckdb");
+        _dbPath = Path.Join(Path.GetTempPath(), $"honua_provider_smoke_{Guid.NewGuid():N}.duckdb");
         await SeedAsync(_dbPath).ConfigureAwait(false);
 
         var graph = ProviderSmokeGraph.Build(locator: "parcels");
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = Honua.TestKit.ConfiguredWebApplicationFactory.Create(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "true");

@@ -938,8 +938,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         // by 17+ call sites in this file, so threading a `using` through every caller here
         // would be disproportionate to the (non-existent) unmanaged resource risk.
         var prometheusProvider = new PrometheusDeployTelemetryProviderEvaluator(
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            new StubHttpClientFactory(new HttpClient(handler)));
+            new StubHttpClientFactory(new Honua.TestKit.CallerOwnedHttpClient(handler)));
 
         return new DeployTelemetrySignalEvaluator(
             new TestControlPlaneOptionsMonitor(new ControlPlaneOptions

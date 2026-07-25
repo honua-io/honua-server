@@ -90,15 +90,21 @@ public static class GeoParquetProjJsonCatalog
         }
 
         var map = new Dictionary<int, string>();
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var property in crs.EnumerateObject())
+        foreach (var entry in crs.EnumerateObject()
+                     .Select(property => (
+                         Property: property,
+                         Srid: int.TryParse(
+                             property.Name,
+                             NumberStyles.Integer,
+                             CultureInfo.InvariantCulture,
+                             out var srid)
+                                 ? (int?)srid
+                                 : null))
+                     .Where(entry => entry.Srid.HasValue))
         {
-            if (int.TryParse(property.Name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
-            {
-                // GetRawText() returns the stored compact PROJJSON verbatim so it can be
-                // spliced directly into the GeoParquet 'geo' metadata without re-serialization.
-                map[srid] = property.Value.GetRawText();
-            }
+            // GetRawText() returns the stored compact PROJJSON verbatim so it can be
+            // spliced directly into the GeoParquet 'geo' metadata without re-serialization.
+            map[entry.Srid.GetValueOrDefault()] = entry.Property.Value.GetRawText();
         }
 
         return map.ToFrozenDictionary();

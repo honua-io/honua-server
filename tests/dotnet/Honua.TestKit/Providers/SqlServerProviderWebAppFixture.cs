@@ -33,13 +33,14 @@ namespace Honua.TestKit.Providers;
 /// <c>SqlServer:Layers</c> config is needed.
 /// </para>
 /// <para>
-/// <b>Known protocol-coverage gap (honua-server#2947 finding, tracked separately):</b> only
-/// GeoServices FeatureServer and OGC API Features route reads through
-/// <c>FeatureProviderQueryRouter</c> for secondary/additional providers. OData and OGC API
-/// Tiles resolve <c>IFeatureReader</c>/<c>ITileProvider</c> directly via DI (always the
-/// primary provider), so a SQL Server-backed publication is invisible to those two
-/// protocols today. The smoke suite only exercises FeatureServer + OGC API Features for
-/// this fixture and skips OData/Tiles with a reason pointing at the filed follow-up issue.
+/// GeoServices FeatureServer, OGC API Features, OData, and OGC API Tiles raster (PNG)
+/// tiles all route reads through <c>FeatureProviderQueryRouter</c>
+/// (<c>TileFeatureProviderResolver</c> for tiles) for secondary/additional providers
+/// (honua-server#2962). OGC API Tiles vector (MVT) tiles remain unreachable for this
+/// provider: native MVT generation is a per-provider capability that only the PostGIS
+/// provider implements, independent of the routing fix, so a SQL Server-backed collection
+/// returns a <c>501 Not Implemented</c> problem response for vector tiles rather than
+/// silently serving PostGIS data for the same layer id.
 /// </para>
 /// </remarks>
 public sealed class SqlServerProviderWebAppFixture : IAsyncLifetime

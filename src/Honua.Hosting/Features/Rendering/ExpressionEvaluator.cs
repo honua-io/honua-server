@@ -293,14 +293,9 @@ internal static class ExpressionEvaluator
             var label = array[i];
             if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
             {
-                // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
-                // allocation: "match" expressions are evaluated once per feature per style paint property.
-                foreach (var item in label.Items)
+                if (MatchesAnyLabel(inputStr, input, label.Items))
                 {
-                    if (MatchesLabel(inputStr, input, item))
-                    {
-                        return Evaluate(array[i + 1], properties, zoom);
-                    }
+                    return Evaluate(array[i + 1], properties, zoom);
                 }
             }
             else if (MatchesLabel(inputStr, input, label))
@@ -317,17 +312,7 @@ internal static class ExpressionEvaluator
     {
         if (label.Kind == MapLibreExpressionKind.Array && label.Items is { Length: > 0 })
         {
-            // Manual loop (not label.Items.Any(...)) to avoid a per-feature closure
-            // allocation on this hot, recursively-invoked match-label path.
-            foreach (var item in label.Items)
-            {
-                if (MatchesLabel(inputStr, inputObj, item))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return MatchesAnyLabel(inputStr, inputObj, label.Items);
         }
 
         switch (label.Kind)
@@ -357,6 +342,25 @@ internal static class ExpressionEvaluator
             default:
                 return false;
         }
+    }
+
+    private static bool MatchesAnyLabel(
+        string? inputStr,
+        object? inputObj,
+        MapLibreExpression[] labels)
+    {
+        var index = 0;
+        while (index < labels.Length)
+        {
+            if (MatchesLabel(inputStr, inputObj, labels[index]))
+            {
+                return true;
+            }
+
+            index++;
+        }
+
+        return false;
     }
 
     private static object? EvaluateStep(MapLibreExpression[] array, ImmutableDictionary<string, object?> properties, RenderZoom zoom)
@@ -533,14 +537,12 @@ internal static class ExpressionEvaluator
         var difference = upper - lower;
         var progress = input - lower;
 
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (difference == 0.0)
+        if (difference.Equals(0d))
         {
             return 0.0;
         }
 
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (@base == 1.0)
+        if (@base.Equals(1d))
         {
             return progress / difference;
         }

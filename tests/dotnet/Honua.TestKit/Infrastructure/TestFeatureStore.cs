@@ -1036,13 +1036,14 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
         // Not rewritten to `.Where(...)`: the loop needs both the field name and its
         // TryGetValue-resolved value together, which `Where` can't express without a
         // second (redundant) dictionary lookup per field.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var field in outFields)
+        foreach (var entry in outFields
+                     .Select(field => (
+                         Field: field,
+                         Found: feature.Attributes.TryGetValue(field, out var value),
+                         Value: value))
+                     .Where(entry => entry.Found))
         {
-            if (feature.Attributes.TryGetValue(field, out var value))
-            {
-                filteredAttributes = filteredAttributes.Add(field, value);
-            }
+            filteredAttributes = filteredAttributes.Add(entry.Field, entry.Value);
         }
 
         return Feature.Create(feature.Id, feature.Geometry, filteredAttributes);

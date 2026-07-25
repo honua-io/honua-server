@@ -321,12 +321,11 @@ public sealed class NominatimGeocodeProviderTests
 
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
-            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
             };
-            return Task.FromResult(response);
+            return Task.FromResult<HttpResponseMessage>(response);
         }
     }
 
@@ -345,12 +344,11 @@ public sealed class NominatimGeocodeProviderTests
 
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
-            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
             };
-            return Task.FromResult(response);
+            return Task.FromResult<HttpResponseMessage>(response);
         }
     }
 
@@ -363,8 +361,7 @@ public sealed class NominatimGeocodeProviderTests
             SendCount++;
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
-            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
                     "[{\"place_id\":101,\"display_name\":\"10 Downing St, London\",\"lat\":\"51.5034\",\"lon\":\"-0.1276\",\"importance\":0.9,\"address\":{\"city\":\"London\"}}]",
@@ -372,7 +369,7 @@ public sealed class NominatimGeocodeProviderTests
                     "application/json")
             };
 
-            return Task.FromResult(response);
+            return Task.FromResult<HttpResponseMessage>(response);
         }
     }
 
@@ -382,8 +379,7 @@ public sealed class NominatimGeocodeProviderTests
         {
             // Response ownership transfers to the caller via the return value
             // (HttpClient's pipeline disposes it); nothing leaks here.
-            // codeql[cs/local-not-disposed] -- ownership transfers through the handler return value.
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            var response = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
                     "{\"place_id\":101,\"display_name\":\"10 Downing St, London\",\"osm_type\":\"way\",\"osm_id\":123,\"address\":{\"road\":\"Downing Street\",\"city\":\"London\"}}",
@@ -391,7 +387,7 @@ public sealed class NominatimGeocodeProviderTests
                     "application/json")
             };
 
-            return Task.FromResult(response);
+            return Task.FromResult<HttpResponseMessage>(response);
         }
     }
 }

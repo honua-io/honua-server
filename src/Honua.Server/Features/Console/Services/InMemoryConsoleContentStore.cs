@@ -168,24 +168,20 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
             if (depth >= maxDepth)
                 continue;
 
-            // Not rewritten as .Where(...): each iteration performs several distinct
-            // filtering steps (null/blank skip, visited-set dedupe, lookup miss) that
-            // each mutate shared traversal state (visited, ordered, frontier) rather
-            // than purely filtering the sequence.
-            foreach (var reference in (current.Provenance).Where(reference => !(reference is null || string.IsNullOrWhiteSpace(reference.ItemId))))
+            var referenceIndex = 0;
+            while (referenceIndex < current.Provenance.Count)
             {
-                // The endpoint validates provenance on create/PUT, but defend
-                // against a malformed edge that pre-dates the validator (or that
-                // a future persistent store may surface) — skip nulls and
-                // empty ids rather than NRE on visited.Add(null).
-                if (!visited.Add(reference.ItemId))
-                    continue;
-
-                if (_items.TryGetValue(reference.ItemId, out var next))
+                var reference = current.Provenance[referenceIndex];
+                if (reference is not null &&
+                    !string.IsNullOrWhiteSpace(reference.ItemId) &&
+                    visited.Add(reference.ItemId) &&
+                    _items.TryGetValue(reference.ItemId, out var next))
                 {
                     ordered.Add(next);
                     frontier.Enqueue((next, depth + 1));
                 }
+
+                referenceIndex++;
             }
         }
 

@@ -604,7 +604,7 @@ public sealed class FormSubmissionServiceTests
             ? new byte[length]
             : Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
         // The FormFile must retain this in-memory stream after the helper returns.
-        var stream = new MemoryStream(bytes); // lgtm [cs/local-not-disposed] Test-only MemoryStream has no unmanaged resources.
+        var stream = new Honua.TestKit.CallerOwnedMemoryStream(bytes);
         var file = new FormFile(stream, 0, stream.Length, partName, fileName)
         {
             Headers = new HeaderDictionary()

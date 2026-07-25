@@ -212,8 +212,7 @@ public static class ZarrTileRenderer
             var v = idx >= 0 && idx < values.Length ? values[idx] : double.NaN;
             // Substitute a missing neighbour with the centre value so an interpolation kernel
             // never smears NoData into valid output; the centre-missing case short-circuits above.
-            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-            return !double.IsFinite(v) || (fillValue is { } fill && v == fill) ? double.NaN : v;
+            return !double.IsFinite(v) || (fillValue is { } fill && v.Equals(fill)) ? double.NaN : v;
         }
 
         var centre = ValueAt((int)Math.Round(fx), (int)Math.Round(fy));
@@ -280,8 +279,7 @@ public static class ZarrTileRenderer
         double hi,
         double? fillValue)
     {
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (!double.IsFinite(value) || (fillValue is { } fill && value == fill))
+        if (!double.IsFinite(value) || (fillValue is { } fill && value.Equals(fill)))
         {
             pixel[0] = 0;
             pixel[1] = 0;
@@ -410,8 +408,7 @@ public static class ZarrTileRenderer
             // only a bit-identical match identifies a no-data pixel. A tolerance
             // here would risk misclassifying genuine nearby data values as
             // missing.
-            // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-            if (!double.IsFinite(value) || (fillValue is { } fill && value == fill))
+            if (!double.IsFinite(value) || (fillValue is { } fill && value.Equals(fill)))
             {
                 continue;
             }
@@ -444,8 +441,7 @@ public static class ZarrTileRenderer
         // only a bit-identical match identifies a no-data pixel. A tolerance
         // here would risk misclassifying genuine nearby data values as
         // missing.
-        // codeql[cs/equality-on-floats] -- exact comparison is required for this sentinel, encoding, or same-source value.
-        if (!double.IsFinite(value) || (fillValue is { } fill && value == fill))
+        if (!double.IsFinite(value) || (fillValue is { } fill && value.Equals(fill)))
         {
             pixel[0] = 0;
             pixel[1] = 0;

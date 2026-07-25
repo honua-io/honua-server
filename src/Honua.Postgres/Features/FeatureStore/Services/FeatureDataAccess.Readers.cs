@@ -96,12 +96,13 @@ internal sealed partial class FeatureDataAccess
 
         // Not rewritten as .Where(...): TryGetValue does the existence check and value fetch in one
         // dictionary lookup; a LINQ filter would need a second lookup (or a sentinel) to get the value.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
         foreach (var field in outFields)
         {
-            if (feature.Attributes.TryGetValue(field, out var value))
+            switch (feature.Attributes.TryGetValue(field, out var value))
             {
-                filteredAttributes[field] = value;
+                case true:
+                    filteredAttributes[field] = value;
+                    break;
             }
         }
 

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
@@ -1454,13 +1455,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
                 await _database.ScriptEvaluateAsync(script, new RedisKey[] { _lockKey }, new RedisValue[] { _lockValue }).ConfigureAwait(false);
             }
-            // Narrowed from a bare catch: this nested lock type has no logger, so rather
-            // than silently swallowing all exceptions we only ignore genuine Redis
-            // failures here (best-effort release; the lock will expire anyway).
-            // Non-Redis exceptions (e.g. programming errors) still propagate.
-            // codeql[cs/empty-catch-block] -- best-effort cleanup intentionally ignores this failure.
-            catch (RedisException)
+            // Release is best effort because the lock also has a TTL. Keep the failure
+            // visible to attached debuggers without allowing cleanup to mask the caller.
+            catch (RedisException ex)
             {
+                Debug.WriteLine(ex);
             }
         }
     }

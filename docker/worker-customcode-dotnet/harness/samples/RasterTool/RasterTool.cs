@@ -45,14 +45,7 @@ public sealed class RasterTool : IGeoprocessingTool
     /// <inheritdoc />
     public Task<GpResult> ExecuteAsync(GpContext context, CancellationToken cancellationToken)
     {
-        // One-time GDAL init. GdalBase.ConfigureAll() wires the bundled native GDAL +
-        // PROJ data and registers all drivers (it calls Gdal.AllRegister internally).
-        // Idempotent-guard so repeated tool invocations in one process do not re-register.
-        // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-        if (Interlocked.Exchange(ref _initialized, 1) == 0)
-        {
-            GdalBase.ConfigureAll();
-        }
+        EnsureGdalInitialized();
 
         if (Gdal.GetDriverCount() <= 0)
         {
@@ -161,6 +154,16 @@ public sealed class RasterTool : IGeoprocessingTool
         context.Progress.Report(100.0, "done");
 
         return Task.FromResult(GpResult.Succeeded($"NDVI GeoTIFF written to {outName}"));
+    }
+
+    private static void EnsureGdalInitialized()
+    {
+        // GdalBase.ConfigureAll() wires the bundled native GDAL + PROJ data and
+        // registers all drivers. Keep that process-wide initialization idempotent.
+        if (Interlocked.Exchange(ref _initialized, 1) == 0)
+        {
+            GdalBase.ConfigureAll();
+        }
     }
 
     /// <summary>

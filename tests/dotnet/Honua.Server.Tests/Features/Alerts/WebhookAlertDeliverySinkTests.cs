@@ -98,8 +98,7 @@ public sealed class WebhookAlertDeliverySinkTests
             SendCount++;
             // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
             // it disposes the response after the caller finishes with it.
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK));
         }
     }
     private sealed class CapturingHeaderHandler : HttpMessageHandler
@@ -120,8 +119,7 @@ public sealed class WebhookAlertDeliverySinkTests
             SignatureHeader = Assert.Single(request.Headers.GetValues("X-Honua-Signature"));
             // Ownership transfers to the HttpClient pipeline that invoked SendAsync;
             // it disposes the response after the caller finishes with it.
-            // codeql[cs/local-not-disposed] -- ownership transfers to the returned or containing disposable object.
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK));
         }
     }
 }

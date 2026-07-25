@@ -176,9 +176,10 @@ public static class ProviderSmokeGraph
                 storageBindingId: BindingId,
                 serviceLocalId: layerIdText,
                 publicationType: MetadataV2PublicationType.EsriFeatureLayer)
-            // OData. Query dispatch for /odata/Layers({layerId})/Features addresses the
-            // primary provider's IFeatureReader directly by numeric layer id — this
-            // publication only feeds $metadata/schema generation.
+            // OData. Query dispatch for /odata/Layers({layerId})/Features and
+            // /odata/Features({layerId}) resolves the reader per layer through
+            // FeatureProviderQueryRouter (honua-server#2962), so this publication also
+            // drives real routed reads, not just $metadata/schema generation.
             .AddPublication(
                 "pub-smoke-odata",
                 serviceId: "svc-smoke",

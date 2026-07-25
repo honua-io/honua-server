@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Internal;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using InfrastructureGeometryService = Honua.Infrastructure.Services.GeometryService;
@@ -232,7 +234,6 @@ internal static class GeoPackageExportWriter
         // Not a `using` declaration: the loop below commits and reassigns `transaction` to a
         // fresh instance every BatchSize rows, disposing the prior one explicitly. The final
         // `finally` disposes whichever transaction is current on exit (normal or exceptional).
-        // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
         SqliteTransaction? transaction = null;
 
         // Create command once and reuse across all rows
@@ -281,7 +282,7 @@ internal static class GeoPackageExportWriter
                 {
                     ct.ThrowIfCancellationRequested();
                     await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-                    transaction.Dispose();
+                    DeferredDisposal.Dispose(transaction);
                     transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
                     cmd.Transaction = transaction;
                     batchCount = 0;
@@ -299,7 +300,7 @@ internal static class GeoPackageExportWriter
         }
         finally
         {
-            transaction?.Dispose();
+            DeferredDisposal.Dispose(transaction);
         }
 
         return new FeatureInsertSummary(

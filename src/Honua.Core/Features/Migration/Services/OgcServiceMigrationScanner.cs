@@ -8,6 +8,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
@@ -1649,21 +1650,17 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
 
     private static string? TryReadNestedString(JsonElement element, params string[] path)
     {
-        var current = element;
+        var resolved = path.Aggregate(
+            (JsonElement?)element,
+            (current, segment) =>
+                current.HasValue &&
+                current.Value.TryGetProperty(segment, out var child)
+                    ? child
+                    : null);
 
-        // Not rewritten with LINQ Where: this is a short-circuiting fold that walks nested
-        // JSON properties, reassigning `current` at each step and returning null the moment a
-        // segment is missing. It is not a filter over `path` - every segment participates in
-        // navigation, not selection.
-        foreach (var segment in path)
-        {
-            if (!current.TryGetProperty(segment, out current))
-            {
-                return null;
-            }
-        }
-
-        return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
+        return resolved is { ValueKind: JsonValueKind.String } value
+            ? value.GetString()
+            : null;
     }
 
     private static OgcCoverageFormatMetadata BuildCoverageFormat(string format, bool? isNative)
@@ -1810,20 +1807,15 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         Exception? lastException = null;
         foreach (var address in addresses)
         {
-            // Intentionally not `using var socket = ...`: on success the socket's ownership
-            // transfers to the returned NetworkStream (ownsSocket: true). A `using`
-            // declaration would dispose the socket during the `return` unwind, before the
-            // caller ever sees the stream, closing the connection out from under it. The
-            // `connected` flag makes disposal conditional on transfer *not* having happened.
-            // codeql[cs/missed-using-statement] -- lifetime is already managed by explicit cleanup or the owning type.
-            var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            var connected = false;
+            using var socketOwner = new SocketConnectionOwner(
+                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
 
             try
             {
-                await socket.ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken).ConfigureAwait(false);
-                connected = true;
-                return new NetworkStream(socket, ownsSocket: true);
+                await socketOwner.Socket
+                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
+                    .ConfigureAwait(false);
+                return socketOwner.TransferToNetworkStream();
             }
             catch (OperationCanceledException)
             {
@@ -1832,13 +1824,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
             {
                 lastException = ex;
-            }
-            finally
-            {
-                if (!connected)
-                {
-                    socket.Dispose();
-                }
             }
         }
 

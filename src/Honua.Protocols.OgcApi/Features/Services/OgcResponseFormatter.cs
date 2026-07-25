@@ -604,16 +604,15 @@ internal static class OgcResponseFormatter
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiPoint srsName=\"{srsName}\">");
 
-                foreach (var coords in (points).Select(point => point.EnumerateArray().ToArray()))
+                foreach (var coords in points
+                             .Select(point => point.EnumerateArray().ToArray())
+                             .Where(coords => coords.Length >= 2))
                 {
-                    if (coords.Length >= 2)
-                    {
-                        var x = coords[0].GetDouble();
-                        var y = coords[1].GetDouble();
-                        builder.AppendLine($"{indent}  <gml:pointMember>");
-                        builder.AppendLine($"{indent}    <gml:Point><gml:pos srsDimension=\"2\">{x} {y}</gml:pos></gml:Point>");
-                        builder.AppendLine($"{indent}  </gml:pointMember>");
-                    }
+                    var x = coords[0].GetDouble();
+                    var y = coords[1].GetDouble();
+                    builder.AppendLine($"{indent}  <gml:pointMember>");
+                    builder.AppendLine($"{indent}    <gml:Point><gml:pos srsDimension=\"2\">{x} {y}</gml:pos></gml:Point>");
+                    builder.AppendLine($"{indent}  </gml:pointMember>");
                 }
 
                 builder.Append($"{indent}</gml:MultiPoint>");
@@ -639,16 +638,14 @@ internal static class OgcResponseFormatter
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiLineString srsName=\"{srsName}\">");
 
-                foreach (var coordinates in (lineStrings).Select(lineString => ExtractGmlCoordinatePairs(lineString)))
+                foreach (var coordinates in lineStrings
+                             .Select(ExtractGmlCoordinatePairs)
+                             .Where(coordinates => coordinates.Count > 0))
                 {
-
-                    if (coordinates.Count > 0)
-                    {
-                        var posListContent = string.Join(" ", coordinates);
-                        builder.AppendLine($"{indent}  <gml:lineStringMember>");
-                        builder.AppendLine($"{indent}    <gml:LineString><gml:posList srsDimension=\"2\">{posListContent}</gml:posList></gml:LineString>");
-                        builder.AppendLine($"{indent}  </gml:lineStringMember>");
-                    }
+                    var posListContent = string.Join(" ", coordinates);
+                    builder.AppendLine($"{indent}  <gml:lineStringMember>");
+                    builder.AppendLine($"{indent}    <gml:LineString><gml:posList srsDimension=\"2\">{posListContent}</gml:posList></gml:LineString>");
+                    builder.AppendLine($"{indent}  </gml:lineStringMember>");
                 }
 
                 builder.Append($"{indent}</gml:MultiLineString>");
@@ -674,47 +671,46 @@ internal static class OgcResponseFormatter
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiPolygon srsName=\"{srsName}\">");
 
-                foreach (var rings in (polygons).Select(polygon => polygon.EnumerateArray().ToArray()))
+                foreach (var rings in polygons
+                             .Select(polygon => polygon.EnumerateArray().ToArray())
+                             .Where(rings => rings.Length > 0))
                 {
-                    if (rings.Length > 0)
+                    builder.AppendLine($"{indent}  <gml:polygonMember>");
+                    builder.AppendLine($"{indent}    <gml:Polygon>");
+
+                    // Exterior ring
+                    var exteriorRing = rings[0];
+                    var coordinates = ExtractGmlCoordinatePairs(exteriorRing);
+
+                    if (coordinates.Count > 0)
                     {
-                        builder.AppendLine($"{indent}  <gml:polygonMember>");
-                        builder.AppendLine($"{indent}    <gml:Polygon>");
+                        var posListContent = string.Join(" ", coordinates);
+                        builder.AppendLine($"{indent}      <gml:exterior>");
+                        builder.AppendLine($"{indent}        <gml:LinearRing>");
+                        builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
+                        builder.AppendLine($"{indent}        </gml:LinearRing>");
+                        builder.AppendLine($"{indent}      </gml:exterior>");
+                    }
 
-                        // Exterior ring
-                        var exteriorRing = rings[0];
-                        var coordinates = ExtractGmlCoordinatePairs(exteriorRing);
+                    // Interior rings (holes)
+                    for (int i = 1; i < rings.Length; i++)
+                    {
+                        var interiorRing = rings[i];
+                        var interiorCoordinates = ExtractGmlCoordinatePairs(interiorRing);
 
-                        if (coordinates.Count > 0)
+                        if (interiorCoordinates.Count > 0)
                         {
-                            var posListContent = string.Join(" ", coordinates);
-                            builder.AppendLine($"{indent}      <gml:exterior>");
+                            var posListContent = string.Join(" ", interiorCoordinates);
+                            builder.AppendLine($"{indent}      <gml:interior>");
                             builder.AppendLine($"{indent}        <gml:LinearRing>");
                             builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
                             builder.AppendLine($"{indent}        </gml:LinearRing>");
-                            builder.AppendLine($"{indent}      </gml:exterior>");
+                            builder.AppendLine($"{indent}      </gml:interior>");
                         }
-
-                        // Interior rings (holes)
-                        for (int i = 1; i < rings.Length; i++)
-                        {
-                            var interiorRing = rings[i];
-                            var interiorCoordinates = ExtractGmlCoordinatePairs(interiorRing);
-
-                            if (interiorCoordinates.Count > 0)
-                            {
-                                var posListContent = string.Join(" ", interiorCoordinates);
-                                builder.AppendLine($"{indent}      <gml:interior>");
-                                builder.AppendLine($"{indent}        <gml:LinearRing>");
-                                builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
-                                builder.AppendLine($"{indent}        </gml:LinearRing>");
-                                builder.AppendLine($"{indent}      </gml:interior>");
-                            }
-                        }
-
-                        builder.AppendLine($"{indent}    </gml:Polygon>");
-                        builder.AppendLine($"{indent}  </gml:polygonMember>");
                     }
+
+                    builder.AppendLine($"{indent}    </gml:Polygon>");
+                    builder.AppendLine($"{indent}  </gml:polygonMember>");
                 }
 
                 builder.Append($"{indent}</gml:MultiPolygon>");

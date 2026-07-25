@@ -54,7 +54,7 @@ public sealed class MySqlProviderWebAppFixture : IAsyncLifetime
 
         var graph = ProviderSmokeGraph.Build(locator: "parcels");
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = Honua.TestKit.ConfiguredWebApplicationFactory.Create(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("HONUA_DEV_AUTH", "true");

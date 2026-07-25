@@ -17,6 +17,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// </summary>
 internal static class ImageServerGeometryHelpers
 {
+    private static readonly string[] CompositeCoordinatePropertyNames = ["paths", "rings"];
+
     /// <summary>Axis-aligned bounding box of an Esri geometry.</summary>
     internal readonly record struct GeometryEnvelope(double XMin, double YMin, double XMax, double YMax, int? Srid);
 
@@ -190,16 +192,26 @@ internal static class ImageServerGeometryHelpers
         }
 
         // paths: [[[x,y], ...], ...] and rings: [[[x,y], ...], ...]
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var name in new[] { "paths", "rings" })
+        var propertyIndex = 0;
+        while (propertyIndex < CompositeCoordinatePropertyNames.Length)
         {
-            if (root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.Array)
+            if (root.TryGetProperty(CompositeCoordinatePropertyNames[propertyIndex], out var element) &&
+                element.ValueKind == JsonValueKind.Array)
             {
-                foreach (var part in element.EnumerateArray().Where(part => part.ValueKind == JsonValueKind.Array))
+                var partIndex = 0;
+                while (partIndex < element.GetArrayLength())
                 {
-                    AppendCoordinatePairs(part, result);
+                    var part = element[partIndex];
+                    if (part.ValueKind == JsonValueKind.Array)
+                    {
+                        AppendCoordinatePairs(part, result);
+                    }
+
+                    partIndex++;
                 }
             }
+
+            propertyIndex++;
         }
 
         return result;
@@ -207,12 +219,20 @@ internal static class ImageServerGeometryHelpers
 
     private static void AppendCoordinatePairs(JsonElement array, List<(double, double)> result)
     {
-        result.AddRange(array.EnumerateArray()
-            .Where(pair => pair.ValueKind == JsonValueKind.Array &&
+        var pairIndex = 0;
+        while (pairIndex < array.GetArrayLength())
+        {
+            var pair = array[pairIndex];
+            if (pair.ValueKind == JsonValueKind.Array &&
                 pair.GetArrayLength() >= 2 &&
                 pair[0].ValueKind == JsonValueKind.Number &&
                 pair[1].ValueKind == JsonValueKind.Number)
-            .Select(pair => (pair[0].GetDouble(), pair[1].GetDouble())));
+            {
+                result.Add((pair[0].GetDouble(), pair[1].GetDouble()));
+            }
+
+            pairIndex++;
+        }
     }
 
     private static bool TryReadNumber(JsonElement element, string property, out double value)

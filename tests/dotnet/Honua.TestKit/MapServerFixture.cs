@@ -15,20 +15,21 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class MapServerFixture : IAsyncLifetime
 {
-    // These static fields back an intentional process-wide, ref-counted shared container:
-    // every MapServerFixture instance (one per xUnit collection) mutates the same statics
-    // under _sharedLock so only the first InitializeAsync starts the containers and only the
-    // last DisposeAsync tears them down. Writing static state from instance lifecycle
-    // methods is the design, not a bug.
+    // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static INetwork? _sharedNetwork;
-    private static IContainer? _sharedMapServerContainer;
-    private static IContainer? _sharedMapCacheContainer;
-    private static string? _sharedEndpointUrl;
-    private static string? _sharedWmtsEndpointUrl;
-    private static string? _sharedStagingDirectory;
-    private static int _sharedRefCount;
-    private static bool _sharedInitialized;
+    private static readonly MapServerSharedState SharedState = new();
+
+    private sealed class MapServerSharedState
+    {
+        public INetwork? SharedNetwork { get; set; }
+        public IContainer? SharedMapServerContainer { get; set; }
+        public IContainer? SharedMapCacheContainer { get; set; }
+        public string? SharedEndpointUrl { get; set; }
+        public string? SharedWmtsEndpointUrl { get; set; }
+        public string? SharedStagingDirectory { get; set; }
+        public int SharedRefCount { get; set; }
+        public bool SharedInitialized { get; set; }
+    }
 
     private const string MapServerImage = "camptocamp/mapserver:8.0";
     private const string MapCacheImage = "camptocamp/mapcache:1.10";
@@ -46,12 +47,12 @@ public sealed class MapServerFixture : IAsyncLifetime
     /// <summary>
     /// Gets the MapServer OGC endpoint URL with the fixture mapfile parameter applied.
     /// </summary>
-    public string EndpointUrl => _sharedEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
+    public string EndpointUrl => SharedState.SharedEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
 
     /// <summary>
     /// Gets the MapCache-backed WMTS endpoint URL for the seeded MapServer layer.
     /// </summary>
-    public string WmtsEndpointUrl => _sharedWmtsEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
+    public string WmtsEndpointUrl => SharedState.SharedWmtsEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
 
     /// <inheritdoc />
     public async Task InitializeAsync()
@@ -59,15 +60,13 @@ public sealed class MapServerFixture : IAsyncLifetime
         await _sharedLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (!_sharedInitialized)
+            if (!SharedState.SharedInitialized)
             {
                 await StartContainerAsync().ConfigureAwait(false);
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedInitialized = true;
+                SharedState.SharedInitialized = true;
             }
 
-            // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-            _sharedRefCount++;
+            SharedState.SharedRefCount++;
         }
         finally
         {
@@ -81,13 +80,12 @@ public sealed class MapServerFixture : IAsyncLifetime
         await _sharedLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_sharedRefCount > 0)
+            if (SharedState.SharedRefCount > 0)
             {
-                // codeql[cs/static-field-written-by-instance] -- the instance lifecycle intentionally coordinates shared process-wide state.
-                _sharedRefCount--;
+                SharedState.SharedRefCount--;
             }
 
-            if (_sharedRefCount == 0 && _sharedInitialized)
+            if (SharedState.SharedRefCount == 0 && SharedState.SharedInitialized)
             {
                 await ResetSharedStateAsync().ConfigureAwait(false);
             }
@@ -101,42 +99,42 @@ public sealed class MapServerFixture : IAsyncLifetime
     private static async Task StartContainerAsync()
     {
         var stagingDirectory = CreateStagingDirectory();
-        _sharedStagingDirectory = stagingDirectory.RootDirectory;
+        SharedState.SharedStagingDirectory = stagingDirectory.RootDirectory;
 
         try
         {
-            _sharedNetwork = new NetworkBuilder().Build();
-            await _sharedNetwork.CreateAsync().ConfigureAwait(false);
+            SharedState.SharedNetwork = new NetworkBuilder().Build();
+            await SharedState.SharedNetwork.CreateAsync().ConfigureAwait(false);
 
-            _sharedMapServerContainer = new ContainerBuilder()
+            SharedState.SharedMapServerContainer = new ContainerBuilder()
                 .WithImage(MapServerImage)
-                .WithNetwork(_sharedNetwork)
+                .WithNetwork(SharedState.SharedNetwork)
                 .WithNetworkAliases(MapServerNetworkAlias)
                 .WithPortBinding(MapServerPort, true)
                 .WithResourceMapping(new DirectoryInfo(stagingDirectory.DataDirectory), "/etc/mapserver/data")
                 .WithResourceMapping(new FileInfo(stagingDirectory.MapFilePath), "/etc/mapserver/")
                 .Build();
 
-            await _sharedMapServerContainer.StartAsync().ConfigureAwait(false);
+            await SharedState.SharedMapServerContainer.StartAsync().ConfigureAwait(false);
 
-            var mapServerPort = _sharedMapServerContainer.GetMappedPublicPort(MapServerPort);
-            _sharedEndpointUrl = $"http://127.0.0.1:{mapServerPort}/?map={Uri.EscapeDataString(ContainerMapFilePath)}";
+            var mapServerPort = SharedState.SharedMapServerContainer.GetMappedPublicPort(MapServerPort);
+            SharedState.SharedEndpointUrl = $"http://127.0.0.1:{mapServerPort}/?map={Uri.EscapeDataString(ContainerMapFilePath)}";
 
-            await WaitForMapServerReadyAsync(_sharedEndpointUrl).ConfigureAwait(false);
+            await WaitForMapServerReadyAsync(SharedState.SharedEndpointUrl).ConfigureAwait(false);
 
-            _sharedMapCacheContainer = new ContainerBuilder()
+            SharedState.SharedMapCacheContainer = new ContainerBuilder()
                 .WithImage(MapCacheImage)
-                .WithNetwork(_sharedNetwork)
+                .WithNetwork(SharedState.SharedNetwork)
                 .WithPortBinding(MapCachePort, true)
                 .WithResourceMapping(new FileInfo(stagingDirectory.MapCacheFilePath), "/etc/mapcache/")
                 .Build();
 
-            await _sharedMapCacheContainer.StartAsync().ConfigureAwait(false);
+            await SharedState.SharedMapCacheContainer.StartAsync().ConfigureAwait(false);
 
-            var mapCachePort = _sharedMapCacheContainer.GetMappedPublicPort(MapCachePort);
-            _sharedWmtsEndpointUrl = $"http://127.0.0.1:{mapCachePort}{MapCacheWmtsPath}";
+            var mapCachePort = SharedState.SharedMapCacheContainer.GetMappedPublicPort(MapCachePort);
+            SharedState.SharedWmtsEndpointUrl = $"http://127.0.0.1:{mapCachePort}{MapCacheWmtsPath}";
 
-            await WaitForMapCacheReadyAsync(_sharedWmtsEndpointUrl).ConfigureAwait(false);
+            await WaitForMapCacheReadyAsync(SharedState.SharedWmtsEndpointUrl).ConfigureAwait(false);
         }
         catch
         {
@@ -147,33 +145,33 @@ public sealed class MapServerFixture : IAsyncLifetime
 
     private static async Task ResetSharedStateAsync()
     {
-        if (_sharedMapCacheContainer is not null)
+        if (SharedState.SharedMapCacheContainer is not null)
         {
-            await _sharedMapCacheContainer.DisposeAsync().ConfigureAwait(false);
+            await SharedState.SharedMapCacheContainer.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (_sharedMapServerContainer is not null)
+        if (SharedState.SharedMapServerContainer is not null)
         {
-            await _sharedMapServerContainer.DisposeAsync().ConfigureAwait(false);
+            await SharedState.SharedMapServerContainer.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (_sharedNetwork is not null)
+        if (SharedState.SharedNetwork is not null)
         {
-            await _sharedNetwork.DisposeAsync().ConfigureAwait(false);
+            await SharedState.SharedNetwork.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (!string.IsNullOrWhiteSpace(_sharedStagingDirectory) && Directory.Exists(_sharedStagingDirectory))
+        if (!string.IsNullOrWhiteSpace(SharedState.SharedStagingDirectory) && Directory.Exists(SharedState.SharedStagingDirectory))
         {
-            Directory.Delete(_sharedStagingDirectory, recursive: true);
+            Directory.Delete(SharedState.SharedStagingDirectory, recursive: true);
         }
 
-        _sharedNetwork = null;
-        _sharedMapServerContainer = null;
-        _sharedMapCacheContainer = null;
-        _sharedEndpointUrl = null;
-        _sharedWmtsEndpointUrl = null;
-        _sharedStagingDirectory = null;
-        _sharedInitialized = false;
+        SharedState.SharedNetwork = null;
+        SharedState.SharedMapServerContainer = null;
+        SharedState.SharedMapCacheContainer = null;
+        SharedState.SharedEndpointUrl = null;
+        SharedState.SharedWmtsEndpointUrl = null;
+        SharedState.SharedStagingDirectory = null;
+        SharedState.SharedInitialized = false;
     }
 
     // All Path.Combine calls below join a generated staging directory with fixed

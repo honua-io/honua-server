@@ -947,16 +947,16 @@ internal static partial class AttachmentEndpoints
 
     private static string? GetFirst(Dictionary<string, StringValues> values, params string[] keys)
     {
-        // Not rewritten as .Where(...): this is a first-match short-circuit over the
-        // Try-pattern (bool + out), not a pure filter — a LINQ equivalent would need an
-        // intermediate nullable projection and would be harder to read than the loop.
-        // codeql[cs/linq/missed-where] -- predicate binds state or awaits; retain imperative control flow.
-        foreach (var key in keys)
+        var keyIndex = 0;
+        while (keyIndex < keys.Length)
         {
-            if (values.TryGetValue(key, out var raw) && !StringValues.IsNullOrEmpty(raw))
+            if (values.TryGetValue(keys[keyIndex], out var raw) &&
+                !StringValues.IsNullOrEmpty(raw))
             {
                 return raw.ToString();
             }
+
+            keyIndex++;
         }
 
         return null;
