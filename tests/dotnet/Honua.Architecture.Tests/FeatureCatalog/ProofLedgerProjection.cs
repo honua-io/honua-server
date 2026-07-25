@@ -16,9 +16,14 @@ namespace Honua.Architecture.Tests.FeatureCatalog;
 /// </summary>
 internal sealed class ProofLedgerProjection
 {
+    private const string DefaultRegistryLocation = "src/Honua.Server/EndpointRegistry.cs";
     private readonly IReadOnlyList<ProofLedgerSurface> _surfaces;
 
-    private ProofLedgerProjection(IReadOnlyList<ProofLedgerSurface> surfaces) => _surfaces = surfaces;
+    private ProofLedgerProjection(IReadOnlyList<ProofLedgerSurface> surfaces)
+    {
+        _surfaces = surfaces;
+        ValidateImplementationMappings();
+    }
 
     /// <summary>Loads and projects the committed proof ledger.</summary>
     public static ProofLedgerProjection Load()
@@ -41,7 +46,7 @@ internal sealed class ProofLedgerProjection
     /// Returns <c>null</c> when no surface matches (which the existing ledger
     /// governance test already forbids for shipped routes).
     /// </summary>
-    public ResolvedSurface? ResolveSurface(string path)
+    public ResolvedSurface? ResolveSurface(string method, string path)
     {
         var surface = _surfaces.FirstOrDefault(candidate => Matches(candidate, path));
         if (surface is null)
@@ -49,19 +54,111 @@ internal sealed class ProofLedgerProjection
             return null;
         }
 
-        var localEvidence = surface.Proofs
+        var routeEvidence = surface.Proofs
             .Where(proof => string.Equals(proof.ProofClass, "route-coverage", StringComparison.OrdinalIgnoreCase))
             .SelectMany(proof => proof.EvidenceLocations)
+            .Where(location => !IsExternal(location))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var localEvidence = routeEvidence
             .Concat(surface.Proofs.SelectMany(proof => proof.EvidenceLocations))
             .Where(location => !IsExternal(location))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var codeLocation = localEvidence.FirstOrDefault(IsImplementationEntryPoint)
+        var mappedLocation = ResolveMappedImplementation(surface, method, path);
+        var inferredLocation = (surface.EndpointImplementationMappings?.Length ?? 0) == 0
+            ? FindSingleImplementation(routeEvidence) ?? FindSingleImplementation(localEvidence)
+            : null;
+        var codeLocation = mappedLocation
+            ?? inferredLocation
             ?? localEvidence.FirstOrDefault(IsRegistryEntryPoint)
-            ?? "src/Honua.Server/EndpointRegistry.cs";
+            ?? DefaultRegistryLocation;
 
         return new ResolvedSurface(surface.SurfaceId, surface.Protocol, surface.SurfaceKind, codeLocation);
+    }
+
+    private static string? ResolveMappedImplementation(
+        ProofLedgerSurface surface,
+        string method,
+        string path)
+    {
+        var endpointKey = EndpointKey.Format(method, path);
+        return (surface.EndpointImplementationMappings ?? [])
+            .FirstOrDefault(mapping => mapping.Endpoints
+                .Select(EndpointKey.Normalize)
+                .Any(candidate => string.Equals(candidate, endpointKey, StringComparison.OrdinalIgnoreCase)))
+            ?.CodeLocation;
+    }
+
+    private static string? FindSingleImplementation(IEnumerable<string> evidenceLocations)
+    {
+        var candidates = evidenceLocations
+            .Where(IsImplementationEntryPoint)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+
+        return candidates.Length == 1 ? candidates[0] : null;
+    }
+
+    private void ValidateImplementationMappings()
+    {
+        foreach (var surface in _surfaces)
+        {
+            var localEvidence = surface.Proofs
+                .SelectMany(proof => proof.EvidenceLocations)
+                .Where(location => !IsExternal(location))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var mappedEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var mapping in surface.EndpointImplementationMappings ?? [])
+            {
+                if (!IsImplementationEntryPoint(mapping.CodeLocation))
+                {
+                    throw new InvalidOperationException(
+                        $"Surface '{surface.SurfaceId}' maps endpoints to non-implementation location "
+                        + $"'{mapping.CodeLocation}'.");
+                }
+
+                if (!localEvidence.Contains(mapping.CodeLocation))
+                {
+                    throw new InvalidOperationException(
+                        $"Surface '{surface.SurfaceId}' maps endpoints to '{mapping.CodeLocation}', "
+                        + "but that location is not cited by the surface's proof evidence.");
+                }
+
+                var endpoints = mapping.Endpoints ?? [];
+                if (endpoints.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Surface '{surface.SurfaceId}' has an implementation mapping with no endpoints.");
+                }
+
+                foreach (var endpoint in endpoints)
+                {
+                    var normalized = EndpointKey.Normalize(endpoint)
+                        ?? throw new InvalidOperationException(
+                            $"Surface '{surface.SurfaceId}' has invalid endpoint mapping '{endpoint}'.");
+                    var separator = normalized.IndexOf(' ');
+                    var path = normalized[(separator + 1)..];
+
+                    if (!Matches(surface, path))
+                    {
+                        throw new InvalidOperationException(
+                            $"Surface '{surface.SurfaceId}' maps endpoint '{normalized}', "
+                            + "but its route selectors do not claim that path.");
+                    }
+
+                    if (!mappedEndpoints.Add(normalized))
+                    {
+                        throw new InvalidOperationException(
+                            $"Surface '{surface.SurfaceId}' maps endpoint '{normalized}' more than once.");
+                    }
+                }
+            }
+        }
     }
 
     private static bool Matches(ProofLedgerSurface surface, string path)
@@ -135,6 +232,24 @@ internal sealed class ProofLedgerSurface
 
     /// <summary>Proofs backing this surface.</summary>
     public ProofLedgerProof[] Proofs { get; init; } = [];
+
+    /// <summary>
+    /// Explicit method-and-route to implementation mappings for surfaces backed by
+    /// more than one endpoint file.
+    /// </summary>
+    public ProofLedgerEndpointImplementationMapping[] EndpointImplementationMappings { get; init; } = [];
+}
+
+/// <summary>
+/// Maps one or more exact endpoint keys to a source file already cited as proof evidence.
+/// </summary>
+internal sealed class ProofLedgerEndpointImplementationMapping
+{
+    /// <summary>Canonical <c>METHOD /route</c> endpoint keys.</summary>
+    public string[] Endpoints { get; init; } = [];
+
+    /// <summary>Repo-relative implementation source cited by the surface.</summary>
+    public string CodeLocation { get; init; } = string.Empty;
 }
 
 /// <summary>A single proof backing a surface (subset of fields the catalog needs).</summary>

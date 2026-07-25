@@ -10,7 +10,7 @@
       "method": "DELETE",
       "family": "Data Enrichment",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs",
+      "code_location": "src/Honua.Server/Features/DataEnrichment/EnrichmentDatasetAdminEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_RemovesDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Deregister_UnknownDataset_ReturnsNotFound"
@@ -723,7 +723,7 @@
       "method": "DELETE",
       "family": "MCP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpProtectedResourceMetadataEndpointExtensions.cs",
+      "code_location": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentUseReturns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404"
@@ -5111,7 +5111,7 @@
       "method": "GET",
       "family": "Portal Collaboration HTTP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+      "code_location": "src/Honua.Server/Features/Collaboration/Operations/SavedMapOperationEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Replay_WithoutSavedMapCapability_ReturnsForbidden"
@@ -5649,7 +5649,7 @@
       "method": "GET",
       "family": "MCP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpProtectedResourceMetadataEndpointExtensions.cs",
+      "code_location": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_ByDefault_Returns405WithAllowHeader",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.GetStreamTeardown_LeavesSessionUsable_ToolsListStill200",
@@ -11120,7 +11120,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Metadata_ReturnsServiceDescriptor",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Metadata_UnknownService_ReturnsNotFound"
@@ -11135,7 +11135,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_GlyphRange_ReturnsGlyphPbf",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Glyph_OutOfRange_ReturnsNotFound",
@@ -11151,7 +11151,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_SpriteJson_ReturnsEmptyJsonObject",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_SpritePng_ReturnsTransparentPng",
@@ -11168,7 +11168,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_DefaultStyles_ReturnsGlStyleWithRewrittenTileSource",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_DefaultStyles_UnknownService_ReturnsNotFound"
@@ -11183,7 +11183,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_StyleResource_RootJson_ReturnsGlStyle",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_StyleResource_SpriteOrGlyph_ReturnsNotFound"
@@ -11216,7 +11216,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMapRoot_ReturnsTopOfPyramid"
       ],
@@ -11230,7 +11230,7 @@
       "method": "GET",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_AbsurdDimension_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_EdgeBlock_MarksOutOfRangeTilesZero",
@@ -11668,7 +11668,7 @@
       "method": "GET",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.GetGroup_PrivateGroup_NotVisibleToNonMember_Returns404"
       ],
@@ -11760,7 +11760,7 @@
       "method": "GET",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2CallbackE2ETests.Authorize_MissingPkceChallenge_RedirectsErrorToClient",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2CallbackE2ETests.Authorize_NonAllowListedRedirectUri_RejectsWithoutRedirect",
@@ -11776,7 +11776,7 @@
       "method": "GET",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2CallbackE2ETests.Callback_FullIdpRoundTrip_IssuesArcGisCodeAndMintsToken",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Callback_WhenNoOidcProviderConfigured_Returns404"
@@ -13003,7 +13003,7 @@
       "method": "POST",
       "family": "Data Enrichment",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs",
+      "code_location": "src/Honua.Server/Features/DataEnrichment/EnrichmentDatasetAdminEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_DuplicateId_ReturnsConflict",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Register_InvalidCategory_ReturnsBadRequest",
@@ -13020,7 +13020,7 @@
       "method": "POST",
       "family": "Mobile",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Mobile/Auth/MobileAuthEndpoints.cs",
+      "code_location": "src/Honua.Server/Features/Mobile/Diagnostics/MobileExceptionIngestionEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.ExceptionUpload_WithApiKey_ReturnsAccepted",
         "Honua.Server.Tests.Features.Mobile.MobileAuthAndDiagnosticsEndpointsTests.ExceptionUpload_WithoutApiKey_ReturnsUnauthorized"
@@ -16083,7 +16083,7 @@
       "method": "POST",
       "family": "Portal Collaboration HTTP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+      "code_location": "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.Claim_WhenFeatureAlreadyLocked_ReturnsTypedConflict",
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.Claim_WithAuthorizedEditor_ReturnsLease",
@@ -16099,7 +16099,7 @@
       "method": "POST",
       "family": "Portal Collaboration HTTP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+      "code_location": "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
       ],
@@ -16113,7 +16113,7 @@
       "method": "POST",
       "family": "Portal Collaboration HTTP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+      "code_location": "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockEndpointsTests.RenewAndRelease_WithSameHolder_ReturnSuccess"
       ],
@@ -16127,7 +16127,7 @@
       "method": "POST",
       "family": "Portal Collaboration HTTP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+      "code_location": "src/Honua.Server/Features/Collaboration/Operations/SavedMapOperationEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_AssignsMonotonicCursors_AndReplayReturnsThem",
         "Honua.Server.Tests.Features.Collaboration.OperationLog.SavedMapOperationEndpointsTests.Append_DuplicateOperationId_IsIdempotent",
@@ -16144,7 +16144,7 @@
       "method": "POST",
       "family": "Portal Collaboration HTTP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs",
+      "code_location": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithAuthorizedSavedMapCapability_ReturnsSessionSnapshot",
         "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationSessionEndpointsTests.Join_WithoutSavedMapCapability_ReturnsUnauthorized"
@@ -16521,7 +16521,7 @@
       "method": "POST",
       "family": "MCP",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpProtectedResourceMetadataEndpointExtensions.cs",
+      "code_location": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_InitializeWithApiKeyAndFollowUpBearerRequiresReauthentication",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_InitializeWithBearerAndApiKey_PrefersBearerPrincipalBinding",
@@ -16674,7 +16674,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OData_CreateFeature_ReadOnlyProvider_ReturnsProviderWriteNotSupported",
+        "Honua.ProviderSmoke.Tests.MySqlProviderSmokeTests.OData_CreateFeature_ReadOnlyProvider_ReturnsProviderWriteNotSupported",
         "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.OData_CreateFeature_ReadOnlyProvider_ReturnsProviderWriteNotSupported",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.CreateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.CreateFeature_WithoutApiKey_ReturnsUnauthorized",
@@ -19416,7 +19416,7 @@
       "method": "POST",
       "family": "GeoServices REST VectorTileServer",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Metadata_Post_ReturnsServiceDescriptor"
       ],
@@ -19666,7 +19666,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Anonymous_Returns401",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Authenticated_CreatesGroupOwnedByCaller"
@@ -19681,7 +19681,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.AddUsers_AsNonOwnerNonAdmin_Returns403",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.AddUsers_AsOwner_AddsMembersThenRemoveUsersRemovesThem"
@@ -19696,7 +19696,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.DeleteGroup_AsOwner_RemovesGroup"
       ],
@@ -19710,7 +19710,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.AddUsers_AsOwner_AddsMembersThenRemoveUsersRemovesThem"
       ],
@@ -19724,7 +19724,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.ShareItem_Anonymous_Returns401",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.ShareItem_ByNonOwnerNonAdmin_Returns403",
@@ -19740,7 +19740,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.ShareItem_ToGroup_MakesItVisibleThenUnshareRevokes"
       ],
@@ -19778,7 +19778,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_ActiveOpaqueToken_ReturnsActiveTrueWithMetadata",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2IntrospectionTests.Introspect_ExpiredToken_ReturnsActiveFalse",
@@ -19799,7 +19799,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_AccessToken_SubsequentValidationFails",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Revoke_MissingToken_ReturnsInvalidRequest",
@@ -19818,7 +19818,7 @@
       "method": "POST",
       "family": "ArcGIS Portal Sharing",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+      "code_location": "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_AuthorizationCodeGrantViaGetQueryString_Returns405MethodNotAllowed",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_AuthorizationCodeGrantWithPkce_ReturnsAccessTokenAndRefreshToken",
@@ -20087,7 +20087,7 @@
       "method": "PUT",
       "family": "Data Enrichment",
       "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs",
+      "code_location": "src/Honua.Server/Features/DataEnrichment/EnrichmentDatasetAdminEndpoints.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_ModifiesDataset",
         "Honua.Server.Tests.Features.DataEnrichment.EnrichmentDatasetCatalogEndpointTests.Update_UnknownDataset_ReturnsNotFound"
