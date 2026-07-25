@@ -103,7 +103,7 @@ internal static class FeatureCatalogGenerator
                     ? tests.OrderBy(value => value, StringComparer.Ordinal).ToArray()
                     : [];
 
-                var surface = ledger.ResolveSurface(endpoint.Path);
+                var surface = ledger.ResolveSurface(endpoint.Method, endpoint.Path);
                 var id = SlugFor(endpoint.Method, endpoint.Path);
                 var family = surface?.Protocol ?? "uncategorized";
                 var method = endpoint.Method.ToUpperInvariant();

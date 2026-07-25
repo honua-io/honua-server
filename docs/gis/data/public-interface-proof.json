@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-06-23T00:00:00Z",
+  "updatedUtc": "2026-07-24T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "capability-manifest",
@@ -130,6 +130,35 @@
       ],
       "endpointContains": [],
       "operationKeys": [],
+      "endpointImplementationMappings": [
+        {
+          "endpoints": [
+            "POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join"
+          ],
+          "codeLocation": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionEndpoints.cs"
+        },
+        {
+          "endpoints": [
+            "GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream"
+          ],
+          "codeLocation": "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionStreamEndpoint.cs"
+        },
+        {
+          "endpoints": [
+            "POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
+            "POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew",
+            "POST /api/v1/saved-maps/{mapId}/collaboration/feature-locks/release"
+          ],
+          "codeLocation": "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockEndpoints.cs"
+        },
+        {
+          "endpoints": [
+            "GET /api/v1/saved-maps/{mapId}/collaboration/operations",
+            "POST /api/v1/saved-maps/{mapId}/collaboration/operations"
+          ],
+          "codeLocation": "src/Honua.Server/Features/Collaboration/Operations/SavedMapOperationEndpoints.cs"
+        }
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -137,6 +166,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Server/Features/Collaboration/Sessions/CollaborationSessionEndpoints.cs",
+            "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Collaboration/Sessions/CollaborationSessionEndpointsTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Collaboration/FeatureLocks/FeatureLockEndpointsTests.cs"
@@ -1421,6 +1452,20 @@
       ],
       "endpointContains": [],
       "operationKeys": [],
+      "endpointImplementationMappings": [
+        {
+          "endpoints": [
+            "POST /oauth/token"
+          ],
+          "codeLocation": "src/Honua.Server/Features/Mobile/Auth/MobileAuthEndpoints.cs"
+        },
+        {
+          "endpoints": [
+            "POST /api/mobile/exceptions"
+          ],
+          "codeLocation": "src/Honua.Server/Features/Mobile/Diagnostics/MobileExceptionIngestionEndpoints.cs"
+        }
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -1489,6 +1534,25 @@
       ],
       "endpointContains": [],
       "operationKeys": [],
+      "endpointImplementationMappings": [
+        {
+          "endpoints": [
+            "POST /api/enrich",
+            "GET /api/enrich/catalog",
+            "GET /api/enrich/datasets",
+            "GET /api/enrich/datasets/{id}"
+          ],
+          "codeLocation": "src/Honua.Server/Features/DataEnrichment/DataEnrichmentEndpoints.cs"
+        },
+        {
+          "endpoints": [
+            "POST /api/enrich/datasets",
+            "PUT /api/enrich/datasets/{id}",
+            "DELETE /api/enrich/datasets/{id}"
+          ],
+          "codeLocation": "src/Honua.Server/Features/DataEnrichment/EnrichmentDatasetAdminEndpoints.cs"
+        }
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -1662,6 +1726,43 @@
       ],
       "endpointContains": [],
       "operationKeys": [],
+      "endpointImplementationMappings": [
+        {
+          "endpoints": [
+            "GET /sharing/rest/generateToken",
+            "POST /sharing/rest/generateToken",
+            "GET /sharing/rest/info",
+            "GET /sharing/rest/portals/self",
+            "GET /sharing/rest/community/self",
+            "GET /sharing/rest/search",
+            "GET /sharing/rest/content/items/{id}",
+            "GET /sharing/rest/content/items/{id}/data"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs"
+        },
+        {
+          "endpoints": [
+            "GET /sharing/rest/oauth2/authorize",
+            "GET /sharing/rest/oauth2/callback",
+            "POST /sharing/rest/oauth2/token",
+            "POST /sharing/rest/oauth2/revoke",
+            "POST /sharing/rest/oauth2/introspect"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs"
+        },
+        {
+          "endpoints": [
+            "POST /sharing/rest/community/createGroup",
+            "GET /sharing/rest/community/groups/{groupId}",
+            "POST /sharing/rest/community/groups/{groupId}/delete",
+            "POST /sharing/rest/community/groups/{groupId}/addUsers",
+            "POST /sharing/rest/community/groups/{groupId}/removeUsers",
+            "POST /sharing/rest/content/items/{itemId}/share",
+            "POST /sharing/rest/content/items/{itemId}/unshare"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs"
+        }
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -1981,6 +2082,37 @@
         "/VectorTileServer"
       ],
       "operationKeys": [],
+      "endpointImplementationMappings": [
+        {
+          "endpoints": [
+            "GET /rest/services/{serviceId}/VectorTileServer",
+            "POST /rest/services/{serviceId}/VectorTileServer"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.cs"
+        },
+        {
+          "endpoints": [
+            "GET /rest/services/{serviceId}/VectorTileServer/resources/styles",
+            "GET /rest/services/{serviceId}/VectorTileServer/resources/styles/{**resourcePath}",
+            "GET /rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}",
+            "GET /rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs"
+        },
+        {
+          "endpoints": [
+            "GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs"
+        },
+        {
+          "endpoints": [
+            "GET /rest/services/{serviceId}/VectorTileServer/tilemap",
+            "GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}"
+          ],
+          "codeLocation": "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs"
+        }
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -1988,6 +2120,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
@@ -3968,6 +4101,22 @@
         "Mcp::prompts/list",
         "Mcp::prompts/get"
       ],
+      "endpointImplementationMappings": [
+        {
+          "endpoints": [
+            "GET /mcp",
+            "POST /mcp",
+            "DELETE /mcp"
+          ],
+          "codeLocation": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs"
+        },
+        {
+          "endpoints": [
+            "GET /.well-known/oauth-protected-resource/mcp"
+          ],
+          "codeLocation": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpProtectedResourceMetadataEndpointExtensions.cs"
+        }
+      ],
       "proofs": [
         {
           "proofClass": "route-coverage",
@@ -3975,6 +4124,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
           ],
