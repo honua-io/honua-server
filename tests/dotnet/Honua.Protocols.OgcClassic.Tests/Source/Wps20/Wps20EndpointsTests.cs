@@ -132,7 +132,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         var body = $"<wps:GetCapabilities service='{service}' version='{version}' xmlns:wps='http://www.opengis.net/wps/2.0'/>";
         using var content = new StringContent(body, Encoding.UTF8, "application/xml");
 
-        var response = await _fixture.Client.PostAsync("/wps", content);
+        using var response = await _fixture.Client.PostAsync("/wps", content);
         var xml = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, xml);
@@ -196,6 +196,23 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, xml);
         xml.Should().Contain("ExceptionReport").And.Contain("prohibited constructs");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("POST /wps")]
+    public async Task ReadRequest_XmlWithUndeclaredWpsOperation_ReturnsValidationError()
+    {
+        const string body = "<wps:DeleteEverything service='WPS' version='2.0.0' xmlns:wps='http://www.opengis.net/wps/2.0'/>";
+        using var content = new StringContent(body, Encoding.UTF8, "application/xml");
+
+        using var response = await _fixture.Client.PostAsync("/wps", content);
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, xml);
+        xml.Should().Contain("ExceptionReport")
+            .And.Contain("The XML request is not valid or contains prohibited constructs.")
+            .And.NotContain("DeleteEverything");
     }
 
     [IntegrationTest]

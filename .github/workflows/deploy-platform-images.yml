@@ -3,7 +3,15 @@ name: Build & Publish Platform Images
 on:
   push:
     tags: ["v*"]
+  schedule:
+    - cron: "30 3 * * 1"
   workflow_dispatch:
+    inputs:
+      scan_only:
+        description: Build and scan images without authenticating to or publishing to registries
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -13,6 +21,7 @@ env:
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
   TRIVY_IMAGE: aquasec/trivy:0.68.1
+  PUBLISH_IMAGES: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
 
 concurrency:
   group: deploy-platform-images-${{ github.ref }}
@@ -21,7 +30,7 @@ concurrency:
 jobs:
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk'
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -114,7 +123,7 @@ jobs:
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       - name: Configure AWS credentials for ECR
-        if: ${{ env.ECR_REGION != '' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && env.ECR_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
         with:
           role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
@@ -122,7 +131,7 @@ jobs:
 
       - name: Resolve ECR registry
         id: ecr
-        if: ${{ env.ECR_REGION != '' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && env.ECR_REGION != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -130,7 +139,7 @@ jobs:
           echo "registry=${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
 
       - name: Ensure ECR repository exists
-        if: ${{ steps.ecr.outputs.registry != '' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && steps.ecr.outputs.registry != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -144,11 +153,11 @@ jobs:
           fi
 
       - name: Log in to Amazon ECR
-        if: ${{ steps.ecr.outputs.registry != '' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && steps.ecr.outputs.registry != '' }}
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
 
       - name: Validate Azure credentials for ACR
-        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && env.ACR_LOGIN_SERVER != '' }}
         shell: bash
         env:
           ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -172,7 +181,7 @@ jobs:
           done
 
       - name: Log in to Azure Container Registry
-        if: ${{ env.ACR_LOGIN_SERVER != '' }}
+        if: ${{ env.PUBLISH_IMAGES == 'true' && env.ACR_LOGIN_SERVER != '' }}
         shell: bash
         env:
           ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -188,6 +197,7 @@ jobs:
 
       - name: Resolve target image names
         id: targets
+        if: ${{ env.PUBLISH_IMAGES == 'true' }}
         shell: bash
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -220,6 +230,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
+        if: ${{ env.PUBLISH_IMAGES == 'true' }}
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ steps.targets.outputs.images }}
@@ -234,6 +245,7 @@ jobs:
 
       - name: Add explicit arch suffixes to image tags
         id: arch_tags
+        if: ${{ env.PUBLISH_IMAGES == 'true' }}
         shell: bash
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -251,6 +263,7 @@ jobs:
 
       - name: Build and push
         id: build
+        if: ${{ env.PUBLISH_IMAGES == 'true' }}
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
@@ -267,16 +280,36 @@ jobs:
           provenance: ${{ matrix.provenance }}
           sbom: ${{ matrix.sbom }}
 
+      - name: Build local image for security scan
+        if: ${{ env.PUBLISH_IMAGES != 'true' }}
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: honua-platform-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          provenance: false
+          sbom: false
+
       - name: Pull image for Trivy scan
         id: scan_prep
         shell: bash
         env:
+          PUBLISH_IMAGES: ${{ env.PUBLISH_IMAGES }}
           SCAN_SOURCE: ${{ steps.targets.outputs.scan_image }}@${{ steps.build.outputs.digest }}
           SCAN_LOCAL: honua-platform-scan:${{ matrix.image_key }}-${{ matrix.arch }}-${{ github.sha }}
         run: |
           set -euo pipefail
-          docker pull "$SCAN_SOURCE"
-          docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
+          if [[ "$PUBLISH_IMAGES" == "true" ]]; then
+            docker pull "$SCAN_SOURCE"
+            docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
+          fi
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
 
       # Always generate an SPDX SBOM artifact for every platform image, even
@@ -329,7 +362,7 @@ jobs:
 
   publish-manifests:
     name: Publish ${{ matrix.image_name }} Manifest
-    if: ${{ (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk') && needs.build-and-push.result == 'success' }}
+    if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || (github.ref == 'refs/heads/trunk' && inputs.scan_only != true)) && needs.build-and-push.result == 'success' }}
     needs: build-and-push
     runs-on: ubuntu-24.04
     strategy:
