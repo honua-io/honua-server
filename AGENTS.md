@@ -51,9 +51,9 @@ Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Test
 
 ## OGC CITE Compliance
 
-**Authoritative pass rate: 952/952 (100%) across 11 OGC CITE conformance suites on `trunk`.**
+**Authoritative pass rate: 1117/1117 (100%) across 13 OGC CITE conformance suites on `trunk`.**
 
-Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-05-17 evidence run:
+Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-07-25 evidence run:
 
 | Suite | Profile | Passed / Total | Pass Rate |
 |---|---|---:|---:|
@@ -65,8 +65,10 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 | WFS 1.0 | `basic` | 162 / 162 | 100% |
 | WFS 1.1 | `basic` | 39 / 39 | 100% |
 | WFS 2.0 | `basic` | 167 / 167 | 100% |
+| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% |
 | WCS 2.0 | `core` | 82 / 82 | 100% |
-| WMS 1.3 | `default` | 199 / 199 | 100% |
+| WMS 1.1.1 | `default` | 126 / 126 | 100% |
+| WMS 1.3 | `default` | 213 / 213 | 100% |
 | WMTS 1.0 | `default` | 60 / 60 | 100% |
 
 The CITE result directories (`cite-*-results/`) are gitignored — empty local directories do not imply unimplemented suites. The functional workflows live under `.github/workflows/cite-*.yml`, runners under `scripts/conformance/cite/`, and Docker compositions under `docker/cite/`.

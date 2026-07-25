@@ -122,7 +122,7 @@ When the coverage's native grid exceeds the per-axis pixel limit and no scaling 
 
 ## Conformance
 
-All four classic services are OGC CITE certified at 100% (WMS 1.3: 199/199, WFS 1.0/1.1/2.0: 162/39/167, WCS 2.0: 82/82, WMTS 1.0: 60/60). The certified counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
+All four classic services pass their published OGC CITE profiles at 100% (WMS 1.1.1/1.3: 126/213, WFS 1.0/1.1/2.0: 162/39/167 plus WFS 2.0 Transactional: 25, WCS 2.0: 82/82, WMTS 1.0: 60/60). The passing counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
 
 ## Guides that use this
 
