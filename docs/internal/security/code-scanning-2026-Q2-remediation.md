@@ -14,17 +14,17 @@ so the dashboard only carries actionable findings going forward.
 
 | Dockerfile | Stage | Image | Digest |
 | --- | --- | --- | --- |
-| `Dockerfile` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc` |
-| `Dockerfile` | runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine` | `@sha256:60eb031b554df75a4b9f358290a2fa15d8961a3bc79b47bb34a00e31f7b78c69` |
-| `docker/Dockerfile.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0-alpine` | `@sha256:0191ff386e93923edf795d363ea0ae0669ce467ada4010b370644b670fa495c1` |
-| `docker/Dockerfile.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine` | `@sha256:4f08c162590324de60f31937f5b5fa9f2b5eddaa4f0aaec3c872f855bf16c36c` |
+| `Dockerfile` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
+| `Dockerfile` | runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine` | `@sha256:27b6b84beeede74fd16886177d360799c8e4299ceadfbd64eef57bafead7878a` |
+| `docker/Dockerfile.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0-alpine` | `@sha256:d8ee39817ca03a3757288e83c37ed73cc969a286c603b827c7cbe33add1c2d1c` |
+| `docker/Dockerfile.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine` | `@sha256:ad7cd1ed2e913fbd806f8ecc0e8bb8e9e8fb7cfd4d3fa43be9aa0b4cd8008bf5` |
 | `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/base:4-appservice` | `@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9` |
 | `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/base:4-appservice` | `@sha256:e15f9ae39a777d8ff1da4f1e74e2847f21cff6e44b10867fd0b9ee2eb23ebdb9` |
-| `docker/Dockerfile.lambda` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc` |
-| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:d7677a5f8e4468b52f46e9246b54878d1317644cc3c0182f9cb2e35180fc50c9` |
+| `docker/Dockerfile.lambda` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
+| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:6228848061d53f16eb774d4f1ddfce45c973376ad38da844dff144cc3e11e517` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
-| `docker/Dockerfile.lambda.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:8a90a473da5205a16979de99d2fc20975e922c68304f5c79d564e666dc3982fc` |
-| `docker/Dockerfile.lambda.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0` | `@sha256:962ef681468320cc5ef25fa18259cf3200247cec2ee96c2574174d4824272151` |
+| `docker/Dockerfile.lambda.aot` | build | `mcr.microsoft.com/dotnet/sdk:10.0` | `@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664` |
+| `docker/Dockerfile.lambda.aot` | runtime | `mcr.microsoft.com/dotnet/runtime-deps:10.0` | `@sha256:894098eafc82e5fa02ba9f2b71d426dc78252876b9e914caae77ed95cfce185a` |
 
 The Functions images were previously the only platform-published Dockerfiles
 without a manifest digest; the unpinned `:4-appservice` tag is what produced the
@@ -77,6 +77,9 @@ other link generator.
 | Code | Line | Disposition | Rationale |
 | --- | --- | --- | --- |
 | DL3008 | `Dockerfile` apt-get install | suppressed | SDK base image is digest-pinned; pinning apt versions here forces a parallel update on every digest bump. |
+| DL3008 | `docker/Dockerfile.functions{,.aot}` apt-get install | suppressed | The Functions base is digest-pinned, while the final runtime layer deliberately resolves the newest Bullseye security revisions available at build time. |
+| DL3005 | `docker/Dockerfile.functions{,.aot}` apt-get upgrade | suppressed | The current Microsoft base digest lags its Debian security repositories; applying those compatible Bullseye updates removes repository-fixable runtime CVEs. |
+| DL3041 | `docker/Dockerfile.lambda` dnf upgrade/install | suppressed | The Lambda base is digest-pinned, while the final runtime layer deliberately resolves the newest compatible Amazon Linux security revisions and required runtime libraries available at build time. |
 | SC2086 | `Dockerfile` dotnet restore | suppressed | `EXTRA_MSBUILD_ARGS` must word-split into separate `-p:` args; quoting it produces an invalid single argument. |
 | SC2086 | `Dockerfile` dotnet publish | suppressed | Same as above. |
 | DL3018 | `Dockerfile` apk add | suppressed | Runtime base image is digest-pinned to a specific Alpine snapshot; apk versions are deterministic for that snapshot. |
@@ -134,6 +137,10 @@ should reference this row.
   gets uploaded to GitHub Code Scanning is produced by this filtered run, so
   here too lower severities are not retained. SARIF categories per matrix
   entry are unchanged so the dashboard still attributes findings per image.
+  A weekly schedule and the manual `scan_only` input build local images without
+  registry authentication or publishing, then upload those same categories.
+  This lets a fresh scan retire stale findings even when ECR or ACR publishing
+  credentials are unavailable.
 
 Re-introduce MEDIUM severity on the Security tab by removing the new
 `severity` inputs / `--severity` flag; the gating Trivy steps will continue
@@ -144,12 +151,32 @@ Scanning) — that is intentionally out of scope for this remediation pass.
 
 ## Inherited findings deferred upstream
 
-The Functions and Lambda base images still ship with package advisories that
-originate from Microsoft's and Amazon's distribution channels and cannot be
-patched in this repository. These will be picked up by the digest pin's normal
-refresh cadence (a new image release retires the alert). They are intentionally
-left as visible HIGH/CRITICAL signal in the Security tab so the upstream cadence
-is observable.
+The Functions runtime layer now applies all available Bullseye package updates,
+removes `libc6-dev` and `linux-libc-dev` (compile-only packages in the final
+custom-handler image), and removes the preloaded v2/v3 Functions extension
+bundles. Honua's `host.json` requires the v4 bundle range, so the older bundles
+cannot be selected at runtime.
+
+A controlled Trivy 0.68.1 scan on 2026-07-24 measured the effect against the
+exact pinned Functions base:
+
+- Pinned upstream base: 784 HIGH/CRITICAL package records.
+- After removing compile-only headers and unused bundles: 105 records.
+- After applying available Bullseye security updates: 51 records.
+
+Of the remaining 51 records, 45 have no fixed Debian package and six belong to
+the Microsoft-owned v4 extension bundle (`MessagePack` and `System.Text.Json`).
+They cannot be upgraded independently without replacing files owned and loaded
+by the Functions host. Those findings remain visible so a future Microsoft base
+or extension-bundle refresh retires them rather than masking them with an
+ignore.
+
+The exact pinned Lambda base reported nine HIGH records on the same date: seven
+for `glib2` and two for `libacl`. Trivy names fixed versions, but `dnf upgrade`
+reported no newer packages in Amazon Linux's repository at build time. The
+runtime layer now invokes `dnf upgrade` so those advisories retire as soon as
+Amazon publishes the packages; until then they remain visible rather than being
+ignored.
 
 ## Before / after alert counts
 

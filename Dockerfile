@@ -4,14 +4,13 @@
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
 
 # Base images are digest-pinned for reproducible builds and supply-chain integrity.
-# Refresh both digests together via scripts/update-base-image-digests.sh (resolves
-# the current digest behind `mcr.microsoft.com/dotnet/sdk:10.0` and
-# `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`). Overrideable via build args so
-# CI can swap in pre-warmed mirrors if MCR throttles.
-# digest pinned 2026-05-20; refresh via scripts/update-base-image-digests.sh
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:dc8430e6024d454edadad1e160e1973be3cabbb7125998ef190d9e5c6adf7dbb
-# digest pinned 2026-05-20; refresh via scripts/update-base-image-digests.sh
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:1e37a8236c558ae31bd6bc8144e38e6036b73cf1b0616fe56d79e60babb9d93b
+# Refresh both digests together by resolving the current manifests behind
+# `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0-alpine`.
+# Overrideable via build args so CI can swap in pre-warmed mirrors if MCR throttles.
+# digest pinned 2026-07-24
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:ed034a8bf0b24ded0cbbac07e17825d8e9ebfe21e308191d0f7421eaf5ad4664
+# digest pinned 2026-07-24
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:27b6b84beeede74fd16886177d360799c8e4299ceadfbd64eef57bafead7878a
 
 # Build stage
 FROM ${DOTNET_SDK_IMAGE} AS build
