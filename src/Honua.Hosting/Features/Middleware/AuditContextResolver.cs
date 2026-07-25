@@ -31,13 +31,13 @@ internal static class AuditContextResolver
         ArgumentNullException.ThrowIfNull(context);
 
         var principal = context.User;
-        var identity = principal?.Identity;
+        var identity = principal.Identity;
         if (identity is { IsAuthenticated: true })
         {
             // For API-key authenticated callers the handler attaches an
             // "api_key_id" claim; prefer that as a stable actor identifier so
             // we never log the raw key name.
-            var apiKeyId = principal?.FindFirst("api_key_id")?.Value;
+            var apiKeyId = principal.FindFirst("api_key_id")?.Value;
             if (!string.IsNullOrWhiteSpace(apiKeyId))
             {
                 actorType = AuditActorType.ApiKey;
@@ -48,10 +48,10 @@ internal static class AuditContextResolver
             // their token carries no display-name claim. Prefer the same stable
             // identifiers used by the Studio authorization service before falling
             // back to Identity.Name.
-            var userId = principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrWhiteSpace(userId))
             {
-                userId = principal?.FindFirst("sub")?.Value;
+                userId = principal.FindFirst("sub")?.Value;
             }
             if (string.IsNullOrWhiteSpace(userId))
             {
@@ -59,7 +59,7 @@ internal static class AuditContextResolver
             }
             if (string.IsNullOrWhiteSpace(userId))
             {
-                userId = principal?.FindFirst(ClaimTypes.Name)?.Value;
+                userId = principal.FindFirst(ClaimTypes.Name)?.Value;
             }
             if (!string.IsNullOrWhiteSpace(userId))
             {
