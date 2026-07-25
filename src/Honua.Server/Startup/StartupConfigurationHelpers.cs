@@ -107,10 +107,14 @@ internal static class StartupConfigurationHelpers
         ConfigurationManager configuration,
         CancellationToken cancellationToken = default)
     {
-        await ResolveRedisConnectionSecretReferenceAsync(configuration, "ConnectionStrings:redis", cancellationToken)
-            .ConfigureAwait(false);
-        await ResolveRedisConnectionSecretReferenceAsync(
-                configuration, "Aspire:StackExchange:Redis:ConnectionString", cancellationToken)
+        const string primaryKey = "ConnectionStrings:redis";
+        const string fallbackKey = "Aspire:StackExchange:Redis:ConnectionString";
+
+        // Match every Redis consumer's null-coalescing precedence: a configured primary value
+        // shadows the Aspire fallback, even when the primary is empty. Resolving the shadowed
+        // fallback could otherwise fail startup for a value the application never reads.
+        var effectiveKey = configuration[primaryKey] is null ? fallbackKey : primaryKey;
+        await ResolveRedisConnectionSecretReferenceAsync(configuration, effectiveKey, cancellationToken)
             .ConfigureAwait(false);
     }
 

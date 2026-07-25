@@ -24,7 +24,7 @@ public sealed class StartupConfigurationHelpersTests
     [Fact]
     public async Task ResolveRedisConnectionSecretReferencesAsync_PlainConnectionString_LeavesValueUnchanged()
     {
-        var configuration = new ConfigurationManager();
+        using var configuration = new ConfigurationManager();
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:redis"] = "localhost:6379",
@@ -38,7 +38,7 @@ public sealed class StartupConfigurationHelpersTests
     [Fact]
     public async Task ResolveRedisConnectionSecretReferencesAsync_NotConfigured_NoOp()
     {
-        var configuration = new ConfigurationManager();
+        using var configuration = new ConfigurationManager();
 
         await StartupConfigurationHelpers.ResolveRedisConnectionSecretReferencesAsync(configuration);
 
@@ -53,7 +53,7 @@ public sealed class StartupConfigurationHelpersTests
         // method ever runs (Program.cs calls it first), so by the time this method sees the value it
         // is already a plain connection string — prove it is left untouched here too, and that no
         // network call is attempted for it.
-        var configuration = new ConfigurationManager();
+        using var configuration = new ConfigurationManager();
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ConnectionStrings:redis"] = "already-resolved-host:6379",
@@ -67,7 +67,7 @@ public sealed class StartupConfigurationHelpersTests
     [Fact]
     public async Task ResolveRedisConnectionSecretReferencesAsync_AspireConnectionStringConfigured_PlainValueLeftUnchanged()
     {
-        var configuration = new ConfigurationManager();
+        using var configuration = new ConfigurationManager();
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Aspire:StackExchange:Redis:ConnectionString"] = "localhost:6379",
@@ -76,5 +76,22 @@ public sealed class StartupConfigurationHelpersTests
         await StartupConfigurationHelpers.ResolveRedisConnectionSecretReferencesAsync(configuration);
 
         configuration["Aspire:StackExchange:Redis:ConnectionString"].Should().Be("localhost:6379");
+    }
+
+    [Fact]
+    public async Task ResolveRedisConnectionSecretReferencesAsync_PrimaryConfigured_SkipsShadowedAspireReference()
+    {
+        const string shadowedReference = "aws:secretsmanager:stale/redis";
+        using var configuration = new ConfigurationManager();
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:redis"] = "primary-host:6379",
+            ["Aspire:StackExchange:Redis:ConnectionString"] = shadowedReference,
+        });
+
+        await StartupConfigurationHelpers.ResolveRedisConnectionSecretReferencesAsync(configuration);
+
+        configuration["ConnectionStrings:redis"].Should().Be("primary-host:6379");
+        configuration["Aspire:StackExchange:Redis:ConnectionString"].Should().Be(shadowedReference);
     }
 }
