@@ -4,6 +4,7 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Coordination;

@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Internal;
 using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;

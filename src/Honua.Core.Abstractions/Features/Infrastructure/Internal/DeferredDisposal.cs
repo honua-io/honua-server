@@ -1,13 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Core.Features.Infrastructure.Abstractions;
+namespace Honua.Core.Features.Infrastructure.Internal;
 
 /// <summary>
 /// Centralizes disposal for resources whose ownership is transferred, conditional, or
 /// deliberately extends beyond the scope in which the resource was created.
 /// </summary>
-public static class DeferredDisposal
+internal static class DeferredDisposal
 {
     /// <summary>
     /// Disposes a resource after its owning operation has completed.

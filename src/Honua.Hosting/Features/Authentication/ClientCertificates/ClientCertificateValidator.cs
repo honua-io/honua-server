@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Formats.Asn1;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication.ClientCertificates;

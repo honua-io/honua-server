@@ -4,6 +4,7 @@
 using System.Reflection;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Plugins.Abstractions;

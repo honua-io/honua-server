@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

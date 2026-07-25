@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Internal;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using InfrastructureGeometryService = Honua.Infrastructure.Services.GeometryService;

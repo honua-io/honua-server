@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;

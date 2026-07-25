@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;

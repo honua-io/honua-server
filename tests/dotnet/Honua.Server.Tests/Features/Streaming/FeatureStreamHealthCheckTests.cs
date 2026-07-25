@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
