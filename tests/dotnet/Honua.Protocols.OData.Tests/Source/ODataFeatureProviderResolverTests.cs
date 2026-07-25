@@ -119,6 +119,28 @@ public sealed class ODataFeatureProviderResolverTests
     }
 
     [Fact]
+    public async Task CheckWriteSupportAsync_ReadOnlyPrimaryProvider_RejectsCrudPipeline()
+    {
+        var fallbackReader = Substitute.For<IFeatureReader, IFeatureDataProvider>();
+        var primaryProvider = (IFeatureDataProvider)fallbackReader;
+        primaryProvider.ProviderName.Returns(DataProviderNames.MySql);
+        primaryProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyMySql);
+        primaryProvider.Reader.Returns(fallbackReader);
+        primaryProvider.Writer.Returns((IFeatureWriter?)null);
+        var resolver = new ODataFeatureProviderResolver(
+            fallbackReader,
+            Substitute.For<IFeatureWriter>(),
+            providerQueryRouter: null);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId: null);
+
+        var support = await resolver.CheckWriteSupportAsync(
+            snapshot, service, resource, publication, 41, CancellationToken.None);
+
+        support.Supported.Should().BeFalse();
+        support.ErrorMessage.Should().Contain("read-only");
+    }
+
+    [Fact]
     public async Task CheckWriteSupportAsync_SecondaryWriter_RejectsPrimaryCrudFallback()
     {
         var connectionId = Guid.NewGuid();

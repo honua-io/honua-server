@@ -20,18 +20,9 @@ namespace Honua.ProviderSmoke.Tests;
 /// <see cref="Tiles_RasterTile_ReturnsNonEmptyPng"/> exercise real, working end-to-end
 /// coverage (the OData and Tiles cases route to SQL Server through
 /// <c>FeatureProviderQueryRouter</c>/<c>TileFeatureProviderResolver</c>,
-/// honua-server#2962). Every other case is present but skipped, each with a reason
-/// pointing at a specific finding rather than silently omitting the coverage:
-/// <list type="bullet">
-///   <item>bbox/envelope (FeatureServer <c>geometry=</c>) — real product bug,
-///   honua-server#2965 (shared EWKB/plain-WKB mismatch, also reproduces on MySQL).</item>
-///   <item>CQL2 <c>filter=</c> (OGC API Features) — pre-existing, already-documented
-///   limitation (sql-server.md), not a new finding.</item>
-///   <item>OGC API Tiles vector (MVT) — not a routing gap: native MVT generation is a
-///   per-provider capability that only the PostGIS provider implements, so a
-///   SQL-Server-backed collection returns <c>501 Not Implemented</c> for vector tiles
-///   regardless of routing.</item>
-/// </list>
+/// honua-server#2962). CQL2 <c>filter=</c> remains skipped because the shared SQL
+/// filter translator currently supports PostgreSQL only. OGC API Tiles vector (MVT)
+/// remains a separate provider capability that only PostGIS implements.
 /// </remarks>
 [Trait("Provider", "SqlServer")]
 public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProviderWebAppFixture>
@@ -42,13 +33,6 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
         "CQL2/OGC API Features filter=... throws NotSupportedException for SQL Server. " +
         "FeatureServer's where= (canonical Where text) path works and is covered by " +
         "FeatureServer_QueryWithWhereClause_ReturnsFilteredFeatures.";
-
-    private const string BboxEwkbGapReason =
-        "Real product bug found via this suite: GeoServicesGeometryConverter emits EWKB " +
-        "(SRID-embedded WKB); SQL Server's geometry::STGeomFromWKB(wkb, srid) expects plain " +
-        "WKB with the SRID as a separate argument, so the embedded SRID header corrupts ring/" +
-        "point-count parsing (\"Polygon input... exterior ring does not have enough points\"). " +
-        "Same root cause as the MySQL bbox skip; tracked in honua-server#2965.";
 
     private readonly SqlServerProviderWebAppFixture _fixture;
 
@@ -81,12 +65,23 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
         }
     }
 
-    [Fact(Skip = BboxEwkbGapReason)]
-    [Trait("Category", "Integration")]
+    [IntegrationTest]
     [Protocol(ProtocolNames.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public Task FeatureServer_QueryWithBbox_NotSupportedForSqlServer_SeeIssue2965() => Task.CompletedTask;
+    public async Task FeatureServer_QueryWithBbox_ReturnsWindowedFeatures()
+    {
+        var (west, south, east, north) = ProviderSmokeData.NarrowBbox;
+        var response = await Client.GetAsync(
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/query" +
+            $"?where=1%3D1&geometry={west},{south},{east},{north}&geometryType=esriGeometryEnvelope" +
+            "&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("features").GetArrayLength().Should().Be(ProviderSmokeData.NarrowBboxCount);
+    }
 
     [IntegrationTest]
     [Protocol(ProtocolNames.OgcApiFeatures)]
@@ -125,6 +120,37 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
     }
 
     [IntegrationTest]
+    [Protocol(ProtocolNames.ODataV4)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /odata/Layers({layerId})/Features")]
+    public async Task OData_CreateFeature_ReadOnlyProvider_ReturnsProviderWriteNotSupported()
+    {
+        using var content = JsonContent.Create(new
+        {
+            Attributes = new Dictionary<string, object?>
+            {
+                ["name"] = "Must not persist",
+                ["area"] = 999.0,
+                ["type"] = "commercial"
+            }
+        });
+
+        var response = await Client.PostAsync(
+            $"/odata/Layers({ProviderSmokeGraph.LayerId})/Features",
+            content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, await response.Content.ReadAsStringAsync());
+        using var errorDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        errorDocument.RootElement.GetProperty("error").GetProperty("code").GetString()
+            .Should().Be("ProviderWriteNotSupported");
+
+        var queryResponse = await Client.GetAsync($"/odata/Features({ProviderSmokeGraph.LayerId})");
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, await queryResponse.Content.ReadAsStringAsync());
+        using var queryDocument = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+        queryDocument.RootElement.GetProperty("value").GetArrayLength().Should().Be(ProviderSmokeData.Parcels.Count);
+    }
+
+    [IntegrationTest]
     [Protocol(ProtocolNames.OgcApiTiles)]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
@@ -142,8 +168,8 @@ public sealed class SqlServerProviderSmokeTests : IClassFixture<SqlServerProvide
             $"/ogc/tiles/collections/{ProviderSmokeGraph.LayerId}/tiles/WorldCRS84Quad/0/0/0?f=png");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         var bytes = await response.Content.ReadAsByteArrayAsync();
-        bytes.Length.Should().BeGreaterThan(0);
+        bytes.Should().StartWith([0x89, 0x50, 0x4E, 0x47]);
     }
 }

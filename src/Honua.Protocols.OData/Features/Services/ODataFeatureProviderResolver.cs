@@ -92,6 +92,12 @@ internal sealed class ODataFeatureProviderResolver(
     {
         if (!RequiresProviderRouting(snapshot, publication))
         {
+            if (_fallbackReader is IFeatureDataProvider primaryProvider &&
+                primaryProvider.Writer is null)
+            {
+                return (false, "The layer's configured data provider is read-only for OData write operations.");
+            }
+
             return (true, null);
         }
 
