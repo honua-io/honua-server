@@ -91,6 +91,45 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_WithParameterName_ReturnsOnlyRequestedBand()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position" +
+            "?coords=POINT(-122.4%2037.8)&parameter-name=band_2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("parameters").EnumerateObject().Select(property => property.Name)
+            .Should().Equal("band_2");
+        var ranges = doc.RootElement.GetProperty("ranges");
+        ranges.EnumerateObject().Select(property => property.Name).Should().Equal("band_2");
+        ranges.GetProperty("band_2").GetProperty("values")[0].GetDouble().Should().Be(12.0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_WithOpenDatetimeInterval_UsesBoundedInstant()
+    {
+        const string expectedInstant = "2026-06-20T00:00:00Z";
+        var datetime = Uri.EscapeDataString($"../{expectedInstant}");
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position" +
+            $"?coords=POINT(-122.4%2037.8)&datetime={datetime}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var doc = JsonDocument.Parse(content);
+        doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")[0]
+            .GetString().Should().Be(expectedInstant);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /edr/collections/{collectionId}/cube")]
     public async Task Edr_Cube_ReturnsCoverageJsonGridSubset()
     {
@@ -117,6 +156,97 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=notapoint");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_OutsideExtent_Returns400WithoutSamplingRaster()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(0%200)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await _rasterStore.DidNotReceive().IdentifyAsync(
+            Arg.Any<int>(),
+            Arg.Any<long>(),
+            Arg.Any<double>(),
+            Arg.Any<double>(),
+            Arg.Any<int?>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_WithInvalidOptionalParameter_Returns400WithoutSamplingRaster()
+    {
+        var invalidQueries = new[]
+        {
+            "coords=POINT(-122.4%2037.8)&parameter-name=unknown",
+            "coords=POINT(-122.4%2037.8)&datetime=not-a-date",
+            "coords=POINT(-122.4%2037.8)&datetime=2026-06-21T00%3A00%3A00Z%2F2026-06-20T00%3A00%3A00Z",
+            "coords=POINT(-122.4%2037.8)&datetime=..%2F.."
+        };
+
+        foreach (var query in invalidQueries)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/edr/collections/{WebAppFixture.TestLayerId}/position?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        await AssertRasterWasNotSampledAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_WithInvalidOptionalParameter_Returns400WithoutSamplingRaster()
+    {
+        var invalidQueries = new[]
+        {
+            "bbox=-122.5,37.7,-122.3,37.9&resolution-x=invalid",
+            "bbox=-122.5,37.7,-122.3,37.9&resolution-x=0",
+            "bbox=-122.5,37.7,-122.3,37.9&datetime=not-a-date",
+            "bbox=-122.5,37.7,-122.3,37.9&parameter-name=unknown"
+        };
+
+        foreach (var query in invalidQueries)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/edr/collections/{WebAppFixture.TestLayerId}/cube?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        await AssertRasterWasNotSampledAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_OutsideExtent_Returns400WithoutSamplingRaster()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=0,0,1,1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertRasterWasNotSampledAsync();
+    }
+
+    private async Task AssertRasterWasNotSampledAsync()
+    {
+        await _rasterStore.DidNotReceive().IdentifyAsync(
+            Arg.Any<int>(),
+            Arg.Any<long>(),
+            Arg.Any<double>(),
+            Arg.Any<double>(),
+            Arg.Any<int?>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [IntegrationTest]

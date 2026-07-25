@@ -89,7 +89,7 @@ jobs:
               echo "- Failed: ${failed}"
               echo "- Skipped: ${skipped}"
               if [[ "${skipped}" -gt 0 ]]; then
-                echo "- Note: the 2 SQL Server OData/Tiles cases are expected skips — a real product routing gap tracked in honua-server#2962 (OData/Tiles bypass FeatureProviderQueryRouter for secondary providers), not a missing prerequisite."
+                echo "- Note: SQL Server CQL2 filtering is intentionally skipped because the shared SQL filter translator currently supports PostgreSQL only."
               fi
             } >> "$GITHUB_STEP_SUMMARY"
           else

@@ -36,8 +36,10 @@ internal sealed class ProofLedgerProjection
     /// <summary>
     /// Resolves the first proof-ledger surface that claims the supplied route,
     /// matching by exact path, prefix, or contains — the same selectors the proof
-    /// ledger declares. Returns <c>null</c> when no surface matches (which the
-    /// existing ledger governance test already forbids for shipped routes).
+    /// ledger declares. Implementation endpoint/handler evidence is preferred for
+    /// <c>code_location</c>; surfaces without it retain their registry fallback.
+    /// Returns <c>null</c> when no surface matches (which the existing ledger
+    /// governance test already forbids for shipped routes).
     /// </summary>
     public ResolvedSurface? ResolveSurface(string path)
     {
@@ -47,11 +49,16 @@ internal sealed class ProofLedgerProjection
             return null;
         }
 
-        var codeLocation = surface.Proofs
+        var localEvidence = surface.Proofs
             .Where(proof => string.Equals(proof.ProofClass, "route-coverage", StringComparison.OrdinalIgnoreCase))
             .SelectMany(proof => proof.EvidenceLocations)
             .Concat(surface.Proofs.SelectMany(proof => proof.EvidenceLocations))
-            .FirstOrDefault(location => !IsExternal(location))
+            .Where(location => !IsExternal(location))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var codeLocation = localEvidence.FirstOrDefault(IsImplementationEntryPoint)
+            ?? localEvidence.FirstOrDefault(IsRegistryEntryPoint)
             ?? "src/Honua.Server/EndpointRegistry.cs";
 
         return new ResolvedSurface(surface.SurfaceId, surface.Protocol, surface.SurfaceKind, codeLocation);
@@ -66,6 +73,34 @@ internal sealed class ProofLedgerProjection
         => Uri.TryCreate(location, UriKind.Absolute, out var uri)
         && (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
             || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsImplementationEntryPoint(string location)
+    {
+        if (!IsCSharpSource(location))
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileNameWithoutExtension(location);
+        if (fileName.Contains("Registry", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return fileName.Contains("Endpoint", StringComparison.OrdinalIgnoreCase)
+            || fileName.Contains("Handler", StringComparison.OrdinalIgnoreCase)
+            || fileName.Contains("Dispatcher", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRegistryEntryPoint(string location)
+        => IsCSharpSource(location) &&
+        Path.GetFileNameWithoutExtension(location).Contains(
+            "Registry",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCSharpSource(string location)
+        => location.StartsWith("src/", StringComparison.OrdinalIgnoreCase) &&
+        location.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
 
     internal sealed record ResolvedSurface(string SurfaceId, string Protocol, string SurfaceKind, string CodeLocation);
 }

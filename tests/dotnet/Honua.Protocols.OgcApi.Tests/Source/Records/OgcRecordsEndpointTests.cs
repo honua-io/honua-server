@@ -167,6 +167,42 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task GetItems_WithDatetimeFilters_PreservesRecordsWithoutTemporalMetadata()
+    {
+        var unfiltered = await GetRecordIdsAsync("limit=1000");
+        var instant = await GetRecordIdsAsync(
+            $"limit=1000&datetime={Uri.EscapeDataString("2026-06-20T00:00:00Z")}");
+        var openInterval = await GetRecordIdsAsync(
+            $"limit=1000&datetime={Uri.EscapeDataString("../2026-06-20T00:00:00Z")}");
+
+        instant.Should().Equal(unfiltered);
+        openInterval.Should().Equal(unfiltered);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task GetItems_WithInvalidDatetime_ReturnsBadRequest()
+    {
+        var invalidValues = new[]
+        {
+            "not-a-date",
+            "2026-06-21T00:00:00Z/2026-06-20T00:00:00Z",
+            "2026-06-20T00:00:00Z/2026-06-21T00:00:00Z/2026-06-22T00:00:00Z"
+        };
+
+        foreach (var datetime in invalidValues)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/ogc/records/collections/{CatalogId}/items?datetime={Uri.EscapeDataString(datetime)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Pagination)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
     public async Task GetItems_WithLimitAndOffset_ReturnsPagedLinks()

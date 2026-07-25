@@ -50,13 +50,24 @@ public abstract class PrimaryProviderSmokeTestsBase
         }
     }
 
-    // FeatureServer_QueryWithBbox_ReturnsWindowedFeatures is NOT shared here: MySQL fails it
-    // due to a real product bug (honua-server#2965 — GeoServicesGeometryConverter emits
-    // EWKB, MySQL's ST_GeomFromWKB expects plain WKB), so each concrete subclass declares
-    // its own copy (DuckDbProviderSmokeTests runs it for real; MySqlProviderSmokeTests
-    // documents the skip). xunit's analyzer (xUnit1024) forbids a derived class from
-    // hiding a same-named base class [Fact], so this cannot live here as a single
-    // overridable method.
+    [IntegrationTest]
+    [Protocol(ProtocolNames.FeatureServer)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task FeatureServer_QueryWithBbox_ReturnsWindowedFeatures()
+    {
+        var (west, south, east, north) = ProviderSmokeData.NarrowBbox;
+        var response = await Client.GetAsync(
+            $"/rest/services/{ProviderSmokeGraph.ServiceName}/FeatureServer/{ProviderSmokeGraph.LayerId}/query" +
+            $"?where=1%3D1&geometry={west},{south},{east},{north}&geometryType=esriGeometryEnvelope" +
+            "&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("features").GetArrayLength()
+            .Should().Be(ProviderSmokeData.NarrowBboxCount);
+    }
 
     [IntegrationTest]
     [Protocol(ProtocolNames.OgcApiFeatures)]
@@ -143,8 +154,18 @@ public abstract class PrimaryProviderSmokeTestsBase
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
     }
 
-    // Tiles_RasterTile_ReturnsNonEmptyPng is NOT shared here for the same reason as the
-    // bbox test above: MySQL returns an empty (204) tile for the same request that renders
-    // real content for DuckDB, tracked under the same real-bug umbrella (honua-server#2965).
-    // Each concrete subclass declares its own copy.
+    [IntegrationTest]
+    [Protocol(ProtocolNames.OgcApiTiles)]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task Tiles_RasterTile_ReturnsNonEmptyPng()
+    {
+        var response = await Client.GetAsync(
+            $"/ogc/tiles/collections/{ProviderSmokeGraph.LayerId}/tiles/WorldCRS84Quad/0/0/0?f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().StartWith([0x89, 0x50, 0x4E, 0x47]);
+    }
 }

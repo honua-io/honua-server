@@ -34,18 +34,14 @@ set -euo pipefail
 #   - unit tests -> only the *.Tests projects in the affected closure
 #   - format     -> only the changed *.cs files (`dotnet format --include`)
 #
-# Capability narrowing — known limitation: docs/gis/data/feature-catalog.json's
-# `code_location` field is, today, almost always the endpoint-registry file
-# rather than the actual handler implementation (a proof-ledger evidence
-# ordering gap, not an intentional design choice). That means the crosswalk
-# can confidently narrow a TEST file change (matched by test-class name) but
-# essentially never a plain handler/service SOURCE file change — those still
-# report `unmatchedSourceFiles` and fail closed. In practice: a PR touching
-# only test files gets genuine per-test narrowing within its shard(s); a PR
-# touching handler/service source (with or without tests) falls back to
-# running the ADR-0037-selected shard(s) in full, exactly as pre-#2951 — never
-# narrower, never broader. `--dry-run` shows exactly which case a given diff
-# hits before you commit to a run.
+# Capability narrowing: docs/gis/data/feature-catalog.json's `code_location`
+# prefers the real endpoint/handler evidence recorded by the proof ledger.
+# Handler source changes can therefore narrow to their proving tests when the
+# ledger carries an unambiguous source location. Surfaces whose ledger evidence
+# still names only EndpointRegistry.cs retain that conservative fallback, and
+# any unmatched source file continues to fail closed to the normal full shard
+# filter. `--dry-run` shows exactly which case a given diff hits before you
+# commit to a run.
 #
 # CLI flags (aliases for the escape-hatch env vars below): --full, --fast,
 # --dry-run, --base <ref>.
@@ -390,13 +386,12 @@ RUN_TEST_PROJECTS="$(printf '%s\n%s\n%s\n' \
 #
 # Narrowing is safe ONLY when the capability crosswalk accounted for every
 # changed file with zero ambiguity: `runAll` is false AND `unmatchedSourceFiles`
-# is empty. Given the catalog's current code_location fidelity (almost always
-# the endpoint-registry file, not the real handler — see the header comment),
-# this is realistically true only for diffs that touch test files (and
-# docs/non-source files), not handler/service source. That is a known,
-# documented limitation, not a bug: it means narrowing degrades gracefully to
-# "no narrowing, run the shard's normal filter" — the exact pre-#2951
-# behavior — rather than ever under-testing a source change it cannot map.
+# is empty. The generated catalog prefers real endpoint/handler paths from the
+# proof ledger, so both mapped source files and test files can satisfy this
+# condition. Missing implementation evidence or an unmatched source change
+# degrades gracefully to "no narrowing, run the shard's normal filter" — the
+# exact pre-#2951 behavior — rather than ever under-testing a source change it
+# cannot map.
 #
 # Even when narrowing is safe, a shard is only narrowed if the capability
 # selector's OWN shard list also names it — i.e. two independent selectors

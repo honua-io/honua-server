@@ -66,6 +66,15 @@ public sealed class SamlSubject
 
     /// <summary>The assertion's session-expiry instant, if specified.</summary>
     public DateTimeOffset? SessionNotOnOrAfter { get; init; }
+
+    /// <summary>The signed assertion identifier used for one-time replay protection.</summary>
+    internal string AssertionId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Instant through which the assertion identifier must remain in the replay cache.
+    /// Includes the configured validation clock skew.
+    /// </summary>
+    internal DateTimeOffset ReplayProtectionExpiresAt { get; init; }
 }
 
 /// <summary>
@@ -153,6 +162,12 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
             }
         }
 
+        var assertionId = assertion.Attribute("ID")?.Value?.Trim();
+        if (string.IsNullOrEmpty(assertionId))
+        {
+            return SamlValidationResult.Failure("SAML assertion has no signed identifier.");
+        }
+
         // ---- Issuer.
         var issuer = assertion.Element(XName.Get("Issuer", SamlAssertionNs))?.Value?.Trim();
         if (!string.IsNullOrEmpty(_options.IdpEntityId) &&
@@ -163,6 +178,8 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
 
         var now = DateTimeOffset.UtcNow;
         var skew = TimeSpan.FromSeconds(Math.Max(0, _options.AllowedClockSkewSeconds));
+        DateTimeOffset? conditionsExpiry = null;
+        DateTimeOffset? confirmationExpiry = null;
 
         // ---- Conditions: NotBefore / NotOnOrAfter + AudienceRestriction.
         var conditions = assertion.Element(XName.Get("Conditions", SamlAssertionNs));
@@ -174,10 +191,13 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
                 return SamlValidationResult.Failure("SAML assertion is not yet valid (NotBefore).");
             }
 
-            if (TryParseInstant(conditions.Attribute("NotOnOrAfter")?.Value, out var notOnOrAfter) &&
-                now - skew >= notOnOrAfter)
+            if (TryParseInstant(conditions.Attribute("NotOnOrAfter")?.Value, out var notOnOrAfter))
             {
-                return SamlValidationResult.Failure("SAML assertion has expired (NotOnOrAfter).");
+                conditionsExpiry = notOnOrAfter;
+                if (now - skew >= notOnOrAfter)
+                {
+                    return SamlValidationResult.Failure("SAML assertion has expired (NotOnOrAfter).");
+                }
             }
 
             if (!string.IsNullOrEmpty(_options.EntityId))
@@ -216,10 +236,13 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
             .Element(XName.Get("SubjectConfirmation", SamlAssertionNs))?
             .Element(XName.Get("SubjectConfirmationData", SamlAssertionNs));
         if (confirmationData is not null &&
-            TryParseInstant(confirmationData.Attribute("NotOnOrAfter")?.Value, out var subjectExpiry) &&
-            now - skew >= subjectExpiry)
+            TryParseInstant(confirmationData.Attribute("NotOnOrAfter")?.Value, out var subjectExpiry))
         {
-            return SamlValidationResult.Failure("SAML subject confirmation has expired.");
+            confirmationExpiry = subjectExpiry;
+            if (now - skew >= subjectExpiry)
+            {
+                return SamlValidationResult.Failure("SAML subject confirmation has expired.");
+            }
         }
 
         // ---- Attributes -> roles / email / display name.
@@ -247,6 +270,12 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
             sessionExpiry = parsedSession;
         }
 
+        var effectiveExpiry = new[] { conditionsExpiry, confirmationExpiry, sessionExpiry }
+            .Where(static expiry => expiry.HasValue)
+            .Select(static expiry => expiry.GetValueOrDefault())
+            .DefaultIfEmpty(now.AddSeconds(Math.Max(60, _options.SessionLifetimeSeconds)))
+            .Min();
+
         return SamlValidationResult.Success(new SamlSubject
         {
             NameId = nameId,
@@ -254,6 +283,8 @@ internal sealed class SamlAssertionValidator(IOptions<SamlAuthenticationOptions>
             DisplayName = displayName,
             Roles = roles,
             SessionNotOnOrAfter = sessionExpiry,
+            AssertionId = assertionId,
+            ReplayProtectionExpiresAt = effectiveExpiry + skew,
         });
     }
 

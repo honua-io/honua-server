@@ -73,6 +73,12 @@
     <None Update="Features/Geoprocessing/customcode-harness-jobspec-contract.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="../Honua.Core.Tests/Raster/CogParser/Fixtures/lzw_pred2_uint8_multitile.tif"
+          Link="Features/Protocols/Cog/Fixtures/lzw_pred2_uint8_multitile.tif"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Honua.Core.Tests/Raster/CogParser/Fixtures/lzw_pred2_uint8_multitile.bin"
+          Link="Features/Protocols/Cog/Fixtures/lzw_pred2_uint8_multitile.bin"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

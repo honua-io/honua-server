@@ -49,9 +49,10 @@ internal static class SamlTestAssertions
         string displayName,
         IReadOnlyList<string> roles,
         DateTimeOffset? notOnOrAfter = null,
-        DateTimeOffset? notBefore = null)
+        DateTimeOffset? notBefore = null,
+        string? audience = null)
     {
-        var xml = BuildResponseXml(nameId, email, displayName, roles, notBefore, notOnOrAfter);
+        var xml = BuildResponseXml(nameId, email, displayName, roles, notBefore, notOnOrAfter, audience);
         var signed = SignAssertion(xml, certificate);
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
@@ -141,7 +142,8 @@ internal static class SamlTestAssertions
         string displayName,
         IReadOnlyList<string> roles,
         DateTimeOffset? notBefore,
-        DateTimeOffset? notOnOrAfter)
+        DateTimeOffset? notOnOrAfter,
+        string? audience = null)
         => BuildResponseXml(
             nameId,
             new (string, IReadOnlyList<string>)[]
@@ -151,13 +153,15 @@ internal static class SamlTestAssertions
                 ("Role", roles),
             },
             notBefore,
-            notOnOrAfter);
+            notOnOrAfter,
+            audience);
 
     private static string BuildResponseXml(
         string nameId,
         IReadOnlyList<(string Name, IReadOnlyList<string> Values)> attributes,
         DateTimeOffset? notBefore,
-        DateTimeOffset? notOnOrAfter)
+        DateTimeOffset? notOnOrAfter,
+        string? audience = null)
     {
         const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
         const string samlp = "urn:oasis:names:tc:SAML:2.0:protocol";
@@ -166,6 +170,8 @@ internal static class SamlTestAssertions
         var nb = (notBefore ?? now.AddMinutes(-5)).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         var noa = (notOnOrAfter ?? now.AddMinutes(5)).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         var issueInstant = now.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        var responseId = $"_resp_{Guid.NewGuid():N}";
+        var assertionId = $"_assertion_{Guid.NewGuid():N}";
 
         var attributesXml = new StringBuilder();
         foreach (var (name, values) in attributes)
@@ -180,10 +186,10 @@ internal static class SamlTestAssertions
         }
 
         return $"""
-            <samlp:Response xmlns:samlp="{samlp}" xmlns="{saml}" ID="_resp1" Version="2.0" IssueInstant="{issueInstant}">
+            <samlp:Response xmlns:samlp="{samlp}" xmlns="{saml}" ID="{responseId}" Version="2.0" IssueInstant="{issueInstant}">
               <Issuer>{Issuer}</Issuer>
               <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
-              <Assertion ID="_assertion1" Version="2.0" IssueInstant="{issueInstant}">
+              <Assertion ID="{assertionId}" Version="2.0" IssueInstant="{issueInstant}">
                 <Issuer>{Issuer}</Issuer>
                 <Subject>
                   <NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">{nameId}</NameID>
@@ -192,7 +198,7 @@ internal static class SamlTestAssertions
                   </SubjectConfirmation>
                 </Subject>
                 <Conditions NotBefore="{nb}" NotOnOrAfter="{noa}">
-                  <AudienceRestriction><Audience>{Audience}</Audience></AudienceRestriction>
+                  <AudienceRestriction><Audience>{audience ?? Audience}</Audience></AudienceRestriction>
                 </Conditions>
                 <AuthnStatement AuthnInstant="{issueInstant}">
                   <AuthnContext><AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password</AuthnContextClassRef></AuthnContext>
@@ -210,7 +216,22 @@ internal static class SamlTestAssertions
     /// RSA-SHA256, mirroring what a real IdP emits.
     /// </summary>
     private static string SignAssertion(string responseXml, X509Certificate2 certificate)
-        => SignElement(responseXml, "_assertion1", certificate);
+    {
+        var document = new XmlDocument { PreserveWhitespace = true };
+        document.LoadXml(responseXml);
+
+        var nsmgr = new XmlNamespaceManager(document.NameTable);
+        nsmgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
+        var assertionId = document.SelectSingleNode("//saml:Assertion", nsmgr)?
+            .Attributes?["ID"]?
+            .Value;
+        if (string.IsNullOrWhiteSpace(assertionId))
+        {
+            throw new InvalidOperationException("Test SAML assertion is missing its ID.");
+        }
+
+        return SignElement(responseXml, assertionId, certificate);
+    }
 
     /// <summary>
     /// Signs the element bearing the supplied <c>ID</c> with an enveloped XML-DSig signature

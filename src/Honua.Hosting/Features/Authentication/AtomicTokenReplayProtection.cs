@@ -21,7 +21,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </summary>
 internal static class AtomicTokenReplayProtection
 {
-    private const string CacheKeyPrefix = "jwt_replay:";
+    private const string JwtCacheKeyPrefix = "jwt_replay:";
     private static readonly object _memoryLock = new();
     private static readonly HashSet<string> _processedTokens = new();
 
@@ -41,14 +41,38 @@ internal static class AtomicTokenReplayProtection
             return true;
         }
 
-        var cacheKey = CacheKeyPrefix + tokenKey;
-
         if (securityToken is not JwtSecurityToken jwtToken)
         {
             return true;
         }
 
         var expiresOn = GetReplayCacheExpiration(jwtToken, options);
+        return await TryMarkKeyAsUsedAsync(
+            JwtCacheKeyPrefix,
+            tokenKey,
+            expiresOn,
+            serviceProvider,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Atomically checks and marks a namespaced replay key as consumed. This shared primitive
+    /// keeps non-JWT signed credentials, such as SAML assertions, on the same Redis SET-NX and
+    /// process-local fallback path as JWT replay protection.
+    /// </summary>
+    public static async Task<bool> TryMarkKeyAsUsedAsync(
+        string cacheKeyPrefix,
+        string replayKey,
+        DateTime expiresOn,
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheKeyPrefix);
+        ArgumentException.ThrowIfNullOrWhiteSpace(replayKey);
+        ArgumentNullException.ThrowIfNull(serviceProvider);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cacheKey = cacheKeyPrefix + replayKey;
 
         // Resolve IConnectionMultiplexer directly - no reflection into IDistributedCache
         // internals. IConnectionMultiplexer is already in the DI graph when Redis is configured

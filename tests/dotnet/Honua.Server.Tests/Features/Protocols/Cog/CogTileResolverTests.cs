@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Cog;
@@ -162,6 +163,72 @@ public class CogTileResolverTests
         await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 32, matchedOverviewTile.Length, Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_GdalMultiTileFixture_MapsFourCoordinatesToExactRangesAndPixels()
+    {
+        var fixtureDirectory = Path.Join(
+            AppContext.BaseDirectory,
+            "Features",
+            "Protocols",
+            "Cog",
+            "Fixtures");
+        var cogBytes = await File.ReadAllBytesAsync(
+            Path.Join(fixtureDirectory, "lzw_pred2_uint8_multitile.tif"));
+        var expectedPixels = await File.ReadAllBytesAsync(
+            Path.Join(fixtureDirectory, "lzw_pred2_uint8_multitile.bin"));
+        var rangeReader = new FixtureRangeReader(cogBytes);
+        var metadata = await new CogMetadataExtractor()
+            .ReadMetadataAsync(rangeReader, "bucket", "cog.tif");
+        rangeReader.ClearRequests();
+
+        metadata.OverviewLevels.Should().ContainSingle();
+        var overview = metadata.OverviewLevels[0];
+        overview.TileOffsets.Should().HaveCount(4);
+        overview.TileByteCounts.Should().HaveCount(4);
+        expectedPixels.Should().HaveCount(4 * metadata.TileWidth * metadata.TileHeight);
+
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        var cogStore = Substitute.For<ICogStore>();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver(
+            [rangeReader],
+            metadataReader,
+            cogStore,
+            cache,
+            NullLogger<CogTileResolver>.Instance);
+
+        var requests = new[]
+        {
+            (Row: 0, Col: 0, TileIndex: 0),
+            (Row: 0, Col: 1, TileIndex: 1),
+            (Row: 1, Col: 0, TileIndex: 2),
+            (Row: 1, Col: 1, TileIndex: 3)
+        };
+        var decodedTileLength = metadata.TileWidth * metadata.TileHeight;
+
+        foreach (var request in requests)
+        {
+            rangeReader.ClearRequests();
+
+            var result = await resolver.GetTileAsync(
+                CreateRegistration(metadata),
+                level: 8,
+                row: request.Row,
+                col: request.Col,
+                RasterFormat.Raw);
+
+            result.Should().NotBeNull();
+            result!.Value.ContentType.Should().Be("application/octet-stream");
+            result.Value.Data.Should().Equal(
+                expectedPixels.AsSpan(request.TileIndex * decodedTileLength, decodedTileLength).ToArray());
+            rangeReader.Requests.Should().ContainSingle()
+                .Which.Should().Be(new RangeRequest(
+                    overview.TileOffsets[request.TileIndex],
+                    overview.TileByteCounts[request.TileIndex]));
+        }
+    }
+
     private static ICloudRangeReader CreateRangeReader(byte[] tileData)
     {
         var rangeReader = Substitute.For<ICloudRangeReader>();
@@ -221,4 +288,60 @@ public class CogTileResolverTests
         YMax = 256,
         Srid = 3857
     };
+
+    private readonly record struct RangeRequest(long Offset, int Length);
+
+    private sealed class FixtureRangeReader(byte[] data) : ICloudRangeReader
+    {
+        private readonly byte[] _data = data;
+        private readonly List<RangeRequest> _requests = [];
+
+        public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
+
+        public List<RangeRequest> Requests => _requests;
+
+        public Task<byte[]> ReadRangeAsync(
+            string bucket,
+            string key,
+            long offset,
+            int length,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _requests.Add(new RangeRequest(offset, length));
+
+            if (offset < 0 || offset >= _data.LongLength || length <= 0)
+            {
+                return Task.FromResult(Array.Empty<byte>());
+            }
+
+            var available = (int)Math.Min(length, _data.LongLength - offset);
+            return Task.FromResult(_data.AsSpan((int)offset, available).ToArray());
+        }
+
+        public async Task<Stream> ReadRangeStreamAsync(
+            string bucket,
+            string key,
+            long offset,
+            int length,
+            CancellationToken cancellationToken = default)
+        {
+            var range = await ReadRangeAsync(bucket, key, offset, length, cancellationToken)
+                .ConfigureAwait(false);
+            // Ownership transfers to the caller, which disposes the returned stream.
+            // codeql[cs/local-not-disposed]
+            return new MemoryStream(range, writable: false);
+        }
+
+        public Task<long> GetObjectSizeAsync(
+            string bucket,
+            string key,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_data.LongLength);
+        }
+
+        public void ClearRequests() => _requests.Clear();
+    }
 }
