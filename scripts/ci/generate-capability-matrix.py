@@ -114,7 +114,14 @@ def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], di
     not acceptable here. For the same reason the anchor is the newest
     ``run_date`` across the committed envelopes, not wall-clock time: an
     ``ageDays`` measured from "now" would drift the committed artifact stale
-    every day with no source change.
+    every day with no source change. Wall clock is used only as a validity
+    guard on anchor candidates: a future-dated ``run_date`` must never become
+    the anchor, because it would self-report age zero (fresh) while making
+    every legitimate envelope look stale — bypassing the shared helper's
+    fail-closed negative-age handling. Excluding it is a no-op for valid
+    committed data (every real observation predates generation time), so
+    byte-stability is preserved; the future-dated envelope itself is then
+    stamped stale via the negative-age path against the sane anchor.
     """
     envelopes: dict[tuple[str, str], dict] = {}
     if envelope_root.exists():
@@ -127,10 +134,11 @@ def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], di
             protocol = envelope.get("protocol")
             if lane and protocol:
                 envelopes[(lane, protocol)] = envelope
+    now = dt.datetime.now(dt.timezone.utc)
     timestamps = [
         timestamp
         for timestamp, _ in (CAPABILITY_IMPACT.parse_timestamp(envelope) for envelope in envelopes.values())
-        if timestamp is not None
+        if timestamp is not None and timestamp <= now
     ]
     anchor = max(timestamps) if timestamps else None
     return envelopes, anchor
@@ -142,18 +150,24 @@ def interop_freshness(envelope: dict | None, anchor: dt.datetime | None) -> dict
     ``unknown``: no committed envelope, no usable observation timestamp, or no
     anchor to measure against. ``stale``: envelope is not green, or its
     evidence observation is more than FRESHNESS_MAX_AGE_DAYS behind the newest
-    committed envelope. ``fresh`` otherwise.
+    committed envelope, or it claims an observation newer than the anchor
+    (negative age — e.g. a future-dated ``run_date`` that
+    ``load_interop_evidence`` excluded from anchor selection; flagged with an
+    explicit ``reason``). ``fresh`` otherwise.
     """
     if envelope is None or anchor is None:
         return {"state": "unknown", "ageDays": None, "runDate": None}
     row = CAPABILITY_IMPACT.freshness_state(envelope, anchor, FRESHNESS_MAX_AGE_DAYS)
     if row["observedAt"] is None:
         return {"state": "unknown", "ageDays": None, "runDate": None}
-    return {
+    result = {
         "state": "stale" if row["stale"] else "fresh",
         "ageDays": row["ageDays"],
         "runDate": row["observedAt"],
     }
+    if row["ageDays"] is not None and row["ageDays"] < 0:
+        result["reason"] = "run_date is newer than the evidence anchor (future-dated); fails closed as stale"
+    return result
 
 
 def build_matrix(
