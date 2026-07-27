@@ -258,9 +258,9 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         }
 
         var normalized = new List<string>(tokens.Length);
-        foreach (var normalizedToken in tokens.Select(rawToken => rawToken.Trim()))
+        for (var tokenIndex = 0; tokenIndex < tokens.Length; tokenIndex++)
         {
-            var token = normalizedToken;
+            var token = tokens[tokenIndex].Trim();
             if (token.Length == 0)
             {
                 error = "Invalid sortby expression.";

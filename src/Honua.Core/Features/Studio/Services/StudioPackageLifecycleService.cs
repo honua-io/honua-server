@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services.Bridging;
 
 namespace Honua.Core.Features.Studio.Services;
 
@@ -26,17 +27,29 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     /// <summary>
     /// Initializes a new Studio package lifecycle service.
     /// </summary>
+    /// <param name="store">The Studio package store.</param>
+    /// <param name="registry">The package-family registry.</param>
+    /// <param name="validator">The package envelope validator.</param>
+    /// <param name="timeProvider">The time provider.</param>
+    /// <param name="bridgeCatalog">
+    /// Optional ADR-0069 family persistence bridges (honua-server#3004). When at least one
+    /// bridge is available, the store is wrapped with <see cref="BridgedStudioPackageStore"/>
+    /// so bridged families (form, analysis) read and write through their native stores.
+    /// </param>
     public StudioPackageLifecycleService(
         IStudioPackageStore store,
         IStudioPackageFamilyRegistry registry,
         IStudioPackageValidator validator,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(validator);
         ArgumentNullException.ThrowIfNull(timeProvider);
-        _store = store;
+        _store = bridgeCatalog is { Bridges.Count: > 0 }
+            ? new BridgedStudioPackageStore(store, bridgeCatalog.Bridges)
+            : store;
         _registry = registry;
         _validator = validator;
         _timeProvider = timeProvider;
@@ -258,6 +271,16 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         using var activity = ActivitySource.StartActivity("studio.package.version.list");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
         return await _store.ListVersionsAsync(itemId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<StudioContentItemPointers?> GetPointersAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = ActivitySource.StartActivity("studio.package.content-item.pointers");
+        activity?.SetTag("studio.item.id", itemId.ToString("D"));
+        return await _store.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

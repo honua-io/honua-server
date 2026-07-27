@@ -79,25 +79,26 @@ public static class ConfigurationValueExtensions
 
         try
         {
-            var converted = targetType switch
-            {
-                Type type when type == typeof(bool) => bool.Parse(value),
-                Type type when type == typeof(byte) => byte.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
-                Type type when type == typeof(short) => short.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
-                Type type when type == typeof(int) => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
-                Type type when type == typeof(long) => long.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
-                Type type when type == typeof(float) => float.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture),
-                Type type when type == typeof(double) => double.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture),
-                Type type when type == typeof(decimal) => decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture),
-                Type type when type == typeof(Guid) => Guid.Parse(value),
-                Type type when type == typeof(TimeSpan) => TimeSpan.Parse(value, CultureInfo.InvariantCulture),
-                Type type when type == typeof(DateTime) => DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-                Type type when type == typeof(DateTimeOffset) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-                Type type when type == typeof(Uri) => new Uri(value, UriKind.RelativeOrAbsolute),
-                Type type when type.IsEnum => Enum.Parse(type, value, ignoreCase: true),
-                _ => throw new InvalidOperationException(
-                    $"Configuration value '{key}' cannot be converted to {targetType.Name}.")
-            };
+            var converted = targetType.IsEnum
+                ? Enum.Parse(targetType, value, ignoreCase: true)
+                : Type.GetTypeCode(targetType) switch
+                {
+                    TypeCode.Boolean => bool.Parse(value),
+                    TypeCode.Byte => byte.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                    TypeCode.Int16 => short.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                    TypeCode.Int32 => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                    TypeCode.Int64 => long.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                    TypeCode.Single => float.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture),
+                    TypeCode.Double => double.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture),
+                    TypeCode.Decimal => decimal.Parse(value, NumberStyles.Number, CultureInfo.InvariantCulture),
+                    TypeCode.DateTime => DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                    _ when targetType == typeof(Guid) => Guid.Parse(value),
+                    _ when targetType == typeof(TimeSpan) => TimeSpan.Parse(value, CultureInfo.InvariantCulture),
+                    _ when targetType == typeof(DateTimeOffset) => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                    _ when targetType == typeof(Uri) => new Uri(value, UriKind.RelativeOrAbsolute),
+                    _ => throw new InvalidOperationException(
+                        $"Configuration value '{key}' cannot be converted to {targetType.Name}.")
+                };
 
             return (T)converted;
         }

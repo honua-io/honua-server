@@ -6,6 +6,7 @@ using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
 
@@ -161,7 +162,6 @@ internal static class StudioAiProxyEndpoints
         DateTimeOffset startedAt,
         CancellationToken cancellationToken)
     {
-        var actor = context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
         var details = new StudioAiProxyAuditDetails
         {
             Kind = summary.Kind,
@@ -177,15 +177,15 @@ internal static class StudioAiProxyEndpoints
         {
             Timestamp = startedAt,
             EventType = AuditEventType.AdminAction,
-            Actor = actor,
-            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
-                ? AuditActorType.Anonymous
-                : AuditActorType.UserId,
+            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            ActorType = actorType,
             ResourceType = "studio_ai_provider",
             ResourceId = string.IsNullOrEmpty(summary.Provider) ? null : summary.Provider,
             Action = "studio_ai.chat",
             Outcome = summary.Succeeded ? AuditOutcome.Success : AuditOutcome.Failure,
-            CorrelationId = context.TraceIdentifier,
+            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
+            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
+            UserAgent = AuditContextResolver.ResolveUserAgent(context),
             Details = JsonSerializer.Serialize(
                 details,
                 Honua.Ai.StudioAiProxy.StudioAiProxyJsonContext.Default.StudioAiProxyAuditDetails)

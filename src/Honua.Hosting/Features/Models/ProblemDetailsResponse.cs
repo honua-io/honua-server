@@ -50,4 +50,13 @@ internal sealed record ProblemDetailsResponse
     /// by validation problems; null/omitted for all other problem responses.
     /// </summary>
     public IReadOnlyList<FieldValidationError>? Errors { get; init; }
+
+    /// <summary>
+    /// Machine-readable extension code (RFC 7807 extension member), for problem families that
+    /// need a stable code beyond <see cref="Type"/>/<see cref="Status"/> for clients to branch
+    /// on. Used by the Studio package lifecycle authorization problem
+    /// (honua-server#3001, REQ-004; for example <c>studio_authorization/cross_user_denied</c>).
+    /// Null/omitted for problem responses that do not set it.
+    /// </summary>
+    public string? Code { get; init; }
 }

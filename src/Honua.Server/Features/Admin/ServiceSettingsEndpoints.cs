@@ -345,17 +345,20 @@ internal static class ServiceSettingsEndpoints
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             MetadataV2Resource? resource = null;
-            // Not a simple filter: ResolveResource(pub) can return null for a candidate
-            // match, in which case the search must keep scanning subsequent publications
-            // rather than stopping at the first Where match, so a LINQ Select/FirstOrDefault
-            // would not preserve this fallback behavior.
-            foreach (var pub in snapshot.Graph.Publications.Where(pub => serviceIds.Contains(pub.ServiceId)))
+            var publications = snapshot.Graph.Publications;
+            for (var publicationIndex = 0; publicationIndex < publications.Count; publicationIndex++)
             {
-                if (!pub.Identifier.IsNumeric || pub.LayerIndex != layerId)
-                    continue;
-                resource = snapshot.ResolveResource(pub);
-                if (resource is not null)
-                    break;
+                var publication = publications[publicationIndex];
+                if (serviceIds.Contains(publication.ServiceId) &&
+                    publication.Identifier.IsNumeric &&
+                    publication.LayerIndex == layerId)
+                {
+                    resource = snapshot.ResolveResource(publication);
+                    if (resource is not null)
+                    {
+                        break;
+                    }
+                }
             }
             if (resource is null)
             {

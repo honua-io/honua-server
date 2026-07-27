@@ -3,6 +3,7 @@
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
@@ -59,6 +60,16 @@ public static class AuthenticationExtensions
     public const string TemporalRollbackExecutePolicy = "TemporalRollbackExecute";
 
     /// <summary>
+    /// Authorization policy name for the Studio package lifecycle surface (honua-server#3001).
+    /// Admits the admin family, matching the pre-#3001 posture, or any authenticated principal
+    /// once <c>Studio:EndUserAuthorization:Enabled</c> is turned on; per-resource ownership and
+    /// the elevated-operation (publish-request, rollback) operator-grant check are enforced
+    /// inside each endpoint handler via <c>IStudioAuthorizationService</c>. See
+    /// <see cref="StudioLifecycleRequirement"/>.
+    /// </summary>
+    public const string StudioLifecyclePolicy = "StudioLifecycle";
+
+    /// <summary>
     /// Adds API key authentication and authorization services
     /// </summary>
     public static IServiceCollection AddApiKeyAuthentication(
@@ -80,6 +91,11 @@ public static class AuthenticationExtensions
         // reads while requiring full admin write for mutating requests routed through OpsReadPolicy.
         services.AddSingleton<IAuthorizationHandler, OpsReadAuthorizationHandler>();
 
+        // Widens the Studio package lifecycle surface from admin-only to ownership-scoped end
+        // users behind a feature flag (honua-server#3001).
+        services.AddSingleton<IAuthorizationHandler, StudioLifecycleAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, StudioLifecycleAuthorizationMiddlewareResultHandler>();
+
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
@@ -91,6 +107,12 @@ public static class AuthenticationExtensions
         // once here (composition time) rather than per-policy-evaluation.
         var mtlsCapabilityEnabled = ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration);
 
+        // honua-server#3001: whether OIDC is configured at all, resolved once here so
+        // ConfigureStudioLifecyclePolicy can route through the composite ApiKey/JWT-Bearer
+        // scheme (the only way an OIDC end-user session can satisfy the policy) instead of
+        // referencing a scheme that was never registered when OIDC is off.
+        var oidcEnabled = configuration.GetValue<bool>($"{OidcAuthenticationOptions.SectionName}:Enabled");
+
         // Add authorization policies
         _ = services.AddAuthorization(options =>
         {
@@ -100,6 +122,7 @@ public static class AuthenticationExtensions
             options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalRollbackExecutePolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(StudioLifecyclePolicy, policy => ConfigureStudioLifecyclePolicy(policy, mtlsCapabilityEnabled, oidcEnabled));
         });
 
         return services;
@@ -154,6 +177,46 @@ public static class AuthenticationExtensions
     }
 
     /// <summary>
+    /// Configures the Studio package lifecycle authorization policy (honua-server#3001). Any
+    /// authenticated principal may satisfy the ASP.NET policy gate — admin unconditionally, a
+    /// non-admin only once <see cref="StudioLifecycleRequirement"/>'s
+    /// <c>Studio:EndUserAuthorization:Enabled</c> check passes — with per-resource ownership and
+    /// the elevated-operation operator-grant check enforced inside each endpoint handler.
+    /// </summary>
+    /// <param name="policy">The policy builder to configure.</param>
+    /// <param name="mtlsCapabilityEnabled">
+    /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958); see
+    /// <see cref="ConfigureAdminPolicy"/>. Only consulted when <paramref name="oidcEnabled"/> is
+    /// <see langword="false"/> — the composite scheme already routes mTLS itself.
+    /// </param>
+    /// <param name="oidcEnabled">
+    /// Whether OIDC authentication is configured (<c>Oidc:Enabled</c>). When
+    /// <see langword="true"/>, the policy is pinned to <see cref="OidcAuthenticationExtensions.CompositeScheme"/>
+    /// instead of <see cref="ApiKeyScheme"/> alone: the composite scheme is what actually routes
+    /// a bearer token to JWT Bearer, letting an OIDC-authenticated non-admin session satisfy
+    /// this policy at all (an admin-only policy pinned to <see cref="ApiKeyScheme"/> can never
+    /// see an OIDC principal). Pinning to the composite scheme unconditionally would throw when
+    /// OIDC is disabled, because that scheme is then never registered.
+    /// </param>
+    private static void ConfigureStudioLifecyclePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled, bool oidcEnabled)
+    {
+        _ = policy.RequireAuthenticatedUser();
+        _ = policy.AddRequirements(new StudioLifecycleRequirement());
+        if (oidcEnabled)
+        {
+            policy.AuthenticationSchemes.Add(OidcAuthenticationExtensions.CompositeScheme);
+        }
+        else
+        {
+            policy.AuthenticationSchemes.Add(ApiKeyScheme);
+            if (mtlsCapabilityEnabled)
+            {
+                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+            }
+        }
+    }
+
+    /// <summary>
     /// Adds authentication middleware to the request pipeline
     /// </summary>
     public static IApplicationBuilder UseApiKeyAuthentication(this IApplicationBuilder app)
@@ -198,4 +261,15 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireTemporalRollbackExecute<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalRollbackExecutePolicy);
+
+    /// <summary>
+    /// Requires Studio package lifecycle authorization for an endpoint or group
+    /// (honua-server#3001). Admits admin unconditionally and any authenticated principal once
+    /// <c>Studio:EndUserAuthorization:Enabled</c> is on; per-resource ownership and the
+    /// elevated-operation (publish-request, rollback) operator-grant check must additionally be
+    /// enforced inside the endpoint handler via <c>IStudioAuthorizationService</c>. With the flag
+    /// off, this policy is equivalent to <see cref="RequireAdminAuthorization{TBuilder}"/>.
+    /// </summary>
+    public static TBuilder RequireStudioLifecycleAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(StudioLifecyclePolicy);
 }

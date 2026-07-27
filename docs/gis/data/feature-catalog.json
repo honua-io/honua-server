@@ -668,6 +668,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -5228,8 +5229,12 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.AnalysisFamily_NativeContentRoundTripsWithJobAndArtifactLinks",
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_FiltersByFamilyOwnerAndState_JoinsPublicationBadge",
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItems_FlagOn_ResponseIncludesOwnerId",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -5243,6 +5248,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.AnalysisFamily_NativeContentRoundTripsWithJobAndArtifactLinks",
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListVersions_FlagOn_FiltersEachVersionByItsOwner",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -5257,6 +5266,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -5272,7 +5283,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_FiltersByFamilyOwnerAndState_JoinsPublicationBadge",
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListContentItemsAndDrafts_WithoutAdmin_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -5286,6 +5298,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOff_NonAdminScopedKeyDenied",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -5300,6 +5314,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.PackageFamilies_AdvertiseBridgedNativeFormats",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AnonymousPolicyChallenge_IsAuditedExactlyOnceWithoutChangingTheResponse",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_WithoutAdmin_ReturnsUnauthorized"
       ],
@@ -16154,7 +16171,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateAppPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -16168,6 +16186,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.Rollback_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16182,6 +16202,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CompareVersions_FlagOn_BothSidesAuthorizedIndividually",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16196,7 +16217,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.AnalysisFamily_NativeContentRoundTripsWithJobAndArtifactLinks",
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreatePublishRequest_WithInvalidIntentOverride_ReturnsBadRequestProblem",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16211,6 +16236,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.AnalysisFamily_NativeContentRoundTripsWithJobAndArtifactLinks",
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16225,7 +16252,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest"
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GenerateMapPackage_MissingPrompt_ReachesHandlerAndReturnsBadRequest",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -16239,7 +16268,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_LifecycleCreatedPackageIsVisibleThroughNativeApi",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_WithNullCollections_Returns201WithEmptyCollections",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16254,6 +16286,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.AnalysisFamily_NativeContentRoundTripsWithJobAndArtifactLinks",
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_LifecycleCreatedPackageIsVisibleThroughNativeApi",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateVersion_FlagOn_MixedOwnerDraftCannotMoveAnotherOwnersCurrentPointer",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
@@ -16298,6 +16335,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_DashboardAsPdf_ReturnsPdfArtifact",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_DashboardAsPng_ReturnsPngArtifact",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_FlagOn_NonOwnerCanExportOnlyThePublishedVersion",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_FlagOn_NonOwnerDeniedWhenItemHasNoPublishedVersion",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_FlagOn_OwnerCanExportTheCurrentUnpublishedVersion",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_KindMismatch_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_MapAsPdf_ReturnsPdfArtifact",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_MapAsPng_ReturnsPngArtifact",
@@ -20822,6 +20862,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_ConsoleAuthoredPackageRoundTripsLosslesslyThroughLifecycle",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.UpdateDraft_WithStaleGeneration_ReturnsConflictProblem"
       ],

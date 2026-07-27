@@ -642,9 +642,8 @@ internal static class OgcResponseFormatter
                              .Select(ExtractGmlCoordinatePairs)
                              .Where(coordinates => coordinates.Count > 0))
                 {
-                    var posListContent = string.Join(" ", coordinates);
                     builder.AppendLine($"{indent}  <gml:lineStringMember>");
-                    builder.AppendLine($"{indent}    <gml:LineString><gml:posList srsDimension=\"2\">{posListContent}</gml:posList></gml:LineString>");
+                    builder.AppendLine($"{indent}    <gml:LineString><gml:posList srsDimension=\"2\">{string.Join(" ", coordinates)}</gml:posList></gml:LineString>");
                     builder.AppendLine($"{indent}  </gml:lineStringMember>");
                 }
 

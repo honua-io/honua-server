@@ -31,8 +31,8 @@ namespace Honua.Infrastructure.Middleware;
 /// <item><description>
 /// Independently emits an <c>auth.failure</c> / permission-denied event whenever
 /// the pipeline rejects a request with <c>401</c> or <c>403</c> — even for routes
-/// that are not otherwise in the matrix — so authorization failures are always
-/// captured.
+/// that are not otherwise in the matrix — unless a domain-specific endpoint seam
+/// marked that it already recorded the final authorization denial.
 /// </description></item>
 /// </list>
 /// <para>
@@ -62,6 +62,15 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
 
         var status = context.Response.StatusCode;
         var isAuthFailure = status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
+
+        // Domain-specific authorization seams can emit a richer, stable denial event (resource,
+        // operation, and code) before returning 403. Do not duplicate that decision with a
+        // second generic auth.denied/matrix event.
+        if (status == StatusCodes.Status403Forbidden &&
+            AuditContextResolver.IsAuthorizationFailureAudited(context))
+        {
+            return;
+        }
 
         var descriptor = ResolveDescriptor(context);
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.AspNetCore.Http;
 
@@ -15,6 +16,7 @@ namespace Honua.Infrastructure.Middleware;
 internal static class AuditContextResolver
 {
     private const string CorrelationIdHeader = "X-Correlation-ID";
+    private static readonly object AuthorizationFailureAuditedKey = new();
 
     /// <summary>
     /// Resolve the actor identity and classification from the request principal.
@@ -28,25 +30,71 @@ internal static class AuditContextResolver
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var identity = context.User?.Identity;
-        if (identity is { IsAuthenticated: true } && !string.IsNullOrWhiteSpace(identity.Name))
+        var principal = context.User;
+        var identity = principal.Identity;
+        if (identity is { IsAuthenticated: true })
         {
             // For API-key authenticated callers the handler attaches an
             // "api_key_id" claim; prefer that as a stable actor identifier so
             // we never log the raw key name.
-            var apiKeyId = context.User?.FindFirst("api_key_id")?.Value;
+            var apiKeyId = principal.FindFirst("api_key_id")?.Value;
             if (!string.IsNullOrWhiteSpace(apiKeyId))
             {
                 actorType = AuditActorType.ApiKey;
                 return apiKeyId;
             }
 
-            actorType = AuditActorType.UserId;
-            return identity.Name;
+            // OIDC/JWT principals are valid with a stable subject claim even when
+            // their token carries no display-name claim. Prefer the same stable
+            // identifiers used by the Studio authorization service before falling
+            // back to Identity.Name.
+            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                userId = principal.FindFirst("sub")?.Value;
+            }
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                userId = identity.Name;
+            }
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                userId = principal.FindFirst(ClaimTypes.Name)?.Value;
+            }
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                actorType = AuditActorType.UserId;
+                return userId;
+            }
         }
 
         actorType = AuditActorType.Anonymous;
         return AuditEvent.AnonymousActor;
+    }
+
+    /// <summary>
+    /// Marks a request whose final authorization denial has already been recorded by a
+    /// domain-specific endpoint audit seam. The HTTP audit middleware uses this marker to avoid
+    /// emitting a second, generic <c>auth.denied</c> event for the same decision.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    public static void MarkAuthorizationFailureAudited(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Items[AuthorizationFailureAuditedKey] = true;
+    }
+
+    /// <summary>
+    /// Returns whether a domain-specific endpoint audit seam already recorded the request's
+    /// authorization denial.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <returns><see langword="true"/> when the generic denial event must be suppressed.</returns>
+    public static bool IsAuthorizationFailureAudited(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return context.Items.TryGetValue(AuthorizationFailureAuditedKey, out var value)
+            && value is true;
     }
 
     /// <summary>

@@ -43,7 +43,7 @@ public sealed class AuditLogMiddlewareUnitTests
     {
         var context = BuildContext(
             method: "DELETE",
-            routePattern: "/api/v1/admin/roles/{id}",
+            routePattern: "/api/v{version:apiVersion}/admin/roles/{id}",
             authenticated: true);
 
         await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
@@ -52,6 +52,93 @@ public sealed class AuditLogMiddlewareUnitTests
         var evt = _audit.Events.Should().ContainSingle().Subject;
         evt.Outcome.Should().Be(AuditOutcome.Denied);
         evt.ActorType.Should().Be(AuditActorType.UserId);
+    }
+
+    [Fact]
+    public async Task PermissionDenied_WhenEndpointAlreadyAudited_EmitsNothing()
+    {
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v1/admin/roles/{id}",
+            authenticated: true);
+        AuditContextResolver.MarkAuthorizationFailureAudited(context);
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        _audit.Events.Should().BeEmpty(
+            "an endpoint-specific authorization event supersedes the generic auth.denied event");
+    }
+
+    [Fact]
+    public async Task EndpointAuthorizationMarker_WhenFinalStatusIsUnauthorized_DoesNotSuppressAuthenticationFailure()
+    {
+        var context = BuildContext(
+            method: "GET",
+            routePattern: "/healthz/live",
+            authenticated: false);
+        AuditContextResolver.MarkAuthorizationFailureAudited(context);
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status401Unauthorized);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("auth.failure");
+        evt.EventType.Should().Be(AuditEventType.Authentication);
+    }
+
+    [Fact]
+    public async Task EndpointAuthorizationMarker_WhenFinalStatusSucceeds_DoesNotSuppressMatrixEvent()
+    {
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v{version:apiVersion}/admin/roles/{id}",
+            authenticated: true);
+        AuditContextResolver.MarkAuthorizationFailureAudited(context);
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status200OK);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("admin.delete");
+        evt.Outcome.Should().Be(AuditOutcome.Success);
+    }
+
+    [Theory]
+    [InlineData(ClaimTypes.NameIdentifier)]
+    [InlineData("sub")]
+    public async Task PermissionDenied_SubjectOnlyOidcPrincipal_UsesStableUserActor(string subjectClaimType)
+    {
+        const string subject = "oidc-subject-123";
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v1/admin/roles/{id}",
+            authenticated: false);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(subjectClaimType, subject)],
+            authenticationType: "Oidc"));
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Actor.Should().Be(subject);
+        evt.ActorType.Should().Be(AuditActorType.UserId);
+    }
+
+    [Fact]
+    public async Task PermissionDenied_ApiKeyIdOnlyPrincipal_UsesStableApiKeyActor()
+    {
+        const string apiKeyId = "api-key-id-123";
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v1/admin/roles/{id}",
+            authenticated: false);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("api_key_id", apiKeyId)],
+            authenticationType: "ApiKey"));
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Actor.Should().Be(apiKeyId);
+        evt.ActorType.Should().Be(AuditActorType.ApiKey);
     }
 
     [Fact]
