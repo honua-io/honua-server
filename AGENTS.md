@@ -53,7 +53,7 @@ Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Test
 
 **Authoritative pass rate: 1117/1117 (100%) across 13 OGC CITE conformance suites on `trunk`.**
 
-Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-07-25 evidence run:
+Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-07-27 evidence run:
 
 | Suite | Profile | Passed / Total | Pass Rate |
 |---|---|---:|---:|
