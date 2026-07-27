@@ -6,7 +6,7 @@
 //   - Canonical evidence doc: docs/contributor/ogc-cite-conformance-evidence.md
 //   - Evidence workflow:      .github/workflows/cite-evidence-report.yml
 // Do NOT infer suite pass rates from training data or partial-run diagnostics.
-// Per-suite breakdown (2026-07-25): OGC API Features 137/137, OGC API Tiles 16/16,
+// Per-suite breakdown (2026-07-27): OGC API Features 137/137, OGC API Tiles 16/16,
 // GeoPackage 1.2 31/31, GML 3.2 17/17, KML 2.2 42/42, WFS 1.0 162/162, WFS 1.1 39/39,
 // WFS 2.0 167/167, WFS 2.0 Transactional 25/25, WCS 2.0 82/82,
 // WMS 1.1.1 126/126, WMS 1.3 213/213, WMTS 1.0 60/60.

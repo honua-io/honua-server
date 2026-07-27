@@ -15,7 +15,7 @@
         "skipped": 0,
         "cantTell": 0
       },
-      "lastEvidenceRun": "2026-07-25",
+      "lastEvidenceRun": "2026-07-27",
       "evidenceWorkflow": "https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml",
       "authoritativeSource": "docs/cite-status.md",
       "suites": [

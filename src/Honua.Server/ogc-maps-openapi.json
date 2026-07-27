@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "x-honua-cite-compliance": {
       "summary": "Map rendering is exercised through the classic WMS 1.1.1 and 1.3 ETS profiles, which pass 126/126 and 213/213 on trunk; full Honua suite is 1117/1117.",
-      "lastEvidenceRun": "2026-07-25",
+      "lastEvidenceRun": "2026-07-27",
       "authoritativeSource": "docs/cite-status.md",
       "suites": [
         { "suite": "WMS 1.1.1", "profile": "default", "passed": 126, "total": 126, "passRate": "100%" },

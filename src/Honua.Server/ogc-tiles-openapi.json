@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "x-honua-cite-compliance": {
       "summary": "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is 1117/1117.",
-      "lastEvidenceRun": "2026-07-25",
+      "lastEvidenceRun": "2026-07-27",
       "authoritativeSource": "docs/cite-status.md",
       "suites": [
         { "suite": "OGC API Tiles 1.0", "profile": "default", "passed": 16, "total": 16, "passRate": "100%" },
