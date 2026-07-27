@@ -31,10 +31,10 @@ directory — check the workflow.
 ## Current Per-Protocol Status
 
 Snapshot copied from
-[CITE Evidence Report run 30136438451](https://github.com/honua-io/honua-server/actions/runs/30136438451)
-on `fix/3017-cite-evidence@5574f5bc82c2eb4b9753e91da1882ab2280fa301`, completed
-2026-07-25T00:57:50Z. The `cite-conformance-evidence-3` bundle reported
-`allPassed=true`: 1117 passed, 0
+[CITE Evidence Report run 30141297711](https://github.com/honua-io/honua-server/actions/runs/30141297711)
+on `fix/3017-cite-evidence@1b933f8145d0d2489e549dd02d5af8c78f8a2d4c`, completed
+2026-07-25T03:26:52Z. The fully green run's `cite-conformance-evidence-4`
+bundle reported `allPassed=true`: 1117 passed, 0
 failed, 0 skipped, 0 CantTell.
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
