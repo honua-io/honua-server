@@ -565,6 +565,56 @@ class ObservationReportTests(unittest.TestCase):
         self.assertFalse(recommendation["escapedDefectSignal"])
         self.assertTrue(recommendation["safeToSwitch"])
 
+    def test_outcome_join_queries_jobs_only_for_ci_workflow_runs(self):
+        # PR Gate and CodeQL runs at the same head never define
+        # `Server Tests (<shard>)` jobs; their jobs endpoints must not be
+        # queried at all (API-quota/timeout guard), only ci.yml's.
+        document = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        document["_meta"] = {"prNumber": 17, "runId": 9, "headSha": "aa11", "runCreatedAt": "2026-07-05T00:00:00Z"}
+        calls = []
+
+        def fake_gh_api(arguments, *, binary=False):
+            calls.append(arguments)
+            if "head_sha=aa11" in arguments:
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 100,
+                            "url": "https://ci.test/runs/100",
+                            "createdAt": "2026-07-05T03:00:00Z",
+                            "path": ".github/workflows/pr-gate.yml",
+                        },
+                        {
+                            "id": 101,
+                            "url": "https://ci.test/runs/101",
+                            "createdAt": "2026-07-05T02:00:00Z",
+                            "path": "dynamic/github-code-scanning/codeql",
+                        },
+                        {
+                            "id": 102,
+                            "url": "https://ci.test/runs/102",
+                            "createdAt": "2026-07-05T01:00:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                    )
+                )
+            self.assertIn("actions/runs/102/jobs", arguments[2])
+            return json.dumps({"name": "Server Tests (B)", "conclusion": "success"})
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            MODULE.join_executed_outcomes("honua-io/honua-server", [document])
+        finally:
+            MODULE.gh_api = original
+        jobs_calls = [arguments[2] for arguments in calls if "/jobs" in arguments[2]]
+        self.assertEqual(jobs_calls, ["repos/honua-io/honua-server/actions/runs/102/jobs"])
+        self.assertEqual(
+            document["_meta"]["shardOutcomes"]["B"],
+            {"jobName": "Server Tests (B)", "conclusion": "success", "runUrl": "https://ci.test/runs/102"},
+        )
+
     def test_pr_whose_newest_run_has_no_report_is_flagged_as_evidence_gap(self):
         # End to end through the fetch: PR 55 has an artifact only on the
         # OLDER run 1; a newer run 2 exists with no parseable report.

@@ -230,16 +230,20 @@ def _legacy_only_candidates(report: dict) -> list[str]:
 
 
 def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
-    """Return {url, jobs} for the newest run at ``head_sha`` that executed
-    `Server Tests (<shard>)` jobs.
+    """Return {url, jobs} with `Server Tests (<shard>)` outcomes merged across
+    the ci.yml runs at ``head_sha``.
 
-    All workflow runs at the head SHA are considered (ci.yml first, then
-    newest-first): in the merge-train model ci.yml has no per-PR
-    pull_request trigger — the shard matrix executes on nightly trunk
-    schedules and train-batch dispatches — so a per-PR head usually has no
-    executed shard jobs and this returns an empty jobs map (outcomes then
-    read as "unknown" coverage gaps for the operator). ``jobs`` maps job
-    display name -> {jobName, conclusion}; lookup failures degrade the same
+    Only ci.yml runs are queried for jobs: it is the sole workflow defining
+    the `Server Tests (<shard>)` matrix (verified across .github/workflows/;
+    the nightly schedule and the merge train's batch dispatch both run
+    ci.yml), and the run listing already carries each run's workflow path, so
+    filtering costs no extra API calls while avoiding a serial jobs-endpoint
+    scan of PR Gate/CodeQL/governance runs that could exhaust API quota or
+    the job timeout on a busy window. In the merge-train model ci.yml has no
+    per-PR pull_request trigger, so a per-PR head usually has no ci.yml run
+    at all and this returns an empty jobs map (outcomes then read as
+    "unknown" coverage gaps for the operator). ``jobs`` maps job display
+    name -> {jobName, conclusion, runUrl}; lookup failures degrade the same
     way.
     """
     try:
@@ -257,13 +261,11 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
             ]
         ).splitlines()
         runs = [json.loads(line) for line in run_lines if line.strip()]
+        runs = [run for run in runs if run.get("path") == CI_WORKFLOW_PATH]
         runs.sort(key=lambda entry: entry.get("createdAt") or "", reverse=True)
-        runs.sort(key=lambda entry: entry.get("path") != CI_WORKFLOW_PATH)
         merged: dict[str, dict] = {}
         primary_url = None
         for run in runs:
-            if run.get("path", "").endswith(WORKFLOW):
-                continue  # the report-only comparison run itself never executes shards
             job_lines = gh_api(
                 [
                     "-X",
@@ -284,11 +286,11 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
                 name = job["name"]
                 if not name.startswith(SHARD_JOB_NAME_PREFIX):
                     continue
-                # Merge shard outcomes ACROSS all runs at the head so a shard
-                # executed only by an older run is not dropped as unknown.
-                # Precedence (see EXECUTED_CONCLUSIONS): among executed
-                # results the newest run wins — first-seen under the
-                # ci.yml-first/newest-first sort — so a successful rerun
+                # Merge shard outcomes ACROSS all ci.yml runs at the head so
+                # a shard executed only by an older run is not dropped as
+                # unknown. Precedence (see EXECUTED_CONCLUSIONS): among
+                # executed results the newest run wins (first-seen under the
+                # newest-first sort) — so a successful rerun
                 # supersedes an older flake failure and a newer failure
                 # supersedes an older success. Non-executed conclusions
                 # (skipped/cancelled/unknown/...) only ever fill an empty
