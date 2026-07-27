@@ -3,6 +3,11 @@ name: Capability Impact Comparison
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      observation_days:
+        description: 'Observation window in days for the aggregation report'
+        required: false
+        default: '28'
 
 permissions:
   contents: read
@@ -28,6 +33,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/python/unit -p 'test_capability_impact.py' -v
           python3 -m unittest discover -s tests/python/unit -p 'test_pre_pr_scoped_selection.py' -v
+          python3 -m unittest discover -s tests/python/unit -p 'test_capability_impact_observation_report.py' -v
 
   comparison:
     name: ADR-0037 vs capability selector (report only)
@@ -75,4 +81,38 @@ jobs:
             capability-impact-summary.md
             changed-files.txt
             legacy-selection.json
+          retention-days: 90
+
+  observation-report:
+    name: Capability selection observation report
+    if: github.event_name == 'workflow_dispatch'
+    needs: completeness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Aggregate accumulated per-PR comparison artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OBSERVATION_DAYS: ${{ inputs.observation_days || '28' }}
+        run: |
+          python3 scripts/ci/capability-impact-observation-report.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --days "$OBSERVATION_DAYS" \
+            --markdown capability-impact-observation-summary.md \
+            > capability-impact-observation-report.json
+          cat capability-impact-observation-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload observation aggregate
+        uses: actions/upload-artifact@v7
+        with:
+          name: capability-impact-observation-${{ github.run_id }}
+          path: |
+            capability-impact-observation-report.json
+            capability-impact-observation-summary.md
           retention-days: 90

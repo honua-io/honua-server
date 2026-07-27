@@ -19,6 +19,9 @@ Joins the following committed, already-generated/drift-gated sources into
     geobench).
   * ``docs/gis/data/capability-no-surface-allowlist.v1.json`` -- capabilities with
     no distinct route.
+  * ``tests/baselines/client-compat/**/*.cert.json`` -- committed client-interop
+    evidence envelopes, joined onto each capability's ``interop[]`` rows as a
+    per-pair ``freshness`` stamp (issue #2897 item 4).
 
 Dependency-light by design: Python 3 standard library only (json, re,
 argparse), matching the existing scripts/ci/*.py and scripts/client-compat/*.py
@@ -32,12 +35,30 @@ CI-job relocation, not a redesign.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import importlib.util
 import json
 import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+ENVELOPE_ROOT = REPO_ROOT / "tests" / "baselines" / "client-compat"
+FRESHNESS_MAX_AGE_DAYS = 14
+
+
+def _load_capability_impact():
+    """Load scripts/ci/capability-impact.py (dashed filename) for its shared
+    evidence helpers (parse_timestamp / is_green / freshness_state)."""
+    path = Path(__file__).resolve().parent / "capability-impact.py"
+    spec = importlib.util.spec_from_file_location("capability_impact", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+CAPABILITY_IMPACT = _load_capability_impact()
 
 # Capability keys whose protocol has an official OGC CITE ETS. Maps a
 # capability key to the exact "Suite" column value in docs/cite-status.md's
@@ -82,12 +103,66 @@ def parse_cite_status(path: Path) -> dict[str, dict]:
     return suites
 
 
+def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], dict], dt.datetime | None]:
+    """Deterministically load committed client-compat envelopes keyed by
+    (clientLane, protocol), plus the freshness anchor.
+
+    Deliberately iterates sorted paths (unlike capability-impact.py's
+    ``load_envelopes``): the bare regeneration must be byte-stable because the
+    capability-matrix drift gate and the merge train both re-run it, so a
+    filesystem-order-dependent winner for duplicate (lane, protocol) pairs is
+    not acceptable here. For the same reason the anchor is the newest
+    ``run_date`` across the committed envelopes, not wall-clock time: an
+    ``ageDays`` measured from "now" would drift the committed artifact stale
+    every day with no source change.
+    """
+    envelopes: dict[tuple[str, str], dict] = {}
+    if envelope_root.exists():
+        for path in sorted(envelope_root.rglob("*.cert.json")):
+            try:
+                envelope = load_json(path)
+            except (OSError, json.JSONDecodeError):
+                continue
+            lane = envelope.get("client_lane") or envelope.get("clientLane")
+            protocol = envelope.get("protocol")
+            if lane and protocol:
+                envelopes[(lane, protocol)] = envelope
+    timestamps = [
+        timestamp
+        for timestamp, _ in (CAPABILITY_IMPACT.parse_timestamp(envelope) for envelope in envelopes.values())
+        if timestamp is not None
+    ]
+    anchor = max(timestamps) if timestamps else None
+    return envelopes, anchor
+
+
+def interop_freshness(envelope: dict | None, anchor: dt.datetime | None) -> dict:
+    """Stamp {state, ageDays, runDate} for one interop (clientLane, protocol) row.
+
+    ``unknown``: no committed envelope, no usable observation timestamp, or no
+    anchor to measure against. ``stale``: envelope is not green, or its
+    evidence observation is more than FRESHNESS_MAX_AGE_DAYS behind the newest
+    committed envelope. ``fresh`` otherwise.
+    """
+    if envelope is None or anchor is None:
+        return {"state": "unknown", "ageDays": None, "runDate": None}
+    row = CAPABILITY_IMPACT.freshness_state(envelope, anchor, FRESHNESS_MAX_AGE_DAYS)
+    if row["observedAt"] is None:
+        return {"state": "unknown", "ageDays": None, "runDate": None}
+    return {
+        "state": "stale" if row["stale"] else "fresh",
+        "ageDays": row["ageDays"],
+        "runDate": row["observedAt"],
+    }
+
+
 def build_matrix(
     feature_catalog: dict,
     cite_suites: dict[str, dict],
     parity: dict,
     capability_keys: dict,
     no_surface: dict,
+    interop_evidence: tuple[dict[tuple[str, str], dict], dt.datetime | None] | None = None,
 ) -> dict:
     entries = feature_catalog["entries"]
 
@@ -116,10 +191,16 @@ def build_matrix(
     for row in crosswalks.get("esriAssess", []):
         esri_assess_by_capability.setdefault(row["capability"], []).append(row["assessKey"])
 
+    envelopes, freshness_anchor = interop_evidence if interop_evidence is not None else ({}, None)
     interop_by_capability: dict[str, list[dict]] = {}
     for row in crosswalks.get("interop", []):
+        envelope = envelopes.get((row["clientLane"], row["protocol"]))
         interop_by_capability.setdefault(row["capability"], []).append(
-            {"clientLane": row["clientLane"], "protocol": row["protocol"]}
+            {
+                "clientLane": row["clientLane"],
+                "protocol": row["protocol"],
+                "freshness": interop_freshness(envelope, freshness_anchor),
+            }
         )
 
     geobench_by_capability: dict[str, list[str]] = {}
@@ -174,7 +255,7 @@ def build_matrix(
     unjoined = sorted(set(cite_suites) - joined_suites)
     return {
         "unjoinedCiteSuites": unjoined,
-        "schemaVersion": "1.0.0",
+        "schemaVersion": "1.1.0",
         "generator": "scripts/ci/generate-capability-matrix.py",
         "trackingIssue": "#2893",
         "sourceArtifacts": [
@@ -183,7 +264,18 @@ def build_matrix(
             "docs/gis/data/geoservices-rest-parity.json",
             "docs/gis/data/capability-keys.v1.json",
             "docs/gis/data/capability-no-surface-allowlist.v1.json",
+            "tests/baselines/client-compat/",
         ],
+        "evidenceFreshness": {
+            "anchor": (
+                freshness_anchor.isoformat().replace("+00:00", "Z") if freshness_anchor is not None else None
+            ),
+            "maxAgeDays": FRESHNESS_MAX_AGE_DAYS,
+            "basis": (
+                "Newest run_date across the committed client-compat envelopes; deterministic "
+                "by design so the drift gate stays byte-stable (see #2897)."
+            ),
+        },
         "capabilities": capabilities_out,
     }
 
@@ -209,7 +301,14 @@ def main() -> int:
     capability_keys = load_json(REPO_ROOT / "docs" / "gis" / "data" / "capability-keys.v1.json")
     no_surface = load_json(REPO_ROOT / "docs" / "gis" / "data" / "capability-no-surface-allowlist.v1.json")
 
-    matrix = build_matrix(feature_catalog, cite_suites, parity, capability_keys, no_surface)
+    matrix = build_matrix(
+        feature_catalog,
+        cite_suites,
+        parity,
+        capability_keys,
+        no_surface,
+        interop_evidence=load_interop_evidence(ENVELOPE_ROOT),
+    )
     rendered = json.dumps(matrix, indent=2) + "\n"
 
     if args.check:

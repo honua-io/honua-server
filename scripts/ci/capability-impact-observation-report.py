@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""Aggregate per-PR capability-impact comparison reports over an observation window.
+
+ADR-0037 remains authoritative. The Capability Impact Comparison workflow
+uploads a report-only `capability-impact-report.json` artifact for every PR
+(#2897). This tool rolls those artifacts up across the observation period and
+renders the switch-decision evidence: subset-size distributions versus the
+legacy path-heuristic selection and run_all, set-relation frequencies,
+would-be-escaped shards, and run_all-fallback reasons.
+
+Live mode pulls artifacts from recent workflow runs via `gh api`; offline mode
+(`--from-dir`) reads already-downloaded report JSONs and is what the unit
+tests in tests/python/unit/test_capability_impact_observation_report.py use.
+Python 3 standard library only, matching scripts/ci/capability-impact.py.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import io
+import json
+import statistics
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+SHARDS = ROOT / ".github/ci-shards.json"
+WORKFLOW = "capability-impact-comparison.yml"
+REPORT_FILENAME = "capability-impact-report.json"
+ARTIFACT_PREFIX = "capability-impact-"
+
+
+def load_total_shard_count(path: Path = SHARDS) -> int:
+    return len(json.loads(path.read_text(encoding="utf-8"))["shards"])
+
+
+def is_comparison_report(document: object) -> bool:
+    return (
+        isinstance(document, dict)
+        and isinstance(document.get("comparison"), dict)
+        and isinstance(document.get("capabilitySelection"), dict)
+    )
+
+
+def load_reports_from_dir(root: Path) -> list[dict]:
+    """Read every parseable per-PR comparison report under ``root`` (recursive).
+
+    Non-report JSON files (changed-files lists, legacy selections, summaries)
+    are silently skipped so a directory of extracted artifacts can be pointed
+    at directly.
+    """
+    reports: list[dict] = []
+    for path in sorted(root.rglob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if is_comparison_report(document):
+            reports.append(document)
+    return reports
+
+
+def gh_api(arguments: list[str], *, binary: bool = False) -> bytes | str:
+    completed = subprocess.run(["gh", "api", *arguments], capture_output=True, check=True)
+    return completed.stdout if binary else completed.stdout.decode("utf-8")
+
+
+def fetch_reports(repo: str, days: int) -> list[dict]:
+    """Download `capability-impact-*` artifacts from recent workflow runs."""
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).strftime("%Y-%m-%d")
+    run_ids = gh_api(
+        [
+            "-X",
+            "GET",
+            f"repos/{repo}/actions/workflows/{WORKFLOW}/runs",
+            "-f",
+            f"created=>={cutoff}",
+            "-f",
+            "per_page=100",
+            "--paginate",
+            "--jq",
+            ".workflow_runs[].id",
+        ]
+    ).split()
+    reports: list[dict] = []
+    for run_id in run_ids:
+        artifact_ids = gh_api(
+            [
+                "-X",
+                "GET",
+                f"repos/{repo}/actions/runs/{run_id}/artifacts",
+                "--jq",
+                f'.artifacts[] | select(.expired | not) | select(.name | startswith("{ARTIFACT_PREFIX}")) | .id',
+            ]
+        ).split()
+        for artifact_id in artifact_ids:
+            payload = gh_api([f"repos/{repo}/actions/artifacts/{artifact_id}/zip"], binary=True)
+            try:
+                with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                    document = json.loads(archive.read(REPORT_FILENAME))
+            except (KeyError, zipfile.BadZipFile, json.JSONDecodeError):
+                continue
+            if is_comparison_report(document):
+                reports.append(document)
+    return reports
+
+
+def distribution(values: list[int]) -> dict:
+    if not values:
+        return {"min": None, "median": None, "mean": None, "max": None}
+    return {
+        "min": min(values),
+        "median": statistics.median(values),
+        "mean": round(statistics.mean(values), 2),
+        "max": max(values),
+    }
+
+
+def _frequency_table(counter: dict[str, int]) -> dict[str, int]:
+    return dict(sorted(counter.items(), key=lambda item: (-item[1], item[0])))
+
+
+def aggregate(
+    reports: list[dict],
+    total_shards: int,
+    *,
+    min_comparisons: int,
+    max_escaped_candidate_reports: int,
+    min_strict_subset_pct: float,
+) -> dict:
+    capability_sizes: list[int] = []
+    legacy_sizes: list[int] = []
+    relations = {
+        "equal": 0,
+        "capabilitySubsetOfLegacy": 0,
+        "capabilitySupersetOfLegacy": 0,
+        "divergent": 0,
+    }
+    legacy_only_frequency: dict[str, int] = {}
+    escaped_frequency: dict[str, int] = {}
+    reports_with_escaped = 0
+    reports_with_escaped_excluding_legacy_run_all = 0
+    capability_run_all_reasons: dict[str, int] = {}
+    legacy_run_all_reasons: dict[str, int] = {}
+    strictly_smaller = 0
+
+    for report in reports:
+        comparison = report["comparison"]
+        selection = report["capabilitySelection"]
+        legacy = report.get("legacy", {}) or {}
+        capability_size = comparison.get("capabilityShardCount", len(selection.get("shards", [])))
+        legacy_size = comparison.get("legacyShardCount", len(legacy.get("shards", [])))
+        capability_sizes.append(capability_size)
+        legacy_sizes.append(legacy_size)
+        legacy_only = comparison.get("legacyOnlyShards", [])
+        capability_only = comparison.get("capabilityOnlyShards", [])
+        if not legacy_only and not capability_only:
+            relations["equal"] += 1
+        elif not capability_only:
+            relations["capabilitySubsetOfLegacy"] += 1
+        elif not legacy_only:
+            relations["capabilitySupersetOfLegacy"] += 1
+        else:
+            relations["divergent"] += 1
+        for shard in legacy_only:
+            legacy_only_frequency[shard] = legacy_only_frequency.get(shard, 0) + 1
+        escaped = comparison.get("escapedDefectCandidates", [])
+        for shard in escaped:
+            escaped_frequency[shard] = escaped_frequency.get(shard, 0) + 1
+        if escaped:
+            reports_with_escaped += 1
+            if not legacy.get("run_all"):
+                reports_with_escaped_excluding_legacy_run_all += 1
+        if selection.get("runAll"):
+            reason = selection.get("reason", "unknown")
+            capability_run_all_reasons[reason] = capability_run_all_reasons.get(reason, 0) + 1
+        if legacy.get("run_all"):
+            reason = legacy.get("reason", "unknown")
+            legacy_run_all_reasons[reason] = legacy_run_all_reasons.get(reason, 0) + 1
+        if capability_size < legacy_size:
+            strictly_smaller += 1
+
+    count = len(reports)
+    strict_subset_pct = round(100.0 * strictly_smaller / count, 1) if count else 0.0
+    criteria = [
+        {
+            "name": "comparisonCount",
+            "threshold": f">= {min_comparisons}",
+            "observed": count,
+            "met": count >= min_comparisons,
+        },
+        {
+            "name": "reportsWithEscapedDefectCandidates",
+            "threshold": f"<= {max_escaped_candidate_reports}",
+            "observed": reports_with_escaped,
+            "met": reports_with_escaped <= max_escaped_candidate_reports,
+        },
+        {
+            "name": "strictlySmallerSelectionPct",
+            "threshold": f">= {min_strict_subset_pct}",
+            "observed": strict_subset_pct,
+            "met": strict_subset_pct >= min_strict_subset_pct,
+        },
+    ]
+    return {
+        "schemaVersion": 1,
+        "mode": "observation-aggregate",
+        "totalShardCount": total_shards,
+        "comparisonCount": count,
+        "selectionSizes": {
+            "capability": distribution(capability_sizes),
+            "legacy": distribution(legacy_sizes),
+            "runAll": total_shards,
+            "meanCapabilityFractionOfRunAll": (
+                round(statistics.mean(capability_sizes) / total_shards, 3) if capability_sizes and total_shards else None
+            ),
+            "meanLegacyFractionOfRunAll": (
+                round(statistics.mean(legacy_sizes) / total_shards, 3) if legacy_sizes and total_shards else None
+            ),
+        },
+        "relations": relations,
+        "strictlySmaller": {"count": strictly_smaller, "pct": strict_subset_pct},
+        "legacyOnlyShardFrequency": _frequency_table(legacy_only_frequency),
+        "escapedDefectCandidates": {
+            "shardFrequency": _frequency_table(escaped_frequency),
+            "reportsWithCandidates": reports_with_escaped,
+            "reportsWithCandidatesExcludingLegacyRunAll": reports_with_escaped_excluding_legacy_run_all,
+        },
+        "runAllFallbacks": {
+            "capability": {
+                "count": sum(capability_run_all_reasons.values()),
+                "reasons": _frequency_table(capability_run_all_reasons),
+            },
+            "legacy": {
+                "count": sum(legacy_run_all_reasons.values()),
+                "reasons": _frequency_table(legacy_run_all_reasons),
+            },
+        },
+        "switchRecommendation": {
+            "safeToSwitch": all(criterion["met"] for criterion in criteria),
+            "criteria": criteria,
+            "note": (
+                "Escaped-defect candidates are shards ADR-0037 would run but the capability "
+                "selector would not; a candidate only becomes a confirmed escape if that shard "
+                "actually failed on the PR, which requires manual correlation before switching."
+            ),
+        },
+    }
+
+
+def markdown(summary: dict, days: int) -> str:
+    sizes = summary["selectionSizes"]
+    relations = summary["relations"]
+    escaped = summary["escapedDefectCandidates"]
+    fallbacks = summary["runAllFallbacks"]
+    recommendation = summary["switchRecommendation"]
+
+    def size_row(name: str, dist: dict) -> str:
+        return f"| {name} | {dist['min']} | {dist['median']} | {dist['mean']} | {dist['max']} |"
+
+    lines = [
+        "## Capability selection observation report",
+        "",
+        "> ADR-0037 remains authoritative; this aggregate is the observation-period evidence for the switch decision (#2897).",
+        "",
+        f"- Window: last {days} days, {summary['comparisonCount']} comparisons",
+        f"- run_all shard count: {summary['totalShardCount']}",
+        f"- Mean fraction of run_all: capability {sizes['meanCapabilityFractionOfRunAll']}, legacy {sizes['meanLegacyFractionOfRunAll']}",
+        "",
+        "### Selection size distribution (shards)",
+        "",
+        "| Selector | Min | Median | Mean | Max |",
+        "|---|---:|---:|---:|---:|",
+        size_row("Capability", sizes["capability"]),
+        size_row("ADR-0037 legacy", sizes["legacy"]),
+        f"| run_all | {summary['totalShardCount']} | {summary['totalShardCount']} | {summary['totalShardCount']} | {summary['totalShardCount']} |",
+        "",
+        "### Set relation per comparison (capability vs ADR-0037)",
+        "",
+        f"- Equal: {relations['equal']}",
+        f"- Capability strict subset of legacy: {relations['capabilitySubsetOfLegacy']}",
+        f"- Capability strict superset of legacy: {relations['capabilitySupersetOfLegacy']}",
+        f"- Divergent (both sides have unique shards): {relations['divergent']}",
+        f"- Capability selection strictly smaller than legacy: {summary['strictlySmaller']['count']} ({summary['strictlySmaller']['pct']}%)",
+        "",
+        "### Legacy-only shards (would-be escapes)",
+        "",
+    ]
+    frequency = summary["legacyOnlyShardFrequency"]
+    if frequency:
+        lines.extend(["| Shard | Comparisons |", "|---|---:|"])
+        lines.extend(f"| {shard} | {count} |" for shard, count in list(frequency.items())[:15])
+        if len(frequency) > 15:
+            lines.append(f"| … {len(frequency) - 15} more | |")
+    else:
+        lines.append("None.")
+    lines.extend(
+        [
+            "",
+            "### Escaped-defect candidate roll-up",
+            "",
+            f"- Comparisons with candidates: {escaped['reportsWithCandidates']}",
+            f"- Excluding comparisons where ADR-0037 itself fell back to run_all: {escaped['reportsWithCandidatesExcludingLegacyRunAll']}",
+            "",
+            "### run_all fallbacks",
+            "",
+            f"- Capability selector: {fallbacks['capability']['count']} ({json.dumps(fallbacks['capability']['reasons'])})",
+            f"- ADR-0037 selector: {fallbacks['legacy']['count']} ({json.dumps(fallbacks['legacy']['reasons'])})",
+            "",
+            "### Switch recommendation",
+            "",
+        ]
+    )
+    for criterion in recommendation["criteria"]:
+        mark = "x" if criterion["met"] else " "
+        lines.append(f"- [{mark}] {criterion['name']} {criterion['threshold']} (observed: {criterion['observed']})")
+    verdict = "SAFE to switch" if recommendation["safeToSwitch"] else "NOT yet safe to switch"
+    lines.extend(
+        [
+            "",
+            f"**Verdict: {verdict}** (all criteria must be met).",
+            "",
+            recommendation["note"],
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", default="honua-io/honua-server", help="GitHub repository (owner/name) to pull artifacts from.")
+    parser.add_argument("--days", type=int, default=28, help="Observation window in days (live mode).")
+    parser.add_argument("--from-dir", type=Path, help="Offline mode: read already-downloaded report JSONs from this directory.")
+    parser.add_argument("--markdown", type=Path, help="Write a markdown summary to this path.")
+    parser.add_argument("--total-shards", type=int, help="Override the run_all shard count (default: .github/ci-shards.json).")
+    parser.add_argument("--min-comparisons", type=int, default=25, help="Switch criterion: minimum number of comparisons.")
+    parser.add_argument(
+        "--max-escaped-candidate-reports",
+        type=int,
+        default=0,
+        help="Switch criterion: maximum comparisons with escaped-defect candidates.",
+    )
+    parser.add_argument(
+        "--min-strict-subset-pct",
+        type=float,
+        default=60.0,
+        help="Switch criterion: minimum percentage of comparisons where the capability selection is strictly smaller.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.from_dir is not None:
+        reports = load_reports_from_dir(args.from_dir)
+    else:
+        reports = fetch_reports(args.repo, args.days)
+    total_shards = args.total_shards if args.total_shards is not None else load_total_shard_count()
+    summary = aggregate(
+        reports,
+        total_shards,
+        min_comparisons=args.min_comparisons,
+        max_escaped_candidate_reports=args.max_escaped_candidate_reports,
+        min_strict_subset_pct=args.min_strict_subset_pct,
+    )
+    print(json.dumps(summary, indent=2))
+    if args.markdown:
+        args.markdown.write_text(markdown(summary, args.days), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
