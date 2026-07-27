@@ -23,10 +23,14 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         result.Authorization.Authorized.Should().BeTrue();
         result.Response.Should().NotBeNull();
-        result.Response!.Snapshot.MapId.Should().Be("saved-map:ops");
+        result.Response!.MapId.Should().Be("saved-map:ops");
+        result.Response.Snapshot.MapId.Should().Be("saved-map:ops");
         result.Response.Snapshot.Participants.Should().ContainSingle();
         result.Response.Participant.DisplayName.Should().Be("Ada");
-        result.Response.Participant.UserId.Should().Be("user-1");
+        result.Response.ParticipantId.Should().Be(result.Response.SessionId.ToString("N"));
+        result.Response.Capabilities.Operations.Should().BeTrue();
+        result.Response.Capabilities.FeatureLocks.Should().BeFalse(
+            "feature-lock events are not bridged onto the session stream");
     }
 
     [UnitTest]
@@ -43,15 +47,40 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         var fanOut = service.UpdateCursor(
             alice.SessionId,
-            new CollaborationCursor { Longitude = -157.8583, Latitude = 21.3069, Zoom = 12 });
+            new CollaborationCursor { X = -157.8583, Y = 21.3069 });
 
         fanOut.DeliveredCount.Should().Be(1);
+        fanOut.Event.EnvelopeVersion.Should().Be(CollaborationEnvelopeContract.Version);
         service.DrainEvents(alice.SessionId).Should().BeEmpty();
         var bobEvents = service.DrainEvents(bob.SessionId);
         bobEvents.Should().ContainSingle();
-        bobEvents[0].Type.Should().Be(CollaborationSessionEventTypes.CursorUpdated);
-        bobEvents[0].Cursor!.Longitude.Should().Be(-157.8583);
+        bobEvents[0].Event.Type.Should().Be(CollaborationSessionEventTypes.Cursor);
+        bobEvents[0].Event.ParticipantId.Should().Be(alice.ParticipantId);
+        bobEvents[0].Event.Cursor!.X.Should().Be(-157.8583);
         service.DrainEvents(cara.SessionId).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task Envelopes_ForOneMap_CarryStrictlyMonotonicSequences()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var service = CreateService(clock);
+        var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
+        var bob = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Bob" }, Principal("bob"))).Response!;
+        _ = service.DrainEvents(alice.SessionId);
+
+        service.UpdateCursor(bob.SessionId, new CollaborationCursor { X = 1, Y = 2 });
+        service.UpdateSelection(bob.SessionId, new CollaborationSelection { Ids = ["f-1"] });
+        service.UpdateCursor(bob.SessionId, new CollaborationCursor { X = 3, Y = 4 });
+
+        var envelopes = service.DrainEvents(alice.SessionId);
+        envelopes.Should().HaveCount(3);
+        envelopes.Select(static e => e.Sequence).Should().BeInAscendingOrder();
+        envelopes.Select(static e => e.Sequence).Distinct().Should().HaveCount(3);
+        envelopes.Should().OnlyContain(static e =>
+            e.Cursor == e.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        // The join snapshot sequence gates the reducer: every later envelope must be above it.
+        envelopes.Should().OnlyContain(e => e.Sequence > alice.Snapshot.Sequence);
     }
 
     [UnitTest]
@@ -68,15 +97,16 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         var followEvents = service.DrainEvents(leader.SessionId);
         followEvents.Should().ContainSingle();
-        followEvents[0].Type.Should().Be(CollaborationSessionEventTypes.FollowUpdated);
-        followEvents[0].Follow!.FollowingSessionId.Should().Be(leader.SessionId);
+        followEvents[0].Event.Type.Should().Be(CollaborationSessionEventTypes.Follow);
+        followEvents[0].Event.Follow!.Following.Should().BeTrue();
+        followEvents[0].Event.Follow!.TargetParticipantId.Should().Be(leader.ParticipantId);
 
         service.Unfollow(follower.SessionId);
 
         var unfollowEvents = service.DrainEvents(leader.SessionId);
         unfollowEvents.Should().ContainSingle();
-        unfollowEvents[0].Type.Should().Be(CollaborationSessionEventTypes.FollowCleared);
-        unfollowEvents[0].Follow!.IsFollowing.Should().BeFalse();
+        unfollowEvents[0].Event.Type.Should().Be(CollaborationSessionEventTypes.Follow);
+        unfollowEvents[0].Event.Follow!.Following.Should().BeFalse();
     }
 
     [UnitTest]
@@ -92,7 +122,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
         var act = () => service.Follow(follower.SessionId, otherMapLeader.SessionId);
 
         act.Should().Throw<KeyNotFoundException>();
-        service.GetSnapshot("map-a").Participants.Single().Follow.IsFollowing.Should().BeFalse();
+        service.GetSnapshot("map-a").FollowTargets.Should().BeEmpty();
         service.DrainEvents(follower.SessionId).Should().BeEmpty();
         service.DrainEvents(otherMapLeader.SessionId).Should().BeEmpty();
     }
@@ -109,10 +139,10 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         service.Leave(bob.SessionId).Should().BeTrue();
 
-        service.GetSnapshot("map-a").Participants.Should().ContainSingle(p => p.SessionId == alice.SessionId);
+        service.GetSnapshot("map-a").Participants.Should().ContainSingle(p => p.Id == alice.ParticipantId);
         service.DrainEvents(alice.SessionId).Should().ContainSingle(e =>
-            e.Type == CollaborationSessionEventTypes.ParticipantLeft &&
-            e.SessionId == bob.SessionId);
+            e.Event.Type == CollaborationSessionEventTypes.ParticipantLeft &&
+            e.Event.SessionId == bob.SessionId.ToString("N"));
         service.DrainEvents(bob.SessionId).Should().BeEmpty();
     }
 
@@ -129,10 +159,11 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         service.Leave(leader.SessionId).Should().BeTrue();
 
-        service.GetSnapshot("map-a").Participants.Single().Follow.IsFollowing.Should().BeFalse();
+        service.GetSnapshot("map-a").FollowTargets.Should().BeEmpty();
         service.DrainEvents(follower.SessionId).Should().Contain(e =>
-            e.Type == CollaborationSessionEventTypes.FollowCleared &&
-            e.SessionId == follower.SessionId);
+            e.Event.Type == CollaborationSessionEventTypes.Follow &&
+            e.Event.ParticipantId == follower.ParticipantId &&
+            e.Event.Follow!.Following == false);
     }
 
     [UnitTest]
@@ -153,18 +184,18 @@ public sealed class InMemoryCollaborationSessionServiceTests
 
         removed.Should().Be(1);
         var snapshot = service.GetSnapshot("map-a");
-        snapshot.Participants.Should().ContainSingle(p => p.SessionId == active.SessionId);
-        snapshot.Participants.Should().NotContain(p => p.SessionId == stale.SessionId);
+        snapshot.Participants.Should().ContainSingle(p => p.Id == active.ParticipantId);
+        snapshot.Participants.Should().NotContain(p => p.Id == stale.ParticipantId);
         service.DrainEvents(active.SessionId).Should().ContainSingle(e =>
-            e.Type == CollaborationSessionEventTypes.ParticipantLeft &&
-            e.SessionId == stale.SessionId);
+            e.Event.Type == CollaborationSessionEventTypes.ParticipantLeft &&
+            e.Event.SessionId == stale.SessionId.ToString("N"));
     }
 
     [UnitTest]
-    public async Task JoinAsync_WithoutSavedMapAuthorizer_FailsClosed()
+    public async Task JoinAsync_WhenAuthorizerDenies_ReturnsFailureWithoutSession()
     {
         var service = new InMemoryCollaborationSessionService(
-            new FailClosedSavedMapCollaborationAuthorizer(),
+            new DenySavedMapCollaborationAuthorizer(),
             new FakeCollaborationClock(FixedUtcNow()));
 
         var result = await service.JoinAsync(
@@ -173,7 +204,42 @@ public sealed class InMemoryCollaborationSessionServiceTests
             new ClaimsPrincipal(new ClaimsIdentity()));
 
         result.Response.Should().BeNull();
-        result.Authorization.Status.Should().Be(SavedMapCollaborationAuthorizationStatus.RequiresAuthentication);
+        result.Authorization.Status.Should().Be(SavedMapCollaborationAuthorizationStatus.Forbidden);
+    }
+
+    [UnitTest]
+    public async Task PublishOperation_DeliversToEveryParticipantIncludingSubmitter()
+    {
+        var clock = new FakeCollaborationClock(FixedUtcNow());
+        var backplane = new RecordingBackplane();
+        var service = new InMemoryCollaborationSessionService(
+            new AllowSavedMapCollaborationAuthorizer(), clock, backplane);
+        var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
+        var bob = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Bob" }, Principal("bob"))).Response!;
+        _ = service.DrainEvents(alice.SessionId);
+        _ = service.DrainEvents(bob.SessionId);
+        backplane.Published.Clear();
+
+        var operation = new CollaborationOperationWire
+        {
+            Id = "op-1",
+            MapId = "map-a",
+            Kind = "view",
+            Revision = 1,
+            Sequence = 1,
+            Cursor = "1",
+            AuthorId = "alice",
+            SubmittedAt = clock.UtcNow
+        };
+        var envelope = service.PublishOperation("map-a", operation);
+
+        envelope.Event.Type.Should().Be(CollaborationSessionEventTypes.OperationAppended);
+        service.DrainEvents(alice.SessionId).Should().ContainSingle(e =>
+            e.Event.Type == CollaborationSessionEventTypes.OperationAppended);
+        service.DrainEvents(bob.SessionId).Should().ContainSingle(e =>
+            e.Event.Operation != null && e.Event.Operation.Id == "op-1");
+        backplane.Published.Should().ContainSingle(e =>
+            e.Event.Type == CollaborationSessionEventTypes.OperationAppended);
     }
 
     [UnitTest]
@@ -186,9 +252,9 @@ public sealed class InMemoryCollaborationSessionServiceTests
         var alice = (await service.JoinAsync("map-a", new CollaborationJoinRequest { DisplayName = "Alice" }, Principal("alice"))).Response!;
         backplane.Published.Clear();
 
-        service.UpdateCursor(alice.SessionId, new CollaborationCursor { Longitude = 1, Latitude = 2 });
+        service.UpdateCursor(alice.SessionId, new CollaborationCursor { X = 1, Y = 2 });
 
-        backplane.Published.Should().ContainSingle(e => e.Type == CollaborationSessionEventTypes.CursorUpdated);
+        backplane.Published.Should().ContainSingle(e => e.Event.Type == CollaborationSessionEventTypes.Cursor);
     }
 
     [UnitTest]
@@ -200,21 +266,34 @@ public sealed class InMemoryCollaborationSessionServiceTests
         _ = service.DrainEvents(local.SessionId);
 
         // Simulate a cursor event produced by a participant on another node.
+        var remoteSession = Guid.NewGuid();
         var remote = new CollaborationEventEnvelope
         {
-            Type = CollaborationSessionEventTypes.CursorUpdated,
-            EventId = Guid.NewGuid(),
             MapId = "map-a",
-            SessionId = Guid.NewGuid(),
-            Timestamp = clock.UtcNow,
-            Cursor = new CollaborationCursor { Longitude = -122.4, Latitude = 37.7 }
+            EventId = Guid.NewGuid().ToString("N"),
+            Sequence = 500,
+            Cursor = "500",
+            ServerTime = clock.UtcNow,
+            SessionId = remoteSession.ToString("N"),
+            ActorId = remoteSession.ToString("N"),
+            Event = new CollaborationSessionEvent
+            {
+                Type = CollaborationSessionEventTypes.Cursor,
+                ParticipantId = remoteSession.ToString("N"),
+                Cursor = new CollaborationCursor { X = -122.4, Y = 37.7 }
+            }
         };
         service.ApplyRemoteEvent(remote);
 
         service.DrainEvents(local.SessionId).Should().ContainSingle(e =>
-            e.Type == CollaborationSessionEventTypes.CursorUpdated &&
-            e.Cursor != null &&
-            Math.Abs(e.Cursor.Longitude - -122.4) < 1e-9);
+            e.Event.Type == CollaborationSessionEventTypes.Cursor &&
+            e.Event.Cursor != null &&
+            Math.Abs(e.Event.Cursor.X - -122.4) < 1e-9);
+
+        // The local per-map sequence advances past the remote sequence so later local envelopes
+        // stay ahead of everything already observed by clients.
+        var next = service.UpdateCursor(local.SessionId, new CollaborationCursor { X = 0, Y = 0 });
+        next.Event.Sequence.Should().BeGreaterThan(500);
     }
 
     [UnitTest]
@@ -232,7 +311,7 @@ public sealed class InMemoryCollaborationSessionServiceTests
         var wait = service.WaitForEventsAsync(alice.SessionId, cts.Token);
         wait.IsCompleted.Should().BeFalse();
 
-        service.UpdateCursor(bob.SessionId, new CollaborationCursor { Longitude = 1, Latitude = 2 });
+        service.UpdateCursor(bob.SessionId, new CollaborationCursor { X = 1, Y = 2 });
 
         (await wait).Should().BeTrue();
     }
@@ -287,5 +366,15 @@ public sealed class InMemoryCollaborationSessionServiceTests
             ClaimsPrincipal principal,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(SavedMapCollaborationAuthorizationResult.Allow());
+    }
+
+    private sealed class DenySavedMapCollaborationAuthorizer : ISavedMapCollaborationAuthorizer
+    {
+        public ValueTask<SavedMapCollaborationAuthorizationResult> AuthorizeJoinAsync(
+            string mapId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(SavedMapCollaborationAuthorizationResult.Forbid(
+                "Denied by test authorizer."));
     }
 }

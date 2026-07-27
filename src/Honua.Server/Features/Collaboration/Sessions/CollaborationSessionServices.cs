@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Linq;
-using System.Security.Claims;
 using Honua.Server.Features.Collaboration.FeatureLocks;
 using Honua.Server.Features.Collaboration.Operations;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,8 +13,12 @@ internal static class CollaborationSessionServices
 {
     public static IServiceCollection AddCollaborationSessionTransport(this IServiceCollection services)
     {
+        services.AddHttpContextAccessor();
         services.TryAddSingleton<ICollaborationSessionClock, SystemCollaborationSessionClock>();
-        services.TryAddSingleton<ISavedMapCollaborationAuthorizer, FailClosedSavedMapCollaborationAuthorizer>();
+        // Studio-lifecycle-backed authorization (#2999): joins/edits/checkpoints are scoped to a
+        // Studio draft or content item and follow the Studio identity model (admin family plus
+        // owner semantics under the end-user flag). Unresolvable map ids stay fail-closed.
+        services.TryAddSingleton<ISavedMapCollaborationAuthorizer, StudioSavedMapCollaborationAuthorizer>();
 
         // Redis backplane for multi-replica presence/cursor fan-out (#971/#1290). Registered only
         // when a multiplexer is configured so single-node and Redis-less deployments fall back to
@@ -34,8 +37,8 @@ internal static class CollaborationSessionServices
         }
 
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
-        // The transport has no leave/heartbeat HTTP surface yet; the background sweep is what
-        // keeps the singleton presence/outbox state bounded when participants stop polling.
+        // The background sweep keeps the singleton presence/outbox state bounded when
+        // participants stop polling or a socket dies without a close frame.
         services.AddHostedService<CollaborationSessionPruneService>();
         services.AddFeatureLockCollaboration();
         services.AddSavedMapOperationLog();
@@ -46,27 +49,4 @@ internal static class CollaborationSessionServices
 internal sealed class SystemCollaborationSessionClock : ICollaborationSessionClock
 {
     public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-}
-
-/// <summary>
-/// Placeholder saved-map capability gate. Until durable saved-map ACLs land, the
-/// collaboration transport denies joins by default so tests and future features must
-/// explicitly provide the real authorizer or a narrow fixture authorizer.
-/// </summary>
-internal sealed class FailClosedSavedMapCollaborationAuthorizer : ISavedMapCollaborationAuthorizer
-{
-    public ValueTask<SavedMapCollaborationAuthorizationResult> AuthorizeJoinAsync(
-        string mapId,
-        ClaimsPrincipal principal,
-        CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(mapId);
-        ArgumentNullException.ThrowIfNull(principal);
-
-        return principal.Identity?.IsAuthenticated == true
-            ? ValueTask.FromResult(SavedMapCollaborationAuthorizationResult.Forbid(
-                "Saved-map collaboration authorization is not configured."))
-            : ValueTask.FromResult(SavedMapCollaborationAuthorizationResult.RequireAuthentication(
-                "Authentication is required to join a saved-map collaboration session."));
-    }
 }

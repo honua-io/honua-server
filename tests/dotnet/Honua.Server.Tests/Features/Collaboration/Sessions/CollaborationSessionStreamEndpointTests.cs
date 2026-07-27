@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
 using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
@@ -20,8 +19,10 @@ namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
 /// <summary>
 /// Integration coverage for the authenticated WebSocket collaboration session transport
-/// (honua-server#971/#1290): join handshake + presence snapshot, cross-participant presence
-/// fan-out, cursor control frames, and fail-closed authorization for unauthorized joins.
+/// (honua-server#971/#2999): v1 envelope handshake (status + snapshot), cross-participant
+/// presence fan-out, cursor control frames, and fail-closed authorization for unauthorized joins.
+/// The SDK-facing contract assertions (envelope version, monotonic sequences, operation echo,
+/// checkpointing) live in <c>CollaborationLiveCoEditingTests</c>.
 /// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
@@ -32,7 +33,7 @@ public sealed class CollaborationSessionStreamEndpointTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
-    public async Task Stream_WithAuthorizedJoin_ReceivesConnectedStatusAndSnapshot()
+    public async Task Stream_WithAuthorizedJoin_ReceivesLiveStatusAndSnapshotEnvelopes()
     {
         using var factory = CreateFactory(allowJoin: true);
         var wsClient = factory.Server.CreateWebSocketClient();
@@ -45,14 +46,17 @@ public sealed class CollaborationSessionStreamEndpointTests
 
         ws.State.Should().Be(WebSocketState.Open);
 
-        var connected = await ReceiveJsonAsync(ws, cts.Token);
-        connected.GetProperty("type").GetString().Should().Be("status");
-        connected.GetProperty("status").GetString().Should().Be("connected");
+        var status = await ReceiveJsonAsync(ws, cts.Token);
+        status.GetProperty("envelopeVersion").GetString().Should().Be("honua.saved-map-collaboration.v1");
+        status.GetProperty("event").GetProperty("type").GetString().Should().Be("status");
+        status.GetProperty("event").GetProperty("status").GetString().Should().Be("live");
 
         var snapshot = await ReceiveJsonAsync(ws, cts.Token);
-        snapshot.GetProperty("type").GetString().Should().Be("snapshot");
-        snapshot.GetProperty("snapshot").GetProperty("mapId").GetString().Should().Be(MapId);
-        snapshot.GetProperty("snapshot").GetProperty("participants").GetArrayLength().Should().Be(1);
+        snapshot.GetProperty("event").GetProperty("type").GetString().Should().Be("snapshot");
+        var snapshotBody = snapshot.GetProperty("event").GetProperty("snapshot");
+        snapshotBody.GetProperty("mapId").GetString().Should().Be(MapId);
+        snapshotBody.GetProperty("participants").GetArrayLength().Should().Be(1);
+        snapshotBody.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
 
         await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
     }
@@ -70,7 +74,7 @@ public sealed class CollaborationSessionStreamEndpointTests
             new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream?displayName=Ada"),
             cts.Token);
 
-        // Drain the first client's connect + snapshot frames.
+        // Drain the first client's status + snapshot envelopes.
         _ = await ReceiveJsonAsync(first, cts.Token);
         _ = await ReceiveJsonAsync(first, cts.Token);
 
@@ -82,8 +86,8 @@ public sealed class CollaborationSessionStreamEndpointTests
             cts.Token);
 
         var joined = await ReceiveJsonAsync(first, cts.Token);
-        joined.GetProperty("type").GetString().Should().Be("participant.joined");
-        joined.GetProperty("participant").GetProperty("displayName").GetString().Should().Be("Bob");
+        joined.GetProperty("event").GetProperty("type").GetString().Should().Be("participant-joined");
+        joined.GetProperty("event").GetProperty("participant").GetProperty("displayName").GetString().Should().Be("Bob");
 
         await first.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
         await second.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
@@ -112,18 +116,19 @@ public sealed class CollaborationSessionStreamEndpointTests
         _ = await ReceiveJsonAsync(second, cts.Token);
         _ = await ReceiveJsonAsync(second, cts.Token);
 
-        // Drain the participant.joined event the second peer's join produced on the first socket.
+        // Drain the participant-joined event the second peer's join produced on the first socket.
         var joined = await ReceiveJsonAsync(first, cts.Token);
-        joined.GetProperty("type").GetString().Should().Be("participant.joined");
+        joined.GetProperty("event").GetProperty("type").GetString().Should().Be("participant-joined");
 
         await SendJsonAsync(
             second,
-            """{"type":"cursor","cursor":{"longitude":-122.4,"latitude":37.7,"zoom":12}}""",
+            """{"type":"cursor","cursor":{"x":-122.4,"y":37.7}}""",
             cts.Token);
 
         var cursor = await ReceiveJsonAsync(first, cts.Token);
-        cursor.GetProperty("type").GetString().Should().Be("cursor.updated");
-        cursor.GetProperty("cursor").GetProperty("longitude").GetDouble().Should().BeApproximately(-122.4, 0.0001);
+        cursor.GetProperty("event").GetProperty("type").GetString().Should().Be("cursor");
+        cursor.GetProperty("event").GetProperty("cursor").GetProperty("x").GetDouble()
+            .Should().BeApproximately(-122.4, 0.0001);
 
         await first.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
         await second.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
@@ -133,13 +138,15 @@ public sealed class CollaborationSessionStreamEndpointTests
     [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_WithoutAuthorization_RejectsUpgrade()
     {
+        // No permissive authorizer override: the default Studio-lifecycle-backed authorizer
+        // fails closed for a map id that resolves to no Studio draft/content item, so the
+        // upgrade is rejected before the socket is accepted. The TestServer surfaces the
+        // rejection as a handshake exception.
         using var factory = CreateFactory(allowJoin: false);
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        // The fail-closed authorizer denies the join, so the upgrade is rejected before the
-        // socket is accepted. The TestServer surfaces the rejection as a handshake exception.
         var connect = async () => await wsClient.ConnectAsync(
             new Uri($"ws://localhost/api/v1/saved-maps/{MapId}/collaboration/sessions/stream"),
             cts.Token);

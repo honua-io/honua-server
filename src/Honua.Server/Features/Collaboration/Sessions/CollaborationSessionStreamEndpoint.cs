@@ -1,22 +1,34 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Collaboration.Operations;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
 /// <summary>
-/// Authenticated WebSocket transport for a saved-map collaboration session (#971/#1290): the
-/// join handshake authorizes through the shared <see cref="ISavedMapCollaborationAuthorizer"/>,
-/// streams the presence snapshot plus participant join/leave/heartbeat/cursor/selection/follow
-/// events for the map, and accepts client control frames that update the joining participant's
-/// own presence. Cross-node fan-out is provided by the Redis backplane registered alongside the
-/// in-memory session service. Mirrors the feature-stream WebSocket writer/receiver pattern.
+/// Authenticated WebSocket transport for a saved-map collaboration session (#971/#2999): the join
+/// handshake authorizes through the shared <see cref="ISavedMapCollaborationAuthorizer"/> (the
+/// Studio-lifecycle-backed authorizer by default), then streams v1 collaboration envelopes —
+/// status, snapshot (presence plus the op-log tail for late joiners), presence deltas, and
+/// server-ordered <c>operation-appended</c> echoes — and accepts client control frames that update
+/// the joining participant's own presence. Cross-node fan-out is provided by the Redis backplane
+/// registered alongside the in-memory session service.
 /// </summary>
+/// <remarks>
+/// Resume semantics (NFR-001): a reconnecting client passes <c>resumeFrom</c> (its last observed
+/// op-log cursor). When the cursor is inside the retained replay window the handshake snapshot
+/// carries the operation tail and the stream continues live; otherwise a typed
+/// <c>resync-required</c> error event precedes a fresh snapshot with no tail, telling the client
+/// to reload the document. Presence is always re-snapshotted on reconnect — the bounded
+/// per-participant outbox intentionally cannot replay presence history, matching the SDK reducer,
+/// which rebuilds presence from every snapshot.
+/// </remarks>
 internal static partial class CollaborationSessionStreamEndpoint
 {
     private const int MaxControlFrameBytes = 16 * 1024;
@@ -27,6 +39,7 @@ internal static partial class CollaborationSessionStreamEndpoint
     public static async Task HandleStream(
         string mapId,
         InMemoryCollaborationSessionService sessions,
+        ISavedMapOperationLogRepository operationLog,
         ILogger<CollaborationStreamLogCategory> logger,
         HttpContext context)
     {
@@ -41,9 +54,22 @@ internal static partial class CollaborationSessionStreamEndpoint
             return;
         }
 
+        long resumeFrom = 0;
+        if (context.Request.Query["resumeFrom"].ToString() is { Length: > 0 } resumeText &&
+            (!long.TryParse(resumeText, NumberStyles.Integer, CultureInfo.InvariantCulture, out resumeFrom) ||
+             resumeFrom < 0))
+        {
+            await StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "resumeFrom must be a non-negative operation cursor.")
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return;
+        }
+
         // Authorize and register the participant BEFORE upgrading so an unauthorized join fails
         // with a typed HTTP status (401/403) instead of an opaque socket close. The authorizer is
-        // the same fail-closed identity/RBAC seam used by the HTTP join endpoint.
+        // the same fail-closed Studio identity/RBAC seam used by the HTTP join endpoint.
         var join = await sessions.JoinAsync(
                 mapId,
                 new CollaborationJoinRequest
@@ -72,37 +98,65 @@ internal static partial class CollaborationSessionStreamEndpoint
         }
 
         var sessionId = join.Response.SessionId;
+        var actorId = join.Response.ParticipantId;
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         using var writeLock = new SemaphoreSlim(1, 1);
 
         try
         {
-            // Initial frames: connection status + the current presence snapshot so the client can
-            // render the "N here" roster immediately without a separate REST round-trip.
-            await SendStatusAsync(
-                webSocket,
-                writeLock,
-                new CollaborationStatusFrame
-                {
-                    Type = "status",
-                    Status = "connected",
-                    Message = "Collaboration session connected.",
-                    SessionId = sessionId
-                },
-                context.RequestAborted).ConfigureAwait(false);
-
+            // Handshake frames: a live status envelope, an optional resync-required error when the
+            // resume cursor fell out of the replay window, then the snapshot (presence plus the
+            // operation tail) so the client can render without a separate REST round-trip.
             await SendEnvelopeAsync(
                 webSocket,
                 writeLock,
-                new CollaborationEventEnvelope
+                sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+                {
+                    Type = CollaborationSessionEventTypes.Status,
+                    Status = "live"
+                }),
+                context.RequestAborted).ConfigureAwait(false);
+
+            var replay = await operationLog.ReplayAsync(
+                    new SavedMapId(mapId),
+                    new SavedMapOperationCursor(resumeFrom),
+                    context.RequestAborted)
+                .ConfigureAwait(false);
+
+            var operations = Array.Empty<CollaborationOperationWire>();
+            if (replay.Status == SavedMapOperationReplayStatus.Ok)
+            {
+                operations = replay.Operations.Select(CollaborationOperationWire.FromEnvelope).ToArray();
+            }
+            else
+            {
+                await SendEnvelopeAsync(
+                    webSocket,
+                    writeLock,
+                    sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
+                    {
+                        Type = CollaborationSessionEventTypes.Error,
+                        Code = CollaborationErrorCodes.ResyncRequired,
+                        Message = replay.Message ?? "The resume cursor is outside the retained operation replay window.",
+                        Terminal = false,
+                        ResyncRequired = true
+                    }),
+                    context.RequestAborted).ConfigureAwait(false);
+            }
+
+            var snapshot = sessions.GetSnapshot(mapId) with
+            {
+                Operations = operations,
+                Cursor = replay.HeadCursor.Value.ToString(CultureInfo.InvariantCulture)
+            };
+            await SendEnvelopeAsync(
+                webSocket,
+                writeLock,
+                sessions.StampEnvelope(mapId, sessionId, actorId, new CollaborationSessionEvent
                 {
                     Type = CollaborationSessionEventTypes.Snapshot,
-                    EventId = Guid.NewGuid(),
-                    MapId = mapId,
-                    SessionId = sessionId,
-                    Timestamp = join.Response.Snapshot.GeneratedAt,
-                    Snapshot = join.Response.Snapshot
-                },
+                    Snapshot = snapshot
+                }),
                 context.RequestAborted).ConfigureAwait(false);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
@@ -284,14 +338,7 @@ internal static partial class CollaborationSessionStreamEndpoint
 
                     break;
                 case "follow":
-                    if (frame.FollowSessionId is { } target)
-                    {
-                        sessions.Follow(sessionId, target);
-                    }
-
-                    break;
-                case "unfollow":
-                    sessions.Unfollow(sessionId);
+                    ApplyFollowFrame(sessions, sessionId, frame.Follow);
                     break;
                 default:
                     // Unknown control type — ignore to stay forward-compatible with SDK clients.
@@ -301,6 +348,29 @@ internal static partial class CollaborationSessionStreamEndpoint
         catch (KeyNotFoundException)
         {
             // Session or follow target vanished concurrently; drop the update.
+        }
+    }
+
+    private static void ApplyFollowFrame(
+        InMemoryCollaborationSessionService sessions,
+        Guid sessionId,
+        CollaborationFollowTarget? follow)
+    {
+        if (follow is null)
+        {
+            return;
+        }
+
+        if (!follow.Following || string.IsNullOrWhiteSpace(follow.TargetParticipantId))
+        {
+            sessions.Unfollow(sessionId);
+            return;
+        }
+
+        // Participant ids are the session id in "N" form; a malformed target is ignored.
+        if (Guid.TryParseExact(follow.TargetParticipantId.Trim(), "N", out var target))
+        {
+            sessions.Follow(sessionId, target);
         }
     }
 
@@ -336,17 +406,6 @@ internal static partial class CollaborationSessionStreamEndpoint
             }
         }
     }
-
-    private static Task SendStatusAsync(
-        WebSocket webSocket,
-        SemaphoreSlim writeLock,
-        CollaborationStatusFrame frame,
-        CancellationToken cancellationToken)
-        => SendJsonAsync(
-            webSocket,
-            writeLock,
-            JsonSerializer.SerializeToUtf8Bytes(frame, CollaborationSessionJsonContext.Default.CollaborationStatusFrame),
-            cancellationToken);
 
     private static Task SendEnvelopeAsync(
         WebSocket webSocket,

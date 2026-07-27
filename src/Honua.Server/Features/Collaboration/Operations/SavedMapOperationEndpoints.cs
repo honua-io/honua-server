@@ -14,8 +14,10 @@ namespace Honua.Server.Features.Collaboration.Operations;
 /// HTTP adapter over the saved-map collaborative edit operation log (#972): a durable op-log
 /// append with monotonic server cursors plus idempotent dedupe, and a replay/catchup read from a
 /// known cursor. Conflicts and out-of-window cursors surface as typed responses rather than silent
-/// overwrites. Authorization reuses the fail-closed saved-map collaboration authorizer so join and
-/// op-log writes share one identity/RBAC seam.
+/// overwrites. Authorization reuses the shared saved-map collaboration authorizer (the
+/// Studio-lifecycle-backed authorizer by default, #2999) so join and op-log writes share one
+/// identity/RBAC seam. Accepted appends are echoed onto the live session stream as
+/// server-ordered <c>operation-appended</c> envelopes.
 /// </summary>
 internal static class SavedMapOperationEndpoints
 {
@@ -53,6 +55,7 @@ internal static class SavedMapOperationEndpoints
         [FromBody] SavedMapOperationAppendApiRequest request,
         [FromServices] ISavedMapOperationLogRepository repository,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
+        [FromServices] InMemoryCollaborationSessionService sessions,
         HttpContext context)
     {
         var authorizationError = await AuthorizeAsync(mapId, authorizer, context).ConfigureAwait(false);
@@ -95,6 +98,15 @@ internal static class SavedMapOperationEndpoints
         };
 
         var result = await repository.AppendAsync(appendRequest, context.RequestAborted).ConfigureAwait(false);
+
+        if (result.Status == SavedMapOperationAppendStatus.Accepted && !result.IsDuplicate && result.Operation is not null)
+        {
+            // Bridge the committed op into the live session fan-out (#2999, REQ-002/REQ-004):
+            // clients submit edits over this REST append (typed conflict semantics stay here) and
+            // the WebSocket stream echoes the committed, server-ordered operation to every
+            // participant of the map — the op-log server cursor is the authoritative order.
+            sessions.PublishOperation(mapId, CollaborationOperationWire.FromEnvelope(result.Operation));
+        }
 
         var response = new SavedMapOperationAppendApiResponse
         {

@@ -9,7 +9,6 @@ using FluentAssertions;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -37,7 +36,10 @@ public sealed class CollaborationSessionEndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
+        data.GetProperty("mapId").GetString().Should().Be("saved-map:ops");
+        data.GetProperty("participantId").GetString().Should().NotBeNullOrEmpty();
         data.GetProperty("participant").GetProperty("displayName").GetString().Should().Be("Ada");
+        data.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
         data.GetProperty("snapshot").GetProperty("mapId").GetString().Should().Be("saved-map:ops");
         data.GetProperty("snapshot").GetProperty("participants").GetArrayLength().Should().Be(1);
     }
@@ -53,6 +55,36 @@ public sealed class CollaborationSessionEndpointsTests
             JsonBody(new CollaborationJoinRequest { DisplayName = "Ada" }));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/leave")]
+    public async Task Leave_JoinedSession_RemovesPresence()
+    {
+        using var factory = CreateFactory(allowJoin: true);
+        using var client = CreateClient(factory);
+        using var joinResponse = await client.PostAsync(
+            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/join",
+            JsonBody(new CollaborationJoinRequest { DisplayName = "Ada" }));
+        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var joinDocument = JsonDocument.Parse(await joinResponse.Content.ReadAsStringAsync());
+        var sessionId = joinDocument.RootElement.GetProperty("data").GetProperty("sessionId").GetGuid();
+
+        using var leaveResponse = await client.PostAsync(
+            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/leave",
+            new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json"));
+
+        leaveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var leaveDocument = JsonDocument.Parse(await leaveResponse.Content.ReadAsStringAsync());
+        leaveDocument.RootElement.GetProperty("data").GetProperty("left").GetBoolean().Should().BeTrue();
+
+        // A second leave is a no-op: the session is already gone.
+        using var repeatResponse = await client.PostAsync(
+            "/api/v1/saved-maps/saved-map:ops/collaboration/sessions/leave",
+            new StringContent($$"""{"sessionId":"{{sessionId}}"}""", Encoding.UTF8, "application/json"));
+        repeatResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var repeatDocument = JsonDocument.Parse(await repeatResponse.Content.ReadAsStringAsync());
+        repeatDocument.RootElement.GetProperty("data").GetProperty("left").GetBoolean().Should().BeFalse();
     }
 
     private static WebApplicationFactory<Program> CreateFactory(bool allowJoin)

@@ -6,9 +6,9 @@ namespace Honua.Server.Features.Collaboration.Sessions;
 /// <summary>
 /// Periodically prunes stale collaboration participants from the in-memory session transport.
 /// Participants accumulate in the singleton <see cref="InMemoryCollaborationSessionService"/> on
-/// every join, and the transport has no leave/heartbeat HTTP surface yet, so without this sweep a
-/// participant that stops polling would hold its presence (and its event outbox) for the process
-/// lifetime.
+/// every join, and a client can vanish without calling the leave endpoint or closing its socket
+/// cleanly, so without this sweep a participant that stops polling would hold its presence (and
+/// its event outbox) for the process lifetime.
 /// </summary>
 internal sealed partial class CollaborationSessionPruneService : BackgroundService
 {

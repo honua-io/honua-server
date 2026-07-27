@@ -27,9 +27,18 @@ internal static class CollaborationSessionEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
-        // Authenticated WebSocket presence/cursor/selection/follow stream (#971/#1290). The join
-        // is authorized through the same fail-closed authorizer before the upgrade, so an
-        // unauthorized client receives a typed 401/403 rather than an opaque socket close.
+        // Explicit session end for REST-joined sessions (#2999, REQ-001). WebSocket sessions end
+        // on disconnect; the prune sweep reclaims anything that never says goodbye.
+        group.MapPost("/leave", HandleLeave)
+            .WithDisplayName("Leave Saved Map Collaboration Session")
+            .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
+            .Produces<ApiResponse<CollaborationLeaveResponse>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        // Authenticated WebSocket v1-envelope stream (#971/#2999). The join is authorized through
+        // the Studio-lifecycle-backed authorizer before the upgrade, so an unauthorized client
+        // receives a typed 401/403 rather than an opaque socket close.
         group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
             .WithDisplayName("Stream Saved Map Collaboration Session")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
@@ -72,5 +81,25 @@ internal static class CollaborationSessionEndpoints
                 context,
                 "You are not allowed to join this collaboration session.")
         };
+    }
+
+    private static IResult HandleLeave(
+        string mapId,
+        [FromBody] CollaborationLeaveRequest request,
+        [FromServices] InMemoryCollaborationSessionService sessions,
+        HttpContext context)
+    {
+        if (request.SessionId == Guid.Empty)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "sessionId is required.");
+        }
+
+        // Session ids are unguessable 128-bit handles returned only to the joining client, so
+        // possession of the id is the leave capability; the map-level authorizer already gated
+        // the join that produced it.
+        var left = sessions.Leave(request.SessionId, reason: "left");
+        return Results.Json(
+            ApiResponse<CollaborationLeaveResponse>.CreateSuccess(new CollaborationLeaveResponse { Left = left }),
+            CollaborationSessionJsonContext.Default.ApiResponseCollaborationLeaveResponse);
     }
 }
