@@ -142,6 +142,7 @@ class ObservationReportTests(unittest.TestCase):
             "id": 1,
             "url": "https://github.com/honua-io/honua-server/actions/runs/1",
             "createdAt": "2026-07-26T00:00:00Z",
+            "headSha": "deadbeef",
             "prNumber": 3031,
         }
 
@@ -173,6 +174,7 @@ class ObservationReportTests(unittest.TestCase):
                 "runId": 1,
                 "runUrl": "https://github.com/honua-io/honua-server/actions/runs/1",
                 "runCreatedAt": "2026-07-26T00:00:00Z",
+                "headSha": "deadbeef",
                 "prNumber": 3031,
                 "artifactName": "capability-impact-11",
             },
@@ -184,7 +186,7 @@ class ObservationReportTests(unittest.TestCase):
         self.assertEqual(occurrences[0]["legacyOnlyShards"], ["B"])
         rendered = MODULE.markdown(summary, 28)
         self.assertIn("### Reports needing escape correlation", rendered)
-        self.assertIn("| [1](https://github.com/honua-io/honua-server/actions/runs/1) | #3031 | B |", rendered)
+        self.assertIn("| [1](https://github.com/honua-io/honua-server/actions/runs/1) | #3031 | B | B=unknown |", rendered)
 
     def test_aggregate_counts_relations_and_size_distributions(self):
         summary = self.aggregate()
@@ -285,6 +287,104 @@ class ObservationReportTests(unittest.TestCase):
         summary = self.aggregate(escapes_reviewed=True)
         self.assertFalse(summary["switchRecommendation"]["safeToSwitch"])
         self.assertIn("NOT yet safe to switch", MODULE.markdown(summary, 28))
+
+    def test_sample_dedupes_to_latest_run_per_pr(self):
+        older = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        older["_meta"] = {"prNumber": 5, "runId": 1, "runCreatedAt": "2026-07-01T00:00:00Z"}
+        newer = report(capability_shards=["A", "B"], legacy_shards=["A", "B"])
+        newer["_meta"] = {"prNumber": 5, "runId": 2, "runCreatedAt": "2026-07-02T00:00:00Z"}
+        other = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        other["_meta"] = {"prNumber": 6, "runId": 3, "runCreatedAt": "2026-07-01T12:00:00Z"}
+        summary = self.aggregate([older, newer, other], min_comparisons=2, min_strict_subset_pct=50.0)
+        # One hot PR with two synchronize pushes counts once (latest run wins).
+        self.assertEqual(summary["comparisonCount"], 2)
+        self.assertEqual(summary["rawReportCount"], 3)
+        self.assertEqual(summary["relations"]["equal"], 1)
+        self.assertEqual(summary["relations"]["capabilitySubsetOfLegacy"], 1)
+        self.assertEqual(summary["strictlySmaller"], {"count": 1, "pct": 50.0})
+        self.assertEqual(summary["legacyOnlyShards"]["reportsWithLegacyOnlyShards"], 1)
+        self.assertEqual(summary["legacyOnlyShards"]["shardFrequency"], {"B": 1})
+        # Occurrences keep all reports with candidates, marking which is latest.
+        occurrences = summary["legacyOnlyShards"]["occurrences"]
+        self.assertEqual([(entry["runId"], entry["latestForPr"]) for entry in occurrences], [(1, False), (3, True)])
+        self.assertTrue(summary["switchRecommendation"]["preconditionsMet"])
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("(latest run per distinct PR; 3 raw reports)", rendered)
+        self.assertIn("#5 (superseded)", rendered)
+
+    def test_join_executed_outcomes_marks_failures_and_blocks_switch(self):
+        document = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        document["_meta"] = {"prNumber": 9, "runId": 4, "headSha": "abc123", "runCreatedAt": "2026-07-01T00:00:00Z"}
+        clean = report(capability_shards=["A"], legacy_shards=["A"])  # no candidates: no CI lookup
+        calls = []
+
+        def fake_gh_api(arguments, *, binary=False):
+            calls.append(arguments)
+            if "head_sha=abc123" in arguments:
+                # Two runs at the head: the report-only comparison run (must be
+                # skipped) and the ci.yml run that executed the shard matrix.
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 76,
+                            "url": "https://ci.test/runs/76",
+                            "createdAt": "2026-07-01T00:20:00Z",
+                            "path": ".github/workflows/capability-impact-comparison.yml",
+                        },
+                        {
+                            "id": 77,
+                            "url": "https://ci.test/runs/77",
+                            "createdAt": "2026-07-01T00:10:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                    )
+                )
+            self.assertIn("actions/runs/77/jobs", arguments[2])
+            return "\n".join(
+                json.dumps(job)
+                for job in (
+                    {"name": "Server Tests (A)", "conclusion": "success"},
+                    {"name": "Server Tests (B)", "conclusion": "failure"},
+                )
+            )
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            MODULE.join_executed_outcomes("honua-io/honua-server", [document, clean])
+        finally:
+            MODULE.gh_api = original
+        self.assertEqual(len(calls), 2)
+        self.assertIn("head_sha=abc123", calls[0])
+        self.assertEqual(document["_meta"]["ciRunUrl"], "https://ci.test/runs/77")
+        self.assertEqual(
+            document["_meta"]["shardOutcomes"], {"B": {"jobName": "Server Tests (B)", "conclusion": "failure"}}
+        )
+        summary = self.aggregate([document], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["preconditionsMet"])
+        self.assertTrue(recommendation["escapedDefectSignal"])
+        # A real executed failure blocks the switch even with the acknowledgment.
+        self.assertFalse(recommendation["safeToSwitch"])
+        self.assertEqual(
+            recommendation["failedShardJobs"],
+            [{"prNumber": 9, "shard": "B", "jobName": "Server Tests (B)", "ciRunUrl": "https://ci.test/runs/77"}],
+        )
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("ESCAPED-DEFECT SIGNAL", rendered)
+        self.assertIn("[B=failure](https://ci.test/runs/77)", rendered)
+
+    def test_unknown_outcomes_are_counted_as_gaps_not_signal(self):
+        document = report(capability_shards=["A"], legacy_shards=["A", "B"])  # no shardOutcomes embedded
+        summary = self.aggregate([document], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertFalse(recommendation["escapedDefectSignal"])
+        self.assertTrue(recommendation["safeToSwitch"])
+        self.assertEqual(summary["legacyOnlyShards"]["unknownOutcomeCount"], 1)
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("B=unknown", rendered)
+        self.assertIn("Unknown/unmatched shard outcomes: 1", rendered)
 
     def test_empty_window_produces_null_distributions_and_unsafe_verdict(self):
         summary = self.aggregate([])

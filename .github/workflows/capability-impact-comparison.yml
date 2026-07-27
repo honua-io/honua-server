@@ -10,10 +10,13 @@ on:
         default: '28'
       escapes_reviewed:
         description: >-
-          Operator affirmation that the legacy-only shard occurrences table
-          ("Reports needing escape correlation") was manually correlated with
-          real shard failures over the window. Required for the full
-          "SAFE to switch" verdict; leave false otherwise.
+          Operator affirmation for the "SAFE to switch" verdict. The report
+          automatically joins each legacy-only shard to any executed
+          "Server Tests (<shard>)" job conclusion found at the same head SHA
+          (a failed job raises the blocking escaped-defect signal); this
+          input affirms the operator reviewed the remaining unknown/unmatched
+          outcomes and coverage gaps in the occurrences table (e.g. against
+          the train batch run that landed the PR). Leave false otherwise.
         type: boolean
         required: false
         default: false

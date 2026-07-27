@@ -29,6 +29,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SHARDS = ROOT / ".github/ci-shards.json"
 WORKFLOW = "capability-impact-comparison.yml"
+CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
+# ci.yml names its shard matrix jobs `Server Tests (${{ matrix.shard_name }})`
+# where shard_name comes from .github/ci-shards.json — the same names the
+# selection reports carry.
+SHARD_JOB_NAME_FORMAT = "Server Tests ({shard})"
+SHARD_JOB_NAME_PREFIX = "Server Tests ("
 REPORT_FILENAME = "capability-impact-report.json"
 ARTIFACT_PREFIX = "capability-impact-"
 
@@ -117,7 +123,7 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
             "--paginate",
             "--jq",
             (
-                ".workflow_runs[] | {id: .id, url: .html_url, createdAt: .created_at, "
+                ".workflow_runs[] | {id: .id, url: .html_url, createdAt: .created_at, headSha: .head_sha, "
                 + "prNumber: (.pull_requests[0].number // null)} | tojson"
             ),
         ]
@@ -156,11 +162,110 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
                     "runId": run["id"],
                     "runUrl": run.get("url"),
                     "runCreatedAt": run.get("createdAt"),
+                    "headSha": run.get("headSha"),
                     "prNumber": run.get("prNumber"),
                     "artifactName": artifact.get("name"),
                 }
                 reports.append(document)
     return reports
+
+
+def _legacy_only_candidates(report: dict) -> list[str]:
+    comparison = report.get("comparison", {})
+    return comparison.get("escapedDefectCandidates", comparison.get("legacyOnlyShards", []))
+
+
+def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
+    """Return {url, jobs} for the newest run at ``head_sha`` that executed
+    `Server Tests (<shard>)` jobs.
+
+    All workflow runs at the head SHA are considered (ci.yml first, then
+    newest-first): in the merge-train model ci.yml has no per-PR
+    pull_request trigger — the shard matrix executes on nightly trunk
+    schedules and train-batch dispatches — so a per-PR head usually has no
+    executed shard jobs and this returns an empty jobs map (outcomes then
+    read as "unknown" coverage gaps for the operator). ``jobs`` maps job
+    display name -> {jobName, conclusion}; lookup failures degrade the same
+    way.
+    """
+    try:
+        run_lines = gh_api(
+            [
+                "-X",
+                "GET",
+                f"repos/{repo}/actions/runs",
+                "-f",
+                f"head_sha={head_sha}",
+                "-f",
+                "per_page=100",
+                "--jq",
+                ".workflow_runs[] | {id: .id, url: .html_url, createdAt: .created_at, path: .path} | tojson",
+            ]
+        ).splitlines()
+        runs = [json.loads(line) for line in run_lines if line.strip()]
+        runs.sort(key=lambda entry: entry.get("createdAt") or "", reverse=True)
+        runs.sort(key=lambda entry: entry.get("path") != CI_WORKFLOW_PATH)
+        for run in runs:
+            if run.get("path", "").endswith(WORKFLOW):
+                continue  # the report-only comparison run itself never executes shards
+            job_lines = gh_api(
+                [
+                    "-X",
+                    "GET",
+                    f"repos/{repo}/actions/runs/{run['id']}/jobs",
+                    "-f",
+                    "per_page=100",
+                    "--paginate",
+                    "--jq",
+                    ".jobs[] | {name: .name, conclusion: .conclusion} | tojson",
+                ]
+            ).splitlines()
+            jobs: dict[str, dict] = {}
+            for job_line in job_lines:
+                if not job_line.strip():
+                    continue
+                job = json.loads(job_line)
+                jobs[job["name"]] = {"jobName": job["name"], "conclusion": job.get("conclusion") or "unknown"}
+            if any(name.startswith(SHARD_JOB_NAME_PREFIX) for name in jobs):
+                return {"url": run.get("url"), "jobs": jobs}
+    except subprocess.CalledProcessError:
+        pass
+    return {"url": None, "jobs": {}}
+
+
+def join_executed_outcomes(repo: str, reports: list[dict]) -> None:
+    """Join legacy-only candidates to EXECUTED shard outcomes at the same head.
+
+    The comparison workflow is report-only and never executes shards. For
+    every report with candidates, look for a workflow run at the same head
+    SHA that executed `Server Tests (<shard>)` jobs, match each candidate
+    shard to its job, and stamp per-shard conclusions onto ``_meta`` for the
+    aggregation. When a lane executed the shards at that head (nightly trunk,
+    a train-batch dispatch, or any future per-PR shard lane) the real
+    conclusions become the primary escape correlation; in the current
+    merge-train model per-PR heads usually have none, so outcomes surface as
+    conclusion "unknown" — a coverage gap the operator resolves manually
+    (e.g. via the train batch run that landed the PR), never a signal.
+    """
+    cache: dict[str, dict] = {}
+    for report in reports:
+        candidates = _legacy_only_candidates(report)
+        if not candidates:
+            continue
+        meta = report.setdefault("_meta", {})
+        head_sha = meta.get("headSha")
+        if not head_sha:
+            continue
+        if head_sha not in cache:
+            cache[head_sha] = _fetch_ci_outcomes(repo, head_sha)
+        outcomes = cache[head_sha]
+        meta["ciRunUrl"] = outcomes.get("url")
+        meta["shardOutcomes"] = {
+            shard: outcomes["jobs"].get(
+                SHARD_JOB_NAME_FORMAT.format(shard=shard), {"jobName": None, "conclusion": "unknown"}
+            )
+            for shard in candidates
+        }
 
 
 def distribution(values: list[int]) -> dict:
@@ -176,6 +281,35 @@ def distribution(values: list[int]) -> dict:
 
 def _frequency_table(counter: dict[str, int]) -> dict[str, int]:
     return dict(sorted(counter.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _sample_key(report: dict, index: int) -> tuple:
+    meta = report.get("_meta") if isinstance(report.get("_meta"), dict) else {}
+    if meta.get("prNumber") is not None:
+        return ("pr", meta["prNumber"])
+    if meta.get("runId") is not None:
+        return ("run", meta["runId"])
+    if meta.get("source"):
+        return ("source", meta["source"])
+    return ("index", index)
+
+
+def _latest_per_pr_indices(reports: list[dict]) -> set[int]:
+    """Indices of the comparison sample: the latest run per pull request.
+
+    Multiple synchronize pushes of one PR upload one report each; counting
+    them all lets a single hot PR satisfy the sample criteria, so the sample
+    keeps only the newest run (by runCreatedAt, falling back to input order)
+    per prNumber. Reports without a derivable prNumber stay individual.
+    """
+    latest: dict[tuple, tuple] = {}
+    for index, report in enumerate(reports):
+        key = _sample_key(report, index)
+        meta = report.get("_meta") if isinstance(report.get("_meta"), dict) else {}
+        rank = (meta.get("runCreatedAt") or "", index)
+        if key not in latest or rank >= latest[key][:2]:
+            latest[key] = (*rank, index)
+    return {entry[2] for entry in latest.values()}
 
 
 def aggregate(
@@ -202,40 +336,79 @@ def aggregate(
     legacy_run_all_reasons: dict[str, int] = {}
     strictly_smaller = 0
 
-    for report in reports:
+    sample_indices = _latest_per_pr_indices(reports)
+    escaped_defect_signal = False
+    failed_shard_jobs: list[dict] = []
+    unknown_outcome_count = 0
+
+    for index, report in enumerate(reports):
         comparison = report["comparison"]
         selection = report["capabilitySelection"]
         legacy = report.get("legacy", {}) or {}
+        meta = report.get("_meta") if isinstance(report.get("_meta"), dict) else {}
+        in_sample = index in sample_indices
         capability_size = comparison.get("capabilityShardCount", len(selection.get("shards", [])))
         legacy_size = comparison.get("legacyShardCount", len(legacy.get("shards", [])))
-        capability_sizes.append(capability_size)
-        legacy_sizes.append(legacy_size)
         legacy_only = comparison.get("legacyOnlyShards", [])
         capability_only = comparison.get("capabilityOnlyShards", [])
-        if not legacy_only and not capability_only:
-            relations["equal"] += 1
-        elif not capability_only:
-            relations["capabilitySubsetOfLegacy"] += 1
-        elif not legacy_only:
-            relations["capabilitySupersetOfLegacy"] += 1
-        else:
-            relations["divergent"] += 1
         # capability-impact.py emits `comparison.escapedDefectCandidates` as
         # exactly `legacyOnlyShards` (the raw set difference legacy - graph);
-        # a per-PR report carries no shard outcome data, so a legacy-only
-        # shard is only a *potential* escape and is aggregated here under its
-        # honest name. Consume the authoritative per-report field rather than
-        # recomputing, falling back to `legacyOnlyShards` for older reports.
-        legacy_only_candidates = comparison.get("escapedDefectCandidates", legacy_only)
-        for shard in legacy_only_candidates:
-            legacy_only_frequency[shard] = legacy_only_frequency.get(shard, 0) + 1
+        # the per-PR report itself carries no shard outcome data, so a
+        # legacy-only shard is only a *potential* escape and is aggregated
+        # here under its honest name. Consume the authoritative per-report
+        # field, falling back to `legacyOnlyShards` for older reports.
+        legacy_only_candidates = _legacy_only_candidates(report)
+
+        if in_sample:
+            capability_sizes.append(capability_size)
+            legacy_sizes.append(legacy_size)
+            if not legacy_only and not capability_only:
+                relations["equal"] += 1
+            elif not capability_only:
+                relations["capabilitySubsetOfLegacy"] += 1
+            elif not legacy_only:
+                relations["capabilitySupersetOfLegacy"] += 1
+            else:
+                relations["divergent"] += 1
+            for shard in legacy_only_candidates:
+                legacy_only_frequency[shard] = legacy_only_frequency.get(shard, 0) + 1
+            if legacy_only_candidates:
+                reports_with_legacy_only += 1
+                if not legacy.get("run_all"):
+                    reports_with_legacy_only_excluding_legacy_run_all += 1
+            if selection.get("runAll"):
+                reason = selection.get("reason", "unknown")
+                capability_run_all_reasons[reason] = capability_run_all_reasons.get(reason, 0) + 1
+            if legacy.get("run_all"):
+                reason = legacy.get("reason", "unknown")
+                legacy_run_all_reasons[reason] = legacy_run_all_reasons.get(reason, 0) + 1
+            if capability_size < legacy_size:
+                strictly_smaller += 1
+
         if legacy_only_candidates:
-            reports_with_legacy_only += 1
-            if not legacy.get("run_all"):
-                reports_with_legacy_only_excluding_legacy_run_all += 1
-            # Preserve run identity so the --escapes-reviewed correlation step
-            # can click through to exactly the runs that need checking.
-            meta = report.get("_meta") if isinstance(report.get("_meta"), dict) else {}
+            # Preserve run identity plus the EXECUTED shard outcomes joined by
+            # join_executed_outcomes (or embedded on --from-dir fixtures):
+            # where a lane executed the shard jobs at the same head SHA their
+            # real conclusions are the primary escape correlation; otherwise
+            # the outcome stays "unknown" as an operator coverage gap.
+            outcomes_map = meta.get("shardOutcomes") if isinstance(meta.get("shardOutcomes"), dict) else {}
+            shard_outcomes = []
+            for shard in sorted(legacy_only_candidates):
+                outcome = outcomes_map.get(shard) or {}
+                conclusion = outcome.get("conclusion") or "unknown"
+                shard_outcomes.append({"shard": shard, "jobName": outcome.get("jobName"), "conclusion": conclusion})
+                if conclusion == "failure":
+                    escaped_defect_signal = True
+                    failed_shard_jobs.append(
+                        {
+                            "prNumber": meta.get("prNumber"),
+                            "shard": shard,
+                            "jobName": outcome.get("jobName"),
+                            "ciRunUrl": meta.get("ciRunUrl"),
+                        }
+                    )
+                elif conclusion == "unknown":
+                    unknown_outcome_count += 1
             legacy_only_occurrences.append(
                 {
                     "runId": meta.get("runId"),
@@ -244,21 +417,16 @@ def aggregate(
                     "prNumber": meta.get("prNumber"),
                     "artifactName": meta.get("artifactName"),
                     "source": meta.get("source"),
-                    "reportIndex": len(capability_sizes) - 1,
+                    "reportIndex": index,
+                    "latestForPr": in_sample,
+                    "ciRunUrl": meta.get("ciRunUrl"),
                     "legacyOnlyShards": sorted(legacy_only_candidates),
+                    "shardOutcomes": shard_outcomes,
                     "legacyRunAll": bool(legacy.get("run_all")),
                 }
             )
-        if selection.get("runAll"):
-            reason = selection.get("reason", "unknown")
-            capability_run_all_reasons[reason] = capability_run_all_reasons.get(reason, 0) + 1
-        if legacy.get("run_all"):
-            reason = legacy.get("reason", "unknown")
-            legacy_run_all_reasons[reason] = legacy_run_all_reasons.get(reason, 0) + 1
-        if capability_size < legacy_size:
-            strictly_smaller += 1
 
-    count = len(reports)
+    count = len(sample_indices)
     strict_subset_pct = round(100.0 * strictly_smaller / count, 1) if count else 0.0
     criteria = [
         {
@@ -279,6 +447,7 @@ def aggregate(
         "mode": "observation-aggregate",
         "totalShardCount": total_shards,
         "comparisonCount": count,
+        "rawReportCount": len(reports),
         "selectionSizes": {
             "capability": distribution(capability_sizes),
             "legacy": distribution(legacy_sizes),
@@ -296,6 +465,7 @@ def aggregate(
             "shardFrequency": _frequency_table(legacy_only_frequency),
             "reportsWithLegacyOnlyShards": reports_with_legacy_only,
             "reportsWithLegacyOnlyShardsExcludingLegacyRunAll": reports_with_legacy_only_excluding_legacy_run_all,
+            "unknownOutcomeCount": unknown_outcome_count,
             "occurrences": legacy_only_occurrences,
         },
         "runAllFallbacks": {
@@ -311,18 +481,27 @@ def aggregate(
         "switchRecommendation": {
             "preconditionsMet": all(criterion["met"] for criterion in criteria),
             "escapesReviewed": escapes_reviewed,
-            "safeToSwitch": all(criterion["met"] for criterion in criteria) and escapes_reviewed,
+            "escapedDefectSignal": escaped_defect_signal,
+            "failedShardJobs": failed_shard_jobs,
+            "safeToSwitch": (
+                all(criterion["met"] for criterion in criteria) and escapes_reviewed and not escaped_defect_signal
+            ),
             "criteria": criteria,
             "note": (
                 "Legacy-only shards (the per-report escapedDefectCandidates field) are shards "
                 "ADR-0037 would run but the capability selector would not. They are definitionally "
                 "present in every comparison where the capability selection is strictly smaller, so "
                 "they cannot be a zero-tolerance switch criterion for a selector that is supposed to "
-                "be tighter. The per-PR reports carry no shard outcome data, so the quantitative "
-                "criteria above are only preconditions: safeToSwitch additionally requires the "
-                "operator to correlate the runs listed in legacyOnlyShards.occurrences (the "
-                "'Reports needing escape correlation' table) with actual shard failures on those "
-                "PRs and affirm the review by re-running with --escapes-reviewed."
+                "be tighter. escapedDefectSignal joins each candidate to the executed "
+                "'Server Tests (<shard>)' job conclusion from any workflow run at the same head SHA "
+                "and is true if any such job failed in the window, which blocks safeToSwitch "
+                "outright. In the merge-train model per-PR heads often have no executed shard jobs "
+                "(the matrix runs on nightly trunk and train-batch dispatches), so outcomes may be "
+                "'unknown' — a coverage gap, never a signal: safeToSwitch additionally requires the "
+                "operator to review the unknown/unmatched rows in legacyOnlyShards.occurrences "
+                "(e.g. against the train batch run that landed the PR) and affirm with "
+                "--escapes-reviewed. Sample counts use the latest run per distinct PR "
+                "(rawReportCount shows all)."
             ),
         },
     }
@@ -343,7 +522,8 @@ def markdown(summary: dict, days: int) -> str:
         "",
         "> ADR-0037 remains authoritative; this aggregate is the observation-period evidence for the switch decision (#2897).",
         "",
-        f"- Window: last {days} days, {summary['comparisonCount']} comparisons",
+        f"- Window: last {days} days, {summary['comparisonCount']} comparisons "
+        f"(latest run per distinct PR; {summary['rawReportCount']} raw reports)",
         f"- run_all shard count: {summary['totalShardCount']}",
         f"- Mean fraction of run_all: capability {sizes['meanCapabilityFractionOfRunAll']}, legacy {sizes['meanLegacyFractionOfRunAll']}",
         "",
@@ -386,21 +566,36 @@ def markdown(summary: dict, days: int) -> str:
     )
     occurrences = legacy_only["occurrences"]
     if occurrences:
-        lines.extend(["| Run | PR | Legacy-only shards |", "|---|---|---|"])
+        lines.extend(["| Run | PR | Legacy-only shards | Executed CI outcome |", "|---|---|---|---|"])
         for occurrence in occurrences[:20]:
             if occurrence["runUrl"]:
                 run_cell = f"[{occurrence['runId'] or 'run'}]({occurrence['runUrl']})"
             else:
                 run_cell = occurrence["runId"] or occurrence["source"] or "?"
             pr_cell = f"#{occurrence['prNumber']}" if occurrence["prNumber"] else "?"
+            if not occurrence["latestForPr"]:
+                pr_cell += " (superseded)"
             shard_cell = ", ".join(occurrence["legacyOnlyShards"])
             if occurrence["legacyRunAll"]:
                 shard_cell += " (legacy run_all)"
-            lines.append(f"| {run_cell} | {pr_cell} | {shard_cell} |")
+            outcome_text = ", ".join(f"{entry['shard']}={entry['conclusion']}" for entry in occurrence["shardOutcomes"])
+            if occurrence["ciRunUrl"]:
+                outcome_cell = f"[{outcome_text}]({occurrence['ciRunUrl']})"
+            else:
+                outcome_cell = outcome_text or "unknown"
+            lines.append(f"| {run_cell} | {pr_cell} | {shard_cell} | {outcome_cell} |")
         if len(occurrences) > 20:
-            lines.append(f"| … {len(occurrences) - 20} more (see JSON `legacyOnlyShards.occurrences`) | | |")
+            lines.append(f"| … {len(occurrences) - 20} more (see JSON `legacyOnlyShards.occurrences`) | | | |")
     else:
         lines.append("None.")
+    if legacy_only["unknownOutcomeCount"]:
+        lines.extend(
+            [
+                "",
+                f"- Unknown/unmatched shard outcomes: {legacy_only['unknownOutcomeCount']} "
+                "(coverage gaps — the operator must review these before affirming `--escapes-reviewed`)",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -415,13 +610,33 @@ def markdown(summary: dict, days: int) -> str:
     )
     for criterion in recommendation["criteria"]:
         mark = "x" if criterion["met"] else " "
-        lines.append(f"- [{mark}] {criterion['name']} {criterion['threshold']} (observed: {criterion['observed']})")
+        observed_suffix = " distinct PRs/runs" if criterion["name"] == "comparisonCount" else ""
+        lines.append(
+            f"- [{mark}] {criterion['name']} {criterion['threshold']} (observed: {criterion['observed']}{observed_suffix})"
+        )
+    signal_mark = " " if recommendation["escapedDefectSignal"] else "x"
+    lines.append(
+        f"- [{signal_mark}] no escaped-defect signal (no legacy-only shard job failed in executed CI over the window)"
+    )
     reviewed_mark = "x" if recommendation["escapesReviewed"] else " "
     lines.append(
-        f"- [{reviewed_mark}] legacy-only shard failures correlated over the window (operator acknowledgment, `--escapes-reviewed`)"
+        f"- [{reviewed_mark}] unknown/unmatched outcomes reviewed (operator acknowledgment, `--escapes-reviewed`)"
     )
-    if recommendation["safeToSwitch"]:
-        verdict = "**Verdict: SAFE to switch** (quantitative preconditions met and escape review acknowledged)."
+    if recommendation["escapedDefectSignal"]:
+        failures = ", ".join(
+            f"{job['shard']} (PR #{job['prNumber']})" if job["prNumber"] else job["shard"]
+            for job in recommendation["failedShardJobs"]
+        )
+        verdict = (
+            "**Verdict: NOT safe to switch — ESCAPED-DEFECT SIGNAL.** A legacy-only shard job "
+            f"failed in executed CI within the window: {failures}. The capability selector would "
+            "have skipped a genuinely failing shard; fix the capability mapping before switching."
+        )
+    elif recommendation["safeToSwitch"]:
+        verdict = (
+            "**Verdict: SAFE to switch** (quantitative preconditions met, no escaped-defect signal "
+            "in executed CI, and the unknown-outcome review acknowledged)."
+        )
     elif recommendation["preconditionsMet"]:
         verdict = (
             "**Verdict: PRECONDITIONS MET — manual legacy-only shard failure correlation still "
@@ -467,9 +682,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.from_dir is not None:
+        # Offline mode: executed outcomes may be embedded on the fixtures
+        # (_meta.shardOutcomes); no live join is attempted.
         reports = load_reports_from_dir(args.from_dir)
     else:
         reports = fetch_reports(args.repo, args.days)
+        join_executed_outcomes(args.repo, reports)
     total_shards = args.total_shards if args.total_shards is not None else load_total_shard_count()
     summary = aggregate(
         reports,
