@@ -359,7 +359,8 @@ class ObservationReportTests(unittest.TestCase):
         self.assertIn("head_sha=abc123", calls[0])
         self.assertEqual(document["_meta"]["ciRunUrl"], "https://ci.test/runs/77")
         self.assertEqual(
-            document["_meta"]["shardOutcomes"], {"B": {"jobName": "Server Tests (B)", "conclusion": "failure"}}
+            document["_meta"]["shardOutcomes"],
+            {"B": {"jobName": "Server Tests (B)", "conclusion": "failure", "runUrl": "https://ci.test/runs/77"}},
         )
         summary = self.aggregate([document], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
         recommendation = summary["switchRecommendation"]
@@ -369,11 +370,102 @@ class ObservationReportTests(unittest.TestCase):
         self.assertFalse(recommendation["safeToSwitch"])
         self.assertEqual(
             recommendation["failedShardJobs"],
-            [{"prNumber": 9, "shard": "B", "jobName": "Server Tests (B)", "ciRunUrl": "https://ci.test/runs/77"}],
+            [
+                {
+                    "prNumber": 9,
+                    "shard": "B",
+                    "jobName": "Server Tests (B)",
+                    "conclusion": "failure",
+                    "ciRunUrl": "https://ci.test/runs/77",
+                }
+            ],
         )
         rendered = MODULE.markdown(summary, 28)
         self.assertIn("ESCAPED-DEFECT SIGNAL", rendered)
         self.assertIn("[B=failure](https://ci.test/runs/77)", rendered)
+
+    def test_non_success_conclusions_signal_or_count_as_gaps(self):
+        # timed_out is a demonstrated non-pass: raises the blocking signal.
+        timed_out = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        timed_out["_meta"] = {
+            "prNumber": 11,
+            "shardOutcomes": {"B": {"jobName": "Server Tests (B)", "conclusion": "timed_out", "runUrl": "https://ci.test/runs/80"}},
+        }
+        summary = self.aggregate([timed_out], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["escapedDefectSignal"])
+        self.assertFalse(recommendation["safeToSwitch"])
+        self.assertEqual(recommendation["failedShardJobs"][0]["conclusion"], "timed_out")
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("ESCAPED-DEFECT SIGNAL", rendered)
+        self.assertIn("B=timed_out (PR #11)", rendered)
+        # cancelled is neither clean nor a signal: it must be counted as a
+        # coverage gap needing explicit review, not fall through silently.
+        cancelled = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        cancelled["_meta"] = {
+            "prNumber": 12,
+            "shardOutcomes": {"B": {"jobName": "Server Tests (B)", "conclusion": "cancelled", "runUrl": None}},
+        }
+        summary = self.aggregate([cancelled], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        self.assertFalse(summary["switchRecommendation"]["escapedDefectSignal"])
+        self.assertEqual(summary["legacyOnlyShards"]["unknownOutcomeCount"], 1)
+        self.assertIn("B=cancelled", MODULE.markdown(summary, 28))
+        # A verified success is clean: no signal, no gap.
+        succeeded = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        succeeded["_meta"] = {
+            "prNumber": 13,
+            "shardOutcomes": {"B": {"jobName": "Server Tests (B)", "conclusion": "success", "runUrl": None}},
+        }
+        summary = self.aggregate([succeeded], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        self.assertFalse(summary["switchRecommendation"]["escapedDefectSignal"])
+        self.assertEqual(summary["legacyOnlyShards"]["unknownOutcomeCount"], 0)
+        self.assertTrue(summary["switchRecommendation"]["safeToSwitch"])
+
+    def test_outcomes_merge_across_runs_at_same_head(self):
+        # Newest run at the head lacks the candidate shard; an older run
+        # executed it and failed. The failure must not be dropped as unknown.
+        document = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        document["_meta"] = {"prNumber": 14, "runId": 5, "headSha": "feed42", "runCreatedAt": "2026-07-02T00:00:00Z"}
+
+        def fake_gh_api(arguments, *, binary=False):
+            if "head_sha=feed42" in arguments:
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 91,
+                            "url": "https://ci.test/runs/91",
+                            "createdAt": "2026-07-02T01:00:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                        {
+                            "id": 90,
+                            "url": "https://ci.test/runs/90",
+                            "createdAt": "2026-07-02T00:30:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                    )
+                )
+            if "actions/runs/91/jobs" in arguments[2]:
+                return json.dumps({"name": "Server Tests (A)", "conclusion": "success"})
+            self.assertIn("actions/runs/90/jobs", arguments[2])
+            return json.dumps({"name": "Server Tests (B)", "conclusion": "failure"})
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            MODULE.join_executed_outcomes("honua-io/honua-server", [document])
+        finally:
+            MODULE.gh_api = original
+        self.assertEqual(
+            document["_meta"]["shardOutcomes"]["B"],
+            {"jobName": "Server Tests (B)", "conclusion": "failure", "runUrl": "https://ci.test/runs/90"},
+        )
+        summary = self.aggregate([document], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["escapedDefectSignal"])
+        self.assertFalse(recommendation["safeToSwitch"])
+        self.assertEqual(recommendation["failedShardJobs"][0]["ciRunUrl"], "https://ci.test/runs/90")
 
     def test_unknown_outcomes_are_counted_as_gaps_not_signal(self):
         document = report(capability_shards=["A"], legacy_shards=["A", "B"])  # no shardOutcomes embedded
@@ -384,7 +476,7 @@ class ObservationReportTests(unittest.TestCase):
         self.assertEqual(summary["legacyOnlyShards"]["unknownOutcomeCount"], 1)
         rendered = MODULE.markdown(summary, 28)
         self.assertIn("B=unknown", rendered)
-        self.assertIn("Unknown/unmatched shard outcomes: 1", rendered)
+        self.assertIn("Non-success shard outcomes needing review: 1", rendered)
 
     def test_empty_window_produces_null_distributions_and_unsafe_verdict(self):
         summary = self.aggregate([])

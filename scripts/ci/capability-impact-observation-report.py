@@ -35,6 +35,11 @@ CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
 # selection reports carry.
 SHARD_JOB_NAME_FORMAT = "Server Tests ({shard})"
 SHARD_JOB_NAME_PREFIX = "Server Tests ("
+# Executed conclusions that raise the blocking escaped-defect signal: the
+# shard demonstrably did not pass. Every other non-"success" conclusion
+# (cancelled, skipped, action_required, startup_failure, neutral, stale,
+# unknown, ...) is a coverage gap the operator must review explicitly.
+SIGNAL_CONCLUSIONS = frozenset({"failure", "timed_out"})
 REPORT_FILENAME = "capability-impact-report.json"
 ARTIFACT_PREFIX = "capability-impact-"
 
@@ -205,6 +210,8 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
         runs = [json.loads(line) for line in run_lines if line.strip()]
         runs.sort(key=lambda entry: entry.get("createdAt") or "", reverse=True)
         runs.sort(key=lambda entry: entry.get("path") != CI_WORKFLOW_PATH)
+        merged: dict[str, dict] = {}
+        primary_url = None
         for run in runs:
             if run.get("path", "").endswith(WORKFLOW):
                 continue  # the report-only comparison run itself never executes shards
@@ -220,15 +227,35 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
                     ".jobs[] | {name: .name, conclusion: .conclusion} | tojson",
                 ]
             ).splitlines()
-            jobs: dict[str, dict] = {}
+            contributed = False
             for job_line in job_lines:
                 if not job_line.strip():
                     continue
                 job = json.loads(job_line)
-                jobs[job["name"]] = {"jobName": job["name"], "conclusion": job.get("conclusion") or "unknown"}
-            if any(name.startswith(SHARD_JOB_NAME_PREFIX) for name in jobs):
-                return {"url": run.get("url"), "jobs": jobs}
+                name = job["name"]
+                if not name.startswith(SHARD_JOB_NAME_PREFIX):
+                    continue
+                # Merge shard outcomes ACROSS all runs at the head so a shard
+                # executed only by an older run is not dropped as unknown.
+                # First-seen wins under the ci.yml-first/newest-first sort, so
+                # each shard keeps its newest canonical executed conclusion.
+                if name in merged:
+                    continue
+                merged[name] = {
+                    "jobName": name,
+                    "conclusion": job.get("conclusion") or "unknown",
+                    "runUrl": run.get("url"),
+                }
+                contributed = True
+            if contributed and primary_url is None:
+                primary_url = run.get("url")
+        return {"url": primary_url, "jobs": merged}
     except subprocess.CalledProcessError:
+        # Degrade instead of failing the whole aggregate: the join is a
+        # best-effort enrichment, and every shard it cannot resolve is
+        # reported as conclusion "unknown" — a coverage gap the operator must
+        # explicitly review before affirming --escapes-reviewed, so a lookup
+        # failure can hide nothing silently.
         pass
     return {"url": None, "jobs": {}}
 
@@ -396,18 +423,30 @@ def aggregate(
             for shard in sorted(legacy_only_candidates):
                 outcome = outcomes_map.get(shard) or {}
                 conclusion = outcome.get("conclusion") or "unknown"
-                shard_outcomes.append({"shard": shard, "jobName": outcome.get("jobName"), "conclusion": conclusion})
-                if conclusion == "failure":
+                shard_outcomes.append(
+                    {
+                        "shard": shard,
+                        "jobName": outcome.get("jobName"),
+                        "conclusion": conclusion,
+                        "runUrl": outcome.get("runUrl"),
+                    }
+                )
+                # Only a verified "success" is clean. failure/timed_out raise
+                # the blocking signal; every other conclusion (unknown,
+                # cancelled, skipped, action_required, startup_failure, ...)
+                # is a coverage gap the operator must review explicitly.
+                if conclusion in SIGNAL_CONCLUSIONS:
                     escaped_defect_signal = True
                     failed_shard_jobs.append(
                         {
                             "prNumber": meta.get("prNumber"),
                             "shard": shard,
                             "jobName": outcome.get("jobName"),
-                            "ciRunUrl": meta.get("ciRunUrl"),
+                            "conclusion": conclusion,
+                            "ciRunUrl": outcome.get("runUrl") or meta.get("ciRunUrl"),
                         }
                     )
-                elif conclusion == "unknown":
+                elif conclusion != "success":
                     unknown_outcome_count += 1
             legacy_only_occurrences.append(
                 {
@@ -493,15 +532,16 @@ def aggregate(
                 "present in every comparison where the capability selection is strictly smaller, so "
                 "they cannot be a zero-tolerance switch criterion for a selector that is supposed to "
                 "be tighter. escapedDefectSignal joins each candidate to the executed "
-                "'Server Tests (<shard>)' job conclusion from any workflow run at the same head SHA "
-                "and is true if any such job failed in the window, which blocks safeToSwitch "
-                "outright. In the merge-train model per-PR heads often have no executed shard jobs "
-                "(the matrix runs on nightly trunk and train-batch dispatches), so outcomes may be "
-                "'unknown' — a coverage gap, never a signal: safeToSwitch additionally requires the "
-                "operator to review the unknown/unmatched rows in legacyOnlyShards.occurrences "
-                "(e.g. against the train batch run that landed the PR) and affirm with "
-                "--escapes-reviewed. Sample counts use the latest run per distinct PR "
-                "(rawReportCount shows all)."
+                "'Server Tests (<shard>)' job conclusions merged across the workflow runs at the "
+                "same head SHA and is true if any such job failed or timed out in the window, which "
+                "blocks safeToSwitch outright. Only a verified 'success' counts as clean: every "
+                "other conclusion (unknown, cancelled, skipped, action_required, startup_failure, "
+                "...) is a coverage gap, never a signal — and in the merge-train model per-PR heads "
+                "often have no executed shard jobs at all (the matrix runs on nightly trunk and "
+                "train-batch dispatches). safeToSwitch therefore additionally requires the operator "
+                "to review the non-success rows in legacyOnlyShards.occurrences (e.g. against the "
+                "train batch run that landed the PR) and affirm with --escapes-reviewed. Sample "
+                "counts use the latest run per distinct PR (rawReportCount shows all)."
             ),
         },
     }
@@ -592,8 +632,9 @@ def markdown(summary: dict, days: int) -> str:
         lines.extend(
             [
                 "",
-                f"- Unknown/unmatched shard outcomes: {legacy_only['unknownOutcomeCount']} "
-                "(coverage gaps — the operator must review these before affirming `--escapes-reviewed`)",
+                f"- Non-success shard outcomes needing review: {legacy_only['unknownOutcomeCount']} "
+                "(unknown/cancelled/skipped/... coverage gaps — only a verified `success` is clean; "
+                "the operator must review these before affirming `--escapes-reviewed`)",
             ]
         )
     lines.extend(
@@ -616,26 +657,28 @@ def markdown(summary: dict, days: int) -> str:
         )
     signal_mark = " " if recommendation["escapedDefectSignal"] else "x"
     lines.append(
-        f"- [{signal_mark}] no escaped-defect signal (no legacy-only shard job failed in executed CI over the window)"
+        f"- [{signal_mark}] no escaped-defect signal "
+        "(no legacy-only shard job failed or timed out in executed CI over the window)"
     )
     reviewed_mark = "x" if recommendation["escapesReviewed"] else " "
     lines.append(
-        f"- [{reviewed_mark}] unknown/unmatched outcomes reviewed (operator acknowledgment, `--escapes-reviewed`)"
+        f"- [{reviewed_mark}] non-success outcomes reviewed (operator acknowledgment, `--escapes-reviewed`)"
     )
     if recommendation["escapedDefectSignal"]:
         failures = ", ".join(
-            f"{job['shard']} (PR #{job['prNumber']})" if job["prNumber"] else job["shard"]
+            f"{job['shard']}={job['conclusion']}" + (f" (PR #{job['prNumber']})" if job["prNumber"] else "")
             for job in recommendation["failedShardJobs"]
         )
         verdict = (
             "**Verdict: NOT safe to switch — ESCAPED-DEFECT SIGNAL.** A legacy-only shard job "
-            f"failed in executed CI within the window: {failures}. The capability selector would "
-            "have skipped a genuinely failing shard; fix the capability mapping before switching."
+            f"failed or timed out in executed CI within the window: {failures}. The capability "
+            "selector would have skipped a genuinely failing shard; fix the capability mapping "
+            "before switching."
         )
     elif recommendation["safeToSwitch"]:
         verdict = (
             "**Verdict: SAFE to switch** (quantitative preconditions met, no escaped-defect signal "
-            "in executed CI, and the unknown-outcome review acknowledged)."
+            "in executed CI, and the non-success outcome review acknowledged)."
         )
     elif recommendation["preconditionsMet"]:
         verdict = (
