@@ -895,6 +895,12 @@ internal static class StudioPackageEndpoints
                 StudioApiJsonContext.Default.ApiResponseStudioContentVersion,
                 statusCode: StatusCodes.Status201Created);
         }
+        catch (ArgumentException ex)
+        {
+            // ADR-0069: a bridged family (form/analysis) rejects an envelope body that is not a
+            // valid native document before anything is persisted.
+            return BadRequest(context, ex.Message);
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(context, ex.Message);
@@ -1462,6 +1468,16 @@ internal static class StudioPackageEndpoints
         {
             return BadRequest(context, ex.Message);
         }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(context, "Studio content version was not found.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // ADR-0069: bridged families surface unsupported or natively-refused publication
+            // (analysis has no publish concept; a form version must be a native draft) as 409.
+            return Conflict(context, ex.Message);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             StudioEndpointsLog.EndpointFailed(logger, "publish-request.create", ex);
@@ -1595,6 +1611,12 @@ internal static class StudioPackageEndpoints
         catch (ArgumentException ex)
         {
             return BadRequest(context, ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // ADR-0069: rollback is not supported for bridged families (forms' published rows
+            // are DB-immutable; analysis versions are append-only).
+            return Conflict(context, ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

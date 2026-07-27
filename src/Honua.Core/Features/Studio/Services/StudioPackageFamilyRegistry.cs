@@ -4,6 +4,7 @@
 using System.Linq;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services.Bridging;
 
 namespace Honua.Core.Features.Studio.Services;
 
@@ -29,14 +30,24 @@ public sealed class StudioPackageFamilyRegistry : IStudioPackageFamilyRegistry
     ];
 
     private readonly IStudioPackageStore _store;
+    private readonly Dictionary<StudioPackageFamily, IStudioFamilyPersistenceBridge> _bridges;
 
     /// <summary>
     /// Initializes a new family registry.
     /// </summary>
-    public StudioPackageFamilyRegistry(IStudioPackageStore store)
+    /// <param name="store">The Studio package store.</param>
+    /// <param name="bridgeCatalog">
+    /// Optional family persistence bridges (ADR-0069, honua-server#3004). Bridged families
+    /// advertise their native format, operation set, and bridge limitations.
+    /// </param>
+    public StudioPackageFamilyRegistry(
+        IStudioPackageStore store,
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         _store = store;
+        _bridges = (bridgeCatalog?.Bridges ?? Array.Empty<IStudioFamilyPersistenceBridge>())
+            .ToDictionary(static bridge => bridge.Family);
     }
 
     /// <inheritdoc />
@@ -67,12 +78,37 @@ public sealed class StudioPackageFamilyRegistry : IStudioPackageFamilyRegistry
     public StudioPackageFamilyDescriptor? GetDescriptor(StudioPackageFamily family)
         => GetCapabilities().Families.FirstOrDefault(descriptor => descriptor.Family == family);
 
-    private static StudioPackageFamilyDescriptor Build(
+    private StudioPackageFamilyDescriptor Build(
         StudioPackageFamily family,
         string format,
         string validationDepth,
         bool durable)
     {
+        // Bridged families (ADR-0069) advertise their native format, bridge-specific operation
+        // set, publish support, and bridge limitations; persistence delegates to the family's
+        // native store rather than the Studio store.
+        if (_bridges.TryGetValue(family, out var bridge))
+        {
+            var bridgeLimitations = new List<string>(bridge.Limitations);
+            if (!durable)
+            {
+                bridgeLimitations.Insert(0, "package lifecycle drafts are backed by in-memory storage and are not durable across server restarts");
+            }
+
+            return new StudioPackageFamilyDescriptor
+            {
+                Family = family,
+                CurrentSchemaVersion = "1.0",
+                Format = bridge.Format,
+                SupportLevel = StudioPackageSupportLevel.Limited,
+                SupportedOperations = bridge.SupportedOperations,
+                ValidationDepth = validationDepth,
+                Limitations = bridgeLimitations,
+                MaxPackageBytes = DefaultMaxPackageBytes,
+                PreviewSupported = true,
+                PublishSupported = bridge.PublishSupported,
+            };
+        }
         var supportLevel = durable
             ? validationDepth == "family-specific"
                 ? StudioPackageSupportLevel.Supported
