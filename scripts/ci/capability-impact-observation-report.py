@@ -112,8 +112,12 @@ def gh_api(arguments: list[str], *, binary: bool = False) -> bytes | str:
     return completed.stdout if binary else completed.stdout.decode("utf-8")
 
 
-def fetch_reports(repo: str, days: int) -> list[dict]:
+def fetch_reports(repo: str, days: int) -> tuple[list[dict], list[dict]]:
     """Download `capability-impact-*` artifacts from recent pull_request runs.
+
+    Returns ``(reports, missing_evidence_prs)``: accepted comparison reports
+    (with ``_meta`` provenance) plus one gap record per PR in the run window
+    that produced NO parseable report from any run.
 
     workflow_dispatch runs are excluded (`event=pull_request`): they diff
     trunk against itself and would pollute the aggregate with empty
@@ -199,7 +203,25 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
                     ),
                 }
                 reports.append(document)
-    return reports
+    # A PR whose every run in the window failed/cancelled before uploading a
+    # parseable comparison artifact would otherwise vanish entirely — neither
+    # a comparison nor a stale-evidence gap. Emit an explicit missing-evidence
+    # record for every PR seen in the RUN list with no accepted report at all;
+    # the aggregate blocks the SAFE verdict while any exist.
+    accepted_prs = {
+        report["_meta"]["prNumber"] for report in reports if report["_meta"].get("prNumber") is not None
+    }
+    missing_evidence_prs = [
+        {
+            "prNumber": pr_number,
+            "newestRunId": newest_run["id"],
+            "newestRunUrl": newest_run.get("url"),
+            "reason": "no run for this PR produced a comparison report",
+        }
+        for pr_number, newest_run in sorted(newest_run_by_pr.items())
+        if pr_number not in accepted_prs
+    ]
+    return reports, missing_evidence_prs
 
 
 def _legacy_only_candidates(report: dict) -> list[str]:
@@ -383,6 +405,7 @@ def aggregate(
     min_comparisons: int,
     min_strict_subset_pct: float,
     escapes_reviewed: bool = False,
+    missing_evidence_prs: list[dict] | None = None,
 ) -> dict:
     capability_sizes: list[int] = []
     legacy_sizes: list[int] = []
@@ -405,6 +428,7 @@ def aggregate(
     failed_shard_jobs: list[dict] = []
     unknown_outcome_count = 0
     stale_evidence_prs: list[dict] = []
+    missing_evidence = list(missing_evidence_prs or [])
 
     for index, report in enumerate(reports):
         comparison = report["comparison"]
@@ -559,6 +583,7 @@ def aggregate(
         "relations": relations,
         "strictlySmaller": {"count": strictly_smaller, "pct": strict_subset_pct},
         "staleEvidencePrs": stale_evidence_prs,
+        "missingEvidencePrs": missing_evidence,
         "legacyOnlyShards": {
             "shardFrequency": _frequency_table(legacy_only_frequency),
             "reportsWithLegacyOnlyShards": reports_with_legacy_only,
@@ -582,11 +607,13 @@ def aggregate(
             "escapedDefectSignal": escaped_defect_signal,
             "failedShardJobs": failed_shard_jobs,
             "staleEvidencePrCount": len(stale_evidence_prs),
+            "missingEvidencePrCount": len(missing_evidence),
             "safeToSwitch": (
                 all(criterion["met"] for criterion in criteria)
                 and escapes_reviewed
                 and not escaped_defect_signal
                 and not stale_evidence_prs
+                and not missing_evidence
             ),
             "criteria": criteria,
             "note": (
@@ -605,8 +632,9 @@ def aggregate(
                 "to review the non-success rows in legacyOnlyShards.occurrences (e.g. against the "
                 "train batch run that landed the PR) and affirm with --escapes-reviewed. Sample "
                 "counts use the latest run per distinct PR (rawReportCount shows all), and "
-                "safeToSwitch also requires staleEvidencePrs to be empty: a PR whose newest run "
-                "produced no comparison report is being judged on outdated evidence."
+                "safeToSwitch also requires staleEvidencePrs and missingEvidencePrs to be empty: a "
+                "PR whose newest run produced no comparison report is being judged on outdated "
+                "evidence, and a PR with no report from any run was never observed at all."
             ),
         },
     }
@@ -711,8 +739,15 @@ def markdown(summary: dict, days: int) -> str:
             f"- ADR-0037 selector: {fallbacks['legacy']['count']} ({json.dumps(fallbacks['legacy']['reasons'])})",
         ]
     )
-    if summary["staleEvidencePrs"]:
+    if summary["staleEvidencePrs"] or summary["missingEvidencePrs"]:
         lines.extend(["", "### Evidence gaps (newest run has no report)", ""])
+        for gap in summary["missingEvidencePrs"]:
+            pr_text = f"PR #{gap['prNumber']}" if gap["prNumber"] else "PR ?"
+            newest_text = f"[{gap['newestRunId']}]({gap['newestRunUrl']})" if gap["newestRunUrl"] else gap["newestRunId"]
+            lines.append(
+                f"- {pr_text}: NO run produced a comparison report (newest run {newest_text}) — "
+                "this PR's selector behavior was never observed."
+            )
         for gap in summary["staleEvidencePrs"]:
             pr_text = f"PR #{gap['prNumber']}" if gap["prNumber"] else "PR ?"
             newest_text = f"[{gap['newestRunId']}]({gap['newestRunUrl']})" if gap["newestRunUrl"] else gap["newestRunId"]
@@ -748,6 +783,11 @@ def markdown(summary: dict, days: int) -> str:
         f"- [{stale_mark}] no stale-evidence PRs (every sampled PR's newest run produced a comparison report; "
         f"observed: {recommendation['staleEvidencePrCount']})"
     )
+    missing_mark = " " if recommendation["missingEvidencePrCount"] else "x"
+    lines.append(
+        f"- [{missing_mark}] no missing-evidence PRs (every PR in the window produced at least one "
+        f"comparison report; observed: {recommendation['missingEvidencePrCount']})"
+    )
     reviewed_mark = "x" if recommendation["escapesReviewed"] else " "
     lines.append(
         f"- [{reviewed_mark}] non-success outcomes reviewed (operator acknowledgment, `--escapes-reviewed`)"
@@ -768,12 +808,15 @@ def markdown(summary: dict, days: int) -> str:
             "**Verdict: SAFE to switch** (quantitative preconditions met, no escaped-defect signal "
             "in executed CI, no stale-evidence PRs, and the non-success outcome review acknowledged)."
         )
-    elif recommendation["preconditionsMet"] and recommendation["staleEvidencePrCount"]:
+    elif recommendation["preconditionsMet"] and (
+        recommendation["staleEvidencePrCount"] or recommendation["missingEvidencePrCount"]
+    ):
         verdict = (
-            "**Verdict: NOT safe to switch — stale evidence.** "
-            f"{recommendation['staleEvidencePrCount']} sampled PR(s) have a newest run with no "
-            "comparison report (see 'Evidence gaps'); re-run the comparison on those PRs' newest "
-            "pushes before switching."
+            "**Verdict: NOT safe to switch — evidence gaps.** "
+            f"{recommendation['staleEvidencePrCount']} PR(s) with stale evidence and "
+            f"{recommendation['missingEvidencePrCount']} PR(s) with no comparison report at all "
+            "(see 'Evidence gaps'); re-run the comparison on those PRs' newest pushes before "
+            "switching."
         )
     elif recommendation["preconditionsMet"]:
         verdict = (
@@ -821,10 +864,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.from_dir is not None:
         # Offline mode: executed outcomes may be embedded on the fixtures
-        # (_meta.shardOutcomes); no live join is attempted.
+        # (_meta.shardOutcomes); no live join or run-inventory gap detection
+        # is attempted (there is no run list to diff against).
         reports = load_reports_from_dir(args.from_dir)
+        missing_evidence_prs: list[dict] = []
     else:
-        reports = fetch_reports(args.repo, args.days)
+        reports, missing_evidence_prs = fetch_reports(args.repo, args.days)
         join_executed_outcomes(args.repo, reports)
     total_shards = args.total_shards if args.total_shards is not None else load_total_shard_count()
     summary = aggregate(
@@ -833,6 +878,7 @@ def main(argv: list[str] | None = None) -> int:
         min_comparisons=args.min_comparisons,
         min_strict_subset_pct=args.min_strict_subset_pct,
         escapes_reviewed=args.escapes_reviewed,
+        missing_evidence_prs=missing_evidence_prs,
     )
     print(json.dumps(summary, indent=2))
     if args.markdown:

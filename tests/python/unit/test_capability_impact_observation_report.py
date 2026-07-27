@@ -160,11 +160,13 @@ class ObservationReportTests(unittest.TestCase):
         original = MODULE.gh_api
         MODULE.gh_api = fake_gh_api
         try:
-            reports = MODULE.fetch_reports("honua-io/honua-server", 28)
+            reports, missing = MODULE.fetch_reports("honua-io/honua-server", 28)
         finally:
             MODULE.gh_api = original
         runs_request = calls[0]
         self.assertIn("event=pull_request", runs_request)
+        # Control: the PR produced an accepted report, so no missing-evidence record.
+        self.assertEqual(missing, [])
         self.assertEqual(len(reports), 1)
         self.assertEqual(reports[0]["changedFileCount"], 2)
         # Provenance is stamped for the escape-correlation table.
@@ -599,10 +601,12 @@ class ObservationReportTests(unittest.TestCase):
         original = MODULE.gh_api
         MODULE.gh_api = fake_gh_api
         try:
-            reports = MODULE.fetch_reports("honua-io/honua-server", 28)
+            reports, missing = MODULE.fetch_reports("honua-io/honua-server", 28)
         finally:
             MODULE.gh_api = original
         self.assertEqual(len(reports), 1)
+        # An older run's report exists, so this is a STALE gap, not a missing one.
+        self.assertEqual(missing, [])
         self.assertEqual(reports[0]["_meta"]["newestRunForPr"]["runId"], 2)
         summary = self.aggregate(reports, min_comparisons=1, min_strict_subset_pct=50.0)
         self.assertEqual(
@@ -629,7 +633,7 @@ class ObservationReportTests(unittest.TestCase):
         self.assertFalse(recommendation["safeToSwitch"])
         rendered = MODULE.markdown(summary, 28)
         self.assertIn("- [ ] no stale-evidence PRs", rendered)
-        self.assertIn("NOT safe to switch — stale evidence", rendered)
+        self.assertIn("NOT safe to switch — evidence gaps", rendered)
         # Control: when the sampled report IS from the newest run, no gap.
         current = report(capability_shards=["A"], legacy_shards=["A"])
         current["_meta"] = {
@@ -640,6 +644,77 @@ class ObservationReportTests(unittest.TestCase):
         summary = self.aggregate([current], min_comparisons=1, min_strict_subset_pct=0.0)
         self.assertEqual(summary["staleEvidencePrs"], [])
         self.assertNotIn("Evidence gaps", MODULE.markdown(summary, 28))
+
+    def test_pr_with_no_report_from_any_run_is_flagged_and_blocks_switch(self):
+        # PR 77's only run failed before uploading any artifact; PR 78 has an
+        # accepted report. PR 77 must surface as a missing-evidence gap that
+        # blocks the SAFE verdict — not silently vanish from the aggregate.
+        payloads = [report_zip(FIXTURES[0])]
+
+        def fake_gh_api(arguments, *, binary=False):
+            if binary:
+                return payloads.pop(0)
+            if "event=pull_request" in arguments:
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 4,
+                            "url": "https://runs.test/4",
+                            "createdAt": "2026-07-25T04:00:00Z",
+                            "headSha": "ddd",
+                            "prNumber": 77,
+                        },
+                        {
+                            "id": 3,
+                            "url": "https://runs.test/3",
+                            "createdAt": "2026-07-25T03:00:00Z",
+                            "headSha": "ccc",
+                            "prNumber": 78,
+                        },
+                    )
+                )
+            if "actions/runs/4/artifacts" in arguments[2]:
+                return ""  # PR 77's failed run uploaded nothing
+            self.assertIn("actions/runs/3/artifacts", arguments[2])
+            return json.dumps({"id": 30, "name": "capability-impact-30"})
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            reports, missing = MODULE.fetch_reports("honua-io/honua-server", 28)
+        finally:
+            MODULE.gh_api = original
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["_meta"]["prNumber"], 78)
+        self.assertEqual(
+            missing,
+            [
+                {
+                    "prNumber": 77,
+                    "newestRunId": 4,
+                    "newestRunUrl": "https://runs.test/4",
+                    "reason": "no run for this PR produced a comparison report",
+                }
+            ],
+        )
+        summary = self.aggregate(
+            reports, min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True, missing_evidence_prs=missing
+        )
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["preconditionsMet"])
+        self.assertEqual(recommendation["missingEvidencePrCount"], 1)
+        self.assertFalse(recommendation["safeToSwitch"])
+        self.assertEqual(summary["missingEvidencePrs"], missing)
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("- [ ] no missing-evidence PRs", rendered)
+        self.assertIn("PR #77: NO run produced a comparison report (newest run [4](https://runs.test/4))", rendered)
+        self.assertIn("NOT safe to switch — evidence gaps", rendered)
+        # Control: no missing-evidence record exists for PR 78, and without
+        # gaps the same sample is safe.
+        self.assertNotIn(78, [gap["prNumber"] for gap in missing])
+        summary = self.aggregate(reports, min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        self.assertTrue(summary["switchRecommendation"]["safeToSwitch"])
 
     def test_unknown_outcomes_are_counted_as_gaps_not_signal(self):
         document = report(capability_shards=["A"], legacy_shards=["A", "B"])  # no shardOutcomes embedded
