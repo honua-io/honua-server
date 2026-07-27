@@ -191,22 +191,46 @@ class ObservationReportTests(unittest.TestCase):
     def test_switch_recommendation_not_safe_with_few_comparisons_or_low_subset_pct(self):
         summary = self.aggregate()
         recommendation = summary["switchRecommendation"]
+        self.assertFalse(recommendation["preconditionsMet"])
         self.assertFalse(recommendation["safeToSwitch"])
         by_name = {criterion["name"]: criterion for criterion in recommendation["criteria"]}
         self.assertEqual(set(by_name), {"comparisonCount", "strictlySmallerSelectionPct"})
         self.assertFalse(by_name["comparisonCount"]["met"])
         self.assertFalse(by_name["strictlySmallerSelectionPct"]["met"])
 
-    def test_strictly_smaller_selection_does_not_block_switch_recommendation(self):
+    def test_strictly_smaller_selection_does_not_block_preconditions(self):
         # A genuinely tighter selector produces legacy-only shards on every
         # strictly-smaller comparison (escapedDefectCandidates is definitionally
         # the legacy-only set); those are informational and must not make the
-        # switch criteria mutually exclusive with min_strict_subset_pct.
+        # quantitative criteria mutually exclusive with min_strict_subset_pct.
         tighter = [report(capability_shards=["A"], legacy_shards=["A", "B"]) for _ in range(3)]
         summary = self.aggregate(tighter, min_comparisons=3, min_strict_subset_pct=60.0)
         self.assertEqual(summary["strictlySmaller"], {"count": 3, "pct": 100.0})
         self.assertEqual(summary["legacyOnlyShards"]["reportsWithLegacyOnlyShards"], 3)
-        self.assertTrue(summary["switchRecommendation"]["safeToSwitch"])
+        self.assertTrue(summary["switchRecommendation"]["preconditionsMet"])
+
+    def test_safe_to_switch_requires_operator_escape_review_acknowledgment(self):
+        tighter = [report(capability_shards=["A"], legacy_shards=["A", "B"]) for _ in range(3)]
+        # Preconditions met, no acknowledgment: verdict caps below safe.
+        summary = self.aggregate(tighter, min_comparisons=3, min_strict_subset_pct=60.0)
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["preconditionsMet"])
+        self.assertFalse(recommendation["escapesReviewed"])
+        self.assertFalse(recommendation["safeToSwitch"])
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("PRECONDITIONS MET", rendered)
+        self.assertIn("--escapes-reviewed", rendered)
+        self.assertNotIn("SAFE to switch", rendered)
+        # With the acknowledgment the full safe verdict is allowed.
+        summary = self.aggregate(tighter, min_comparisons=3, min_strict_subset_pct=60.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["escapesReviewed"])
+        self.assertTrue(recommendation["safeToSwitch"])
+        self.assertIn("SAFE to switch", MODULE.markdown(summary, 28))
+        # Acknowledgment alone never overrides unmet preconditions.
+        summary = self.aggregate(escapes_reviewed=True)
+        self.assertFalse(summary["switchRecommendation"]["safeToSwitch"])
+        self.assertIn("NOT yet safe to switch", MODULE.markdown(summary, 28))
 
     def test_empty_window_produces_null_distributions_and_unsafe_verdict(self):
         summary = self.aggregate([])

@@ -160,6 +160,7 @@ def aggregate(
     *,
     min_comparisons: int,
     min_strict_subset_pct: float,
+    escapes_reviewed: bool = False,
 ) -> dict:
     capability_sizes: list[int] = []
     legacy_sizes: list[int] = []
@@ -266,16 +267,20 @@ def aggregate(
             },
         },
         "switchRecommendation": {
-            "safeToSwitch": all(criterion["met"] for criterion in criteria),
+            "preconditionsMet": all(criterion["met"] for criterion in criteria),
+            "escapesReviewed": escapes_reviewed,
+            "safeToSwitch": all(criterion["met"] for criterion in criteria) and escapes_reviewed,
             "criteria": criteria,
             "note": (
                 "Legacy-only shards (the per-report escapedDefectCandidates field) are shards "
                 "ADR-0037 would run but the capability selector would not. They are definitionally "
                 "present in every comparison where the capability selection is strictly smaller, so "
                 "they cannot be a zero-tolerance switch criterion for a selector that is supposed to "
-                "be tighter. The per-PR reports carry no shard outcome data; before switching, "
-                "manually correlate the legacy-only shard table above with actual shard failures on "
-                "those PRs to confirm no real escapes occurred."
+                "be tighter. The per-PR reports carry no shard outcome data, so the quantitative "
+                "criteria above are only preconditions: safeToSwitch additionally requires the "
+                "operator to correlate the legacy-only shard table with actual shard failures on "
+                "those PRs over the window and affirm the review by re-running with "
+                "--escapes-reviewed."
             ),
         },
     }
@@ -345,11 +350,24 @@ def markdown(summary: dict, days: int) -> str:
     for criterion in recommendation["criteria"]:
         mark = "x" if criterion["met"] else " "
         lines.append(f"- [{mark}] {criterion['name']} {criterion['threshold']} (observed: {criterion['observed']})")
-    verdict = "SAFE to switch" if recommendation["safeToSwitch"] else "NOT yet safe to switch"
+    reviewed_mark = "x" if recommendation["escapesReviewed"] else " "
+    lines.append(
+        f"- [{reviewed_mark}] legacy-only shard failures correlated over the window (operator acknowledgment, `--escapes-reviewed`)"
+    )
+    if recommendation["safeToSwitch"]:
+        verdict = "**Verdict: SAFE to switch** (quantitative preconditions met and escape review acknowledged)."
+    elif recommendation["preconditionsMet"]:
+        verdict = (
+            "**Verdict: PRECONDITIONS MET — manual legacy-only shard failure correlation still "
+            "required before switching.** Re-run with `--escapes-reviewed` after correlating the "
+            "legacy-only shard table with actual shard failures on those PRs."
+        )
+    else:
+        verdict = "**Verdict: NOT yet safe to switch** (quantitative preconditions not met)."
     lines.extend(
         [
             "",
-            f"**Verdict: {verdict}** (all criteria must be met).",
+            verdict,
             "",
             recommendation["note"],
         ]
@@ -371,6 +389,15 @@ def main(argv: list[str] | None = None) -> int:
         default=60.0,
         help="Switch criterion: minimum percentage of comparisons where the capability selection is strictly smaller.",
     )
+    parser.add_argument(
+        "--escapes-reviewed",
+        action="store_true",
+        help=(
+            "Operator acknowledgment that legacy-only shard failures were manually correlated over "
+            "the window. Without it the verdict caps at PRECONDITIONS MET and safeToSwitch stays "
+            "false, because the per-PR reports carry no shard outcome data."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.from_dir is not None:
@@ -383,6 +410,7 @@ def main(argv: list[str] | None = None) -> int:
         total_shards,
         min_comparisons=args.min_comparisons,
         min_strict_subset_pct=args.min_strict_subset_pct,
+        escapes_reviewed=args.escapes_reviewed,
     )
     print(json.dumps(summary, indent=2))
     if args.markdown:
