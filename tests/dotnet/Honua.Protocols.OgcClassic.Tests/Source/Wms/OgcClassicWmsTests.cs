@@ -102,6 +102,36 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_TwoComponentVersion_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetCapabilities_FourComponentVersion_ReturnsServiceException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2.3.4");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        content.Should().Contain("ServiceExceptionReport");
+        content.Should().Contain("InvalidParameterValue");
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.Wms111)]
     [Operation(Operations.Wms)]
     [InterfaceOperation(TestProtocols.Wms111, "GetCapabilities")]
@@ -673,7 +703,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         var schemaLocation = document.Root?.Attribute(
             System.Xml.Linq.XName.Get(
                 "noNamespaceSchemaLocation",
-                System.Xml.Schema.XmlSchema.InstanceNamespace))?.Value;
+                System.Xml.Schema.XmlSchema.InstanceNamespace))?.Value
+            ?? throw new InvalidOperationException("GML output is missing xsi:noNamespaceSchemaLocation.");
         schemaLocation.Should().NotBeNullOrWhiteSpace();
 
         var schemaResponse = await _fixture.Client.GetAsync(schemaLocation);
@@ -702,6 +733,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         {
             while (validatingReader.Read())
             {
+                // Reading to the end drives schema validation; errors surface via ValidationEventHandler.
             }
         }
 

@@ -750,7 +750,11 @@ internal static partial class WmsRequestHandlers
             return true;
         }
 
-        if (!Version.TryParse(trimmed, out var parsedVersion))
+        // WMS version values have exactly three numeric components (x.y.z); shapes
+        // like "1.2" or "1.2.3.4" are InvalidParameterValue, not negotiable inputs.
+        if (!Version.TryParse(trimmed, out var parsedVersion) ||
+            parsedVersion.Build < 0 ||
+            parsedVersion.Revision >= 0)
         {
             negotiatedVersion = string.Empty;
             return false;
