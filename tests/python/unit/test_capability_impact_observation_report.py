@@ -516,6 +516,53 @@ class ObservationReportTests(unittest.TestCase):
         self.assertTrue(summary["switchRecommendation"]["escapedDefectSignal"])
         self.assertFalse(summary["switchRecommendation"]["safeToSwitch"])
 
+    def test_newer_executed_rerun_supersedes_older_failure(self):
+        # A successful rerun at the same head (e.g. after a transient 40P01
+        # deadlock flake) is the newest executed result and must win: the
+        # older failure raises no signal. Non-executed conclusions still never
+        # shadow executed ones (covered by the skipped/failure test above).
+        document = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        document["_meta"] = {"prNumber": 16, "runId": 8, "headSha": "beef99", "runCreatedAt": "2026-07-04T00:00:00Z"}
+
+        def fake_gh_api(arguments, *, binary=False):
+            if "head_sha=beef99" in arguments:
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 95,
+                            "url": "https://ci.test/runs/95",
+                            "createdAt": "2026-07-04T02:00:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                        {
+                            "id": 94,
+                            "url": "https://ci.test/runs/94",
+                            "createdAt": "2026-07-04T01:00:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                    )
+                )
+            if "actions/runs/95/jobs" in arguments[2]:
+                return json.dumps({"name": "Server Tests (B)", "conclusion": "success"})
+            self.assertIn("actions/runs/94/jobs", arguments[2])
+            return json.dumps({"name": "Server Tests (B)", "conclusion": "failure"})
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            MODULE.join_executed_outcomes("honua-io/honua-server", [document])
+        finally:
+            MODULE.gh_api = original
+        self.assertEqual(
+            document["_meta"]["shardOutcomes"]["B"],
+            {"jobName": "Server Tests (B)", "conclusion": "success", "runUrl": "https://ci.test/runs/95"},
+        )
+        summary = self.aggregate([document], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertFalse(recommendation["escapedDefectSignal"])
+        self.assertTrue(recommendation["safeToSwitch"])
+
     def test_pr_whose_newest_run_has_no_report_is_flagged_as_evidence_gap(self):
         # End to end through the fetch: PR 55 has an artifact only on the
         # OLDER run 1; a newer run 2 exists with no parseable report.
@@ -573,6 +620,16 @@ class ObservationReportTests(unittest.TestCase):
         rendered = MODULE.markdown(summary, 28)
         self.assertIn("### Evidence gaps (newest run has no report)", rendered)
         self.assertIn("PR #55: newest run [2](https://runs.test/2) produced no comparison report", rendered)
+        # A stale-evidence PR blocks the SAFE verdict even when every other
+        # criterion is met and the operator acknowledged the review.
+        summary = self.aggregate(reports, min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        recommendation = summary["switchRecommendation"]
+        self.assertTrue(recommendation["preconditionsMet"])
+        self.assertEqual(recommendation["staleEvidencePrCount"], 1)
+        self.assertFalse(recommendation["safeToSwitch"])
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("- [ ] no stale-evidence PRs", rendered)
+        self.assertIn("NOT safe to switch — stale evidence", rendered)
         # Control: when the sampled report IS from the newest run, no gap.
         current = report(capability_shards=["A"], legacy_shards=["A"])
         current["_meta"] = {

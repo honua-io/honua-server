@@ -46,37 +46,49 @@ class InteropEvidenceFreshnessTests(unittest.TestCase):
             write_envelopes(root, envelopes)
             return MODULE.load_interop_evidence(root)
 
-    def test_future_dated_envelope_never_becomes_anchor_and_fails_closed(self):
+    def test_future_dated_envelope_fails_generation_with_explicit_error(self):
+        # A future-dated run_date is corrupt input: it must never anchor the
+        # window (it would self-report fresh while staling legitimate
+        # evidence), and silently excluding it against wall clock would make
+        # the committed bytes time-dependent. The generator refuses to run.
         future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)).isoformat().replace("+00:00", "Z")
+        with self.assertRaises(SystemExit) as raised:
+            self.load(
+                [
+                    envelope("js", "wms", future),
+                    envelope("cli", "wfs", "2026-07-20T00:00:00Z"),
+                ]
+            )
+        message = str(raised.exception)
+        self.assertIn("future-dated", message)
+        self.assertIn("js", message)
+        self.assertIn("wms", message)
+
+    def test_all_future_dated_envelopes_fail_generation_too(self):
+        future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=5)).isoformat().replace("+00:00", "Z")
+        with self.assertRaises(SystemExit) as raised:
+            self.load([envelope("js", "wms", future)])
+        self.assertIn("future-dated", str(raised.exception))
+
+    def test_valid_envelopes_anchor_and_stamp_fresh(self):
         legit_date = "2026-07-20T00:00:00Z"
-        loaded, anchor = self.load(
-            [
-                envelope("js", "wms", future),
-                envelope("cli", "wfs", legit_date),
-            ]
-        )
-        # The legitimate envelope anchors the window, not the future-dated one.
-        self.assertIsNotNone(anchor)
+        loaded, anchor = self.load([envelope("cli", "wfs", legit_date)])
         self.assertEqual(anchor.isoformat().replace("+00:00", "Z"), legit_date)
-        # The legitimate envelope keeps its correct freshness (age 0 = fresh).
-        legit = MODULE.interop_freshness(loaded[("cli", "wfs")], anchor)
-        self.assertEqual(legit, {"state": "fresh", "ageDays": 0, "runDate": legit_date})
-        # The future-dated envelope fails closed: negative age, stale, with an
-        # explicit reason flagging it.
-        flagged = MODULE.interop_freshness(loaded[("js", "wms")], anchor)
+        self.assertEqual(
+            MODULE.interop_freshness(loaded[("cli", "wfs")], anchor),
+            {"state": "fresh", "ageDays": 0, "runDate": legit_date},
+        )
+
+    def test_negative_age_is_defensively_stale_with_reason(self):
+        # load_interop_evidence rejects future-dated input outright, so an
+        # envelope newer than the anchor should be unreachable — but the
+        # stamping still fails closed defensively with an explicit reason.
+        newer = envelope("js", "wms", "2026-07-20T00:00:00Z")
+        older_anchor = dt.datetime(2026, 7, 1, tzinfo=dt.timezone.utc)
+        flagged = MODULE.interop_freshness(newer, older_anchor)
         self.assertEqual(flagged["state"], "stale")
         self.assertLess(flagged["ageDays"], 0)
         self.assertIn("future-dated", flagged["reason"])
-
-    def test_all_future_dated_envelopes_leave_no_anchor(self):
-        future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=5)).isoformat().replace("+00:00", "Z")
-        loaded, anchor = self.load([envelope("js", "wms", future)])
-        self.assertIsNone(anchor)
-        # Without an anchor everything is unknown — never self-reported fresh.
-        self.assertEqual(
-            MODULE.interop_freshness(loaded[("js", "wms")], anchor),
-            {"state": "unknown", "ageDays": None, "runDate": None},
-        )
 
     def test_stale_and_not_green_envelopes_have_no_reason_flag(self):
         newest = "2026-07-20T00:00:00Z"

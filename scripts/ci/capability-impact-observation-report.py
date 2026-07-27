@@ -40,6 +40,13 @@ SHARD_JOB_NAME_PREFIX = "Server Tests ("
 # (cancelled, skipped, action_required, startup_failure, neutral, stale,
 # unknown, ...) is a coverage gap the operator must review explicitly.
 SIGNAL_CONCLUSIONS = frozenset({"failure", "timed_out"})
+# Conclusions where the shard job actually ran to a verdict. Merge precedence
+# across runs at one head: the NEWEST executed result wins (a successful
+# rerun supersedes an older flake failure — e.g. the documented transient
+# 40P01 deadlock reruns — and a newer failure supersedes an older success),
+# while non-executed conclusions (skipped/cancelled/unknown/...) never shadow
+# an executed result from any run.
+EXECUTED_CONCLUSIONS = frozenset({"success"}) | SIGNAL_CONCLUSIONS
 REPORT_FILENAME = "capability-impact-report.json"
 ARTIFACT_PREFIX = "capability-impact-"
 
@@ -257,12 +264,13 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
                     continue
                 # Merge shard outcomes ACROSS all runs at the head so a shard
                 # executed only by an older run is not dropped as unknown.
-                # Signal precedence: a demonstrated failure/timed_out from ANY
-                # run at the head always wins — a newer skipped/cancelled/
-                # unknown conclusion must not shadow it. Only among equally
-                # non-signal results does first-seen win (the ci.yml-first/
-                # newest-first sort), keeping each shard's newest canonical
-                # executed conclusion.
+                # Precedence (see EXECUTED_CONCLUSIONS): among executed
+                # results the newest run wins — first-seen under the
+                # ci.yml-first/newest-first sort — so a successful rerun
+                # supersedes an older flake failure and a newer failure
+                # supersedes an older success. Non-executed conclusions
+                # (skipped/cancelled/unknown/...) only ever fill an empty
+                # slot and are replaced by an executed result from ANY run.
                 candidate = {
                     "jobName": name,
                     "conclusion": job.get("conclusion") or "unknown",
@@ -270,8 +278,8 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
                 }
                 existing = merged.get(name)
                 if existing is not None and not (
-                    candidate["conclusion"] in SIGNAL_CONCLUSIONS
-                    and existing["conclusion"] not in SIGNAL_CONCLUSIONS
+                    candidate["conclusion"] in EXECUTED_CONCLUSIONS
+                    and existing["conclusion"] not in EXECUTED_CONCLUSIONS
                 ):
                     continue
                 merged[name] = candidate
@@ -573,8 +581,12 @@ def aggregate(
             "escapesReviewed": escapes_reviewed,
             "escapedDefectSignal": escaped_defect_signal,
             "failedShardJobs": failed_shard_jobs,
+            "staleEvidencePrCount": len(stale_evidence_prs),
             "safeToSwitch": (
-                all(criterion["met"] for criterion in criteria) and escapes_reviewed and not escaped_defect_signal
+                all(criterion["met"] for criterion in criteria)
+                and escapes_reviewed
+                and not escaped_defect_signal
+                and not stale_evidence_prs
             ),
             "criteria": criteria,
             "note": (
@@ -592,7 +604,9 @@ def aggregate(
                 "train-batch dispatches). safeToSwitch therefore additionally requires the operator "
                 "to review the non-success rows in legacyOnlyShards.occurrences (e.g. against the "
                 "train batch run that landed the PR) and affirm with --escapes-reviewed. Sample "
-                "counts use the latest run per distinct PR (rawReportCount shows all)."
+                "counts use the latest run per distinct PR (rawReportCount shows all), and "
+                "safeToSwitch also requires staleEvidencePrs to be empty: a PR whose newest run "
+                "produced no comparison report is being judged on outdated evidence."
             ),
         },
     }
@@ -729,6 +743,11 @@ def markdown(summary: dict, days: int) -> str:
         f"- [{signal_mark}] no escaped-defect signal "
         "(no legacy-only shard job failed or timed out in executed CI over the window)"
     )
+    stale_mark = " " if recommendation["staleEvidencePrCount"] else "x"
+    lines.append(
+        f"- [{stale_mark}] no stale-evidence PRs (every sampled PR's newest run produced a comparison report; "
+        f"observed: {recommendation['staleEvidencePrCount']})"
+    )
     reviewed_mark = "x" if recommendation["escapesReviewed"] else " "
     lines.append(
         f"- [{reviewed_mark}] non-success outcomes reviewed (operator acknowledgment, `--escapes-reviewed`)"
@@ -747,7 +766,14 @@ def markdown(summary: dict, days: int) -> str:
     elif recommendation["safeToSwitch"]:
         verdict = (
             "**Verdict: SAFE to switch** (quantitative preconditions met, no escaped-defect signal "
-            "in executed CI, and the non-success outcome review acknowledged)."
+            "in executed CI, no stale-evidence PRs, and the non-success outcome review acknowledged)."
+        )
+    elif recommendation["preconditionsMet"] and recommendation["staleEvidencePrCount"]:
+        verdict = (
+            "**Verdict: NOT safe to switch — stale evidence.** "
+            f"{recommendation['staleEvidencePrCount']} sampled PR(s) have a newest run with no "
+            "comparison report (see 'Evidence gaps'); re-run the comparison on those PRs' newest "
+            "pushes before switching."
         )
     elif recommendation["preconditionsMet"]:
         verdict = (
