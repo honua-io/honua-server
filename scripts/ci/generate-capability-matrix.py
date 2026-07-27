@@ -111,7 +111,10 @@ def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], di
     ``load_envelopes``): the bare regeneration must be byte-stable because the
     capability-matrix drift gate and the merge train both re-run it, so a
     filesystem-order-dependent winner for duplicate (lane, protocol) pairs is
-    not acceptable here. For the same reason the anchor is the newest
+    not acceptable here. Duplicate pairs follow the
+    scripts/client-compat/diff-baselines.py precedent: the envelope with the
+    highest ``run_date`` wins, and ties keep the first under sorted path
+    order — both deterministic, so ``--check`` stays byte-stable. For the same reason the anchor is the newest
     ``run_date`` across the committed envelopes, not wall-clock time: an
     ``ageDays`` measured from "now" would drift the committed artifact stale
     every day with no source change. A future-dated ``run_date`` must never
@@ -134,7 +137,15 @@ def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], di
             lane = envelope.get("client_lane") or envelope.get("clientLane")
             protocol = envelope.get("protocol")
             if lane and protocol:
-                envelopes[(lane, protocol)] = envelope
+                key = (lane, protocol)
+                existing = envelopes.get(key)
+                # Duplicate (lane, protocol) pairs: keep the most recent
+                # observation (highest run_date), matching
+                # scripts/client-compat/diff-baselines.py — not whichever
+                # path happens to sort last. Strict '>' keeps the first
+                # sorted path on ties (deterministic).
+                if existing is None or str(envelope.get("run_date") or "") > str(existing.get("run_date") or ""):
+                    envelopes[key] = envelope
     now = dt.datetime.now(dt.timezone.utc)
     timestamps = []
     for (lane, protocol), envelope in envelopes.items():

@@ -79,6 +79,33 @@ class InteropEvidenceFreshnessTests(unittest.TestCase):
             {"state": "fresh", "ageDays": 0, "runDate": legit_date},
         )
 
+    def test_duplicate_pair_keeps_newest_run_date_not_last_sorted_path(self):
+        # Two committed envelopes for the same (lane, protocol): the NEWER
+        # observation lives in the lexically EARLIER path (index 0) and must
+        # win, matching scripts/client-compat/diff-baselines.py; last-sorted-
+        # path-wins would publish the stale runDate/freshness.
+        newer_date = "2026-07-20T00:00:00Z"
+        older_date = "2026-06-01T00:00:00Z"
+        loaded, anchor = self.load(
+            [
+                envelope("js", "wms", newer_date),  # js-wms-0.cert.json
+                envelope("js", "wms", older_date),  # js-wms-1.cert.json
+            ]
+        )
+        self.assertEqual(loaded[("js", "wms")]["run_date"], newer_date)
+        self.assertEqual(anchor.isoformat().replace("+00:00", "Z"), newer_date)
+        self.assertEqual(
+            MODULE.interop_freshness(loaded[("js", "wms")], anchor),
+            {"state": "fresh", "ageDays": 0, "runDate": newer_date},
+        )
+        # Equal run_date tie: the first sorted path wins deterministically.
+        first = envelope("cli", "wfs", newer_date)
+        first["marker"] = "first"
+        second = envelope("cli", "wfs", newer_date)
+        second["marker"] = "second"
+        loaded, _ = self.load([first, second])
+        self.assertEqual(loaded[("cli", "wfs")]["marker"], "first")
+
     def test_negative_age_is_defensively_stale_with_reason(self):
         # load_interop_evidence rejects future-dated input outright, so an
         # envelope newer than the anchor should be unreachable — but the
