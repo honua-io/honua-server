@@ -24,7 +24,7 @@ public sealed class MetadataReleaseOperationOptions
     /// exercised and recorded without depending on a naturally broken layer. Safe by default: every
     /// field is inert unless explicitly configured, and injection is refused outside
     /// <see cref="FaultInjection"/>'s allowed-environment list so it can never fire against
-    /// production. See <c>docs/internal/demo/demo-b-safe-rollback.md</c>.
+    /// production. See <c>runbook/demo-b-safe-rollback.md</c> in the honua-io/honua-demo repository.
     /// </summary>
     public MetadataReleaseFaultInjectionOptions FaultInjection { get; set; } = new();
 }
