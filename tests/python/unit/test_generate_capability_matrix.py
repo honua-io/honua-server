@@ -106,6 +106,34 @@ class InteropEvidenceFreshnessTests(unittest.TestCase):
         loaded, _ = self.load([first, second])
         self.assertEqual(loaded[("cli", "wfs")]["marker"], "first")
 
+    def test_duplicate_pair_compares_instants_not_lexicographic_strings(self):
+        # "2026-07-10T00:30:00+02:00" sorts ABOVE "2026-07-09T23:00:00Z"
+        # lexicographically but is the EARLIER instant (22:30Z vs 23:00Z).
+        # Instant ordering must win.
+        offset_earlier = "2026-07-10T00:30:00+02:00"  # = 2026-07-09T22:30:00Z
+        utc_later = "2026-07-09T23:00:00Z"
+        loaded, anchor = self.load(
+            [
+                envelope("js", "wms", offset_earlier),  # js-wms-0.cert.json
+                envelope("js", "wms", utc_later),  # js-wms-1.cert.json
+            ]
+        )
+        self.assertEqual(loaded[("js", "wms")]["run_date"], utc_later)
+        self.assertEqual(anchor, dt.datetime(2026, 7, 9, 23, 0, tzinfo=dt.timezone.utc))
+        # Equal INSTANTS in different representations tie-break to the first
+        # sorted path.
+        first = envelope("cli", "wfs", "2026-07-10T02:00:00+02:00")  # = 00:00Z
+        first["marker"] = "first"
+        second = envelope("cli", "wfs", "2026-07-10T00:00:00Z")
+        second["marker"] = "second"
+        loaded, _ = self.load([first, second])
+        self.assertEqual(loaded[("cli", "wfs")]["marker"], "first")
+        # An unparseable timestamp never displaces a parseable one.
+        broken = envelope("desktop-qgis", "wfs", "not-a-date")
+        parseable = envelope("desktop-qgis", "wfs", utc_later)
+        loaded, _ = self.load([broken, parseable])
+        self.assertEqual(loaded[("desktop-qgis", "wfs")]["run_date"], utc_later)
+
     def test_negative_age_is_defensively_stale_with_reason(self):
         # load_interop_evidence rejects future-dated input outright, so an
         # envelope newer than the anchor should be unreachable — but the

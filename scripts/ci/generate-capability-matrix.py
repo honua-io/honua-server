@@ -112,9 +112,12 @@ def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], di
     capability-matrix drift gate and the merge train both re-run it, so a
     filesystem-order-dependent winner for duplicate (lane, protocol) pairs is
     not acceptable here. Duplicate pairs follow the
-    scripts/client-compat/diff-baselines.py precedent: the envelope with the
-    highest ``run_date`` wins, and ties keep the first under sorted path
-    order — both deterministic, so ``--check`` stays byte-stable. For the same reason the anchor is the newest
+    scripts/client-compat/diff-baselines.py precedent (newest observation
+    wins) but compare parsed UTC-normalized instants rather than raw strings:
+    ISO-8601 offsets break lexicographic ordering ("...T00:30:00+02:00" sorts
+    above "...T23:00:00Z" of the previous day while being the earlier
+    instant). Equal instants keep the first under sorted path order — both
+    deterministic, so ``--check`` stays byte-stable. For the same reason the anchor is the newest
     ``run_date`` across the committed envelopes, not wall-clock time: an
     ``ageDays`` measured from "now" would drift the committed artifact stale
     every day with no source change. A future-dated ``run_date`` must never
@@ -140,12 +143,19 @@ def load_interop_evidence(envelope_root: Path) -> tuple[dict[tuple[str, str], di
                 key = (lane, protocol)
                 existing = envelopes.get(key)
                 # Duplicate (lane, protocol) pairs: keep the most recent
-                # observation (highest run_date), matching
-                # scripts/client-compat/diff-baselines.py — not whichever
-                # path happens to sort last. Strict '>' keeps the first
-                # sorted path on ties (deterministic).
-                if existing is None or str(envelope.get("run_date") or "") > str(existing.get("run_date") or ""):
+                # observation, matching scripts/client-compat/
+                # diff-baselines.py's newest-wins semantics — but compared as
+                # parsed UTC instants, not lexicographically (mixed ISO-8601
+                # offsets misorder as strings). Strict '>' keeps the first
+                # sorted path on equal instants; an unparseable timestamp
+                # never displaces a parseable one (deterministic).
+                if existing is None:
                     envelopes[key] = envelope
+                else:
+                    candidate_at, _ = CAPABILITY_IMPACT.parse_timestamp(envelope)
+                    existing_at, _ = CAPABILITY_IMPACT.parse_timestamp(existing)
+                    if candidate_at is not None and (existing_at is None or candidate_at > existing_at):
+                        envelopes[key] = envelope
     now = dt.datetime.now(dt.timezone.utc)
     timestamps = []
     for (lane, protocol), envelope in envelopes.items():
