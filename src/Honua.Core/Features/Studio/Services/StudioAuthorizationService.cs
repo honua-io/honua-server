@@ -163,7 +163,9 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
                 "Authentication is required for Studio package lifecycle operations.");
         }
 
-        var isElevated = operation is StudioAuthorizationOperation.PublishRequest or StudioAuthorizationOperation.Rollback;
+        var isElevated = operation is StudioAuthorizationOperation.PublishRequest
+            or StudioAuthorizationOperation.Rollback
+            or StudioAuthorizationOperation.Generate;
         var isRead = operation is StudioAuthorizationOperation.ReadDraft
             or StudioAuthorizationOperation.ReadContentItem
             or StudioAuthorizationOperation.ListOwn;
@@ -201,9 +203,12 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // id regardless of who owns it. A grant scoped to the "own" sentinel authorizes every
         // resource the caller owns; a grant scoped to the concrete resourceId (or the "*"
         // wildcard) authorizes an operator-provisioned delegate, independent of ownership.
-        var operatorOperation = operation == StudioAuthorizationOperation.PublishRequest
-            ? OperatorOperation.Publish
-            : OperatorOperation.Rollback;
+        var operatorOperation = operation switch
+        {
+            StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
+            StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
+            _ => OperatorOperation.Rollback,
+        };
 
         if (isOwn && await HasOperatorGrantAsync(principal, operatorOperation, OwnResourceSentinel, cancellationToken).ConfigureAwait(false))
         {

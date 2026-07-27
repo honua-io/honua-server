@@ -120,11 +120,18 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Create Studio Rollback Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        // honua-server#3023: the generate routes intentionally rely on the group-level
+        // RequireStudioLifecycleAuthorization() gate (admin unconditionally; any authenticated
+        // principal once Studio:EndUserAuthorization:Enabled is on) instead of the former
+        // route-level RequireAdminAuthorization(). AI generation must not be implicitly
+        // widened by the end-user flag, so each handler additionally enforces the elevated
+        // StudioAuthorizationOperation.Generate check (StudioDraft/own/Execute operator grant
+        // for non-admins) before the request body is parsed. With the flag off this is exactly
+        // the prior admin-only posture.
         group.MapPost("/map-packages/generate", HandleGenerateMap)
             .WithDisplayName("Generate Studio Map Package")
             .WithSummary("Generate or refine a map package from a natural-language prompt.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .RequireAdminAuthorization()
             .Accepts<GenerateMapPackageRequest>("application/json")
             .Produces<MapGenerationResult>();
 
@@ -132,7 +139,6 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Generate Studio App Package")
             .WithSummary("Generate or refine a studio-app/v1 app package from a natural-language prompt.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .RequireAdminAuthorization()
             .Accepts<GenerateAppPackageRequest>("application/json")
             .Produces<AppGenerationResult>();
 
@@ -329,8 +335,15 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleGenerateApp(
         HttpContext context,
-        [FromServices] IAppGenerationService generation)
+        [FromServices] IAppGenerationService generation,
+        [FromServices] StudioEndpointAuthorization authorization)
     {
+        var generateAuthResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-app-generation").ConfigureAwait(false);
+        if (generateAuthResult is not null)
+        {
+            return generateAuthResult;
+        }
+
         GenerateAppPackageRequest? request;
         try
         {
@@ -377,8 +390,15 @@ internal static class StudioPackageEndpoints
 
     private static async Task<IResult> HandleGenerateMap(
         HttpContext context,
-        [FromServices] IMapGenerationService generation)
+        [FromServices] IMapGenerationService generation,
+        [FromServices] StudioEndpointAuthorization authorization)
     {
+        var generateAuthResult = await EnsureGenerateAuthorizedAsync(authorization, context, "studio-map-generation").ConfigureAwait(false);
+        if (generateAuthResult is not null)
+        {
+            return generateAuthResult;
+        }
+
         GenerateMapPackageRequest? request;
         try
         {
@@ -1604,6 +1624,25 @@ internal static class StudioPackageEndpoints
             return ServerError(context, "Studio rollback request could not be created.");
         }
     }
+
+    /// <summary>
+    /// Authorizes the AI generation endpoints (honua-server#3023): unlike the lifecycle
+    /// handlers, generation has no existing resource whose ownership can gate it, and it
+    /// consumes model resources — so it is an elevated operation. Admins pass unchanged;
+    /// with the end-user flag on, a non-admin needs a <c>StudioDraft</c> <c>Execute</c>
+    /// operator grant (the <c>own</c> sentinel form), keeping the group-level policy widening
+    /// from implicitly opening generation to every authenticated principal.
+    /// </summary>
+    private static Task<IResult?> EnsureGenerateAuthorizedAsync(
+        StudioEndpointAuthorization authorization,
+        HttpContext context,
+        string resourceType)
+        => EnsureAuthorizedAsync(
+            authorization, context,
+            StudioAuthorizationOperation.Generate,
+            resourceOwnerId: authorization.ResolveCallerId(context.User),
+            resourceType: resourceType,
+            resourceId: null);
 
     /// <summary>
     /// Authorizes a Studio package-lifecycle operation against the target resource's recorded

@@ -784,9 +784,9 @@ internal sealed partial class ODataSearchService
         }
 
         var segments = SplitTopLevel(expand);
-        foreach (var normalizedSegment in segments.Select(segment => segment.Trim()))
+        for (var segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
         {
-            var trimmed = normalizedSegment;
+            var trimmed = segments[segmentIndex].Trim();
             if (string.IsNullOrWhiteSpace(trimmed))
             {
                 continue;

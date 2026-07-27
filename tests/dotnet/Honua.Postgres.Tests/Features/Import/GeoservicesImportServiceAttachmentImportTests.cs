@@ -369,12 +369,12 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                     return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.InternalServerError));
                 }
 
-                var resp = new HttpResponseMessage(HttpStatusCode.OK)
+                var resp = new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(Encoding.UTF8.GetBytes("binary-payload"))
                 };
                 resp.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
-                return Task.FromResult(resp);
+                return Task.FromResult<System.Net.Http.HttpResponseMessage>(resp);
             }
 
             if (pathAndQuery.Contains("/queryAttachments", StringComparison.Ordinal))

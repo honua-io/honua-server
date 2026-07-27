@@ -74,10 +74,6 @@ With the flag on:
   regardless of ownership. Cross-user access to a non-owned, non-published
   resource is denied by default. No operator grant is required for the baseline
   tier — the flag itself is the widening switch (REQ-002).
-- **AI generation remains admin-only.** `POST /map-packages/generate` and
-  `POST /app-packages/generate` can invoke configured model providers before a
-  resource with an enforceable owner exists. The end-user lifecycle flag does
-  not widen these potentially costly operations; both retain the admin policy.
 - **Save-as-version authorizes both mutation boundaries.** Saving a draft creates
   an immutable version *and* advances the parent item's `currentVersionId`.
   Consequently, a non-admin caller must own both the draft and the immutable
@@ -123,6 +119,19 @@ With the flag on:
   which (as above) can be recorded under a different owner. A caller who owns
   only the target version, even with a matching `StudioDraft` operator grant,
   cannot move another principal's item's pointer.
+- **AI generation is elevated, never implicitly widened.** `POST
+  /map-packages/generate` and `POST /app-packages/generate` are not opened to
+  every authenticated principal by the end-user flag: generation consumes model
+  resources and creates content with no pre-existing resource whose ownership
+  could gate it, so a non-admin caller requires a `StudioDraft` `Execute`
+  operator grant (the self-service `own`-sentinel form suffices; admins are
+  unaffected, and with the flag off both routes stay admin-only exactly as
+  before). Without the grant the request is denied
+  `studio_authorization/elevated_grant_required` before the request body is
+  even parsed. To enable generation for a pilot end user, an operator
+  provisions the grant `Service=StudioDraft`, `Layer=own`, `Operation=Execute`
+  on a role held by that user (honua-server#3023); revoking the grant closes
+  access again without touching the flag.
 - **Version comparison authorizes both requested versions individually** —
   `leftVersionId` and `rightVersionId` are each checked against their own
   recorded owner (never publicly readable, since a diff can expose unpublished

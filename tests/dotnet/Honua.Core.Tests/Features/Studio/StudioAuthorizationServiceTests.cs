@@ -210,6 +210,29 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public async Task AuthorizeAsync_FlagOn_NonAdminOwnResource_GenerateUsesExecuteOperatorOperation()
+    {
+        // honua-server#3023: AI generation is elevated and maps to the Execute operator
+        // operation. A Publish or Rollback grant must not authorize generation -- each
+        // elevated operation is independently policy-gated.
+        var service = BuildService(enabled: true, out var evaluator);
+        evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Publish);
+        evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Rollback);
+
+        var denied = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Generate, resourceOwnerId: Alice);
+        Assert.False(denied.IsAllowed);
+        Assert.True(denied.IsElevated);
+        Assert.Equal(StudioAuthorizationService.ElevatedGrantRequiredCode, denied.Code);
+
+        evaluator.Allow(OperatorResourceType.StudioDraft, "own", OperatorOperation.Execute);
+        var allowed = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.Generate, resourceOwnerId: Alice);
+        Assert.True(allowed.IsAllowed);
+        Assert.True(allowed.IsElevated);
+    }
+
+    [UnitTest]
     public async Task AuthorizeAsync_FlagOn_NonAdminCrossUser_ElevatedOperationAllowedWithDelegateGrant()
     {
         // A delegate scenario: an operator granted alice explicit publish rights on bob's

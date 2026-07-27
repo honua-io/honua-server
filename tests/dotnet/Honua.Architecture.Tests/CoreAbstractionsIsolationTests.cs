@@ -91,10 +91,13 @@ public sealed class CoreAbstractionsIsolationTests
         var abstractionsAssembly =
             typeof(Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository).Assembly;
 
-        foreach (var qualifiedTypeName in expectedInternalHelpers)
+        for (var helperIndex = 0; helperIndex < expectedInternalHelpers.Length; helperIndex++)
         {
+            var qualifiedTypeName = expectedInternalHelpers[helperIndex];
             var helperType = abstractionsAssembly.GetType(qualifiedTypeName);
-            helperType.Should().NotBeNull("callers share one resource-ownership implementation");
+            helperType.Should().NotBeNull(
+                "{0} must provide the shared resource-ownership implementation",
+                qualifiedTypeName);
             helperType!.IsNotPublic.Should().BeTrue("concrete infrastructure helpers must remain internal");
             abstractionsAssembly.GetExportedTypes()
                 .Should()
