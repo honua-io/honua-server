@@ -8,6 +8,15 @@ on:
         description: 'Observation window in days for the aggregation report'
         required: false
         default: '28'
+      escapes_reviewed:
+        description: >-
+          Operator affirmation that the legacy-only shard occurrences table
+          ("Reports needing escape correlation") was manually correlated with
+          real shard failures over the window. Required for the full
+          "SAFE to switch" verdict; leave false otherwise.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -101,11 +110,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OBSERVATION_DAYS: ${{ inputs.observation_days || '28' }}
+          ESCAPES_REVIEWED: ${{ inputs.escapes_reviewed }}
         run: |
+          extra_args=()
+          if [ "$ESCAPES_REVIEWED" = "true" ]; then
+            extra_args+=(--escapes-reviewed)
+          fi
           python3 scripts/ci/capability-impact-observation-report.py \
             --repo "$GITHUB_REPOSITORY" \
             --days "$OBSERVATION_DAYS" \
             --markdown capability-impact-observation-summary.md \
+            "${extra_args[@]}" \
             > capability-impact-observation-report.json
           cat capability-impact-observation-summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload observation aggregate
