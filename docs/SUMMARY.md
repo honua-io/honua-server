@@ -138,7 +138,7 @@
 ## Internal
 
 - [Internal engineering docs](internal/README.md)
-- [Demo B — ops-champion recording runbook](internal/demo/demo-b-ops-runbook.md)
+- [Demo runbooks (moved to honua-demo)](internal/demo/README.md)
 
 ## Archive
 
