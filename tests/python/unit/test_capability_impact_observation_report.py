@@ -177,6 +177,11 @@ class ObservationReportTests(unittest.TestCase):
                 "headSha": "deadbeef",
                 "prNumber": 3031,
                 "artifactName": "capability-impact-11",
+                "newestRunForPr": {
+                    "runId": 1,
+                    "runUrl": "https://github.com/honua-io/honua-server/actions/runs/1",
+                    "runCreatedAt": "2026-07-26T00:00:00Z",
+                },
             },
         )
         summary = self.aggregate(reports, min_comparisons=1, min_strict_subset_pct=50.0)
@@ -466,6 +471,118 @@ class ObservationReportTests(unittest.TestCase):
         self.assertTrue(recommendation["escapedDefectSignal"])
         self.assertFalse(recommendation["safeToSwitch"])
         self.assertEqual(recommendation["failedShardJobs"][0]["ciRunUrl"], "https://ci.test/runs/90")
+
+    def test_signal_conclusion_wins_merge_over_newer_non_signal(self):
+        # Newest run at the head has the candidate shard skipped; an older run
+        # executed it and failed. The demonstrated failure must win the merge.
+        document = report(capability_shards=["A"], legacy_shards=["A", "B"])
+        document["_meta"] = {"prNumber": 15, "runId": 6, "headSha": "cafe77", "runCreatedAt": "2026-07-03T00:00:00Z"}
+
+        def fake_gh_api(arguments, *, binary=False):
+            if "head_sha=cafe77" in arguments:
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 93,
+                            "url": "https://ci.test/runs/93",
+                            "createdAt": "2026-07-03T01:00:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                        {
+                            "id": 92,
+                            "url": "https://ci.test/runs/92",
+                            "createdAt": "2026-07-03T00:30:00Z",
+                            "path": ".github/workflows/ci.yml",
+                        },
+                    )
+                )
+            if "actions/runs/93/jobs" in arguments[2]:
+                return json.dumps({"name": "Server Tests (B)", "conclusion": "skipped"})
+            self.assertIn("actions/runs/92/jobs", arguments[2])
+            return json.dumps({"name": "Server Tests (B)", "conclusion": "failure"})
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            MODULE.join_executed_outcomes("honua-io/honua-server", [document])
+        finally:
+            MODULE.gh_api = original
+        self.assertEqual(
+            document["_meta"]["shardOutcomes"]["B"],
+            {"jobName": "Server Tests (B)", "conclusion": "failure", "runUrl": "https://ci.test/runs/92"},
+        )
+        summary = self.aggregate([document], min_comparisons=1, min_strict_subset_pct=50.0, escapes_reviewed=True)
+        self.assertTrue(summary["switchRecommendation"]["escapedDefectSignal"])
+        self.assertFalse(summary["switchRecommendation"]["safeToSwitch"])
+
+    def test_pr_whose_newest_run_has_no_report_is_flagged_as_evidence_gap(self):
+        # End to end through the fetch: PR 55 has an artifact only on the
+        # OLDER run 1; a newer run 2 exists with no parseable report.
+        payloads = [report_zip(FIXTURES[0])]
+
+        def fake_gh_api(arguments, *, binary=False):
+            if binary:
+                return payloads.pop(0)
+            if "event=pull_request" in arguments:
+                return "\n".join(
+                    json.dumps(run)
+                    for run in (
+                        {
+                            "id": 2,
+                            "url": "https://runs.test/2",
+                            "createdAt": "2026-07-25T02:00:00Z",
+                            "headSha": "bbb",
+                            "prNumber": 55,
+                        },
+                        {
+                            "id": 1,
+                            "url": "https://runs.test/1",
+                            "createdAt": "2026-07-25T01:00:00Z",
+                            "headSha": "aaa",
+                            "prNumber": 55,
+                        },
+                    )
+                )
+            if "actions/runs/2/artifacts" in arguments[2]:
+                return ""  # newest run uploaded nothing (cancelled/failed)
+            self.assertIn("actions/runs/1/artifacts", arguments[2])
+            return json.dumps({"id": 10, "name": "capability-impact-10"})
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            reports = MODULE.fetch_reports("honua-io/honua-server", 28)
+        finally:
+            MODULE.gh_api = original
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["_meta"]["newestRunForPr"]["runId"], 2)
+        summary = self.aggregate(reports, min_comparisons=1, min_strict_subset_pct=50.0)
+        self.assertEqual(
+            summary["staleEvidencePrs"],
+            [
+                {
+                    "prNumber": 55,
+                    "latestReportRunId": 1,
+                    "latestReportRunUrl": "https://runs.test/1",
+                    "newestRunId": 2,
+                    "newestRunUrl": "https://runs.test/2",
+                }
+            ],
+        )
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("### Evidence gaps (newest run has no report)", rendered)
+        self.assertIn("PR #55: newest run [2](https://runs.test/2) produced no comparison report", rendered)
+        # Control: when the sampled report IS from the newest run, no gap.
+        current = report(capability_shards=["A"], legacy_shards=["A"])
+        current["_meta"] = {
+            "prNumber": 56,
+            "runId": 7,
+            "newestRunForPr": {"runId": 7, "runUrl": "https://runs.test/7", "runCreatedAt": "2026-07-25T03:00:00Z"},
+        }
+        summary = self.aggregate([current], min_comparisons=1, min_strict_subset_pct=0.0)
+        self.assertEqual(summary["staleEvidencePrs"], [])
+        self.assertNotIn("Evidence gaps", MODULE.markdown(summary, 28))
 
     def test_unknown_outcomes_are_counted_as_gaps_not_signal(self):
         document = report(capability_shards=["A"], legacy_shards=["A", "B"])  # no shardOutcomes embedded

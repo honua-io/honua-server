@@ -133,11 +133,21 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
             ),
         ]
     ).splitlines()
-    reports: list[dict] = []
-    for run_line in run_lines:
-        if not run_line.strip():
+    runs = [json.loads(run_line) for run_line in run_lines if run_line.strip()]
+    # Inventory the newest run per PR from the RUN list, not from parseable
+    # artifacts: if a PR's newest push failed completeness or was cancelled
+    # before uploading a report, the older artifact must not silently pass as
+    # its current evidence — the aggregation flags such PRs as evidence gaps.
+    newest_run_by_pr: dict[int, dict] = {}
+    for run in runs:
+        pr_number = run.get("prNumber")
+        if pr_number is None:
             continue
-        run = json.loads(run_line)
+        current = newest_run_by_pr.get(pr_number)
+        if current is None or (run.get("createdAt") or "") > (current.get("createdAt") or ""):
+            newest_run_by_pr[pr_number] = run
+    reports: list[dict] = []
+    for run in runs:
         artifact_lines = gh_api(
             [
                 "-X",
@@ -163,6 +173,7 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
             if is_comparison_report(document) and is_observable_comparison(document):
                 # Provenance for the --escapes-reviewed correlation step:
                 # both live and --from-dir reports carry one `_meta` shape.
+                newest_run = newest_run_by_pr.get(run.get("prNumber")) if run.get("prNumber") is not None else None
                 document["_meta"] = {
                     "runId": run["id"],
                     "runUrl": run.get("url"),
@@ -170,6 +181,15 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
                     "headSha": run.get("headSha"),
                     "prNumber": run.get("prNumber"),
                     "artifactName": artifact.get("name"),
+                    "newestRunForPr": (
+                        {
+                            "runId": newest_run["id"],
+                            "runUrl": newest_run.get("url"),
+                            "runCreatedAt": newest_run.get("createdAt"),
+                        }
+                        if newest_run is not None
+                        else None
+                    ),
                 }
                 reports.append(document)
     return reports
@@ -237,15 +257,24 @@ def _fetch_ci_outcomes(repo: str, head_sha: str) -> dict:
                     continue
                 # Merge shard outcomes ACROSS all runs at the head so a shard
                 # executed only by an older run is not dropped as unknown.
-                # First-seen wins under the ci.yml-first/newest-first sort, so
-                # each shard keeps its newest canonical executed conclusion.
-                if name in merged:
-                    continue
-                merged[name] = {
+                # Signal precedence: a demonstrated failure/timed_out from ANY
+                # run at the head always wins — a newer skipped/cancelled/
+                # unknown conclusion must not shadow it. Only among equally
+                # non-signal results does first-seen win (the ci.yml-first/
+                # newest-first sort), keeping each shard's newest canonical
+                # executed conclusion.
+                candidate = {
                     "jobName": name,
                     "conclusion": job.get("conclusion") or "unknown",
                     "runUrl": run.get("url"),
                 }
+                existing = merged.get(name)
+                if existing is not None and not (
+                    candidate["conclusion"] in SIGNAL_CONCLUSIONS
+                    and existing["conclusion"] not in SIGNAL_CONCLUSIONS
+                ):
+                    continue
+                merged[name] = candidate
                 contributed = True
             if contributed and primary_url is None:
                 primary_url = run.get("url")
@@ -367,6 +396,7 @@ def aggregate(
     escaped_defect_signal = False
     failed_shard_jobs: list[dict] = []
     unknown_outcome_count = 0
+    stale_evidence_prs: list[dict] = []
 
     for index, report in enumerate(reports):
         comparison = report["comparison"]
@@ -411,6 +441,26 @@ def aggregate(
                 legacy_run_all_reasons[reason] = legacy_run_all_reasons.get(reason, 0) + 1
             if capability_size < legacy_size:
                 strictly_smaller += 1
+            # The latest PARSEABLE report is only current evidence if it came
+            # from the PR's newest run: a newer run that produced no report
+            # (failed completeness, cancelled before upload) means the PR's
+            # evidence may be stale and must be surfaced, not silently reused.
+            newest_run = meta.get("newestRunForPr") if isinstance(meta.get("newestRunForPr"), dict) else None
+            if (
+                newest_run
+                and meta.get("runId") is not None
+                and newest_run.get("runId") is not None
+                and newest_run["runId"] != meta["runId"]
+            ):
+                stale_evidence_prs.append(
+                    {
+                        "prNumber": meta.get("prNumber"),
+                        "latestReportRunId": meta.get("runId"),
+                        "latestReportRunUrl": meta.get("runUrl"),
+                        "newestRunId": newest_run["runId"],
+                        "newestRunUrl": newest_run.get("runUrl"),
+                    }
+                )
 
         if legacy_only_candidates:
             # Preserve run identity plus the EXECUTED shard outcomes joined by
@@ -500,6 +550,7 @@ def aggregate(
         },
         "relations": relations,
         "strictlySmaller": {"count": strictly_smaller, "pct": strict_subset_pct},
+        "staleEvidencePrs": stale_evidence_prs,
         "legacyOnlyShards": {
             "shardFrequency": _frequency_table(legacy_only_frequency),
             "reportsWithLegacyOnlyShards": reports_with_legacy_only,
@@ -644,6 +695,24 @@ def markdown(summary: dict, days: int) -> str:
             "",
             f"- Capability selector: {fallbacks['capability']['count']} ({json.dumps(fallbacks['capability']['reasons'])})",
             f"- ADR-0037 selector: {fallbacks['legacy']['count']} ({json.dumps(fallbacks['legacy']['reasons'])})",
+        ]
+    )
+    if summary["staleEvidencePrs"]:
+        lines.extend(["", "### Evidence gaps (newest run has no report)", ""])
+        for gap in summary["staleEvidencePrs"]:
+            pr_text = f"PR #{gap['prNumber']}" if gap["prNumber"] else "PR ?"
+            newest_text = f"[{gap['newestRunId']}]({gap['newestRunUrl']})" if gap["newestRunUrl"] else gap["newestRunId"]
+            report_text = (
+                f"[{gap['latestReportRunId']}]({gap['latestReportRunUrl']})"
+                if gap["latestReportRunUrl"]
+                else gap["latestReportRunId"]
+            )
+            lines.append(
+                f"- {pr_text}: newest run {newest_text} produced no comparison report — "
+                f"the sampled evidence comes from older run {report_text} and may be stale."
+            )
+    lines.extend(
+        [
             "",
             "### Switch recommendation",
             "",
