@@ -25,6 +25,10 @@ on:
       - 'docs/gis/data/capability-matrix.v1.json'
       - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
+      # generate-capability-matrix.py imports parse_timestamp/is_green/
+      # freshness_state from capability-impact.py, so helper changes can
+      # change the committed matrix.
+      - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/validate-cite-openapi-compliance.py'
       - 'src/Honua.Server/openapi.json'
       - 'src/Honua.Server/ogc-tiles-openapi.json'
@@ -43,6 +47,7 @@ on:
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/validate-cite-openapi-compliance.py'
       - 'src/Honua.Server/openapi.json'
       - 'src/Honua.Server/ogc-tiles-openapi.json'

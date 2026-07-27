@@ -116,8 +116,10 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
             "per_page=100",
             "--paginate",
             "--jq",
-            ".workflow_runs[] | {id: .id, url: .html_url, createdAt: .created_at, "
-            "prNumber: (.pull_requests[0].number // null)} | tojson",
+            (
+                ".workflow_runs[] | {id: .id, url: .html_url, createdAt: .created_at, "
+                + "prNumber: (.pull_requests[0].number // null)} | tojson"
+            ),
         ]
     ).splitlines()
     reports: list[dict] = []
@@ -131,8 +133,10 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
                 "GET",
                 f"repos/{repo}/actions/runs/{run['id']}/artifacts",
                 "--jq",
-                f'.artifacts[] | select(.expired | not) | select(.name | startswith("{ARTIFACT_PREFIX}")) '
-                "| {id: .id, name: .name} | tojson",
+                (
+                    f'.artifacts[] | select(.expired | not) | select(.name | startswith("{ARTIFACT_PREFIX}")) '
+                    + "| {id: .id, name: .name} | tojson"
+                ),
             ]
         ).splitlines()
         for artifact_line in artifact_lines:
