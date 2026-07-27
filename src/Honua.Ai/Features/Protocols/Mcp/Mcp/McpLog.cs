@@ -96,4 +96,13 @@ internal static partial class McpLog
         string draftId,
         long? generationBefore,
         long? generationAfter);
+
+    /// <summary>
+    /// A POST presented a well-formed but unknown <c>Mcp-Session-Id</c> and was
+    /// served statelessly instead of 404 (honua-server#3027 fallback for
+    /// multi-instance deployments without sticky routing). Only a short prefix
+    /// of the id is logged because a session id names a live session elsewhere.
+    /// </summary>
+    [LoggerMessage(8174, LogLevel.Debug, "MCP unknown session served statelessly: SessionIdPrefix={SessionIdPrefix}")]
+    public static partial void SessionServedStateless(ILogger logger, string sessionIdPrefix);
 }

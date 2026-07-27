@@ -215,6 +215,19 @@ endpoint cannot be abused. Options live under the `Mcp` configuration section.
 | `Mcp:SessionIdleTimeout` | `00:30:00` | Sliding idle TTL. Every request (or an opened GET stream) on a session refreshes the window; an untouched session expires and is swept. Expired ids return `404`, so clients re-initialize cleanly. |
 | `Mcp:MaxSessions` | `10000` | Maximum concurrently tracked sessions. Bounds memory on a public endpoint. |
 | `Mcp:SessionEvictionPolicy` | `EvictLeastRecentlyUsed` | What to do at capacity: evict the least-recently-used session, or `RejectNew` (refuse `initialize` with a retryable `unavailable` error and leave live sessions untouched). |
+| `Mcp:StatelessSessionFallback` | `true` | Serve a `POST /mcp` that presents a well-formed but unknown `Mcp-Session-Id` as if it were session-less instead of `404`. Session state is per instance, so this keeps spec-compliant clients working on multi-instance deployments without sticky routing. Set `false` for the strict Streamable-HTTP behavior (`404` so the client re-initializes). Malformed ids always `404`. |
+
+**Stateless session fallback.** Session state is held in each instance's memory,
+so on a multi-instance deployment without sticky routing (for example the
+multi-container Lambda demo) a client that ran `initialize` against one instance
+would strictly `404` whenever a later `POST` lands on a different instance. By
+default the server instead serves such a request statelessly: every `POST` is
+independently authenticated and authorized, and the only session-negotiated
+state (elicitation capability, SSE progress routing) degrades to its documented
+session-less fallback. No session id is echoed on these responses — only
+`initialize` mints. Note this also means a session id that was terminated with
+`DELETE /mcp` (or idle-expired) is served statelessly rather than `404`; set
+`Mcp:StatelessSessionFallback=false` to restore the strict spec posture.
 
 **Server-initiated streaming.** Leave `Mcp:ServerInitiatedStreamEnabled=false`
 behind any ingress that buffers responses — notably serverless gateways
