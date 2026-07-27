@@ -82,6 +82,9 @@ def load_reports_from_dir(root: Path) -> list[dict]:
         except (OSError, json.JSONDecodeError):
             continue
         if is_comparison_report(document) and is_observable_comparison(document):
+            meta = document.get("_meta") if isinstance(document.get("_meta"), dict) else {}
+            meta.setdefault("source", str(path.relative_to(root)))
+            document["_meta"] = meta
             reports.append(document)
     return reports
 
@@ -100,7 +103,7 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
     job.
     """
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).strftime("%Y-%m-%d")
-    run_ids = gh_api(
+    run_lines = gh_api(
         [
             "-X",
             "GET",
@@ -113,28 +116,45 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
             "per_page=100",
             "--paginate",
             "--jq",
-            ".workflow_runs[].id",
+            ".workflow_runs[] | {id: .id, url: .html_url, createdAt: .created_at, "
+            "prNumber: (.pull_requests[0].number // null)} | tojson",
         ]
-    ).split()
+    ).splitlines()
     reports: list[dict] = []
-    for run_id in run_ids:
-        artifact_ids = gh_api(
+    for run_line in run_lines:
+        if not run_line.strip():
+            continue
+        run = json.loads(run_line)
+        artifact_lines = gh_api(
             [
                 "-X",
                 "GET",
-                f"repos/{repo}/actions/runs/{run_id}/artifacts",
+                f"repos/{repo}/actions/runs/{run['id']}/artifacts",
                 "--jq",
-                f'.artifacts[] | select(.expired | not) | select(.name | startswith("{ARTIFACT_PREFIX}")) | .id',
+                f'.artifacts[] | select(.expired | not) | select(.name | startswith("{ARTIFACT_PREFIX}")) '
+                "| {id: .id, name: .name} | tojson",
             ]
-        ).split()
-        for artifact_id in artifact_ids:
-            payload = gh_api([f"repos/{repo}/actions/artifacts/{artifact_id}/zip"], binary=True)
+        ).splitlines()
+        for artifact_line in artifact_lines:
+            if not artifact_line.strip():
+                continue
+            artifact = json.loads(artifact_line)
+            payload = gh_api([f"repos/{repo}/actions/artifacts/{artifact['id']}/zip"], binary=True)
             try:
                 with zipfile.ZipFile(io.BytesIO(payload)) as archive:
                     document = json.loads(archive.read(REPORT_FILENAME))
             except (KeyError, zipfile.BadZipFile, json.JSONDecodeError):
                 continue
             if is_comparison_report(document) and is_observable_comparison(document):
+                # Provenance for the --escapes-reviewed correlation step:
+                # both live and --from-dir reports carry one `_meta` shape.
+                document["_meta"] = {
+                    "runId": run["id"],
+                    "runUrl": run.get("url"),
+                    "runCreatedAt": run.get("createdAt"),
+                    "prNumber": run.get("prNumber"),
+                    "artifactName": artifact.get("name"),
+                }
                 reports.append(document)
     return reports
 
@@ -171,6 +191,7 @@ def aggregate(
         "divergent": 0,
     }
     legacy_only_frequency: dict[str, int] = {}
+    legacy_only_occurrences: list[dict] = []
     reports_with_legacy_only = 0
     reports_with_legacy_only_excluding_legacy_run_all = 0
     capability_run_all_reasons: dict[str, int] = {}
@@ -208,6 +229,22 @@ def aggregate(
             reports_with_legacy_only += 1
             if not legacy.get("run_all"):
                 reports_with_legacy_only_excluding_legacy_run_all += 1
+            # Preserve run identity so the --escapes-reviewed correlation step
+            # can click through to exactly the runs that need checking.
+            meta = report.get("_meta") if isinstance(report.get("_meta"), dict) else {}
+            legacy_only_occurrences.append(
+                {
+                    "runId": meta.get("runId"),
+                    "runUrl": meta.get("runUrl"),
+                    "runCreatedAt": meta.get("runCreatedAt"),
+                    "prNumber": meta.get("prNumber"),
+                    "artifactName": meta.get("artifactName"),
+                    "source": meta.get("source"),
+                    "reportIndex": len(capability_sizes) - 1,
+                    "legacyOnlyShards": sorted(legacy_only_candidates),
+                    "legacyRunAll": bool(legacy.get("run_all")),
+                }
+            )
         if selection.get("runAll"):
             reason = selection.get("reason", "unknown")
             capability_run_all_reasons[reason] = capability_run_all_reasons.get(reason, 0) + 1
@@ -255,6 +292,7 @@ def aggregate(
             "shardFrequency": _frequency_table(legacy_only_frequency),
             "reportsWithLegacyOnlyShards": reports_with_legacy_only,
             "reportsWithLegacyOnlyShardsExcludingLegacyRunAll": reports_with_legacy_only_excluding_legacy_run_all,
+            "occurrences": legacy_only_occurrences,
         },
         "runAllFallbacks": {
             "capability": {
@@ -278,9 +316,9 @@ def aggregate(
                 "they cannot be a zero-tolerance switch criterion for a selector that is supposed to "
                 "be tighter. The per-PR reports carry no shard outcome data, so the quantitative "
                 "criteria above are only preconditions: safeToSwitch additionally requires the "
-                "operator to correlate the legacy-only shard table with actual shard failures on "
-                "those PRs over the window and affirm the review by re-running with "
-                "--escapes-reviewed."
+                "operator to correlate the runs listed in legacyOnlyShards.occurrences (the "
+                "'Reports needing escape correlation' table) with actual shard failures on those "
+                "PRs and affirm the review by re-running with --escapes-reviewed."
             ),
         },
     }
@@ -337,6 +375,30 @@ def markdown(summary: dict, days: int) -> str:
             "",
             f"- Comparisons with legacy-only shards: {legacy_only['reportsWithLegacyOnlyShards']}",
             f"- Excluding comparisons where ADR-0037 itself fell back to run_all: {legacy_only['reportsWithLegacyOnlyShardsExcludingLegacyRunAll']}",
+            "",
+            "### Reports needing escape correlation",
+            "",
+        ]
+    )
+    occurrences = legacy_only["occurrences"]
+    if occurrences:
+        lines.extend(["| Run | PR | Legacy-only shards |", "|---|---|---|"])
+        for occurrence in occurrences[:20]:
+            if occurrence["runUrl"]:
+                run_cell = f"[{occurrence['runId'] or 'run'}]({occurrence['runUrl']})"
+            else:
+                run_cell = occurrence["runId"] or occurrence["source"] or "?"
+            pr_cell = f"#{occurrence['prNumber']}" if occurrence["prNumber"] else "?"
+            shard_cell = ", ".join(occurrence["legacyOnlyShards"])
+            if occurrence["legacyRunAll"]:
+                shard_cell += " (legacy run_all)"
+            lines.append(f"| {run_cell} | {pr_cell} | {shard_cell} |")
+        if len(occurrences) > 20:
+            lines.append(f"| … {len(occurrences) - 20} more (see JSON `legacyOnlyShards.occurrences`) | | |")
+    else:
+        lines.append("None.")
+    lines.extend(
+        [
             "",
             "### run_all fallbacks",
             "",

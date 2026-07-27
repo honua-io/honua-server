@@ -138,14 +138,23 @@ class ObservationReportTests(unittest.TestCase):
     def test_fetch_reports_filters_to_pull_request_runs_and_skips_empty_artifacts(self):
         calls = []
         payloads = [report_zip(dispatch_shaped_empty_report()), report_zip(FIXTURES[0])]
+        run = {
+            "id": 1,
+            "url": "https://github.com/honua-io/honua-server/actions/runs/1",
+            "createdAt": "2026-07-26T00:00:00Z",
+            "prNumber": 3031,
+        }
 
         def fake_gh_api(arguments, *, binary=False):
             calls.append(arguments)
             if binary:
                 return payloads.pop(0)
             if "/artifacts" in arguments[2]:
-                return "10\n11"
-            return "1"
+                return "\n".join(
+                    json.dumps(artifact)
+                    for artifact in ({"id": 10, "name": "capability-impact-10"}, {"id": 11, "name": "capability-impact-11"})
+                )
+            return json.dumps(run)
 
         original = MODULE.gh_api
         MODULE.gh_api = fake_gh_api
@@ -157,6 +166,25 @@ class ObservationReportTests(unittest.TestCase):
         self.assertIn("event=pull_request", runs_request)
         self.assertEqual(len(reports), 1)
         self.assertEqual(reports[0]["changedFileCount"], 2)
+        # Provenance is stamped for the escape-correlation table.
+        self.assertEqual(
+            reports[0]["_meta"],
+            {
+                "runId": 1,
+                "runUrl": "https://github.com/honua-io/honua-server/actions/runs/1",
+                "runCreatedAt": "2026-07-26T00:00:00Z",
+                "prNumber": 3031,
+                "artifactName": "capability-impact-11",
+            },
+        )
+        summary = self.aggregate(reports, min_comparisons=1, min_strict_subset_pct=50.0)
+        occurrences = summary["legacyOnlyShards"]["occurrences"]
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0]["prNumber"], 3031)
+        self.assertEqual(occurrences[0]["legacyOnlyShards"], ["B"])
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("### Reports needing escape correlation", rendered)
+        self.assertIn("| [1](https://github.com/honua-io/honua-server/actions/runs/1) | #3031 | B |", rendered)
 
     def test_aggregate_counts_relations_and_size_distributions(self):
         summary = self.aggregate()
@@ -182,6 +210,32 @@ class ObservationReportTests(unittest.TestCase):
         divergent["comparison"]["escapedDefectCandidates"] = ["Z"]
         summary = self.aggregate([divergent])
         self.assertEqual(summary["legacyOnlyShards"]["shardFrequency"], {"Z": 1})
+
+    def test_from_dir_occurrences_carry_source_identity_and_omit_clean_reports(self):
+        embedded = report(capability_shards=["A"], legacy_shards=["A", "C"])
+        embedded["_meta"] = {"runId": 7, "runUrl": "https://example.test/runs/7", "prNumber": 42}
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_fixtures(root, FIXTURES + [embedded])
+            reports = MODULE.load_reports_from_dir(root)
+        summary = self.aggregate(reports)
+        occurrences = summary["legacyOnlyShards"]["occurrences"]
+        # Only the two reports with legacy-only shards appear; clean reports
+        # (equal, superset, run_all-equal) are omitted.
+        self.assertEqual(summary["comparisonCount"], len(FIXTURES) + 1)
+        self.assertEqual(len(occurrences), 2)
+        by_shards = {tuple(entry["legacyOnlyShards"]): entry for entry in occurrences}
+        # From-dir identity falls back to the report's path within the artifact dir.
+        self.assertEqual(by_shards[("B",)]["source"], "capability-impact-0/capability-impact-report.json")
+        self.assertIsNone(by_shards[("B",)]["runId"])
+        # Embedded _meta provenance is preserved and merged with the source path.
+        self.assertEqual(by_shards[("C",)]["runId"], 7)
+        self.assertEqual(by_shards[("C",)]["prNumber"], 42)
+        self.assertEqual(by_shards[("C",)]["source"], f"capability-impact-{len(FIXTURES)}/capability-impact-report.json")
+        rendered = MODULE.markdown(summary, 28)
+        self.assertIn("### Reports needing escape correlation", rendered)
+        self.assertIn("| capability-impact-0/capability-impact-report.json | ? | B |", rendered)
+        self.assertIn("| [7](https://example.test/runs/7) | #42 | C |", rendered)
 
     def test_run_all_fallback_frequency_and_reasons(self):
         summary = self.aggregate()
