@@ -5,8 +5,9 @@ ADR-0037 remains authoritative. The Capability Impact Comparison workflow
 uploads a report-only `capability-impact-report.json` artifact for every PR
 (#2897). This tool rolls those artifacts up across the observation period and
 renders the switch-decision evidence: subset-size distributions versus the
-legacy path-heuristic selection and run_all, set-relation frequencies,
-would-be-escaped shards, and run_all-fallback reasons.
+legacy path-heuristic selection and run_all, set-relation frequencies, the
+legacy-only shard roll-up (potential escapes, informational), and
+run_all-fallback reasons.
 
 Live mode pulls artifacts from recent workflow runs via `gh api`; offline mode
 (`--from-dir`) reads already-downloaded report JSONs and is what the unit
@@ -22,7 +23,6 @@ import io
 import json
 import statistics
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
@@ -45,6 +45,29 @@ def is_comparison_report(document: object) -> bool:
     )
 
 
+def is_observable_comparison(document: dict) -> bool:
+    """True when the report describes a real PR comparison worth aggregating.
+
+    workflow_dispatch runs of the comparison workflow diff trunk against
+    itself and upload an empty report (zero changed files, empty selections on
+    both sides); folding those into the aggregate would dilute every
+    distribution, so they are excluded here in addition to the event filter in
+    ``fetch_reports``.
+    """
+    if document.get("changedFileCount", 0) == 0:
+        return False
+    comparison = document["comparison"]
+    selection = document["capabilitySelection"]
+    legacy = document.get("legacy", {}) or {}
+    has_any_selection = (
+        comparison.get("capabilityShardCount", 0) > 0
+        or comparison.get("legacyShardCount", 0) > 0
+        or selection.get("runAll")
+        or legacy.get("run_all")
+    )
+    return bool(has_any_selection)
+
+
 def load_reports_from_dir(root: Path) -> list[dict]:
     """Read every parseable per-PR comparison report under ``root`` (recursive).
 
@@ -58,7 +81,7 @@ def load_reports_from_dir(root: Path) -> list[dict]:
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if is_comparison_report(document):
+        if is_comparison_report(document) and is_observable_comparison(document):
             reports.append(document)
     return reports
 
@@ -69,13 +92,21 @@ def gh_api(arguments: list[str], *, binary: bool = False) -> bytes | str:
 
 
 def fetch_reports(repo: str, days: int) -> list[dict]:
-    """Download `capability-impact-*` artifacts from recent workflow runs."""
+    """Download `capability-impact-*` artifacts from recent pull_request runs.
+
+    workflow_dispatch runs are excluded (`event=pull_request`): they diff
+    trunk against itself and would pollute the aggregate with empty
+    comparisons — including the dispatch run that hosts this very aggregation
+    job.
+    """
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)).strftime("%Y-%m-%d")
     run_ids = gh_api(
         [
             "-X",
             "GET",
             f"repos/{repo}/actions/workflows/{WORKFLOW}/runs",
+            "-f",
+            "event=pull_request",
             "-f",
             f"created=>={cutoff}",
             "-f",
@@ -103,7 +134,7 @@ def fetch_reports(repo: str, days: int) -> list[dict]:
                     document = json.loads(archive.read(REPORT_FILENAME))
             except (KeyError, zipfile.BadZipFile, json.JSONDecodeError):
                 continue
-            if is_comparison_report(document):
+            if is_comparison_report(document) and is_observable_comparison(document):
                 reports.append(document)
     return reports
 
@@ -128,7 +159,6 @@ def aggregate(
     total_shards: int,
     *,
     min_comparisons: int,
-    max_escaped_candidate_reports: int,
     min_strict_subset_pct: float,
 ) -> dict:
     capability_sizes: list[int] = []
@@ -140,9 +170,8 @@ def aggregate(
         "divergent": 0,
     }
     legacy_only_frequency: dict[str, int] = {}
-    escaped_frequency: dict[str, int] = {}
-    reports_with_escaped = 0
-    reports_with_escaped_excluding_legacy_run_all = 0
+    reports_with_legacy_only = 0
+    reports_with_legacy_only_excluding_legacy_run_all = 0
     capability_run_all_reasons: dict[str, int] = {}
     legacy_run_all_reasons: dict[str, int] = {}
     strictly_smaller = 0
@@ -165,15 +194,19 @@ def aggregate(
             relations["capabilitySupersetOfLegacy"] += 1
         else:
             relations["divergent"] += 1
-        for shard in legacy_only:
+        # capability-impact.py emits `comparison.escapedDefectCandidates` as
+        # exactly `legacyOnlyShards` (the raw set difference legacy - graph);
+        # a per-PR report carries no shard outcome data, so a legacy-only
+        # shard is only a *potential* escape and is aggregated here under its
+        # honest name. Consume the authoritative per-report field rather than
+        # recomputing, falling back to `legacyOnlyShards` for older reports.
+        legacy_only_candidates = comparison.get("escapedDefectCandidates", legacy_only)
+        for shard in legacy_only_candidates:
             legacy_only_frequency[shard] = legacy_only_frequency.get(shard, 0) + 1
-        escaped = comparison.get("escapedDefectCandidates", [])
-        for shard in escaped:
-            escaped_frequency[shard] = escaped_frequency.get(shard, 0) + 1
-        if escaped:
-            reports_with_escaped += 1
+        if legacy_only_candidates:
+            reports_with_legacy_only += 1
             if not legacy.get("run_all"):
-                reports_with_escaped_excluding_legacy_run_all += 1
+                reports_with_legacy_only_excluding_legacy_run_all += 1
         if selection.get("runAll"):
             reason = selection.get("reason", "unknown")
             capability_run_all_reasons[reason] = capability_run_all_reasons.get(reason, 0) + 1
@@ -191,12 +224,6 @@ def aggregate(
             "threshold": f">= {min_comparisons}",
             "observed": count,
             "met": count >= min_comparisons,
-        },
-        {
-            "name": "reportsWithEscapedDefectCandidates",
-            "threshold": f"<= {max_escaped_candidate_reports}",
-            "observed": reports_with_escaped,
-            "met": reports_with_escaped <= max_escaped_candidate_reports,
         },
         {
             "name": "strictlySmallerSelectionPct",
@@ -223,11 +250,10 @@ def aggregate(
         },
         "relations": relations,
         "strictlySmaller": {"count": strictly_smaller, "pct": strict_subset_pct},
-        "legacyOnlyShardFrequency": _frequency_table(legacy_only_frequency),
-        "escapedDefectCandidates": {
-            "shardFrequency": _frequency_table(escaped_frequency),
-            "reportsWithCandidates": reports_with_escaped,
-            "reportsWithCandidatesExcludingLegacyRunAll": reports_with_escaped_excluding_legacy_run_all,
+        "legacyOnlyShards": {
+            "shardFrequency": _frequency_table(legacy_only_frequency),
+            "reportsWithLegacyOnlyShards": reports_with_legacy_only,
+            "reportsWithLegacyOnlyShardsExcludingLegacyRunAll": reports_with_legacy_only_excluding_legacy_run_all,
         },
         "runAllFallbacks": {
             "capability": {
@@ -243,9 +269,13 @@ def aggregate(
             "safeToSwitch": all(criterion["met"] for criterion in criteria),
             "criteria": criteria,
             "note": (
-                "Escaped-defect candidates are shards ADR-0037 would run but the capability "
-                "selector would not; a candidate only becomes a confirmed escape if that shard "
-                "actually failed on the PR, which requires manual correlation before switching."
+                "Legacy-only shards (the per-report escapedDefectCandidates field) are shards "
+                "ADR-0037 would run but the capability selector would not. They are definitionally "
+                "present in every comparison where the capability selection is strictly smaller, so "
+                "they cannot be a zero-tolerance switch criterion for a selector that is supposed to "
+                "be tighter. The per-PR reports carry no shard outcome data; before switching, "
+                "manually correlate the legacy-only shard table above with actual shard failures on "
+                "those PRs to confirm no real escapes occurred."
             ),
         },
     }
@@ -254,7 +284,7 @@ def aggregate(
 def markdown(summary: dict, days: int) -> str:
     sizes = summary["selectionSizes"]
     relations = summary["relations"]
-    escaped = summary["escapedDefectCandidates"]
+    legacy_only = summary["legacyOnlyShards"]
     fallbacks = summary["runAllFallbacks"]
     recommendation = summary["switchRecommendation"]
 
@@ -286,10 +316,10 @@ def markdown(summary: dict, days: int) -> str:
         f"- Divergent (both sides have unique shards): {relations['divergent']}",
         f"- Capability selection strictly smaller than legacy: {summary['strictlySmaller']['count']} ({summary['strictlySmaller']['pct']}%)",
         "",
-        "### Legacy-only shards (would-be escapes)",
+        "### Legacy-only shards (potential escapes, informational)",
         "",
     ]
-    frequency = summary["legacyOnlyShardFrequency"]
+    frequency = legacy_only["shardFrequency"]
     if frequency:
         lines.extend(["| Shard | Comparisons |", "|---|---:|"])
         lines.extend(f"| {shard} | {count} |" for shard, count in list(frequency.items())[:15])
@@ -300,10 +330,8 @@ def markdown(summary: dict, days: int) -> str:
     lines.extend(
         [
             "",
-            "### Escaped-defect candidate roll-up",
-            "",
-            f"- Comparisons with candidates: {escaped['reportsWithCandidates']}",
-            f"- Excluding comparisons where ADR-0037 itself fell back to run_all: {escaped['reportsWithCandidatesExcludingLegacyRunAll']}",
+            f"- Comparisons with legacy-only shards: {legacy_only['reportsWithLegacyOnlyShards']}",
+            f"- Excluding comparisons where ADR-0037 itself fell back to run_all: {legacy_only['reportsWithLegacyOnlyShardsExcludingLegacyRunAll']}",
             "",
             "### run_all fallbacks",
             "",
@@ -338,12 +366,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--total-shards", type=int, help="Override the run_all shard count (default: .github/ci-shards.json).")
     parser.add_argument("--min-comparisons", type=int, default=25, help="Switch criterion: minimum number of comparisons.")
     parser.add_argument(
-        "--max-escaped-candidate-reports",
-        type=int,
-        default=0,
-        help="Switch criterion: maximum comparisons with escaped-defect candidates.",
-    )
-    parser.add_argument(
         "--min-strict-subset-pct",
         type=float,
         default=60.0,
@@ -360,7 +382,6 @@ def main(argv: list[str] | None = None) -> int:
         reports,
         total_shards,
         min_comparisons=args.min_comparisons,
-        max_escaped_candidate_reports=args.max_escaped_candidate_reports,
         min_strict_subset_pct=args.min_strict_subset_pct,
     )
     print(json.dumps(summary, indent=2))

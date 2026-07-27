@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -22,14 +24,19 @@ def report(
     capability_reason="capability_match",
     legacy_run_all=False,
     legacy_reason="targeted",
+    changed_file_count=2,
 ):
-    """Build a fixture matching capability-impact.py build_report's output shape."""
+    """Build a fixture matching capability-impact.py build_report's output shape.
+
+    Mirrors the authoritative definition: `escapedDefectCandidates` is emitted
+    as exactly the legacy-only set difference (capability-impact.py line ~393).
+    """
     capability = set(capability_shards)
     legacy = set(legacy_shards)
     return {
         "schemaVersion": 1,
         "mode": "report-only",
-        "changedFileCount": 2,
+        "changedFileCount": changed_file_count,
         "capabilityLabels": [],
         "legacy": {"run_all": legacy_run_all, "shards": sorted(legacy), "reason": legacy_reason},
         "capabilitySelection": {
@@ -72,6 +79,11 @@ FIXTURES = [
 ]
 
 
+def dispatch_shaped_empty_report():
+    """A workflow_dispatch (trunk-vs-trunk) artifact: zero changed files, empty selections."""
+    return report(capability_shards=[], legacy_shards=[], changed_file_count=0)
+
+
 def write_fixtures(root: Path, reports):
     for index, document in enumerate(reports):
         directory = root / f"capability-impact-{index}"
@@ -83,11 +95,23 @@ def write_fixtures(root: Path, reports):
     )
     (root / "capability-impact-0" / "changed-files.txt").write_text("src/X.cs\n", encoding="utf-8")
     (root / "not-json.json").write_text("{broken", encoding="utf-8")
+    # A dispatch-shaped empty comparison must be excluded from aggregation.
+    (root / "capability-impact-dispatch").mkdir(parents=True)
+    (root / "capability-impact-dispatch" / "capability-impact-report.json").write_text(
+        json.dumps(dispatch_shaped_empty_report()), encoding="utf-8"
+    )
+
+
+def report_zip(document) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("capability-impact-report.json", json.dumps(document))
+    return buffer.getvalue()
 
 
 class ObservationReportTests(unittest.TestCase):
     def aggregate(self, reports=FIXTURES, **overrides):
-        options = {"min_comparisons": 25, "max_escaped_candidate_reports": 0, "min_strict_subset_pct": 60.0}
+        options = {"min_comparisons": 25, "min_strict_subset_pct": 60.0}
         options.update(overrides)
         return MODULE.aggregate(reports, 4, **options)
 
@@ -96,8 +120,43 @@ class ObservationReportTests(unittest.TestCase):
             root = Path(raw)
             write_fixtures(root, FIXTURES)
             reports = MODULE.load_reports_from_dir(root)
+        # The dispatch-shaped empty report in the fixture directory is excluded.
         self.assertEqual(len(reports), len(FIXTURES))
         self.assertTrue(all(MODULE.is_comparison_report(document) for document in reports))
+        self.assertTrue(all(document["changedFileCount"] > 0 for document in reports))
+
+    def test_observable_comparison_excludes_empty_reports(self):
+        self.assertFalse(MODULE.is_observable_comparison(dispatch_shaped_empty_report()))
+        # Changed files present but nothing selected on either side and no
+        # run_all: nothing to compare.
+        hollow = report(capability_shards=[], legacy_shards=[])
+        self.assertFalse(MODULE.is_observable_comparison(hollow))
+        # A docs-only PR (files changed, capability empty, legacy non-empty) stays.
+        docs_only = report(capability_shards=[], legacy_shards=["Core"])
+        self.assertTrue(MODULE.is_observable_comparison(docs_only))
+
+    def test_fetch_reports_filters_to_pull_request_runs_and_skips_empty_artifacts(self):
+        calls = []
+        payloads = [report_zip(dispatch_shaped_empty_report()), report_zip(FIXTURES[0])]
+
+        def fake_gh_api(arguments, *, binary=False):
+            calls.append(arguments)
+            if binary:
+                return payloads.pop(0)
+            if "/artifacts" in arguments[2]:
+                return "10\n11"
+            return "1"
+
+        original = MODULE.gh_api
+        MODULE.gh_api = fake_gh_api
+        try:
+            reports = MODULE.fetch_reports("honua-io/honua-server", 28)
+        finally:
+            MODULE.gh_api = original
+        runs_request = calls[0]
+        self.assertIn("event=pull_request", runs_request)
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["changedFileCount"], 2)
 
     def test_aggregate_counts_relations_and_size_distributions(self):
         summary = self.aggregate()
@@ -111,34 +170,42 @@ class ObservationReportTests(unittest.TestCase):
         self.assertEqual(summary["selectionSizes"]["legacy"], {"min": 1, "median": 2.0, "mean": 2.25, "max": 4})
         self.assertEqual(summary["strictlySmaller"], {"count": 1, "pct": 25.0})
 
-    def test_legacy_only_frequency_and_escaped_candidate_rollup(self):
+    def test_legacy_only_shard_rollup_consumes_per_report_field(self):
         summary = self.aggregate()
-        self.assertEqual(summary["legacyOnlyShardFrequency"], {"B": 1})
-        self.assertEqual(summary["escapedDefectCandidates"]["shardFrequency"], {"B": 1})
-        self.assertEqual(summary["escapedDefectCandidates"]["reportsWithCandidates"], 1)
-        self.assertEqual(summary["escapedDefectCandidates"]["reportsWithCandidatesExcludingLegacyRunAll"], 1)
+        legacy_only = summary["legacyOnlyShards"]
+        self.assertEqual(legacy_only["shardFrequency"], {"B": 1})
+        self.assertEqual(legacy_only["reportsWithLegacyOnlyShards"], 1)
+        self.assertEqual(legacy_only["reportsWithLegacyOnlyShardsExcludingLegacyRunAll"], 1)
+        # The aggregate must consume comparison.escapedDefectCandidates (the
+        # authoritative per-report field), not recompute a set difference.
+        divergent = report(capability_shards=["A", "C"], legacy_shards=["A", "B"])
+        divergent["comparison"]["escapedDefectCandidates"] = ["Z"]
+        summary = self.aggregate([divergent])
+        self.assertEqual(summary["legacyOnlyShards"]["shardFrequency"], {"Z": 1})
 
     def test_run_all_fallback_frequency_and_reasons(self):
         summary = self.aggregate()
         self.assertEqual(summary["runAllFallbacks"]["capability"], {"count": 1, "reasons": {"unmapped_graph_source": 1}})
         self.assertEqual(summary["runAllFallbacks"]["legacy"], {"count": 1, "reasons": {"infrastructure_change": 1}})
 
-    def test_switch_recommendation_not_safe_with_escaped_candidates_or_few_comparisons(self):
+    def test_switch_recommendation_not_safe_with_few_comparisons_or_low_subset_pct(self):
         summary = self.aggregate()
         recommendation = summary["switchRecommendation"]
         self.assertFalse(recommendation["safeToSwitch"])
         by_name = {criterion["name"]: criterion for criterion in recommendation["criteria"]}
+        self.assertEqual(set(by_name), {"comparisonCount", "strictlySmallerSelectionPct"})
         self.assertFalse(by_name["comparisonCount"]["met"])
-        self.assertFalse(by_name["reportsWithEscapedDefectCandidates"]["met"])
         self.assertFalse(by_name["strictlySmallerSelectionPct"]["met"])
 
-    def test_switch_recommendation_safe_when_all_criteria_met(self):
-        clean = [report(capability_shards=["A"], legacy_shards=["A", "B"]) for _ in range(3)]
-        for document in clean:
-            document["comparison"]["escapedDefectCandidates"] = []
-            document["comparison"]["legacyOnlyShards"] = []
-            document["comparison"]["legacyShardCount"] = 2
-        summary = self.aggregate(clean, min_comparisons=3, min_strict_subset_pct=60.0)
+    def test_strictly_smaller_selection_does_not_block_switch_recommendation(self):
+        # A genuinely tighter selector produces legacy-only shards on every
+        # strictly-smaller comparison (escapedDefectCandidates is definitionally
+        # the legacy-only set); those are informational and must not make the
+        # switch criteria mutually exclusive with min_strict_subset_pct.
+        tighter = [report(capability_shards=["A"], legacy_shards=["A", "B"]) for _ in range(3)]
+        summary = self.aggregate(tighter, min_comparisons=3, min_strict_subset_pct=60.0)
+        self.assertEqual(summary["strictlySmaller"], {"count": 3, "pct": 100.0})
+        self.assertEqual(summary["legacyOnlyShards"]["reportsWithLegacyOnlyShards"], 3)
         self.assertTrue(summary["switchRecommendation"]["safeToSwitch"])
 
     def test_empty_window_produces_null_distributions_and_unsafe_verdict(self):
@@ -154,8 +221,9 @@ class ObservationReportTests(unittest.TestCase):
         self.assertIn("ADR-0037 remains authoritative", rendered)
         self.assertIn("### Switch recommendation", rendered)
         self.assertIn("comparisonCount >= 25", rendered)
-        self.assertIn("reportsWithEscapedDefectCandidates <= 0", rendered)
         self.assertIn("strictlySmallerSelectionPct >= 60.0", rendered)
+        self.assertNotIn("reportsWithEscapedDefectCandidates", rendered)
+        self.assertIn("cannot be a zero-tolerance switch criterion", rendered)
         self.assertIn("NOT yet safe to switch", rendered)
         self.assertIn("| B | 1 |", rendered)
 
