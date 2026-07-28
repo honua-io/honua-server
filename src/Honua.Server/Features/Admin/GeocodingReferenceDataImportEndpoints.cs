@@ -77,13 +77,21 @@ internal static class GeocodingReferenceDataImportEndpoints
         {
             form = await context.Request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
         }
+        catch (BadHttpRequestException ex)
+        {
+            // Oversized chunked bodies exceed IHttpMaxRequestBodySizeFeature during form
+            // parsing and surface here with the correct status (413); preserve it instead of
+            // flattening to 400 via the IOException base class.
+            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode,
+                "The multipart form data could not be parsed. Check the multipart boundary and that the upload is within the documented size limits.");
+        }
         catch (Exception ex) when (ex is InvalidDataException or IOException)
         {
             // Missing/invalid multipart boundaries surface as InvalidDataException, while a body
             // that never contains the declared boundary ends in an IOException from the multipart
-            // reader (BadHttpRequestException also derives from IOException). All are client
-            // faults during form parsing; without this the global handler would surface them as
-            // 500s. Over-limit chunked bodies get the dedicated 413.
+            // reader. All are client faults during form parsing; without this the global handler
+            // would surface them as 500s. Over-limit Content-Length'd multipart sections get the
+            // dedicated 413.
             var status = ex is InvalidDataException &&
                 ex.Message.Contains("length limit", StringComparison.OrdinalIgnoreCase)
                 ? StatusCodes.Status413PayloadTooLarge
