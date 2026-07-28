@@ -314,7 +314,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
             }
         }
 
-        if (!mapping.ContainsKey(RoleX) || !mapping.ContainsKey(RoleY))
+        if (!mapping.TryGetValue(RoleX, out var xIndex) || !mapping.TryGetValue(RoleY, out var yIndex))
         {
             throw new GeocoderReferenceDataImportException(
                 "The reference data CSV must contain WGS84 longitude/latitude columns (for example " +
@@ -323,7 +323,7 @@ internal sealed partial class GeocoderReferenceDataImportService(
 
         // Sharing one column between non-coordinate roles is legal, but the two coordinate
         // axes reading the same column would silently give every point identical lon/lat.
-        if (mapping[RoleX] == mapping[RoleY])
+        if (xIndex == yIndex)
         {
             throw new GeocoderReferenceDataImportException(
                 "The 'x' and 'y' roles must map to different CSV columns.");
