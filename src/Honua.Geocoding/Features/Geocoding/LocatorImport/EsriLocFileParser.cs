@@ -76,9 +76,8 @@ internal static class EsriLocFileParser
         bool? matchIfScoresTie = null, interpolate = null;
         var parsedPairs = 0;
 
-        foreach (var rawLine in text.Split('\n'))
+        foreach (var line in text.Split('\n').Select(static rawLine => rawLine.Trim()))
         {
-            var line = rawLine.Trim();
             if (line.Length == 0 || line.StartsWith(';') || line.StartsWith('#'))
             {
                 continue;

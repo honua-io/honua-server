@@ -52,7 +52,12 @@ public static class ServiceCollectionExtensions
         // the provider reads. Binding here is idempotent with AddLocalGeocodeProvider.
         services.AddOptions<LocalGeocoderProviderConfiguration>()
             .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Local"));
-        services.TryAddSingleton<IEsriLocatorImportService, EsriLocatorImportService>();
+        // Factory registration closes over the configuration argument so hosts (and DI
+        // validation) do not need IConfiguration itself registered in the container.
+        services.TryAddSingleton<IEsriLocatorImportService>(sp => new EsriLocatorImportService(
+            configuration,
+            sp.GetRequiredService<IOptionsMonitor<LocalGeocoderProviderConfiguration>>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<EsriLocatorImportService>>()));
 
         return services;
     }

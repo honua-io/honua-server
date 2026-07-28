@@ -46,7 +46,8 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
         "HOUSE_NUM,STREET_NAME,CITY,STATE,ZIP,COUNTRY,POINT_X,POINT_Y,NOTES\n" +
         "380,New York St,Redlands,CA,92373,US,-117.1956,34.0566,esri hq\n" +
         "1,Microsoft Way,Redmond,WA,98052,US,-122.1298,47.6396,msft hq\n" +
-        "bad,Row,No,Coords,00000,US,not-a-number,34.0,broken\n";
+        "bad,Row,No,Coords,00000,US,not-a-number,34.0,broken\n" +
+        "7,NaN St,Nowhere,ZZ,11111,US,NaN,NaN,non-finite coords\n";
 
     private readonly WebAppFixture _fixture = new();
     private HttpClient _adminClient = null!;
@@ -95,7 +96,7 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
         Assert.Equal("local", data.GetProperty("provider").GetString());
         Assert.True(data.GetProperty("referenceDataImported").GetBoolean());
         Assert.Equal(2, data.GetProperty("recordsImported").GetInt32());
-        Assert.Equal(1, data.GetProperty("recordsSkipped").GetInt32());
+        Assert.Equal(2, data.GetProperty("recordsSkipped").GetInt32());
 
         // Match settings are recorded from the source locator.
         var matchSettings = data.GetProperty("matchSettings");
@@ -249,6 +250,22 @@ public sealed class EsriLocatorImportEndpointTests : IAsyncLifetime
 
         content.Add(new StringContent(LocatorName), "locatorName");
         return content;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GeocodingAdmin)]
+    [Endpoint("POST /api/v1/admin/geocoding/locators/import")]
+    public async Task Import_MismatchedLocatorName_Returns400()
+    {
+        using var content = new MultipartFormDataContent();
+        AddLocPart(content);
+        content.Add(new StringContent("SomeOtherLocator"), "locatorName");
+
+        using var response = await _adminClient.PostAsync("/api/v1/admin/geocoding/locators/import", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("does not match the geocode service name", body, StringComparison.Ordinal);
     }
 
     private static void AddLocPart(MultipartFormDataContent content)

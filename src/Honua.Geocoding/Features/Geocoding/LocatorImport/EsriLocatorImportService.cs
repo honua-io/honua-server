@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Geocoding.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -70,7 +72,31 @@ internal sealed partial class EsriLocatorImportService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        using var activity = GeocodingTelemetry.Source.StartActivity("geocoding.locator_import");
+        activity?.SetTag("honua.operation", "locator_import");
+
+        try
+        {
+            var result = await ImportCoreAsync(request, activity, cancellationToken).ConfigureAwait(false);
+            activity?.SetTag("honua.geocoding.reference_imported", result.ReferenceDataImported);
+            activity?.SetTag("honua.geocoding.records_imported", result.RecordsImported);
+            activity?.SetTag("honua.geocoding.records_skipped", result.RecordsSkipped);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
+
+    private async Task<EsriLocatorImportResult> ImportCoreAsync(
+        EsriLocatorImportRequest request,
+        Activity? activity,
+        CancellationToken cancellationToken)
+    {
         var locatorName = ResolveLocatorName(request);
+        activity?.SetTag("honua.geocoding.locator", locatorName);
         var report = new List<LocatorTranslationEntry>();
         var definition = EsriLocFileParser.Parse(request.LocContent.Span, locatorName, report);
 
@@ -267,13 +293,8 @@ internal sealed partial class EsriLocatorImportService(
             }
         }
 
-        foreach (var role in _roles)
+        foreach (var role in _roles.Where(role => !mapping.ContainsKey(role)))
         {
-            if (mapping.ContainsKey(role))
-            {
-                continue;
-            }
-
             foreach (var alias in _roleAliases[role])
             {
                 if (columnsByName.TryGetValue(alias, out var index) && !mapping.ContainsValue(index))
@@ -353,7 +374,7 @@ internal sealed partial class EsriLocatorImportService(
             return false;
         }
 
-        if (x is < -180 or > 180 || y is < -90 or > 90)
+        if (!double.IsFinite(x) || !double.IsFinite(y) || x is < -180 or > 180 || y is < -90 or > 90)
         {
             reason = "Longitude/latitude values are outside the WGS84 range.";
             return false;
@@ -475,16 +496,31 @@ internal sealed partial class EsriLocatorImportService(
         return inserted;
     }
 
-    private static string ResolveLocatorName(EsriLocatorImportRequest request)
+    private string ResolveLocatorName(EsriLocatorImportRequest request)
     {
-        var name = !string.IsNullOrWhiteSpace(request.LocatorName)
-            ? request.LocatorName.Trim()
-            : Path.GetFileNameWithoutExtension(request.LocFileName).Trim();
+        // The GeocodeServer runtime serves only the statically configured Geocoding:LocatorName
+        // route; until per-locator registration exists, an import must land under that name or
+        // the response would advertise a locator the server cannot serve.
+        var configured = configuration["Geocoding:LocatorName"];
+        var served = string.IsNullOrWhiteSpace(configured) ? "World" : configured.Trim();
 
+        if (string.IsNullOrWhiteSpace(request.LocatorName))
+        {
+            return served;
+        }
+
+        var name = request.LocatorName.Trim();
         if (name.Length == 0 || name.Length > 128 || !LocatorNameRegex().IsMatch(name))
         {
             throw new EsriLocatorImportException(
                 "Locator name must be 1-128 characters of letters, digits, spaces, '.', '_' or '-'.");
+        }
+
+        if (!string.Equals(name, served, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new EsriLocatorImportException(
+                $"Locator name '{name}' does not match the geocode service name '{served}' this " +
+                "server registers. Import under the configured name or change Geocoding:LocatorName.");
         }
 
         return name;
