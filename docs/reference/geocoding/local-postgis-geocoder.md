@@ -62,9 +62,11 @@ separator punctuation (commas/semicolons) replaced by spaces. The provider appli
 normalization to incoming queries, so a comma-formatted display address and a space-joined
 structured query normalize to the same text. Loaders should normalize on insert:
 
-> **Migrating pre-existing data:** if you loaded reference rows under the earlier rule (commas
-> preserved in `search_text`), re-normalize once so prefix matching keeps working:
-> `UPDATE honua_geocode_reference SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'));`
+> **Migrating pre-existing data:** rows loaded under the earlier rule (commas preserved in
+> `search_text`) are re-normalized automatically on boot for the default
+> `public.honua_geocode_reference` table (migration 091). Custom schema/table configurations
+> must run the equivalent once:
+> `UPDATE <your_table> SET search_text = lower(regexp_replace(trim(regexp_replace(search_text, '[,;]', ' ', 'g')), '\s+', ' ', 'g'));`
 
 ```sql
 INSERT INTO honua_geocode_reference

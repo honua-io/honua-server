@@ -440,10 +440,17 @@ internal sealed partial class GeocoderReferenceDataImportService(
             // it does not already contain are folded in without duplication. Separator
             // punctuation is canonicalized by the shared normalizer, so a comma-formatted
             // display address still scores exact against space-joined structured queries.
-            var normalizedDisplay = GeocodeReferenceText.Normalize(displayName);
+            // Token-boundary containment: a component counts as present only when every one
+            // of its normalized tokens appears as a whole token in the display ("US" is not
+            // contained in "Museum").
+            var displayTokens = GeocodeReferenceText.Normalize(displayName)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .ToHashSet(StringComparer.Ordinal);
             var extras = new[] { streetLine, neighborhood, city, region, postalCode, country }
                 .Where(static p => !string.IsNullOrWhiteSpace(p))
-                .Where(p => !normalizedDisplay.Contains(GeocodeReferenceText.Normalize(p!), StringComparison.Ordinal));
+                .Where(p => !GeocodeReferenceText.Normalize(p!)
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .All(displayTokens.Contains));
             searchSource = string.Join(' ', new[] { displayName }.Concat(extras));
         }
         else
