@@ -9,7 +9,9 @@ using NetTopologySuite.Features;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.Core.Features.Shared.Models;
 using Honua.Geoprocessing.Inference;
+using Honua.Infrastructure.Rendering;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
@@ -114,7 +116,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed(
                 "imagery.classify is unavailable on this deployment: no cloud inference backend is configured. " +
                 $"Set {ImageryInferenceOptions.SectionName}:Provider (supported: '{HttpImageryInferenceClient.ProviderId}' — " +
-                "an OpenAI-compatible or hosted-ONNX REST endpoint) and " +
+                "an HTTP endpoint speaking Honua's JSON inference contract) and " +
                 $"{ImageryInferenceOptions.SectionName}:Endpoint, with credentials supplied as a secret reference or via the " +
                 $"{ImageryInferenceOptions.ApiKeyEnvironmentVariable} environment variable.");
         }
@@ -127,7 +129,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                 return JobExecutionResult.Failed(
                     $"imagery.classify inference provider '{options.Provider}' is recognized but not yet supported in this build. " +
                     $"Use provider '{HttpImageryInferenceClient.ProviderId}' pointed at the service's HTTPS invocation endpoint " +
-                    "(OpenAI-compatible or hosted-ONNX REST) instead.");
+                    "speaking Honua's JSON inference contract, directly or via a thin gateway) instead.");
             }
 
             Log.ProviderUnsupported(_logger, job.OperationId, options.Provider);
@@ -268,6 +270,20 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                     "valid GeoJSON FeatureCollection (empty payload).");
             }
 
+            // Size-gate BEFORE materializing. The response reader allows up to twice
+            // MaxArtifactBytes so a base64 raster envelope fits, and parsing GeoJSON
+            // explodes into UTF-16 plus NTS geometry/attribute objects many times the
+            // wire size — so deferring this check until after the parse would let an
+            // adversarial or unexpectedly dense payload exhaust worker memory before
+            // the guard ever ran.
+            if (featureJson.Length > maxArtifactBytes)
+            {
+                Log.ArtifactTooLarge(_logger, job.OperationId, featureJson.Length, maxArtifactBytes);
+                return JobExecutionResult.Failed(
+                    $"imagery.classify output feature collection size {featureJson.Length} bytes exceeds configured " +
+                    $"MaxArtifactBytes={maxArtifactBytes}. Raise the limit or apply a stricter confidenceThreshold.");
+            }
+
             if (!FeatureCollectionArtifact.TryParseJson(
                     Encoding.UTF8.GetString(featureJson), out var parsedFeatures, out var featureParseError))
             {
@@ -282,22 +298,17 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
             // projected source CRS (metre coordinates) would therefore be silently
             // read as degrees and placed on the far side of the planet, so
             // out-of-range coordinates are rejected instead of published.
-            if (!TryValidateWgs84Bounds(parsedFeatures, out var boundsError))
+            if (!TryValidateDetectionPlacement(
+                    inputs.SourceGeoreferencing, parsedFeatures, out var boundsError))
             {
                 Log.FeatureOutputNotWgs84(_logger, job.OperationId, boundsError);
                 return JobExecutionResult.Failed(
-                    "imagery.classify inference failed: the backend returned detected features outside WGS 84 " +
-                    $"bounds ({boundsError}). GeoJSON output must be EPSG:4326 longitude/latitude (RFC 7946); " +
-                    $"the source CRS is supplied to the backend as 'sourceCrs' (EPSG:{inputs.SourceGeoreferencing.CrsCode}) " +
-                    "so it can transform detections before returning them.");
-            }
-
-            if (featureJson.Length > maxArtifactBytes)
-            {
-                Log.ArtifactTooLarge(_logger, job.OperationId, featureJson.Length, maxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"imagery.classify output feature collection size {featureJson.Length} bytes exceeds configured " +
-                    $"MaxArtifactBytes={maxArtifactBytes}. Raise the limit or apply a stricter confidenceThreshold.");
+                    "imagery.classify inference failed: the backend returned detected features that are not " +
+                    $"consistent with the source scene ({boundsError}). GeoJSON output must be WGS 84 " +
+                    "(EPSG:4326) longitude/latitude (RFC 7946) covering the scene; the source CRS is supplied " +
+                    "to the backend " +
+                    $"as 'sourceCrs' (EPSG:{inputs.SourceGeoreferencing.CrsCode}) so it can transform detections " +
+                    "before returning them.");
             }
 
             artifactUri = FeatureCollectionArtifact.BuildDataUri(featureJson);
@@ -355,8 +366,9 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
         if (GeoTiffGeoreferencing.TryRead(sourceBytes, out var sourceGeoreferencing)
             && sourceGeoreferencing.UnsupportedTransformReason is { } sourceTransformReason)
         {
-            error = $"input 'source' carries a model transform this process cannot verify against an output "
-                + $"({sourceTransformReason}). Only axis-aligned north-up GeoTIFF grids are accepted";
+            error = $"input 'source' carries georeferencing this process cannot verify against an output "
+                + $"({sourceTransformReason}). Sources must be axis-aligned north-up GeoTIFFs with an "
+                + "EPSG-coded CRS";
             return false;
         }
 
@@ -437,14 +449,33 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
     }
 
     /// <summary>
-    /// Verifies every detected geometry falls inside WGS 84 bounds
-    /// (lon +/-180, lat +/-90). This is what catches a backend echoing projected
-    /// source-CRS coordinates into an artifact that downstream code reads as
-    /// degrees.
+    /// Verifies detected geometries are plausibly WHERE THE SCENE IS, not merely
+    /// numerically lon/lat. Global +/-180/+/-90 bounds are weak evidence: pixel
+    /// coordinates from a small image (say <c>[10, 20]</c>) satisfy them while
+    /// sitting on another continent from a UTM scene.
     /// </summary>
-    private static bool TryValidateWgs84Bounds(FeatureCollection features, out string error)
+    /// <remarks>
+    /// The strength of the check depends on whether the source CRS can be mapped
+    /// to WGS 84 in this image. The lean serving image carries no PROJ (see
+    /// <c>ManagedReprojectFastPath</c>: only identity and WGS 84 &lt;-&gt; Web
+    /// Mercator are in-process), so:
+    /// <list type="bullet">
+    ///   <item>WGS 84 / Web Mercator sources get an EXACT scene footprint;</item>
+    ///   <item>UTM sources get their zone's area of use, which is coarse but still
+    ///   catches wrong-continent placement;</item>
+    ///   <item>any other CRS falls back to global lon/lat bounds, the best that is
+    ///   possible without a PROJ-backed transform.</item>
+    /// </list>
+    /// </remarks>
+    private static bool TryValidateDetectionPlacement(
+        GeoTiffGeoreferencing source,
+        FeatureCollection features,
+        out string error)
     {
         error = "";
+
+        var hasFootprint = TryGetWgs84Footprint(
+            source, out var minLon, out var minLat, out var maxLon, out var maxLat);
 
         foreach (var geometry in features.Select(feature => feature?.Geometry))
         {
@@ -462,9 +493,95 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                     $"geometry envelope [{envelope.MinX}, {envelope.MinY}, {envelope.MaxX}, {envelope.MaxY}] is not longitude/latitude");
                 return false;
             }
+
+            if (hasFootprint
+                && (envelope.MaxX < minLon || envelope.MinX > maxLon
+                    || envelope.MaxY < minLat || envelope.MinY > maxLat))
+            {
+                error = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"geometry envelope [{envelope.MinX}, {envelope.MinY}, {envelope.MaxX}, {envelope.MaxY}] lies outside the source footprint [{minLon}, {minLat}, {maxLon}, {maxLat}]");
+                return false;
+            }
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Computes a WGS 84 bounding box the detections must fall within, using only
+    /// transforms available in the lean image. Returns false when the source CRS
+    /// cannot be mapped without PROJ, in which case the caller falls back to
+    /// global lon/lat bounds.
+    /// </summary>
+    private static bool TryGetWgs84Footprint(
+        GeoTiffGeoreferencing source,
+        out double minLon,
+        out double minLat,
+        out double maxLon,
+        out double maxLat)
+    {
+        minLon = minLat = maxLon = maxLat = 0d;
+
+        var west = source.OriginX;
+        var east = source.OriginX + source.ExtentWidth;
+        var north = source.OriginY;
+        var south = source.OriginY - source.ExtentHeight;
+
+        if (source.CrsCode == 4326)
+        {
+            // Pad by 10% of the scene so a detection touching the edge is not
+            // rejected for floating-point or half-pixel reasons.
+            var padX = Math.Abs(east - west) * 0.1;
+            var padY = Math.Abs(north - south) * 0.1;
+            minLon = west - padX;
+            maxLon = east + padX;
+            minLat = south - padY;
+            maxLat = north + padY;
+            return true;
+        }
+
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(source.CrsCode))
+        {
+            var (lonA, latA) = CoordinateTransformer.WebMercatorToLonLat(west, south);
+            var (lonB, latB) = CoordinateTransformer.WebMercatorToLonLat(east, north);
+            var loLon = Math.Min(lonA, lonB);
+            var hiLon = Math.Max(lonA, lonB);
+            var loLat = Math.Min(latA, latB);
+            var hiLat = Math.Max(latA, latB);
+            var padX = (hiLon - loLon) * 0.1;
+            var padY = (hiLat - loLat) * 0.1;
+            minLon = loLon - padX;
+            maxLon = hiLon + padX;
+            minLat = loLat - padY;
+            maxLat = hiLat + padY;
+            return true;
+        }
+
+        // WGS 84 / UTM zone NN North (326NN) or South (327NN). The zone's area of
+        // use is analytic — no PROJ needed — and although it is far coarser than
+        // the scene itself, it still refuses a detection on the wrong continent.
+        if (source.CrsCode is (>= 32601 and <= 32660) or (>= 32701 and <= 32760))
+        {
+            var zone = source.CrsCode % 100;
+            var centralMeridian = -183d + (6d * zone);
+            minLon = centralMeridian - 6d;
+            maxLon = centralMeridian + 6d;
+            if (source.CrsCode < 32700)
+            {
+                minLat = -1d;
+                maxLat = 85d;
+            }
+            else
+            {
+                minLat = -81d;
+                maxLat = 1d;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private sealed record InferenceInputs(

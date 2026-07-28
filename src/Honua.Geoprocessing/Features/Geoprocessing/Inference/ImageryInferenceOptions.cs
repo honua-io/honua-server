@@ -7,7 +7,8 @@ namespace Honua.Geoprocessing.Inference;
 /// Configuration for the delegated imagery/ML inference lane (#2241). Honua does
 /// not bundle a model runtime: the <c>imagery.classify</c> process submits the
 /// source raster and a model reference to a configured cloud inference endpoint
-/// (SageMaker / Vertex AI / Azure ML / OpenAI-compatible or hosted-ONNX REST) and
+/// (SageMaker / Vertex AI / Azure ML / any HTTP model server speaking Honua's
+/// inference contract) and
 /// lands the returned classification raster or detected features as a GP job
 /// artifact.
 /// </summary>
@@ -30,8 +31,10 @@ internal sealed class ImageryInferenceOptions
     /// <summary>
     /// Inference backend provider id. Empty (the default) means no backend is
     /// configured and the imagery lane advertises itself as unavailable.
-    /// Supported: <c>http</c> (generic REST — OpenAI-compatible or hosted-ONNX
-    /// endpoints, including Azure ML online-endpoint invocation URLs).
+    /// Supported: <c>http</c> (generic REST speaking Honua's own JSON inference
+    /// contract — implemented directly by a model server, or by a thin gateway in
+    /// front of one such as an Azure ML online endpoint; NOT the OpenAI
+    /// chat-completions wire format).
     /// Recognized but not yet supported in this build: <c>sagemaker</c>,
     /// <c>vertex</c>, <c>azureml</c> (their SDK-authenticated adapters); these
     /// fail with a clear message pointing at the <c>http</c> adapter.

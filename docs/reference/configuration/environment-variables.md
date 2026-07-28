@@ -208,7 +208,7 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__Executors__MaxArtifactBytes` | `52428800` (50 MiB) | Max single artifact payload a built-in executor publishes. |
 | `Geoprocessing__Executors__OutputRootDirectory` | OS temp dir | Root for file-sink outputs; traversal outside is rejected. |
 | `Geoprocessing__Executors__ResultRetention` | `7.00:00:00` | Retention TTL for durable result packages. |
-| `Geoprocessing__ImageryInference__Provider` | *(unset — lane dormant)* | Cloud inference backend for `imagery.classify`. Supported: `http` (OpenAI-compatible / hosted-ONNX / Azure ML online-endpoint REST). `sagemaker`/`vertex`/`azureml` are recognized but fail clearly until SDK adapters land. |
+| `Geoprocessing__ImageryInference__Provider` | *(unset — lane dormant)* | Cloud inference backend for `imagery.classify`. Supported: `http` (generic REST speaking Honua's own JSON inference contract — not the OpenAI chat-completions format; implement it directly or put a thin gateway in front of your model server). `sagemaker`/`vertex`/`azureml` are recognized but fail clearly until SDK adapters land. |
 | `Geoprocessing__ImageryInference__Endpoint` | *(unset)* | Absolute http(s) invocation URL of the inference endpoint. Never echoed to callers. |
 | `Geoprocessing__ImageryInference__ApiKey` | *(unset)* | Backend API key: a secret reference (resolved through the secret store), a literal, or unset to fall back to `HONUA_IMAGERY_INFERENCE_API_KEY`. Never logged. |
 | `Geoprocessing__ImageryInference__ApiKeyHeader` | *(unset — `Authorization: Bearer`)* | Optional custom header name to carry the API key (for example `x-api-key`). |

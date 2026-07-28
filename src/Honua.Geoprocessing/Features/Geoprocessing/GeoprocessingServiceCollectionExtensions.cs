@@ -163,8 +163,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         // unconfigured — no startup validation, no eager probe; an unconfigured
         // deployment fails the job at execution with a clear message. Provider
         // adapters sit behind IImageryInferenceClient; the generic 'http' REST
-        // adapter (OpenAI-compatible / hosted-ONNX / Azure ML online endpoints)
-        // is the supported backend in this build.
+        // adapter, which speaks Honua's own JSON inference contract (implemented
+        // by a model server directly or by a thin gateway in front of one), is the
+        // supported backend in this build.
         services
             .AddOptions<Inference.ImageryInferenceOptions>()
             .Bind(configuration.GetSection(Inference.ImageryInferenceOptions.SectionName));

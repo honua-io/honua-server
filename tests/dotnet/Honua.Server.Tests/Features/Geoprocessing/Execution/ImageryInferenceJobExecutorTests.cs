@@ -151,8 +151,12 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_FeaturesOutput_PublishesFeatureCollectionArtifact()
     {
+        // Coordinates must sit inside the EPSG:32610 (UTM 10N) source scene's zone:
+        // the executor verifies detection placement against the source footprint,
+        // so an arbitrary lon/lat like [10, 20] would be (correctly) rejected as
+        // being on another continent.
         const string featureCollection =
-            """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[10.0,20.0]},"properties":{"class":"building","score":0.91}}]}""";
+            """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{"class":"building","score":0.91}}]}""";
         var handler = new StubHttpHandler(_ => JsonResponse(
             $$"""{"outputType":"features","features":{{featureCollection}}}"""));
         var executor = CreateExecutor(handler, provider: "http");
@@ -678,6 +682,87 @@ public sealed class ImageryInferenceJobExecutorTests
         var result = await executor.ExecuteAsync(CreateJobRecord(), context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_InRangeButOffFootprintDetections_AreRejected()
+    {
+        // Codex's example: [10, 20] is numerically valid lon/lat, so a global
+        // bounds test accepts it — but the source is an EPSG:32610 (UTM 10N)
+        // scene, whose zone spans roughly -129..-117 longitude. Publishing this
+        // would place the detection on another continent.
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[10.0,20.0]},"properties":{"class":"building"}}]}}""")),
+            provider: "http");
+        var context = CreateContext("op-off-footprint");
+
+        var result = await executor.ExecuteAsync(
+            CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("source footprint");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_DetectionsInsideTheUtmZone_AreAccepted()
+    {
+        // Same UTM 10N scene; a detection at -122.4, 37.8 (San Francisco) sits in
+        // the zone and must still be published.
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                """{"outputType":"features","features":{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-122.4,37.8]},"properties":{"class":"building"}}]}}""")),
+            provider: "http");
+        var context = CreateContext("op-on-footprint", out _);
+
+        var result = await executor.ExecuteAsync(
+            CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_UserDefinedSourceCrs_IsRejectedWithSpecificMessage()
+    {
+        // GeoKey 32767 means the CRS is spelled out in further tags rather than
+        // named by EPSG. The lane cannot resolve that, and says so precisely
+        // instead of claiming the file has no georeferencing at all.
+        var userDefined = BuildGeoTiff(
+            width: 64, height: 64, originX: 500000, originY: 4600000, pixelSize: 10, epsg: 32767);
+        var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
+        var executor = CreateExecutor(handler, provider: "http");
+        var context = CreateContext("op-user-defined-crs");
+
+        var record = CreateJobRecord(source: Convert.ToBase64String(userDefined));
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("user-defined");
+        handler.LastRequestBody.Should().BeNull("an unverifiable source must not be delegated");
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_OversizedFeaturePayload_IsRejectedBeforeParsing()
+    {
+        // The guard must fire on the raw payload, before UTF-16 decoding and NTS
+        // object expansion multiply the footprint.
+        var padding = new string('x', 4096);
+        var executor = CreateExecutor(
+            new StubHttpHandler(_ => JsonResponse(
+                "{\"outputType\":\"features\",\"features\":{\"type\":\"FeatureCollection\",\"note\":\""
+                + padding
+                + "\",\"features\":[]}}")),
+            provider: "http", maxArtifactBytes: 1024);
+        var context = CreateContext("op-huge-features");
+
+        var result = await executor.ExecuteAsync(
+            CreateJobRecord(task: "detection"), context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("MaxArtifactBytes");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
     }
 
     [UnitTest]

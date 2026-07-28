@@ -45,6 +45,15 @@ internal readonly record struct GeoTiffGeoreferencing
     /// </summary>
     private const double MaxRoundingFractionOfExtent = 0.1;
 
+    /// <summary>
+    /// GeoKey value meaning "the CRS is user-defined and spelled out in the
+    /// remaining GeoKeys / parameter tags" rather than named by an EPSG code.
+    /// </summary>
+    private const ushort GeoKeyUserDefined = 32767;
+
+    /// <summary>Sentinel <see cref="CrsCode"/> for a user-defined CRS.</summary>
+    internal const int UserDefinedCrsCode = -1;
+
     private const ushort GeoKeyRasterType = 1025;
     private const ushort RasterPixelIsPoint = 2;
 
@@ -487,6 +496,12 @@ internal readonly record struct GeoTiffGeoreferencing
 
             string? unsupported = null;
 
+            if (_crsCode == UserDefinedCrsCode)
+            {
+                unsupported = "the GeoKeyDirectory declares a user-defined CRS (32767) rather than an EPSG code, "
+                    + "which this comparison cannot resolve";
+            }
+
             if (_hasScale && _hasTiepoint)
             {
                 if (_scaleX <= 0 || _scaleY <= 0)
@@ -701,14 +716,18 @@ internal readonly record struct GeoTiffGeoreferencing
                     continue;
                 }
 
-                if (keyId == GeoKeyProjectedCsType && value != 0 && value != 32767)
+                if (keyId == GeoKeyProjectedCsType && value != 0)
                 {
-                    return value;
+                    // A user-defined CRS is REPORTED, not silently dropped: the
+                    // caller can then say so precisely instead of emitting the
+                    // generic "no usable georeferencing" message for a file that
+                    // is in fact georeferenced, just not by EPSG code.
+                    return value == GeoKeyUserDefined ? UserDefinedCrsCode : value;
                 }
 
-                if (keyId == GeoKeyGeographicType && value != 0 && value != 32767)
+                if (keyId == GeoKeyGeographicType && value != 0)
                 {
-                    geographic = value;
+                    geographic = value == GeoKeyUserDefined ? UserDefinedCrsCode : value;
                 }
             }
 

@@ -9,15 +9,19 @@ namespace Honua.Geoprocessing.Inference;
 /// <summary>
 /// Generic REST provider adapter for the delegated imagery/ML inference lane
 /// (#2241) — the end-to-end-supported backend family. Targets any hosted
-/// inference HTTP endpoint that speaks a simple JSON contract: OpenAI-compatible
-/// inference gateways, hosted-ONNX model servers, and Azure ML online-endpoint
-/// style invocation URLs (bearer-key auth). SageMaker/Vertex SDK-signed
-/// invocation is intentionally NOT implemented here; those provider ids fail
-/// clearly in the executor until dedicated adapters land.
+/// inference HTTP endpoint that speaks HONUA'S OWN JSON contract, documented
+/// below. This is deliberately NOT the OpenAI chat-completions wire format and
+/// not any vendor's native protocol: a deployment points <c>Endpoint</c> at a
+/// model server that implements this contract directly, or at a thin gateway
+/// that translates it to whatever the model actually speaks (a hosted-ONNX
+/// server, an Azure ML online endpoint, and so on). Auth is a bearer key or a
+/// custom header. SageMaker/Vertex SDK-signed invocation is intentionally NOT
+/// implemented here; those provider ids fail clearly in the executor until
+/// dedicated adapters land.
 /// </summary>
 /// <remarks>
 /// Request contract (JSON): <c>{ "model", "task", "image" (base64 GeoTIFF),
-/// "imageMediaType", "confidenceThreshold"? }</c>.
+/// "imageMediaType", "sourceCrs"?, "confidenceThreshold"? }</c>.
 /// Response contract (JSON): <c>{ "outputType": "raster"|"features",
 /// "raster": base64 GeoTIFF | "features": GeoJSON FeatureCollection }</c>.
 /// The backend must preserve the source georeferencing: raster outputs carry the
