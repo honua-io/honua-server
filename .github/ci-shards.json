@@ -331,6 +331,9 @@
         "tests/dotnet/Honua.Server.Tests/Import/RedisImportJobManagerIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/RedisImportTestStubs.cs",
         "tests/dotnet/Honua.Server.Tests/Import/RedisJobQueueFallbackTests.cs",
+        "src/Honua.Core/Features/Geoprocessing/Abstractions/IProcessConditionalInputProbe.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/ProcessConditionalInputProbe.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ToolboxTranslationEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/UniversalProgressStoreIntegrationTests.cs",
         "tests/fixtures/toolbox-translation/"

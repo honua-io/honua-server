@@ -62,6 +62,13 @@ internal static partial class ToolboxTranslationEndpoints
         {
             throw;
         }
+        // An oversized body surfaces as BadHttpRequestException with status 413; let it
+        // reach the shared ExceptionMapper, which maps it to a clean 413 envelope. Catching
+        // it here would downgrade the response to 400 and lose those semantics.
+        catch (BadHttpRequestException)
+        {
+            throw;
+        }
         // Intentionally generic: reading/deserializing can throw JsonException,
         // NotSupportedException, or IOException for malformed/unreadable request bodies;
         // map all of them to a 400 response.

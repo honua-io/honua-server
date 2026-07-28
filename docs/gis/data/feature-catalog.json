@@ -14265,6 +14265,7 @@
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_MalformedBody_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_NullToolCollections_NormalizesToEmptyAndReports",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_NullTools_ReturnsBadRequest",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_OversizedStreamedBody_Returns413NotBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_PartiallyTranslatableToolbox_ReportsUnsupportedConstructs",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_SatisfiedConditionalInput_IsTranslated",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_TranslatableToolbox_RoundTripsAllParameterSignatures",

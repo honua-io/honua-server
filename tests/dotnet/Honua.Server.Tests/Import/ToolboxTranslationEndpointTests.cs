@@ -2,12 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
@@ -28,6 +31,12 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // A small edit payload cap keeps the oversized-body case cheap to exercise.
+        _fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(new LimitsOptions
+        {
+            Edits = new EditLimits { MaxPayloadSize = 1048576 }
+        }));
+
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
     }
@@ -409,6 +418,24 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("artifactVersion");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_OversizedStreamedBody_Returns413NotBadRequest()
+    {
+        // Streamed without Content-Length, so the size cannot be pre-checked: the limit
+        // trips mid-read and surfaces as BadHttpRequestException(413). The handler must let
+        // that reach the shared ExceptionMapper instead of flattening it to 400.
+        using var oversized = new StreamContent(
+            new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 2 * 1024 * 1024))));
+        oversized.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        oversized.Headers.ContentLength = null;
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/import/toolbox/translation/validate", oversized);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
     }
 
     [IntegrationTest]
