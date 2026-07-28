@@ -178,6 +178,8 @@ is an operator-provisioned run on the self-hosted Windows ArcGIS Pro runner:
    substantiating the CERT-PRTL-\* IDs and link it here + from the migration
    evidence doc.
 
-Until that operator run exists, the CERT-PRTL token/OAuth2 IDs are baselined
-`skip` (see the matrix). This linkage is tracked on #1372 (real-client gate) and
-#1096 (runner provisioning).
+The full CERT-PRTL slice (including the token/OAuth2 IDs, formerly committed
+`skip`) is baselined `pass` from a containerized-lane capture of the stub —
+that substantiates the wire contract, **not** the real-client behavior; the
+licensed operator run above remains the epic's acceptance gate. This linkage is
+tracked on #1372 (real-client gate) and #1096 (runner provisioning).

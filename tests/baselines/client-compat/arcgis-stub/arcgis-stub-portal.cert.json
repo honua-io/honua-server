@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260709T000000Z",
-  "run_date": "2026-07-09T00:00:00.000000+00:00",
+  "run_id": "20260728T180311Z",
+  "run_date": "2026-07-28T18:03:12.238287+00:00",
   "server_version": "local",
   "client_lane": "arcgis-stub",
   "client_version": "stub-1.0",
@@ -30,7 +30,7 @@
       "test_case_id": "CERT-PRTL-SRCH-01",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 3,
+      "measured_count": 9,
       "measured_delta": null,
       "notes": "total/start/num/nextStart/results paging shape",
       "evidence_ref": ""
@@ -55,37 +55,82 @@
     },
     {
       "test_case_id": "CERT-PRTL-TOKN-01",
-      "status": "skip",
+      "status": "pass",
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Behavior verified by PortalFacadeDiscoveryContractTests; committed skip pending first containerized-lane capture. A genuine failure emits `fail` and is caught via the diff new-fail path. Promote via scripts/client-compat/refresh-baselines.sh.",
+      "notes": "generateToken expires is Unix milliseconds",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-PRTL-AUTH-01",
-      "status": "skip",
+      "status": "pass",
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Named-user org-tier discovery; behavior verified by PortalFacadeDiscoveryContractTests. Committed skip pending first containerized-lane capture; a broken projection emits `fail` (caught via new-fail). Promote via refresh-baselines.sh.",
+      "notes": "named-user token surfaces org-tier items",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-PRTL-OAUTH-01",
-      "status": "skip",
+      "status": "pass",
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "oauth2/token error-envelope shape; skips only when the bridge is 404-disabled, otherwise emits pass/fail (a wrong status or non-RFC body is caught via new-fail). Committed skip pending first containerized-lane capture. Promote via refresh-baselines.sh.",
+      "notes": "oauth2/token returns RFC 6749 error envelope for an invalid grant",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-SELF-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "portals/self with a named-user token populates the user block",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-COMM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "anonymous community/self returns Esri error envelope 401/499, no user document",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-COMM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "community/self with a named-user token returns the user document",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-TOKN-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "generateToken with invalid credentials returns Esri error envelope 401/499, no token",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PRTL-OAUTH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "oauth2/token refresh_token grant returns invalid_grant for an unknown refresh token",
       "evidence_ref": ""
     }
   ],
   "summary": {
-    "total": 8,
-    "passed": 5,
+    "total": 13,
+    "passed": 13,
     "failed": 0,
-    "skipped": 3,
+    "skipped": 0,
     "not_applicable": 0
   },
   "cite_results": null,
