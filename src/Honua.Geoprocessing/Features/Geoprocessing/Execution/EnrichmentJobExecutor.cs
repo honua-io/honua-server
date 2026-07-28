@@ -79,6 +79,13 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// </summary>
     private const int DefaultMaxInputFeatures = 250_000;
 
+    /// <summary>
+    /// Hard operator ceiling for the per-layer admission cap. A caller may only lower
+    /// the cap; it can never be raised past this, so no single job can disable the
+    /// guard and exhaust the worker.
+    /// </summary>
+    private const int MaxInputFeaturesCeiling = 1_000_000;
+
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<EnrichmentJobExecutor> _logger;
@@ -164,7 +171,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         EnrichmentPlan plan;
         try
         {
-            plan = BuildPlan(inputs, dataset);
+            plan = BuildPlan(inputs, dataset, hasInline);
         }
         catch (TransformInputException ex)
         {
@@ -342,7 +349,10 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     // Resolves the effective join behavior from the enrichment vocabulary: the
     // 'method' names (mirroring POST /api/enrich) take precedence over a raw
     // 'predicate', which falls back to the dataset default.
-    private static EnrichmentPlan BuildPlan(StepInputReader inputs, EnrichmentDatasetDefinition dataset)
+    private static EnrichmentPlan BuildPlan(
+        StepInputReader inputs,
+        EnrichmentDatasetDefinition dataset,
+        bool inlineSource)
     {
         var carryFields = StatisticsSupport.ParseFieldList(inputs.GetOrDefault("outputFields", string.Empty));
         if (carryFields.Count == 0)
@@ -406,7 +416,23 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // ordinates.
         var outputSrid = TryReadPositiveInt(inputs, "outSrid") ?? DefaultOutputSrid;
 
-        var maxInputFeatures = TryReadPositiveInt(inputs, "maxInputFeatures") ?? DefaultMaxInputFeatures;
+        // Inline GeoJSON is WGS 84 by specification (RFC 7946) and is parsed with the
+        // 4326 factory, so it cannot be joined against a dataset reprojected to another
+        // CRS. Reject that combination rather than silently comparing 4326 input
+        // ordinates against reprojected dataset ordinates.
+        if (inlineSource && outputSrid != DefaultOutputSrid)
+        {
+            throw new TransformInputException(
+                $"'outSrid' must be {DefaultOutputSrid} when the source is supplied inline via 'input': inline "
+                + "GeoJSON is WGS 84 by specification. Use a 'layerId' source to enrich in another CRS.");
+        }
+
+        // The caller may only LOWER the admission cap. An operator ceiling still applies,
+        // so a permitted caller cannot disable the guard (e.g. int.MaxValue) and exhaust
+        // the worker before the artifact-size check.
+        var maxInputFeatures = Math.Min(
+            TryReadPositiveInt(inputs, "maxInputFeatures") ?? DefaultMaxInputFeatures,
+            MaxInputFeaturesCeiling);
 
         return new EnrichmentPlan(
             methodName, nearest, predicate, distance, carryFields, stats, outputSrid, maxInputFeatures);

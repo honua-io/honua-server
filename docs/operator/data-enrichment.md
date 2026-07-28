@@ -73,9 +73,14 @@ enrichment-local job lifecycle:
   CRS units (managed NTS join, no geodesic conversion) — the sync endpoint's
   `distanceMeters` semantics do not apply, so supply `distance` explicitly and
   pick a metric `outSrid` (e.g. 3857) when you need meters.
+  `bbox` coordinates are expressed in `outSrid` (the layer connector stamps the
+  filter envelope with the requested output SRID). Inline `input` sources must
+  keep `outSrid` at 4326 — inline GeoJSON is WGS 84 by specification, so the
+  request is rejected rather than joined against a reprojected dataset.
 - **Bounded input**: `maxInputFeatures` (default 250000) caps each layer read
   while streaming, so an oversized selection fails fast with an actionable error
-  instead of exhausting worker memory.
+  instead of exhausting worker memory. The value is clamped to an operator
+  ceiling of 1000000 — a caller may only lower the cap, never disable it.
 
 ## Registering enrichment datasets
 
