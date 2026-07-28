@@ -57,7 +57,12 @@
     { "id": "CERT-PRTL-RBAC-01", "category": "PORTAL" },
     { "id": "CERT-PRTL-TOKN-01", "category": "PORTAL" },
     { "id": "CERT-PRTL-AUTH-01", "category": "PORTAL" },
-    { "id": "CERT-PRTL-OAUTH-01", "category": "PORTAL" }
+    { "id": "CERT-PRTL-OAUTH-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-SELF-02", "category": "PORTAL" },
+    { "id": "CERT-PRTL-COMM-01", "category": "PORTAL" },
+    { "id": "CERT-PRTL-COMM-02", "category": "PORTAL" },
+    { "id": "CERT-PRTL-TOKN-02", "category": "PORTAL" },
+    { "id": "CERT-PRTL-OAUTH-02", "category": "PORTAL" }
   ],
   "lanes": [
     {

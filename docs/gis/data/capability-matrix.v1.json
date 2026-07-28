@@ -18,7 +18,7 @@
     "tests/baselines/client-compat/"
   ],
   "evidenceFreshness": {
-    "anchor": "2026-07-09T00:00:00Z",
+    "anchor": "2026-07-28T18:03:12.238287Z",
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
@@ -1508,7 +1508,7 @@
           "protocol": "featureserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:19.209522Z"
           }
         },
@@ -1653,7 +1653,7 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:19.321037Z"
           }
         },
@@ -1855,7 +1855,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:39.990000Z"
           }
         },
@@ -1864,7 +1864,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:07:17.988831Z"
           }
         },
@@ -1873,7 +1873,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:27.279118Z"
           }
         },
@@ -1913,7 +1913,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:39.755000Z"
           }
         },
@@ -1922,7 +1922,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -1974,7 +1974,7 @@
           "protocol": "ogc-tiles",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2035,7 +2035,7 @@
           "protocol": "mvt",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:52.394000Z"
           }
         }
@@ -2111,7 +2111,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:40.991000Z"
           }
         },
@@ -2120,7 +2120,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:07:17.989246Z"
           }
         },
@@ -2129,7 +2129,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:27.279118Z"
           }
         }
@@ -2167,7 +2167,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:39.001000Z"
           }
         },
@@ -2176,7 +2176,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
@@ -2225,7 +2225,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:37.557000Z"
           }
         },
@@ -2234,7 +2234,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 62,
+            "ageDays": 82,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
