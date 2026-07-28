@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using Honua.Core.Features.Collaboration.Operations;
-using Honua.Server.Features.Collaboration.Sessions;
 
 namespace Honua.Server.Features.Collaboration.Checkpoints;
 
@@ -25,24 +24,26 @@ namespace Honua.Server.Features.Collaboration.Checkpoints;
 internal sealed class SavedMapCheckpointOperationLog
 {
     private readonly ISavedMapOperationLogRepository _repository;
-    private readonly ICollaborationSessionBackplane _backplane;
+    private readonly SavedMapCollaborationTopology _topology;
     private readonly ConcurrentDictionary<string, long> _checkpointedCursors = new(StringComparer.Ordinal);
 
     public SavedMapCheckpointOperationLog(
         ISavedMapOperationLogRepository repository,
-        ICollaborationSessionBackplane backplane)
+        SavedMapCollaborationTopology topology)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-        _backplane = backplane ?? throw new ArgumentNullException(nameof(backplane));
+        _topology = topology ?? throw new ArgumentNullException(nameof(topology));
     }
 
     /// <summary>
-    /// Whether a replay from this node provably observes every accepted edit. False when the
-    /// deployment is distributed (the session backplane spans replicas) but the op log is
-    /// process-local, because an append and its checkpoint replay can land on different nodes.
+    /// Whether a replay from this node provably observes every accepted edit. False only when
+    /// the deployment is declared multi-replica but the op log is process-local, because an
+    /// append and its checkpoint replay can then land on different nodes. A single instance is
+    /// always authoritative over its own log — including the very common single-instance
+    /// deployment that uses Redis for cache/jobs.
     /// </summary>
     public bool CanProveReplayContinuity =>
-        !_backplane.IsDistributed || _repository.SupportsReplicaSharedReplay;
+        !_topology.IsMultiReplica || _repository.SupportsReplicaSharedReplay;
 
     /// <summary>
     /// Replays every operation accepted after the last successfully checkpointed cursor for

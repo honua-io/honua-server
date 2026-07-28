@@ -323,8 +323,6 @@ public sealed class InMemoryCollaborationSessionServiceTests
     {
         public List<CollaborationEventEnvelope> Published { get; } = [];
 
-        public bool IsDistributed => false;
-
         public void Publish(CollaborationEventEnvelope ev) => Published.Add(ev);
     }
 

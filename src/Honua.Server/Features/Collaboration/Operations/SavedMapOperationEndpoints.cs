@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Collaboration.Checkpoints;
 using Honua.Server.Features.Collaboration.Sessions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -57,7 +58,7 @@ internal static class SavedMapOperationEndpoints
         [FromServices] ISavedMapOperationLogRepository repository,
         [FromServices] ISavedMapCollaborationAuthorizer authorizer,
         [FromServices] InMemoryCollaborationSessionService sessions,
-        [FromServices] ICollaborationSessionBackplane backplane,
+        [FromServices] SavedMapCollaborationTopology topology,
         HttpContext context)
     {
         // One canonical log key per draft regardless of the GUID textual form in the route
@@ -70,11 +71,13 @@ internal static class SavedMapOperationEndpoints
         }
 
         // Same fail-closed continuity rule as the checkpoint surface (honua-server#2999
-        // review): with a distributed backplane but a process-local op log, two replicas would
-        // each run an independent per-map cursor sequence — both could accept "cursor 1" and
-        // broadcast conflicting committed operations that can never be reconciled. Reject the
-        // edit honestly instead of accepting state the deployment cannot make authoritative.
-        if (backplane.IsDistributed && !repository.SupportsReplicaSharedReplay)
+        // review): in a declared multi-replica deployment with a process-local op log, two
+        // replicas would each run an independent per-map cursor sequence — both could accept
+        // "cursor 1" and broadcast conflicting committed operations that can never be
+        // reconciled. Reject the edit honestly instead of accepting state the deployment cannot
+        // make authoritative. A single instance (even one using Redis for cache/jobs) is
+        // authoritative over its own log and is unaffected.
+        if (topology.IsMultiReplica && !repository.SupportsReplicaSharedReplay)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
@@ -95,6 +98,19 @@ internal static class SavedMapOperationEndpoints
         if (request.BaseCursor < 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "baseCursor must be zero or positive.");
+        }
+
+        // Only kinds the checkpoint applier can express on the Studio composition body may enter
+        // a checkpointable log (honua-server#2999 review). Admitting one it cannot apply would
+        // wedge the map: every later checkpoint 422s while the operation is retained, then fails
+        // the continuity guard once it is pruned, so the session could never produce another
+        // saved version. Reject at the door instead.
+        if (!SavedMapOperationDraftApplier.IsCheckpointable(request.Kind.Value))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Operation kind '{request.Kind.Value}' cannot be applied to a saved-map " +
+                "checkpoint and is not accepted by the collaboration operation log.");
         }
 
         var actorId = ResolveActorId(request.ActorId, context.User);

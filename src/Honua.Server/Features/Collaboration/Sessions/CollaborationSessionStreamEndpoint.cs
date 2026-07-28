@@ -175,8 +175,15 @@ internal static partial class CollaborationSessionStreamEndpoint
                 }
             }
 
+            // The snapshot's own Sequence is the boundary the client reducer compares later
+            // envelopes against, so it MUST be the sequence stamped before the tail was read —
+            // not the channel's current sequence. Using the current one would place the boundary
+            // after operations that were appended during snapshot assembly but are absent from
+            // Operations, and the reducer would then discard their envelopes as pre-snapshot,
+            // silently losing committed edits (honua-server#2999 review).
             var snapshot = sessions.GetSnapshot(mapId) with
             {
+                Sequence = snapshotEnvelope.Sequence,
                 Operations = operations,
                 Cursor = replay.HeadCursor.Value.ToString(CultureInfo.InvariantCulture)
             };

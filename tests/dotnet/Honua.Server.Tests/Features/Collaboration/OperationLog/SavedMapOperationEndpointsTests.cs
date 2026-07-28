@@ -119,9 +119,9 @@ public sealed class SavedMapOperationEndpointsTests
         var body = $$"""
             {
               "operationId": "{{operationId}}",
-              "kind": "SetMetadataField",
+              "kind": "SetViewport",
               "baseCursor": {{baseCursor}},
-              "payload": { "title": "Updated" }
+              "payload": { "zoom": 8 }
             }
             """;
         using var content = new StringContent(body, Encoding.UTF8, "application/json");

@@ -11,7 +11,8 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Authentication;
-using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Server.Features.Collaboration;
+using Honua.Server.Features.Collaboration.Checkpoints;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -307,20 +308,22 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
-    public async Task EditAndCheckpoint_DistributedBackplaneWithProcessLocalLog_FailClosed()
+    public async Task EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised()
     {
         // The in-memory op log declares it cannot prove cross-replica replay continuity...
         new InMemorySavedMapOperationLogRepository().SupportsReplicaSharedReplay.Should().BeFalse();
 
-        // ...so with a distributed backplane (multi-replica deployment) both the edit append
-        // (whose node-local cursors could collide across replicas) and the checkpoint (whose
-        // node-local replay could omit accepted edits) must fail closed.
-        using var factory = CreateFactory(configureTestServices: services =>
+        // ...so in a DECLARED multi-replica deployment both the edit append (whose node-local
+        // cursors could collide across replicas) and the checkpoint (whose node-local replay
+        // could omit accepted edits) must fail closed.
+        using var factory = CreateFactory(configuration: new Dictionary<string, string?>
         {
-            services.RemoveAll<ICollaborationSessionBackplane>();
-            services.AddSingleton<ICollaborationSessionBackplane>(new DistributedNoOpBackplane());
+            // The direct override, rather than Deployment:Mode=MultiNode, which additionally
+            // demands Redis and shared file storage from the platform config validator.
+            [SavedMapCollaborationTopology.MultiReplicaConfigurationKey] = "true"
         });
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
@@ -342,6 +345,80 @@ public sealed class CollaborationLiveCoEditingTests
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "checkpoint response body: {0}", text);
         text.Should().Contain("replica-shared");
+
+        // The advertised capability must agree with what the endpoints actually accept.
+        using var joinContent = new StringContent(
+            """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
+        using var joinResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/sessions/join", joinContent);
+        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var join = (await ReadJsonAsync(joinResponse)).GetProperty("data");
+        join.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeFalse();
+        join.GetProperty("snapshot").GetProperty("capabilities").GetProperty("operations").GetBoolean()
+            .Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    public async Task EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable()
+    {
+        // Redis presence alone must NEVER imply multi-replica: a single instance commonly uses
+        // Redis for cache/jobs and must keep full live co-editing (honua-server#2999 review).
+        using var factory = CreateFactory(configuration: new Dictionary<string, string?>
+        {
+            ["Redis:ConnectionString"] = "localhost:6379",
+            ["ConnectionStrings:Redis"] = "localhost:6379",
+            ["Cache:Redis:ConnectionString"] = "localhost:6379"
+        });
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        using var joinContent = new StringContent(
+            """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
+        using var joinResponse = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadJsonAsync(joinResponse)).GetProperty("data")
+            .GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
+
+        var append = await AppendOperationAsync(
+            client, mapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":7}""");
+        append.GetProperty("status").GetString().Should().Be("accepted");
+
+        var checkpoint = await CheckpointAsync(client, mapId, "single instance");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    public async Task Append_KindTheCheckpointApplierCannotApply_IsRejected()
+    {
+        using var factory = CreateFactory();
+        using var client = CreateAdminClient(factory);
+        var draft = await CreateMapDraftAsync(client);
+        var mapId = draft.DraftId.ToString("D");
+
+        // SetMetadataField has no composition-body transform, so admitting it would wedge every
+        // later checkpoint. The append endpoint and the applier agree it is not accepted.
+        SavedMapOperationDraftApplier.IsCheckpointable(SavedMapOperationKind.SetMetadataField)
+            .Should().BeFalse();
+        using var content = new StringContent(
+            """{"operationId":"op-meta","kind":"SetMetadataField","baseCursor":0,"payload":{"title":"x"}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var response = await client.PostAsync(
+            $"/api/v1/saved-maps/{mapId}/collaboration/operations", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // ...and the map is still checkpointable afterwards.
+        _ = await AppendOperationAsync(
+            client, mapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":4}""");
+        var checkpoint = await CheckpointAsync(client, mapId, "after rejection");
+        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
     }
 
     [IntegrationTest]
@@ -377,16 +454,6 @@ public sealed class CollaborationLiveCoEditingTests
         checkpoint2.GetProperty("headCursor").GetInt64().Should().Be(3);
     }
 
-    private sealed class DistributedNoOpBackplane : ICollaborationSessionBackplane
-    {
-        public bool IsDistributed => true;
-
-        public void Publish(CollaborationEventEnvelope ev)
-        {
-            // Cross-node delivery is irrelevant here; only the distributed-topology signal matters.
-        }
-    }
-
     [IntegrationTest]
     [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
@@ -405,24 +472,33 @@ public sealed class CollaborationLiveCoEditingTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         bool endUserAuthorization = false,
-        Action<IServiceCollection>? configureTestServices = null)
+        IDictionary<string, string?>? configuration = null)
     {
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    var settings = new Dictionary<string, string?>
                     {
                         ["HONUA_DEV_AUTH"] = "false",
                         ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
                         ["Studio:EndUserAuthorization:Enabled"] = endUserAuthorization ? "true" : "false"
-                    });
+                    };
+
+                    if (configuration is not null)
+                    {
+                        foreach (var (key, value) in configuration)
+                        {
+                            settings[key] = value;
+                        }
+                    }
+
+                    configBuilder.AddInMemoryCollection(settings);
                 });
 
                 builder.ConfigureTestServices(services =>
                 {
-                    configureTestServices?.Invoke(services);
                     // No collaboration authorizer override: these tests exercise the real
                     // Studio-lifecycle-backed authorizer. The Studio store is swapped for the
                     // in-memory implementation so the lifecycle runs without a migrated Postgres

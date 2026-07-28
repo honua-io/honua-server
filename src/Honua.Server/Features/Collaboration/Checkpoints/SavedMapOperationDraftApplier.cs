@@ -42,6 +42,9 @@ internal static class SavedMapOperationDraftApplier
         {
             current = operation.Kind switch
             {
+                // Keep this switch and IsCheckpointable in lockstep: the append endpoint rejects
+                // any kind this applier cannot express, so an unsupported kind can never enter a
+                // checkpointable log (honua-server#2999 review).
                 SavedMapOperationKind.SetViewport => ApplyBody(current, operation, ApplySetViewport),
                 SavedMapOperationKind.SetLayerVisibility => ApplyBody(current, operation, ApplySetLayerVisibility),
                 SavedMapOperationKind.ReorderLayers => ApplyBody(current, operation, ApplyReorderLayers),
@@ -53,6 +56,26 @@ internal static class SavedMapOperationDraftApplier
 
         return current;
     }
+
+    /// <summary>
+    /// Whether <paramref name="kind"/> can be applied to a Studio composition body by
+    /// <see cref="Apply"/>. The op-log append endpoint gates on this so the log only ever holds
+    /// operations a checkpoint can actually persist.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SavedMapOperationKind.SetMetadataField"/> is deliberately excluded: the Studio
+    /// composition body carries no metadata bag, so there is no non-speculative transform for it.
+    /// Saved-map metadata is edited through the Studio draft surface, not the live op log.
+    /// </remarks>
+    public static bool IsCheckpointable(SavedMapOperationKind kind) => kind switch
+    {
+        SavedMapOperationKind.SetViewport => true,
+        SavedMapOperationKind.SetLayerVisibility => true,
+        SavedMapOperationKind.ReorderLayers => true,
+        SavedMapOperationKind.PatchStyle => true,
+        SavedMapOperationKind.ReplaceWebMapDocument => true,
+        _ => false,
+    };
 
     private static StudioPackageEnvelope ApplyBody(
         StudioPackageEnvelope envelope,

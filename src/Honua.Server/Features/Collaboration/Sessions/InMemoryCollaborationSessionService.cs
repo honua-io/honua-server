@@ -30,15 +30,21 @@ internal sealed class InMemoryCollaborationSessionService
     private readonly ISavedMapCollaborationAuthorizer _authorizer;
     private readonly ICollaborationSessionClock _clock;
     private readonly ICollaborationSessionBackplane _backplane;
+    private readonly CollaborationCapabilities _capabilities;
 
     public InMemoryCollaborationSessionService(
         ISavedMapCollaborationAuthorizer authorizer,
         ICollaborationSessionClock clock,
-        ICollaborationSessionBackplane? backplane = null)
+        ICollaborationSessionBackplane? backplane = null,
+        CollaborationCapabilities? capabilities = null)
     {
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _backplane = backplane ?? NullCollaborationSessionBackplane.Instance;
+        // Advertised capabilities must match what the endpoints will actually accept: when the
+        // deployment fails edits closed, the stream must not claim operations are available
+        // (honua-server#2999 review).
+        _capabilities = capabilities ?? CollaborationCapabilities.Default;
     }
 
     public async ValueTask<CollaborationJoinResult> JoinAsync(
@@ -116,6 +122,7 @@ internal sealed class InMemoryCollaborationSessionService
                 MapId = mapId,
                 SessionId = sessionId,
                 ParticipantId = participant.ParticipantId,
+                Capabilities = _capabilities,
                 Participant = CollaborationParticipantWire.FromPresence(participant),
                 Snapshot = snapshot
             }
@@ -133,7 +140,8 @@ internal sealed class InMemoryCollaborationSessionService
             return new CollaborationSnapshot
             {
                 MapId = mapId,
-                Sequence = 0
+                Sequence = 0,
+                Capabilities = _capabilities
             };
         }
 
@@ -737,7 +745,7 @@ internal sealed class InMemoryCollaborationSessionService
         return cleared;
     }
 
-    private static CollaborationSnapshot CreateSnapshotLocked(MapChannel channel)
+    private CollaborationSnapshot CreateSnapshotLocked(MapChannel channel)
     {
         var ordered = channel.Participants.Values
             .Select(static state => state.Presence)
@@ -774,6 +782,7 @@ internal sealed class InMemoryCollaborationSessionService
         {
             MapId = channel.MapId,
             Sequence = channel.LastSequence,
+            Capabilities = _capabilities,
             Participants = ordered.Select(CollaborationParticipantWire.FromPresence).ToArray(),
             Cursors = cursors,
             Selections = selections,

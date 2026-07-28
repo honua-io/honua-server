@@ -36,6 +36,22 @@ internal static class CollaborationSessionServices
             services.TryAddSingleton<ICollaborationSessionBackplane>(NullCollaborationSessionBackplane.Instance);
         }
 
+        // Deployment topology drives the collaboration fail-closed rules; it is deliberately an
+        // operator declaration (Deployment:Mode / Collaboration:MultiReplica) rather than an
+        // inference from Redis presence, since a single instance commonly uses Redis for
+        // cache/jobs and must keep full live co-editing (honua-server#2999 review).
+        services.TryAddSingleton<SavedMapCollaborationTopology>();
+        // The advertised session capabilities must match what the endpoints will accept: when
+        // edits fail closed, the stream advertises operations/replay as unavailable.
+        services.TryAddSingleton(static sp =>
+        {
+            var topology = sp.GetRequiredService<SavedMapCollaborationTopology>();
+            var log = sp.GetRequiredService<Core.Features.Collaboration.Operations.ISavedMapOperationLogRepository>();
+            var operationsAvailable = !topology.IsMultiReplica || log.SupportsReplicaSharedReplay;
+            return operationsAvailable
+                ? CollaborationCapabilities.Default
+                : CollaborationCapabilities.Default with { Operations = false, Replay = false };
+        });
         services.TryAddSingleton<InMemoryCollaborationSessionService>();
         // The background sweep keeps the singleton presence/outbox state bounded when
         // participants stop polling or a socket dies without a close frame.

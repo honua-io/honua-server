@@ -3,8 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Collaboration.Operations;
+using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Collaboration.Checkpoints;
-using Honua.Server.Features.Collaboration.Sessions;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Collaboration.Checkpoints;
@@ -17,7 +17,7 @@ public sealed class SavedMapCheckpointOperationLogTests
     public async Task ReplayPendingAsync_RecordedCursorInsideWindow_ReplaysOnlySuffix()
     {
         var repository = new InMemorySavedMapOperationLogRepository(retainedOperationCount: 2);
-        var log = new SavedMapCheckpointOperationLog(repository, new LocalBackplane());
+        var log = new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(false));
         for (var i = 1; i <= 5; i++)
         {
             await AppendAsync(repository, i);
@@ -38,7 +38,7 @@ public sealed class SavedMapCheckpointOperationLogTests
     public async Task ReplayPendingAsync_NeverCheckpointedOperationsPruned_ReportsResyncRequired()
     {
         var repository = new InMemorySavedMapOperationLogRepository(retainedOperationCount: 2);
-        var log = new SavedMapCheckpointOperationLog(repository, new LocalBackplane());
+        var log = new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(false));
         for (var i = 1; i <= 5; i++)
         {
             await AppendAsync(repository, i);
@@ -57,9 +57,9 @@ public sealed class SavedMapCheckpointOperationLogTests
         var repository = new InMemorySavedMapOperationLogRepository();
         repository.SupportsReplicaSharedReplay.Should().BeFalse();
 
-        new SavedMapCheckpointOperationLog(repository, new LocalBackplane())
+        new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(false))
             .CanProveReplayContinuity.Should().BeTrue();
-        new SavedMapCheckpointOperationLog(repository, new DistributedBackplane())
+        new SavedMapCheckpointOperationLog(repository, SavedMapCollaborationTopology.ForMultiReplica(true))
             .CanProveReplayContinuity.Should().BeFalse();
     }
 
@@ -77,21 +77,4 @@ public sealed class SavedMapCheckpointOperationLogTests
         result.Status.Should().Be(SavedMapOperationAppendStatus.Accepted);
     }
 
-    private sealed class LocalBackplane : ICollaborationSessionBackplane
-    {
-        public bool IsDistributed => false;
-
-        public void Publish(CollaborationEventEnvelope ev)
-        {
-        }
-    }
-
-    private sealed class DistributedBackplane : ICollaborationSessionBackplane
-    {
-        public bool IsDistributed => true;
-
-        public void Publish(CollaborationEventEnvelope ev)
-        {
-        }
-    }
 }
