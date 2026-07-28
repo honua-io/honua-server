@@ -321,6 +321,14 @@ internal sealed partial class GeocoderReferenceDataImportService(
                 "POINT_X/POINT_Y, LON/LAT) or an explicit fieldMap for the 'x' and 'y' roles.");
         }
 
+        // Sharing one column between non-coordinate roles is legal, but the two coordinate
+        // axes reading the same column would silently give every point identical lon/lat.
+        if (mapping[RoleX] == mapping[RoleY])
+        {
+            throw new GeocoderReferenceDataImportException(
+                "The 'x' and 'y' roles must map to different CSV columns.");
+        }
+
         if (!mapping.ContainsKey(RoleDisplayName) && !mapping.ContainsKey(RoleStreetName))
         {
             throw new GeocoderReferenceDataImportException(
@@ -341,6 +349,11 @@ internal sealed partial class GeocoderReferenceDataImportService(
             var column = header[i].Trim();
             if (column.Length == 0)
             {
+                // Every physical column is classified — an unnamed header cell is reported
+                // rather than silently dropped along with its row values.
+                report.Add(new ReferenceColumnReportEntry(
+                    $"(column {i + 1})", ReferenceColumnStatus.Ignored,
+                    "Header cell is empty; values in this position are discarded."));
                 continue;
             }
 
