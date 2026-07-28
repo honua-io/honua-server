@@ -892,10 +892,10 @@
       "displayName": "Forward Geocoding",
       "category": "Geocoding",
       "edition": "Community",
-      "entryCount": 9,
-      "provingTestCount": 47,
+      "entryCount": 10,
+      "provingTestCount": 57,
       "maturity": {
-        "implemented": 9
+        "implemented": 10
       },
       "noSurface": null,
       "cite": [],

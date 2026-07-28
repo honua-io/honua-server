@@ -3,6 +3,7 @@
 
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
+using Honua.Geocoding.Features.Geocoding.ReferenceDataImport;
 using Honua.Geocoding.Features.Geocoding.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +45,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGeocodeProviderFactory>(sp => (GeocodeProviderRegistry)sp.GetRequiredService<IGeocodeProviderRegistry>());
         services.AddScoped<IGeocodeCoordinatorService, GeocodeCoordinatorService>();
         services.AddScoped<IGeocodeProviderCoordinator, GeocodeProviderCoordinator>();
+
+        // Geocoder reference data import. Registered with the core services (not only when the
+        // local provider is enabled) so operators can load reference data before enabling the
+        // local provider; the target table configuration binds the same Providers:Local section
+        // the provider reads. Binding here is idempotent with AddLocalGeocodeProvider.
+        services.AddOptions<LocalGeocoderProviderConfiguration>()
+            .Bind(configuration.GetSection($"{GeocodingConfiguration.SectionName}:Providers:Local"));
+        // Factory registration closes over the configuration argument so hosts (and DI
+        // validation) do not need IConfiguration itself registered in the container.
+        services.TryAddSingleton<IGeocoderReferenceDataImportService>(sp => new GeocoderReferenceDataImportService(
+            configuration,
+            sp.GetRequiredService<IOptionsMonitor<LocalGeocoderProviderConfiguration>>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<GeocoderReferenceDataImportService>>()));
 
         return services;
     }

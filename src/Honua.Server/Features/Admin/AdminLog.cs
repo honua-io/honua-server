@@ -265,4 +265,13 @@ internal static partial class AdminLog
         Level = LogLevel.Warning,
         Message = "Geocoding provider health check failed")]
     public static partial void GeocodingProviderHealthCheckFailed(ILogger logger, Exception ex);
+
+    /// <summary>
+    /// Log when a geocoder reference data import request is rejected with an operator-safe reason.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4622,
+        Level = LogLevel.Warning,
+        Message = "Geocoder reference data import rejected: {Reason}")]
+    public static partial void GeocoderReferenceImportRejected(ILogger logger, string reason);
 }
